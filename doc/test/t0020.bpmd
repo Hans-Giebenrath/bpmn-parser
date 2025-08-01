@@ -1,0 +1,45 @@
+// GENERATE VISIBILITY TABLE
+= Good Client
+
+# Incoming Data
+- tee-protect-outer
+# tee-protect-inner
+. Finish
+
+= Bad Actor
+
+# Receiving
+- Echo in TEE task
+# Sending
+. Finish
+
+= Better Client
+
+# tee-unprotect-inner
+- Process in TEE task
+. Finish
+
+OD Input <-incoming-data ->tee-protect-outer
+ & Input [sc] <-tee-protect-outer ->tee-protect-inner
+ & Input [sc&tee] <-receiving ->echo
+ & Output [sc&tee] <-echo ->sending
+ & Output [sc] <-tee-unprotect-inner ->process
+
+MF <-tee-protect-inner ->receiving
+MF <-sending ->tee-unprotect-inner
+
+[pe-bpmn
+  (tee-tasks @process)
+  (tee-in-protect @tee-protect-outer @better-client)
+  (tee-external-root-access)
+  (stroke-color #7a7)
+]
+
+[pe-bpmn
+  (tee-tasks @echo)
+  (tee-in-protect @tee-protect-inner no-rv)
+  (tee-out-unprotect @tee-unprotect-inner no-rv)
+  (tee-external-root-access)
+  (stroke-color #a55)
+]
+

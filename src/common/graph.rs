@@ -1,135 +1,315 @@
-// graph.rs
-use crate::common::bpmn_event::BpmnEvent;
-use crate::common::edge::Edge;
-use crate::common::node::Node;
+use super::macros::impl_index;
+use crate::common::bpmn_node::{BpmnNode, EventVisual};
+use crate::common::config::Config;
+use crate::common::edge::{DummyEdgeBendPoints, Edge, EdgeType};
+use crate::common::node::LayerId;
+use crate::common::node::{Node, NodeType};
 use crate::common::pool::Pool;
+use crate::lexer::{DataType, EventType};
+use crate::parser::ParseError;
+use annotate_snippets::Level;
+use std::collections::{HashMap, HashSet};
+use std::fmt::{self, Debug};
+use std::mem;
+
+use super::edge::FlowType;
 
 /// Represents a graph consisting of nodes and edges.
-#[derive(Clone)]
+#[derive(Default)]
 pub struct Graph {
-    pub pools: Vec<Pool>,    // Pools
-    pub edges: Vec<Edge>,    // Edges
-    pub last_node_id: usize, // Last used node ID
+    /// Nodes shall only be added to this Vec, but the order shall not be modified.
+    /// Otherwise NodeIds will point to the wrong nodes.
+    pub nodes: Vec<Node>,
+    /// Edges shall only be added to this Vec, but the order shall not be modified.
+    /// Otherwise EdgeIds will point to the wrong edges.
+    pub edges: Vec<Edge>,
+    pub pools: Vec<Pool>,
+
+    pub data_elements: Vec<SemanticDataElement>,
+    pub config: Config,
+
+    pub num_layers: usize,
+}
+
+#[derive(Debug, Eq, PartialEq, Hash, Clone)]
+pub struct SemanticDataElement {
+    pub name: String,
+    pub data_element: Vec<NodeId>,
+}
+
+#[derive(Debug, Clone, Eq, PartialEq, Copy, Hash, PartialOrd, Ord)]
+pub struct SdeId(pub usize);
+impl_index!(SdeId, SemanticDataElement, sde_idx);
+
+/// A Newtype to make sure that code outside of the module does not modify its value.
+/// The invariant is that every created NodeId does point to some existing node.
+#[derive(PartialEq, Default, Clone, Debug, Copy, Hash, Eq, PartialOrd, Ord)]
+pub struct PoolId(pub usize);
+
+/// A Newtype to make sure that code outside of the module does not modify its value.
+/// The invariant is that every created NodeId does point to some existing node.
+#[derive(PartialEq, Default, Clone, Debug, Copy, Hash, Eq, PartialOrd, Ord)]
+pub struct LaneId(pub usize);
+
+// TODO make use of
+#[derive(PartialEq, Default, Clone, Debug, Copy, Hash, Eq)]
+pub struct PoolAndLane {
+    pub pool: PoolId,
+    pub lane: LaneId,
+}
+
+pub struct Coord3 {
+    pub pool: PoolId,
+    pub lane: LaneId,
+    pub layer: usize,
+    pub half_layer: bool,
+}
+
+/// A Newtype to make sure that code outside of the module does not modify its value.
+/// The invariant is that every created NodeId does point to some existing node.
+#[derive(PartialEq, Default, Clone, Debug, Copy, Hash, Eq)]
+pub struct NodeId(pub usize);
+
+#[derive(PartialEq, Default, Clone, Debug, Copy, Hash, Eq)]
+pub struct EdgeId(pub usize);
+
+impl fmt::Display for NodeId {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "{}", self.0)
+    }
 }
 
 impl Graph {
-    pub fn new() -> Self {
-        Graph {
-            pools: Vec::new(),
-            edges: Vec::new(),
-            last_node_id: 0,
-        }
+    pub fn add_pool(&mut self, pool: Option<String>) -> PoolId {
+        self.pools.push(Pool::new(pool));
+        PoolId(self.pools.len() - 1)
     }
 
-    pub fn add_node(
-        &mut self,
-        bpmn_event: BpmnEvent,
-        id: Option<usize>,
-        pool_node: Option<String>,
-        lane_node: Option<String>,
-    ) -> usize {
-        // Generate or use provided node ID
-        let node_id = id.unwrap_or_else(|| self.next_node_id());
+    pub fn add_node(&mut self, node_type: NodeType, pool_id: PoolId, lane_id: LaneId) -> NodeId {
+        let node_id = NodeId(self.nodes.len());
 
+        // Add node ID to the pool and lane stuff
+        self.pools[pool_id.0].add_node(lane_id, node_id);
 
-        // Create new node
-        let node = Node::new(
-            node_id,
-            None,
-            None,
-            Some(bpmn_event),
-            pool_node.clone(),
-            lane_node.clone(),
-        );
+        let (width, height) = node_size(&node_type);
 
-
-        // Add node to appropriate pool
-        let pool_name = pool_node.unwrap_or_default();
-        if let Some(pool) = self
-            .pools
-            .iter_mut()
-            .find(|p| p.get_pool_name() == pool_name)
-        {
-            pool.add_node(node);
-        } else {
-            let mut new_pool = Pool::new(pool_name);
-            new_pool.add_node(node);
-            self.pools.push(new_pool);
-        }
+        self.nodes.push(Node {
+            id: node_id,
+            node_type,
+            pool: pool_id,
+            lane: lane_id,
+            x: 0,
+            y: 0,
+            width,
+            height,
+            stroke_color: None,
+            fill_color: None,
+            layer_id: LayerId(0),
+            node_above_in_same_lane: None,
+            node_below_in_same_lane: None,
+            uses_half_layer: false,
+            incoming: Vec::new(),
+            outgoing: Vec::new(),
+            aux: super::node::NodePhaseAuxData::None,
+        });
 
         node_id
     }
 
-    pub fn get_pools(&self) -> &Vec<Pool> {
-        &self.pools
+    pub fn add_edge(
+        &mut self,
+        from: NodeId,
+        to: NodeId,
+        edge_type: EdgeType,
+        flow_type: FlowType,
+    ) -> EdgeId {
+        let edge_id = EdgeId(self.edges.len());
+        self.edges.push(Edge {
+            from,
+            to,
+            edge_type,
+            flow_type,
+            is_reversed: false,
+            stroke_color: None,
+            stays_within_lane: self.nodes[from.0].pool == self.nodes[to.0].pool
+                && self.nodes[from.0].lane == self.nodes[to.0].lane,
+        });
+
+        self.nodes[from.0].outgoing.push(edge_id);
+        self.nodes[to.0].incoming.push(edge_id);
+        edge_id
     }
 
-    pub fn get_pools_mut(&mut self) -> &mut Vec<Pool> {
-        &mut self.pools
+    pub fn add_sde(&mut self, name: String, node_ids: Vec<NodeId>) -> SdeId {
+        let sde_id = SdeId(self.data_elements.len());
+        self.data_elements.push(SemanticDataElement {
+            name,
+            data_element: node_ids,
+        });
+        sde_id
     }
 
-    pub fn take_edges(&mut self) -> Vec<Edge> {
-        std::mem::take(&mut self.edges)
+    pub fn transported_data(&self, edge_id: EdgeId) -> Option<&[SdeId]> {
+        let edge = &self.edges[edge_id];
+        match &edge.flow_type {
+            FlowType::DataFlow(aux) => Some(&aux.transported_data),
+            FlowType::MessageFlow(aux) => Some(&aux.transported_data),
+            _ => None,
+        }
     }
 
-    pub fn set_edges(&mut self, edges: Vec<Edge>) {
-        self.edges = edges;
-    }
+    /// Only allowed before the bend points are added.
+    pub fn reverse_edge(&mut self, edge_id: EdgeId) {
+        // Modifies the edge in place (instead of marking it as deleted and creating a new one), so
+        // no unnecessary hole is created within graph.edges.
+        let edge = &mut self.edges[edge_id.0];
+        assert!(edge.from.0 != edge.to.0);
+        assert!(
+            self.nodes[edge.from.0]
+                .outgoing
+                .iter()
+                .any(|e| e.0 == edge_id.0)
+        );
+        self.nodes[edge.from.0]
+            .outgoing
+            .retain(|e| e.0 != edge_id.0);
+        self.nodes[edge.from.0].incoming.push(edge_id);
 
-    /// Adds an edge to the graph.
-    pub fn add_edge(&mut self, edge: Edge) {
-        self.edges.push(edge);
-    }
+        assert!(
+            self.nodes[edge.to.0]
+                .incoming
+                .iter()
+                .any(|e| e.0 == edge_id.0)
+        );
+        self.nodes[edge.to.0].incoming.retain(|e| e.0 != edge_id.0);
+        self.nodes[edge.to.0].outgoing.push(edge_id);
 
-    // Get the next node ID.
-    pub fn next_node_id(&mut self) -> usize {
-        self.last_node_id += 1; // Increment the last used ID
-        self.last_node_id // Return the new ID
+        mem::swap(&mut edge.from, &mut edge.to);
+        edge.is_reversed = true;
     }
+}
 
-    pub fn get_node_by_id(&self, id: usize) -> Option<&Node> {
-        for pool in &self.pools {
-            for lane in pool.get_lanes() {
-                for node in lane.get_layers() {
-                    if node.id == id {
-                        return Some(node);
-                    }
-                }
+pub fn node_size(node_type: &NodeType) -> (usize, usize) {
+    let event = match &node_type {
+        NodeType::DummyNode => {
+            // Height of 0 so there is just padding between the lines.
+            // Otherwise there would be too much whitespace between lines.
+            return (100, 0);
+        }
+        NodeType::RealNode { event, .. } => event,
+    };
+
+    match event {
+        // Start Events
+        BpmnNode::Event(_, _) => (36, 36),
+
+        // Gateways
+        BpmnNode::Gateway(_) => (50, 50),
+
+        // Activities
+        BpmnNode::Activity(_) => (100, 80),
+
+        BpmnNode::Data(DataType::Store, _) => (50, 50),
+        BpmnNode::Data(DataType::Object, _) => (36, 50),
+    }
+}
+
+impl Debug for Graph {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        writeln!(
+            f,
+            "graph - #nodes {} #edges {}",
+            self.nodes.len(),
+            self.edges.len()
+        )?;
+        for n in &self.nodes {
+            writeln!(
+                f,
+                "  node: {} (p: {}, l: {}, lyr: {:?}) - {:?} - in: {:?}, out: {:?}",
+                n.id.0,
+                n.pool.0,
+                n.lane.0,
+                n.layer_id,
+                n.display_text(),
+                n.incoming,
+                n.outgoing
+            )?;
+        }
+        for e in &self.edges {
+            writeln!(f, "  edge: {} -> {}", e.from.0, e.to.0)?;
+        }
+        for (pool_idx, pool) in self.pools.iter().enumerate() {
+            for (lane_idx, lane) in pool.lanes.iter().enumerate() {
+                writeln!(f, "  p/l {}/{}: {:?}", pool_idx, lane_idx, lane.nodes)?;
             }
         }
-        println!("Node with id {} not found", id);
-        None
+        Ok(())
+    }
+}
+
+impl SemanticDataElement {
+    pub(crate) fn contains(&self, node_id: NodeId) -> bool {
+        self.data_element.contains(&node_id)
+    }
+}
+
+type ValidationErrors = ParseError;
+
+pub fn validate_invariants(graph: &Graph) -> Result<(), ValidationErrors> {
+    // TODO
+    //
+    // (1) there is no situation where an edge's from has multiple edges in its outgoing vec, and
+    // the edge's to has multiple edges in its incoming vec. TODO in the future this should
+    // actually work.
+    // (2) No self-loops: An edge's from is different from to.
+    // (3) The gateway connection stuff should make sense
+    // (4) Data names should be consistent (when sending and receiving something)
+
+    let mut errors = Vec::new();
+
+    {
+        for message_flow in graph.edges.iter().filter(|e| e.is_message_flow()) {
+            check_if_valid_message_flow_start(&graph.nodes[message_flow.from], &mut errors);
+            check_if_valid_message_flow_end(&graph.nodes[message_flow.to], &mut errors);
+        }
     }
 
-    pub fn get_nodes_by_pool_name(&self, pool_name: &str) -> Vec<&Node> {
-        self.pools
-            .iter()
-            .flat_map(|pool| pool.get_lanes())
-            .flat_map(|lane| lane.get_layers())
-            .filter(|node| node.pool.as_deref() == Some(pool_name))
-            .collect()
+    if errors.is_empty() {
+        Ok(())
+    } else {
+        Err(errors)
     }
+}
 
-    pub fn print_graph(&self) {
-        println!("Printing Graph");
-        for pool in &self.pools {
-            println!("Pool: {}", pool.get_pool_name());
-            for lane in pool.get_lanes() {
-                println!("  Lane: {}", lane.get_lane());
-                for node in lane.get_layers() {
-                    println!(
-                        "    Node: {}, x: {}, y: {}, y_offset: {}",
-                        node.id,
-                        node.x.unwrap_or(0.0),
-                        node.y.unwrap_or(0.0),
-                        node.y_offset.unwrap_or(0.0)
-                    );
-                }
+fn check_if_valid_message_flow_start(node: &Node, errors: &mut ValidationErrors) {
+    if let NodeType::RealNode { event, tc, .. } = &node.node_type {
+        match event {
+            BpmnNode::Event(EventType::Message, EventVisual::Throw | EventVisual::End) => (),
+            BpmnNode::Activity(_) => (),
+            _ => {
+                errors.push((
+                "This node type cannot send messages. Only message events (M#) or tasks (e.g. .-) can be used as message flow starts. Note that shorthand events (#) are automatically transformed into message events when they are used in a message flow.".to_string(),
+                    *tc,
+                    Level::Error
+                ));
             }
         }
-        println!("Printing edges");
-        for edge in &self.edges {
-            println!("  Edge: {} -> {}", edge.from, edge.to);
+    }
+}
+
+fn check_if_valid_message_flow_end(node: &Node, errors: &mut ValidationErrors) {
+    if let NodeType::RealNode { event, tc, .. } = &node.node_type {
+        match event {
+            BpmnNode::Event(EventType::Message, EventVisual::Start(_) | EventVisual::Catch(_)) => {}
+            BpmnNode::Event(EventType::Blank, _) => (),
+            BpmnNode::Activity(_) => (),
+            _ => {
+                errors.push((
+                "This node type cannot send messages. Only message events (M#) or tasks (e.g. .-) can be used as message flow starts. Note that shorthand events (#) are automatically transformed into message events when they are used in a message flow.".to_string(),
+                    *tc,
+                    Level::Error
+                ));
+            }
         }
     }
 }

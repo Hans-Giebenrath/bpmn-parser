@@ -1,0 +1,21 @@
+= Pizza Demo
+== Customer
+# Hunger Detected
+- Order an Pizza
+X ->option1 ->option2
+
+G <-option1
+- Pepperoni
+G -> chosen
+
+G <-option2
+- Cheese
+G ->chosen
+
+X <-chosen
+- Pizza received
+. Eat the pizza
+== Pizzeria
+# Get an Order
+- Prepare the pizza
+. Deliver the pizza

@@ -1,0 +1,15 @@
+= Pool 1
+== Lane 1
+
+# Start 1
+- Send
+. End 1
+
+= Pool 2
+== Lane 2
+
+# Start 2
+- Receive
+. End 2
+
+MF <-send ->receive

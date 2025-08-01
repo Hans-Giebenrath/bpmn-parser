@@ -1,0 +1,79 @@
+// GENERATE VISIBILITY TABLE
+
+= Client 1
+# s
+- Prepare Data
+- Encrypt Data @tee-in-protect
+# send @send1
+# receive @receive1
+. Done
+
+= Service Provider
+# s
++ ->sf-from-c1 ->sf-from-c2
+
+F <-sf-from-c1
+# Receive message from Client 1 @unprotect1
+F ->join
+
+F <-sf-from-c2
+# Receive message from Client 2 @unprotect2
+F ->join
+
++ <-join
+- Process Data
++ ->fin1 ->fin2
+
+F <-fin1
+. send-to-c1 @send-to-c1
+
+F <-fin2
+. send-to-c2 @send-to-c2
+
+= Client 2
+# s
+- Prepare Data
+# send @send2
+# receive @receive2
+. Done
+
+= Admin
+# s
+. e
+
+
+MF <-client1-send ->sp-receive1
+MF <-client2-send ->sp-receive2
+
+MF <-send-to-c1 ->c1-receive1
+MF <-send-to-c2 ->c2-receive2
+
+
+OD Input Data 1 <-c1-prepare-data ->tee-in-protect
+ & Input Data 1 [protected] <-tee-in-protect ->send1
+ & Input Data 1 <-sp-receive1 ->process
+
+OD Input Data 2 <-c2-prepare-data ->c2-send
+ & Input Data 2 <-sp-receive2 ->process
+
+OD Result 1 <-process ->sp-send-c1
+ & Result 1 <-c1-receive1
+
+OD Result 2 <-process ->sp-send-c2
+ & Result 2 <-c2-receive2
+
+[pe-bpmn
+  (tee-pool @sp)
+  (tee-in-protect @tee-in-protect @admin)
+  (tee-in-protect @send2 no-rv)
+  (tee-in-unprotect @unprotect1)
+  (tee-in-unprotect @unprotect2)
+  (tee-out-protect @send-to-c1)
+  (tee-out-protect @send-to-c2)
+  (tee-out-unprotect @receive1 @admin)
+  (tee-out-unprotect @receive2 @admin)
+  (tee-admin @admin)
+  (tee-external-root-access @sp)
+  (stroke-color #0063B2)
+  (fill-color #9CC3D5)
+]

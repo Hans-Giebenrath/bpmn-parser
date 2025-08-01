@@ -1,0 +1,7 @@
+# Start Event
+- Task @t1
+- t
+- Task2 @t2
+. End
+
+OD Ob <-t1 ->t2

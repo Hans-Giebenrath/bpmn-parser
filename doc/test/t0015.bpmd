@@ -1,0 +1,55 @@
+= Client 1
+# Start
+- Prepare Data
+# Send @send
+# Receive @receive
+. Done
+
+= Service Provider
+# Start
++ ->sf-from-c1 ->sf-from-c2
+
+F <-sf-from-c1
+# Receive message from Client 1
+F ->join
+
+F <-sf-from-c2
+# Receive message from Client 2
+F ->join
+
++ <-join
+- Process Data
++ ->fin1 ->fin2
+
+F <-fin1
+. Send @send-to-c1
+
+F <-fin2
+. Send @send-to-c2
+
+= Client 2
+# Start
+- Prepare Data
+# Send @send
+# Receive @receive
+. Done
+
+
+MF <-client1-send ->sp-receive1
+MF <-client2-send ->sp-receive2
+
+MF <-sp-send-c1 ->c1-receive
+MF <-sp-send-c2 ->c2-receive
+
+
+OD Input Data 1 <-c1-prepare-data ->c1-send
+ & Input Data 1 <-sp-receive1 ->process
+
+OD Input Data 2 <-c2-prepare-data ->c2-send
+ & Input Data 2 <-sp-receive2 ->process
+
+OD Result 1 <-process ->sp-send-c1
+ & Result 1 <-c1-receive
+
+OD Result 2 <-process ->sp-send-c2
+ & Result 2 <-c2-receive

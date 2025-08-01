@@ -1,0 +1,33 @@
+# A 1
+F ->A2
+
+# BB 1
+F ->B2
+
+F <-B2
+. BB 2
+
+F <-A2
+. A 2
+//# Start Event
+//X ->a1"Go Here" ->b1"No, here!"
+//
+//G <-a1
+//- A 1
+//F ->a1a2
+//
+//G <-b1
+//- BB 1
+//F ->b1b2
+//
+//F <-b1b2
+//- BB 2
+//G ->endjoin
+//
+//F <-a1a2
+//- A 2
+//G ->endjoin
+//
+//X <-endjoin
+//. Finish.
+

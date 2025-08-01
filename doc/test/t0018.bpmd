@@ -1,0 +1,15 @@
+# Start
+X ->up ->down
+
+G <-up
+- a
+G ->join
+
+G <-down
+- b
+G ->join
+
+X <-join
+. Done
+
+OD <-b

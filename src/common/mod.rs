@@ -1,6 +1,8 @@
-pub mod bpmn_event;
+pub mod bpmn_node;
+pub mod config;
 pub mod edge;
 pub mod graph;
 pub mod lane;
+pub mod macros;
 pub mod node;
 pub mod pool;

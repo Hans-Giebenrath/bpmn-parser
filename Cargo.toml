@@ -1,8 +1,23 @@
+cargo-features = ["profile-rustflags"]
+
 [package]
 name = "bpmn-parser"
 version = "0.1.0"
-edition = "2021"
+edition = "2024"
 
 [dependencies]
-good_lp = { version = "1.8.1" }
-svg = "0.18.0"
+clap = { version = "4", features = ["derive"] }
+good_lp = { version = "1", features = [
+    "singlethread-cbc",
+    "coin_cbc",
+], default-features = false }
+svg = "0.18"
+annotate-snippets = "0.11"
+itertools = {version = "0", features = ["use_alloc"]}
+rustc-hash = {version = "2", default-features = false }
+fuzzy-matcher = "0.3.7"
+csv = "1.3.1"
+vecset = "0.0.3"
+
+[profile.test]
+rustflags = ["-Adead_code", "-Aunused_variables", "-Aunused_imports"]

@@ -1,0 +1,21 @@
+= Pool A
+
+== Lane 1
+
+# Start 1
+- Aoijo @a
+- Aoijo @b
+. End 1
+
+OD Lol1 <-a
+OD Lol2 ->b
+
+== Lane 2
+
+# Start 2
+. End 2
+
+= Pool B
+
+# Start B
+. End B

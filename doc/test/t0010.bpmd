@@ -1,0 +1,42 @@
+# Start Event
+X ->above"Go Here" ->below"No, here!" ->more
+
+G <-above
+- A 1
+F ->a1a2
+
+F <-b1b2
+- BB 2
+F ->b2b3
+
+F <-c2c3
+- CCC 2
+G ->endjoin
+
+F <-a1a2
+- A 2
+F ->a2a3
+
+F <-a2a3
+- A 3
+G ->endjoin
+
+G <-below
+- BB 1
+F ->b1b2
+
+F <-b2b3
+- BB 3
+G ->endjoin
+
+G <-more
+- CCC 1
+F ->c1c2
+
+F <-c1c2
+- CCC 2
+F ->c2c3
+
+X <-endjoin
+- And uahifuh
+. Finish.

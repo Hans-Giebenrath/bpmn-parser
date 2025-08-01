@@ -1,0 +1,11 @@
+= BPMD - Business Process Modeling DSL
+:icons: font
+
+== t0008.bpmd
+
+image::t0008.png[width=60%]
+
+[source]
+----
+include::t0008.bpmd[]
+----

@@ -1,575 +1,1213 @@
+use crate::common::bpmn_node;
+use crate::common::bpmn_node::BpmnNode;
+use crate::common::bpmn_node::EventVisual;
+use crate::common::bpmn_node::InterruptingKind;
+use crate::common::edge::{DataFlowAux, EdgeType, FlowType};
+use crate::common::edge::{MessageFlowAux, RegularEdgeBendPoints};
+use crate::common::graph::{Graph, SdeId};
+use crate::common::graph::{LaneId, NodeId, PoolId};
+use crate::common::node::NodeType;
+use crate::lexer::ActivityMeta;
+use crate::lexer::DataMeta;
+use crate::lexer::Direction;
+use crate::lexer::EdgeMeta;
+use crate::lexer::EventType;
+use crate::lexer::GatewayInnerMeta;
+use crate::lexer::GatewayNodeMeta;
+use crate::lexer::SequenceFlowMeta;
+use crate::lexer::lex;
+use crate::lexer::{self, MessageFlowMeta};
+use crate::lexer::{DataAux, DataFlowMeta};
+use crate::lexer::{Statement, StatementStream, TokenCoordinate};
+use crate::node_id_matcher::NodeIdMatcher;
+use crate::pool_id_matcher::PoolIdMatcher;
 use std::collections::HashMap;
-use crate::lexer::{Lexer, LexerError, Token};
-use crate::common::bpmn_event::BpmnEvent;
-use crate::common::edge::Edge;
-use crate::common::graph::Graph;
-use crate::lexer::{Lexer, Token};
-use std::collections::HashMap;
+use std::collections::HashSet;
+use std::dbg;
 
-struct ParseContext {
+use annotate_snippets::Level;
+use annotate_snippets::Snippet;
+use annotate_snippets::renderer::Renderer;
+
+pub struct ParseContext {
     last_node_id: Option<usize>,
-    current_pool: Option<String>,
-    current_lane: Option<String>,
-    current_token: Token,
+    grouping_state: GroupingState,
+    lifeline_state: LifelineState,
+    pub current_token_coordinate: TokenCoordinate,
+    /// Sequence flows are always within a pool, so the identifiers are scoped per PoolId
+    /// through this HashMap.
+    dangling_sequence_flows: HashMap<PoolId, DanglingSequenceFlows>,
+    // Shorthand blank events maybe need to be transformed into message events, such that they are
+    // allowed to send or receive data. This automatic transformation is done to allow quickly
+    // prototyping of the BPMD file using shorthand syntax in a first iteration.
+    shorthand_blank_events: HashSet<NodeId>,
+    node_id_matcher: NodeIdMatcher,
+    pub pool_id_matcher: PoolIdMatcher,
 }
 
-struct ParseBranching {
-    label_map: HashMap<String, Vec<(BpmnEvent, usize, Option<String>, Option<String>)>>, // Remember the events for each label <label name, (event, node id, pool, lane)>
-    label_end_map: HashMap<String, (String, Option<String>)>, // Remember the join label for each branch label <label name, (join label name, optional text)>
-    gateway_map: HashMap<usize, Vec<(String, Option<String>)>>, // Remember the branches for each gateway <node id, (label, optional text)>
-    gateway_end_map: HashMap<usize, Vec<String>>, // Remember the join labels for each gateway <node id, <join label names>>
-    gateway_types: HashMap<usize, (Token, usize, usize)>, // Remember the type of each gateway <node id, (event, line, column)>, used for error checking
+// X ->l1 ; l1: - task; J end; X<-end
+#[derive(Debug)]
+enum LifelineState {
+    /// At the beginning of the text file, a pool or lane, and after a terminal
+    /// node.
+    NoLifelineActive {
+        // None if it is the beginning of the text file.
+        previous_lifeline_termination_statement: Option<TokenCoordinate>,
+    },
+    /// When a branch target was encountered.
+    StartedFromSequenceFlowLanding {
+        name: String,
+        token_coordinate: TokenCoordinate,
+    },
+    /// During a chain of tasks/events.
+    ActiveLifeline {
+        last_node_id: NodeId,
+        token_coordinate: TokenCoordinate,
+    },
+}
+
+// Later this might also track deeper nesting from other special constructs.
+#[derive(Debug)]
+enum GroupingState {
+    Init,
+    /// In this case some node was parsed while we were in the Init state, i.e. no previous Pool
+    /// expression was parsed. This means that the rendered image shall not contain a rendered pool
+    /// at all (this is for the tiny examples). But also, any later encountered pool or lane
+    /// statement are errors. The `first_encountered_node` is stored for better error reporting.
+    WithinAnonymousPool {
+        pool_id: PoolId,
+        lane_id: LaneId,
+        first_encountered_node: TokenCoordinate,
+    },
+    /// Just parsed a pool, all good an regular.
+    WithinPool {
+        pool_id: PoolId,
+        ptc: TokenCoordinate,
+    },
+    /// When a pool was parsed and then some node, the lane is implicitly added in our code for a
+    /// unified structure, but since it does not have a name nor a location (TokenCoordinate) in
+    /// the input text file, it is considered anonymous.
+    /// Invariant: No explicit lane is allowed in this pool going forward.
+    WithinAnonymousLane {
+        pool_id: PoolId,
+        ptc: TokenCoordinate,
+        lane_id: LaneId,
+        first_encountered_node: TokenCoordinate,
+    },
+    /// We are in a lane, all good and regular.
+    WithinLane {
+        pool_id: PoolId,
+        ptc: TokenCoordinate,
+        lane_id: LaneId,
+        ltc: TokenCoordinate,
+    },
 }
 
 #[derive(Debug)]
-pub enum ParseError {
-    UnexpectedToken(String, Token, usize, String), // Message and token that caused the error
-    ExpectedJoinLabelError(String, usize, String), // Error when a join label is expected
-    LexerError(LexerError),        // Propagate lexer errors
-    BranchingError(Token, usize, String),        // Errors related to branching
-    GatewayMatchingError((usize, usize), String),        // Error when a gateway does not match
-    GatewayJoinMissingError(usize, String),      // Error when a join gateway is missings
-    UnexpectedTokenAfterGoError(Token, usize, String),   // Errors related to Go tokens
-    DefineNodesAfterGoError(usize, String),               // Errors related to Go nodes
-    GoFromError(usize, String), // Error when a node is expected before a 'Go' token
-    GoToError(usize, String), // Error when a 'Go' token has no node to join
-    GenericError(String), // Generic error
+struct DanglingEdgeInfo {
+    known_node_id: NodeId,
+    // Might be empty
+    edge_text: String,
+    tc: TokenCoordinate,
 }
 
-impl std::fmt::Display for ParseError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            ParseError::UnexpectedToken(label, token, line, highlight) => write!(f, "Unexpected token {:?} encountered {}at line {}\n{}", token, label, line, highlight),
-            ParseError::ExpectedJoinLabelError(label, line, highlight) => write!(f, "Label must end with a 'J' token! Add it to label '{}' at {}\n{}", label, line, highlight),
-            ParseError::LexerError(err) => write!(f, "{}", err),
-            ParseError::BranchingError(token, line, highlight) => write!(f, "Unexpected token {:?} after 'X' token at line {}!\nDid you mean to do 'X ->' or 'X <-'?\n{}", token, line, highlight),
-            ParseError::GatewayMatchingError(lines, highlight) => write!(f, "Gateways do not match at lines {} and {}\n{}", lines.0, lines.1, highlight),
-            ParseError::GatewayJoinMissingError(line, highlight) => write!(f, "Join gateway missing for label at line {}\n{}", line, highlight),
-            ParseError::UnexpectedTokenAfterGoError(token, line, highlight) => write!(f, "Unexpected token {:?} after 'G' token at line {}!\nDid you mean to do 'G ->' or 'G <-'?\n{}", token, line, highlight),
-            ParseError::DefineNodesAfterGoError(line, highlight) => write!(f, "Incoming 'G' token must be used before defining nodes at line {}\n{}", line, highlight),
-            ParseError::GoFromError(line, highlight) => write!(f, "Node must be defined before outgoing 'G' token at line {}\n{}", line, highlight),
-            ParseError::GoToError(line, highlight) => write!(f, "Node must be defined after incoming 'G' token at line {}\n{}", line, highlight),
-            ParseError::GenericError(err) => write!(f, "{}", err),
-        }
-    }
+/// I'd somehow like to impose some restrictions here, but even for an n:m relationship there is a
+/// good reason (some gateway criss-crossing). So better analyse the resulting graph and complain
+/// if invalid connection were created and then let the user fix up their mess.
+#[derive(Default)]
+struct DanglingSequenceFlows {
+    /// An edge whose start is known but end is unknown: `->label`
+    dangling_end_map: HashMap<String, Vec<DanglingEdgeInfo>>,
+    /// An edge whose end is known but start is unknown: `<-label`
+    dangling_start_map: HashMap<String, Vec<DanglingEdgeInfo>>,
 }
 
-pub struct Parser<'a> {
-    graph: Graph,
-    lexer: Lexer<'a>,
-    context: ParseContext,
+pub type ParseError = Vec<(String, TokenCoordinate, Level)>;
+
+pub struct Parser {
+    pub graph: Graph,
+    pub context: ParseContext,
 }
 
-impl<'a> Parser<'a> {
+impl Parser {
     /// Create a new parser from a lexer
-    pub fn new(mut lexer: Lexer<'a>) -> Result<Self, ParseError> {
-        let current_token = lexer.next_token().map_err(|err| ParseError::LexerError(err))?;
-        Ok(Parser {
-            graph: Graph::new(vec![], vec![]),
-            lexer,
+    fn new() -> Self {
+        Parser {
+            graph: Graph::default(),
             context: ParseContext {
                 last_node_id: None,
-                current_pool: None,
-                current_lane: None,
-                current_token,
+                grouping_state: GroupingState::Init,
+                lifeline_state: LifelineState::NoLifelineActive {
+                    previous_lifeline_termination_statement: None,
+                },
+                current_token_coordinate: TokenCoordinate::default(),
+                dangling_sequence_flows: HashMap::default(),
+                shorthand_blank_events: Default::default(),
+                node_id_matcher: NodeIdMatcher::new(),
+                pool_id_matcher: PoolIdMatcher::new(),
             },
-        })
-    }
-
-    /// Advances to the next token
-    fn advance(&mut self) -> Result<(), ParseError> {
-        match self.lexer.next_token() {
-            Ok(token) => {
-                self.context.current_token = token;
-                Ok(())
-            }
-            Err(err) => Err(ParseError::LexerError(err)),
         }
-    }
-
-    /// Peeks at the next token without advancing
-    fn peek(&mut self) -> Result<Token, LexerError> {
-        self.lexer.peek_token()
     }
 
     /// Parses the input and returns a graph
-    pub fn parse(&mut self) -> Result<Graph, ParseError> {
-        // Initialize the branching structure
-        let mut branching = ParseBranching {
-            label_map: HashMap::new(),       // (label, events)
-            label_end_map: HashMap::new(),   // (label, (join label, optional text))
-            gateway_map: HashMap::new(),     // (node id, labels)
-            gateway_end_map: HashMap::new(), // (node id, <join labels>)
-            gateway_types: HashMap::new(), // (node id, event)
-        };
+    fn parse(
+        self,
+        input: String,
+        tokens: StatementStream,
+    ) -> Result<Graph, Box<dyn std::error::Error>> {
+        self.parse_inner(tokens).map_err(|e| {
+            let result = Renderer::styled()
+                .render(
+                    Level::Error.title("Parser error").snippet(
+                        Snippet::source(&input)
+                            .line_start(1)
+                            .fold(true)
+                            .annotations(e.iter().map(
+                                |(label, TokenCoordinate { start, end }, annotation_type)| {
+                                    annotation_type.span(*start..*end).label(label)
+                                },
+                            )),
+                    ),
+                )
+                .to_string();
 
-        // Initialize the go structures
-        let mut go_from_map: HashMap<usize, Vec<(String, Option<String>)>> = HashMap::new(); // (node id, <(labels, optional texts)>)
-        let mut go_to_map: HashMap<String, Vec<usize>> = HashMap::new(); // (label, node ids)
-        let mut go_active = false; // Flag to indicate if a go is active (outgoing)
+            Box::new(lexer::MyParseError(result)).into()
+        })
+    }
 
+    /// Exists purely for easier mapping of ParseError to Box<dyn...>
+    fn parse_inner(mut self, tokens: StatementStream) -> Result<Graph, ParseError> {
         // Parse the input
-        while self.context.current_token != Token::Eof {
-            // Check if a Go is active and if it's valid
-            if go_active && self.is_token_a_node(&self.context.current_token) {
-                return Err(ParseError::DefineNodesAfterGoError(self.lexer.line, self.lexer.highlight_error()));
+        for (coordinate, token) in tokens {
+            self.context.current_token_coordinate = coordinate;
+            match token {
+                Statement::Pool(label) => self.parse_pool(&label)?,
+                Statement::Lane(label) => self.parse_lane(&label)?,
+                Statement::Event(meta) => self.parse_event(meta, false)?,
+                Statement::EventEnd(meta) => self.parse_event(meta, true)?,
+                Statement::Activity(meta) => self.parse_activity(meta)?,
+                Statement::GatewayBranchStart(meta) => self.parse_gateway_branch_start(meta)?,
+                Statement::GatewayBranchEnd(meta) => self.parse_gateway_branch_end(meta)?,
+                Statement::GatewayJoinStart(meta) => self.parse_gateway_join_start(meta)?,
+                Statement::GatewayJoinEnd(meta) => self.parse_gateway_join_end(meta)?,
+                Statement::SequenceFlowJump(meta) => self.parse_sequence_flow_jump(meta)?,
+                Statement::SequenceFlowLand(meta) => self.parse_sequence_flow_land(meta)?,
+                Statement::MessageFlow(meta) => self.parse_message_flow(meta)?,
+                Statement::Data(meta) => self.parse_data(meta)?,
+                Statement::PeBpmn(pe_bpmn) => self.parse_pe_bpmn(pe_bpmn)?,
+                Statement::Layout(_) => {
+                    eprintln!("Warning: layout instructions are currently ignored.")
+                } //Token::Go => {
+                  //    self.parse_go()?;
+                  //    continue;
+                  //}
+                  //Token::Label(label) => self.parse_label(&label)?,
+                  //Token::Join(exit_label, text) => self.parse_join(exit_label, text)?,
             }
-            // Match the current token and parse accordingly
-            let current_token = self.context.current_token.clone();
-            match current_token {
-                Token::Pool(label) => self.parse_pool(&label, &mut go_active),
-                Token::Lane(label) => self.parse_lane(&label, &mut go_active),
-                Token::Go => { self.parse_go(self.context.last_node_id, &mut go_from_map, &mut go_to_map, &mut go_active)?; continue; },
-                Token::EventStart(label) => self.parse_common(BpmnEvent::Start(label)),
-                Token::EventMiddle(label) => self.parse_common(BpmnEvent::Middle(label)),
-                Token::EventEnd(label) => self.parse_common(BpmnEvent::End(label)),
-                Token::ActivityTask(label) => self.parse_common(BpmnEvent::ActivityTask(label)),
-                Token::GatewayExclusive => { self.parse_gateway(BpmnEvent::GatewayExclusive, &mut branching)?; continue; },
-                Token::GatewayParallel => { self.parse_gateway(BpmnEvent::GatewayParallel, &mut branching)?; continue; },
-                Token::GatewayInclusive => { self.parse_gateway(BpmnEvent::GatewayInclusive, &mut branching)?; continue; },
-                Token::GatewayEvent => { self.parse_gateway(BpmnEvent::GatewayEvent, &mut branching)?; continue; },
-                Token::Label(label) => self.parse_label(&mut branching, &label, &mut go_from_map, &mut go_to_map)?,
-                _ => {
-                    return Err(ParseError::UnexpectedToken(
-                        String::new(),
-                        self.context.current_token.clone(),
-                        self.lexer.line,
-                        self.lexer.highlight_error()
-                    ));
-                }
-            }
-            self.advance()?;
         }
 
-        // Loop through all defined gateways
-        for (gateway_from_id, labels) in branching.gateway_map {
-            // Loop through all branches in the gateway
-            for (label, text) in labels {
-                // Check if the label defined in the gateway exists in the label_map
-                let events = branching.label_map.get(&label).expect("Label not found!");
-                // Use the first event to create the edge to the gateway node
-                let first_event = events.get(0).expect("No events found for label");
-                let node_id = self.graph.add_node(first_event.0.clone(), first_event.1.clone(), first_event.2.clone(), first_event.3.clone());
-                let edge = Edge::new(gateway_from_id, node_id, text.clone());
-                self.graph.add_edge(edge);
-                self.context.last_node_id = Some(node_id);
-                // Loop through all events in the label
-                for event in &events[1..] {
-                    let node_id = self.graph.add_node(event.0.clone(), event.1.clone(), event.2.clone(), event.3.clone());
-                    // Check if this event is a gateway, we don't want to connect gateways to gateways
-                    if self.is_event_a_gateway(&event.0) {
-                        // Check if this gateway joins anywhere
-                        if branching.gateway_end_map.contains_key(&node_id) {
-                            // Skip adding an edge to join gateways
-                            self.context.last_node_id = Some(node_id);
-                            continue;
+        for dangling_sequence_flows in self.context.dangling_sequence_flows.values() {
+            let dangling_end_map = &dangling_sequence_flows.dangling_end_map;
+            let dangling_start_map = &dangling_sequence_flows.dangling_start_map;
+            let all_keys: std::collections::HashSet<_> = dangling_end_map
+                .keys()
+                .chain(dangling_start_map.keys())
+                .collect();
+
+            for key in &all_keys {
+                match (dangling_end_map.get(*key), dangling_start_map.get(*key)) {
+                    (Some(starts), Some(ends)) => {
+                        for start in starts {
+                            for end in ends {
+                                if self.graph.nodes[start.known_node_id.0].pool
+                                    != self.graph.nodes[end.known_node_id.0].pool
+                                {
+                                    return Err(vec![
+                                        (
+                                            format!(
+                                                "The sequence flow connection `{key}` is not allowed to cross pools, but this node ..."
+                                            ),
+                                            start.tc,
+                                            Level::Error,
+                                        ),
+                                        (
+                                            "... and this node live in different pools."
+                                                .to_string(),
+                                            end.tc,
+                                            Level::Error,
+                                        ),
+                                    ]);
+                                }
+                                self.graph.add_edge(
+                                    start.known_node_id,
+                                    end.known_node_id,
+                                    EdgeType::Regular {
+                                        text: Some(start.edge_text.clone()),
+                                        bend_points:
+                                            RegularEdgeBendPoints::ToBeDeterminedOrStraight,
+                                    },
+                                    FlowType::SequenceFlow,
+                                );
+                            }
                         }
                     }
-                    // Connect the current node to the previous node
-                    let edge = Edge::new(self.context.last_node_id.unwrap(), node_id, None);
-                    self.graph.add_edge(edge);
-                    self.context.last_node_id = Some(node_id);
-                }
-                // Get the join label for the label
-                let end_label = branching.label_end_map.get(&label);
-                // Check if any gateways join this label
-                let end_join_ids: Vec<usize> = branching.gateway_end_map.iter()
-                    .filter_map(|(key, labels)| {
-                        if labels.contains(&end_label.unwrap().0) {
-                            Some(*key)
+                    (Some(still_danglings), None) | (None, Some(still_danglings)) => {
+                        let label_used_in_other_pools = self
+                            .context
+                            .dangling_sequence_flows
+                            .iter()
+                            .map(|x| {
+                                x.1.dangling_end_map.contains_key(*key)
+                                    || x.1.dangling_start_map.contains_key(*key)
+                            })
+                            .filter(|x| *x)
+                            .count()
+                            > 1;
+                        let additional_hint = if label_used_in_other_pools {
+                            // TODO the error message should contain an example construct.
+                            " (in case you wanted to cross pools: you can only send and receive messages across pools)"
                         } else {
-                            None
-                        }
-                    }).collect();
-                // Connect the last node in the label to the joining gateways
-                for end_join_id in end_join_ids {
-                    // Check if the gateway types match
-                    if let (Some((type_from, line_from, column_from)), Some((type_to, line_to, column_to))) = (
-                        branching.gateway_types.get(&gateway_from_id),
-                        branching.gateway_types.get(&end_join_id),
-                    ) {
-                        if type_from != type_to {
-                            let error_from = self.lexer.highlight_line_error(*line_from, *column_from);
-                            let error_to = self.lexer.highlight_line_error(*line_to, *column_to);
-                            let error = error_from +"\n"+ &error_to;
-                            return Err(ParseError::GatewayMatchingError(
-                                (*line_from, *line_to),
-                                error,
-                            ));
-                        }
-                    } else {
-                        return Err(ParseError::GenericError(format!(
-                            "One or both gateway types are missing for IDs: {} and {}",
-                            gateway_from_id, end_join_id
-                        )));
+                            ""
+                        };
+                        return Err(still_danglings
+                            .iter()
+                            .map(|still_dangling| {
+                                (
+                                    format!("Label `{key}` is not defined elsewhere in this pool{additional_hint}."),
+                                    still_dangling.tc,
+                                    Level::Error,
+                                )
+                            })
+                            .collect());
                     }
-                    let edge = Edge::new(self.context.last_node_id.unwrap(), end_join_id, end_label.unwrap().1.clone());
-                    self.graph.add_edge(edge);
+                    (None, None) => unreachable!(), // Keys come from at least one map
                 }
             }
         }
 
-        // Loop through all go_from_map entries `G -> label "Optional text"` 
-        for (from_node_id, labels) in go_from_map {
-            // Loop through all outgoing labels from the same node
-            for (label, text) in labels {
-                // Check if the label exists in joining nodes
-                if let Some(to_node_ids) = go_to_map.get(&label) {
-                    // Loop through all joining nodes
-                    for to_node_id in to_node_ids {
-                        // Create an edge from the current node to the joining node
-                        let edge = Edge::new(from_node_id, *to_node_id, text.clone());
-                        self.graph.add_edge(edge);
-                    }
-                }
-            }
-        }
+        self.process_shorthand_blank_events()?;
 
-        Ok(self.graph.clone())
+        crate::common::graph::validate_invariants(&self.graph)?;
+
+        Ok(self.graph)
     }
 
     /// Set the current pool
-    fn parse_pool(&mut self, label: &str, go_active: &mut bool) {
-        self.context.current_pool = Some(label.to_string());
-        self.context.current_lane = None;
+    fn parse_pool(&mut self, label: &str) -> Result<(), ParseError> {
+        let old_state = std::mem::replace(
+            &mut self.context.lifeline_state,
+            LifelineState::NoLifelineActive {
+                previous_lifeline_termination_statement: None,
+            },
+        );
+        err_from_unfinished_lifeline(old_state, self.context.current_token_coordinate)?;
+        let pool_id = self.graph.add_pool(Some(label.to_string()));
+        self.context.grouping_state = GroupingState::WithinPool {
+            pool_id: pool_id,
+            ptc: self.context.current_token_coordinate,
+        };
         self.context.last_node_id = None;
-        self.lexer.seen_start = false;
-        *go_active = false;
+        // For better error reporting, reset this to "fresh".
+        self.context
+            .pool_id_matcher
+            .register(pool_id, Some(label.to_string()));
+        Ok(())
     }
 
     /// Set the current lane
-    fn parse_lane(&mut self, label: &str, go_active: &mut bool) {
-        self.context.current_lane = Some(label.to_string());
+    fn parse_lane(&mut self, label: &str) -> Result<(), ParseError> {
+        let old_state = std::mem::replace(
+            &mut self.context.lifeline_state,
+            LifelineState::NoLifelineActive {
+                previous_lifeline_termination_statement: None,
+            },
+        );
+        err_from_unfinished_lifeline(old_state, self.context.current_token_coordinate)?;
+
+        match self.context.grouping_state {
+            GroupingState::Init => {
+                return Err(vec![(
+                    format!(
+                        "Lanes must always be part of a pool, please add a pool (e.g. `= My Pool`) above this line."
+                    ),
+                    self.context.current_token_coordinate,
+                    Level::Error,
+                )]);
+            }
+            GroupingState::WithinPool { pool_id, ptc }
+            | GroupingState::WithinLane { pool_id, ptc, .. } => {
+                let lane_id = self.graph.pools[pool_id.0].add_lane(Some(label.to_string()));
+                self.context.grouping_state = GroupingState::WithinLane {
+                    pool_id,
+                    ptc,
+                    lane_id,
+                    ltc: self.context.current_token_coordinate,
+                };
+            }
+            GroupingState::WithinAnonymousPool {
+                first_encountered_node,
+                ..
+            } => {
+                return Err(vec![
+                    (
+                        format!(
+                            "This lane is part of a diagram without pools and lanes, since the diagram does not start with a pool. Hence this lane statement is illegal."
+                        ),
+                        self.context.current_token_coordinate,
+                        Level::Error,
+                    ),
+                    (
+                        format!(
+                            "If you want to use pools and lanes, please add a pool (e.g. `= My Pool`) and a lane (e.g. `== My Lane`) *before your first node*."
+                        ),
+                        first_encountered_node,
+                        Level::Note,
+                    ),
+                ]);
+            }
+            GroupingState::WithinAnonymousLane {
+                ptc,
+                first_encountered_node,
+                ..
+            } => {
+                return Err(vec![
+                    (
+                        format!(
+                            "This lane is part of a pool without explicit lanes, since the pool does not start with a lane. Hence this lane statement is illegal."
+                        ),
+                        self.context.current_token_coordinate,
+                        Level::Error,
+                    ),
+                    (
+                        format!(
+                            "If you want to use multiple lanes within this pool, please add a lane (e.g. `== My Lane`) as the first statement inside of you pool *before any other nodes*."
+                        ),
+                        first_encountered_node,
+                        Level::Note,
+                    ),
+                    (format!("The pool started here."), ptc, Level::Note),
+                ]);
+            }
+        }
+
         self.context.last_node_id = None;
-        self.lexer.seen_start = false;
-        *go_active = false;
+        Ok(())
     }
 
     /// Parse a gateway
-    fn parse_gateway(
-        &mut self, 
-        event: BpmnEvent, 
-        branching: &mut ParseBranching
-    ) -> Result<(), ParseError> {
+    fn parse_gateway_branch_start(&mut self, meta: GatewayNodeMeta) -> Result<(), ParseError> {
         // Assign a unique node ID to this gateway
-        let node_id = self.graph.add_node_noid(event, self.context.current_pool.clone(), self.context.current_lane.clone());
+        let (pool_id, lane_id) = self.manage_pool_and_lane_ids_for_new_node();
+        let node_id = self.graph.add_node(
+            NodeType::RealNode {
+                event: BpmnNode::Gateway(meta.gateway_type),
+                display_text: meta.node_meta.display_text,
+                tc: self.context.current_token_coordinate,
+                transported_data: vec![],
+                pe_bpmn_hides_protection_operations: false,
+            },
+            pool_id,
+            lane_id,
+        );
 
-        // Call the common gateway parsing logic
-        return self.parse_gateway_common(node_id, branching, false)
-    }
-    
-    /// Common logic for parsing gateways (branch or join)
-    fn parse_gateway_common(
-        &mut self, 
-        node_id: usize, 
-        branching: &mut ParseBranching,
-        inside_label: bool
-    ) -> Result<(), ParseError> {
-        // Save the current line and error message in case of an error
-        let line = self.lexer.line.clone();
-        let highlighted_line = self.lexer.highlight_error();
-        branching.gateway_types.insert(node_id, (self.context.current_token.clone(), line, self.lexer.column - 2));
-
-        // Handle Branch or Join for the gateway
-        self.advance()?;
-        match &self.context.current_token {
-            Token::Branch(_, _) => self.handle_gateway_branching(node_id, branching, inside_label)?,
-            Token::JoinLabel(_) => self.handle_gateway_join(node_id, branching, inside_label)?,
-            _ => return Err(ParseError::BranchingError(
-                self.context.current_token.clone(),
-                line,
-                highlighted_line
-            )),
-        }
-
-        Ok(())
-    }
-
-    // Helper to handle branching
-    fn handle_gateway_branching(
-        &mut self,
-        node_id: usize,
-        branching: &mut ParseBranching,
-        inside_label: bool
-    ) -> Result<(), ParseError> {
-        if !inside_label {
-            self.connect_nodes(node_id);
-        }
-        while let Token::Branch(label, text) = &self.context.current_token {
-            let branch_text = if text.is_empty() { None } else { Some(text.clone()) };
-            branching
-                .gateway_map
-                .entry(node_id)
-                .or_insert_with(Vec::new)
-                .push((label.clone(), branch_text));
-            self.advance()?;
-        }
-        Ok(())
-    }
-
-    // Helper to handle joins
-    fn handle_gateway_join(
-        &mut self,
-        node_id: usize,
-        branching: &mut ParseBranching,
-        inside_label: bool,
-    ) -> Result<(), ParseError> {
-        if !inside_label {
-            self.context.last_node_id = Some(node_id);
-        }
-        while let Token::JoinLabel(label) = &self.context.current_token {
-            branching
-                .gateway_end_map
-                .entry(node_id)
-                .or_insert_with(Vec::new)
-                .push(label.clone());
-            self.advance()?;
-        }
-        Ok(())
-    }
-
-    /// Parse a branch label
-    fn parse_label(
-        &mut self, 
-        branching: &mut ParseBranching, 
-        label: &str, 
-        go_from_map: &mut HashMap<usize, Vec<(String, Option<String>)>>, 
-        go_to_map: &mut HashMap<String, Vec<usize>>, 
-    ) -> Result<(), ParseError>  {
-        let mut go_active_in_label = false;
-        // Save the current line and error message in case of an error
-        let start_line = self.lexer.line;
-        let highlighted_line = self.lexer.highlight_error();
-        
-        // Save all events for this label
-        let mut events: Vec<(BpmnEvent,usize, Option<String>, Option<String>)> = vec![]; // (event, node_id, pool, lane)
-        
-        // Parse all events until a join label is found
-        self.advance()?;
-        while !matches!(self.context.current_token, Token::Join(_,_)) && !matches!(self.context.current_token, Token::Eof) {
-            // Check if a Go is active and if it's valid
-            let current_token = self.context.current_token.clone();
-            if go_active_in_label && self.is_token_a_node(&current_token) {
-                return Err(ParseError::DefineNodesAfterGoError(self.lexer.line, self.lexer.highlight_error()));
-            }
-            match &current_token {
-                // If the current token is a label, parse it recursively
-                Token::Label(inner_label) => {
-                    self.parse_label(branching, &inner_label, go_from_map, go_to_map)?;
-                }
-                Token::EventStart(label) => {
-                    events.push(self.create_event_node(BpmnEvent::Start(label.clone()))?);
-                }
-                Token::EventMiddle(label) => {
-                    events.push(self.create_event_node(BpmnEvent::Middle(label.clone()))?);
-                }
-                Token::EventEnd(label) => {
-                    events.push(self.create_event_node(BpmnEvent::End(label.clone()))?);
-                }
-                Token::ActivityTask(label) => {
-                    events.push(self.create_event_node(BpmnEvent::ActivityTask(label.clone()))?);
-                }
-                Token::Go => { 
-                    let from_id = events.last().map(|event| event.1);
-                    self.parse_go(from_id, go_from_map, go_to_map, &mut go_active_in_label)?; 
-                    continue; 
-                },
-                Token::GatewayExclusive => {
-                    self.handle_gateway_in_label(branching, &mut events, BpmnEvent::GatewayExclusive)?;
-                    continue;
-                },
-                Token::GatewayParallel => {
-                    self.handle_gateway_in_label(branching, &mut events, BpmnEvent::GatewayParallel)?;
-                    continue;
-                },
-                Token::GatewayInclusive => {
-                    self.handle_gateway_in_label(branching, &mut events, BpmnEvent::GatewayInclusive)?;
-                    continue;
-                },
-                Token::GatewayEvent => {
-                    self.handle_gateway_in_label(branching, &mut events, BpmnEvent::GatewayEvent)?;
-                    continue;
-                },
-                _ => return Err(ParseError::UnexpectedToken(
-                    format!("in label '{}' ", label),
-                    self.context.current_token.clone(),
-                    self.lexer.line,
-                    self.lexer.highlight_error()
-                )),
-            }
-            self.advance()?;
-        }
-        branching.label_map.insert(label.to_string(), events);
-        if let Token::Join(exit_label, text) = &self.context.current_token {
-            branching.label_end_map.insert(
-                label.to_string(),
-                (
-                    exit_label.clone(), 
-                    if text.is_empty() { None } else { Some(text.clone()) }
-                )
-            );
-        } else {
-            return Err(ParseError::ExpectedJoinLabelError(
-                label.to_string(),
-                start_line,
-                highlighted_line
-            ));
-        }
-        Ok(())
-    }
-
-    /// Create an event node
-    fn create_event_node(
-        &mut self,
-        event: BpmnEvent,
-    ) -> Result<(BpmnEvent, usize, Option<String>, Option<String>), ParseError> {
-        let node_id = self.graph.next_node_id();
-        Ok((
-            event,
+        self.connect_nodes(
             node_id,
-            self.context.current_pool.clone(),
-            self.context.current_lane.clone(),
-        ))
-    }    
+            pool_id,
+            LifelineState::NoLifelineActive {
+                previous_lifeline_termination_statement: Some(
+                    self.context.current_token_coordinate,
+                ),
+            },
+        )?;
 
-    /// Handle a gateway inside a branch
-    fn handle_gateway_in_label(
-        &mut self,
-        branching: &mut ParseBranching,
-        events: &mut Vec<(BpmnEvent, usize, Option<String>, Option<String>)>,
-        event: BpmnEvent
-    ) -> Result<(), ParseError> {
-        // Assign a unique node ID to this gateway
-        let gateway_id = self.graph.next_node_id();
-        self.context.last_node_id = Some(gateway_id);
-        
-        events.push((
-            event,
-            gateway_id,
-            self.context.current_pool.clone(),
-            self.context.current_lane.clone(),
-        ));
-    
-        // Store the gateway_id and parse branches without advancing
-        return self.parse_gateway_common(gateway_id, branching, true);
+        for EdgeMeta { target, text_label } in meta.sequence_flow_jump_metas.into_iter() {
+            self.context
+                .dangling_sequence_flows
+                .entry(pool_id)
+                .or_default()
+                .dangling_end_map
+                .entry(target)
+                .or_default()
+                .push(DanglingEdgeInfo {
+                    known_node_id: node_id,
+                    edge_text: text_label,
+                    tc: self.context.current_token_coordinate,
+                });
+        }
+        Ok(())
     }
 
-    /// Connect two nodes with an edge if needed
-    fn connect_nodes(&mut self, node_id: usize) {
-        if let Some(last_node_id) = self.context.last_node_id {
-            let edge = Edge::new(last_node_id, node_id, None);
-            self.graph.add_edge(edge);
+    // Helper to handle joins. Note, this is actually a real BPMN node, other than the Go target
+    // and the intermediate labels.
+    fn parse_gateway_join_end(&mut self, meta: GatewayNodeMeta) -> Result<(), ParseError> {
+        // Assign a unique node ID to this gateway
+        let (pool_id, lane_id) = self.manage_pool_and_lane_ids_for_new_node();
+        let node_id = self.graph.add_node(
+            NodeType::RealNode {
+                event: BpmnNode::Gateway(meta.gateway_type),
+                display_text: meta.node_meta.display_text,
+                tc: self.context.current_token_coordinate,
+                transported_data: vec![],
+                pe_bpmn_hides_protection_operations: false,
+            },
+            pool_id,
+            lane_id,
+        );
+        let old_state = std::mem::replace(
+            &mut self.context.lifeline_state,
+            LifelineState::ActiveLifeline {
+                last_node_id: node_id,
+                token_coordinate: self.context.current_token_coordinate,
+            },
+        );
+        err_from_unfinished_lifeline(old_state, self.context.current_token_coordinate)?;
+        for EdgeMeta { target, text_label } in meta.sequence_flow_jump_metas.into_iter() {
+            self.context
+                .dangling_sequence_flows
+                .entry(pool_id)
+                .or_default()
+                .dangling_start_map
+                .entry(target.clone())
+                .or_default()
+                .push(DanglingEdgeInfo {
+                    known_node_id: node_id,
+                    edge_text: text_label,
+                    tc: self.context.current_token_coordinate,
+                });
         }
-        self.context.last_node_id = Some(node_id);
+        Ok(())
+    }
+
+    fn parse_gateway_branch_end(&mut self, meta: GatewayInnerMeta) -> Result<(), ParseError> {
+        match self.context.lifeline_state {
+LifelineState::ActiveLifeline { token_coordinate, .. } | LifelineState::StartedFromSequenceFlowLanding { token_coordinate, .. } =>
+            return Err(vec![
+(
+                "Any sequence flow above this statement should be finished, but this is not the case.".to_string(),
+                self.context.current_token_coordinate,Level::Error
+            ),
+            (
+                "This statement does not finish the sequence flow. Try using `. End Event`, `F ->somewhere` or `X ->lbl1 ->lbl2` to finish the sequence flow.".to_string(),
+                    token_coordinate, Level::Note
+            )
+            ]),
+_ => (),
+        }
+        if !meta.sequence_flow_jump_meta.text_label.is_empty() {
+            dbg!(
+                "The label text should be stored within the edge or so, and warn if the other end already provided a text for this edge."
+            );
+        }
+        self.context.lifeline_state = LifelineState::StartedFromSequenceFlowLanding {
+            name: meta.sequence_flow_jump_meta.target,
+            token_coordinate: self.context.current_token_coordinate,
+        };
+        Ok(())
+    }
+
+    fn parse_gateway_join_start(&mut self, meta: GatewayInnerMeta) -> Result<(), ParseError> {
+        let (pool_id, _lane_id) = self.manage_pool_and_lane_ids_for_new_node();
+        let old_state = std::mem::replace(
+            &mut self.context.lifeline_state,
+            LifelineState::NoLifelineActive {
+                previous_lifeline_termination_statement: Some(
+                    self.context.current_token_coordinate,
+                ),
+            },
+        );
+        let known_node_id = match old_state {
+            LifelineState::ActiveLifeline { last_node_id, .. } => last_node_id,
+            a => {
+                return Err(err_from_no_lifeline_active(
+                    a,
+                    self.context.current_token_coordinate,
+                ));
+            }
+        };
+        if let NodeType::RealNode { ref mut tc, .. } = self.graph.nodes[known_node_id.0].node_type {
+            tc.end = self.context.current_token_coordinate.end;
+        } else {
+            panic!("in the beginning there are no dummy nodes.");
+        };
+        // The only place where there are multiple uses of the same label allowed.
+        self.context
+            .dangling_sequence_flows
+            .entry(pool_id)
+            .or_default()
+            .dangling_end_map
+            .entry(meta.sequence_flow_jump_meta.target)
+            .or_default()
+            .push(DanglingEdgeInfo {
+                known_node_id,
+                edge_text: meta.sequence_flow_jump_meta.text_label,
+                tc: self.context.current_token_coordinate,
+            });
+        Ok(())
+    }
+
+    /// Connects the current node with the previous node, handling incoming joining/jumping
+    /// lifelines as well.
+    fn connect_nodes(
+        &mut self,
+        current_node_id: NodeId,
+        current_pool_id: PoolId,
+        new_lifeline_state: LifelineState,
+    ) -> Result<(), ParseError> {
+        // Use `replace` here to avoid lifetime errors.
+        match std::mem::replace(&mut self.context.lifeline_state, new_lifeline_state) {
+            LifelineState::StartedFromSequenceFlowLanding {
+                name,
+                token_coordinate,
+            } => {
+                self.context
+                    .dangling_sequence_flows
+                    .entry(current_pool_id)
+                    .or_default()
+                    .dangling_start_map
+                    .entry(name)
+                    .or_default()
+                    .push(DanglingEdgeInfo {
+                        known_node_id: current_node_id,
+                        edge_text: "".to_string(),
+                        tc: token_coordinate,
+                    });
+                // Extend the token coordinate of the node onto the previous sequence flow landing
+                // node, so that error reporting with bad branching connections is more helpful.
+                if let NodeType::RealNode { ref mut tc, .. } =
+                    self.graph.nodes[current_node_id.0].node_type
+                {
+                    tc.start = token_coordinate.start;
+                } else {
+                    panic!("in the beginning there are no dummy nodes.");
+                };
+            }
+            LifelineState::ActiveLifeline { last_node_id, .. } => {
+                // No text for regular sequence flow edges.
+                self.graph.add_edge(
+                    last_node_id,
+                    current_node_id,
+                    EdgeType::Regular {
+                        text: None,
+                        bend_points: RegularEdgeBendPoints::ToBeDeterminedOrStraight,
+                    },
+                    FlowType::SequenceFlow,
+                );
+            }
+            a => {
+                return Err(err_from_no_lifeline_active(
+                    a,
+                    self.context.current_token_coordinate,
+                ));
+            }
+        }
+        Ok(())
     }
 
     /// Common function to parse an event or task
-    fn parse_common(&mut self, event: BpmnEvent) {
-        let node_id = self.graph.add_node_noid(event, self.context.current_pool.clone(), self.context.current_lane.clone());
-        self.connect_nodes(node_id);
-    }
-
-    /// Parse a go
-    fn parse_go(
-        &mut self, 
-        from_id: Option<usize>,
-        go_from_map: &mut HashMap<usize, Vec<(String, Option<String>)>>, 
-        go_to_map: &mut HashMap<String, Vec<usize>>, 
-        go_active: &mut bool
-    ) -> Result<(), ParseError> {
-        // Save the current line and error message in case of an error
-        let line = self.lexer.line.clone();
-        let highlighted_line = self.lexer.highlight_error();
-
-        // Check if this go is a branching go or a join go
-        self.advance()?;
-        match &self.context.current_token {
-            Token::Branch(_, _) => {
-                *go_active = true;
-                self.handle_go_from(from_id, go_from_map)?;
+    fn parse_event(&mut self, meta: lexer::EventMeta, is_end: bool) -> Result<(), ParseError> {
+        let (pool_id, lane_id) = self.manage_pool_and_lane_ids_for_new_node();
+        let ids = meta.node_meta.ids;
+        let node_id = match self.context.lifeline_state {
+            LifelineState::NoLifelineActive { .. } if !is_end => {
+                let last_node_id = self.graph.add_node(
+                    NodeType::RealNode {
+                        event: BpmnNode::Event(
+                            meta.event_type,
+                            bpmn_node::EventVisual::default_start(meta.event_visual)?,
+                        ),
+                        display_text: meta.node_meta.display_text,
+                        tc: self.context.current_token_coordinate,
+                        transported_data: vec![],
+                        pe_bpmn_hides_protection_operations: false,
+                    },
+                    pool_id,
+                    lane_id,
+                );
+                self.context.lifeline_state = LifelineState::ActiveLifeline {
+                    last_node_id,
+                    token_coordinate: self.context.current_token_coordinate,
+                };
+                last_node_id
             }
-            Token::JoinLabel(_) => {
-                *go_active = false;
-                let next_node_id = self.graph.last_node_id + 1;
-                self.handle_go_to(next_node_id, go_to_map)?;
+            _ if is_end => {
+                let node_id = self.graph.add_node(
+                    NodeType::RealNode {
+                        event: BpmnNode::Event(
+                            meta.event_type,
+                            bpmn_node::EventVisual::default_end(meta.event_visual)?,
+                        ),
+                        display_text: meta.node_meta.display_text,
+                        tc: self.context.current_token_coordinate,
+                        transported_data: vec![],
+                        pe_bpmn_hides_protection_operations: false,
+                    },
+                    pool_id,
+                    lane_id,
+                );
+                self.connect_nodes(
+                    node_id,
+                    pool_id,
+                    LifelineState::NoLifelineActive {
+                        previous_lifeline_termination_statement: Some(
+                            self.context.current_token_coordinate,
+                        ),
+                    },
+                )?;
+                node_id
             }
             _ => {
-                return Err(ParseError::UnexpectedTokenAfterGoError(
-                    self.context.current_token.clone(),
-                    line,
-                    highlighted_line
+                let node_id = self.graph.add_node(
+                    NodeType::RealNode {
+                        event: BpmnNode::Event(
+                            meta.event_type,
+                            bpmn_node::EventVisual::default_intermediate(
+                                meta.event_visual,
+                                meta.event_type,
+                            )?,
+                        ),
+                        display_text: meta.node_meta.display_text,
+                        tc: self.context.current_token_coordinate,
+                        transported_data: vec![],
+                        pe_bpmn_hides_protection_operations: false,
+                    },
+                    pool_id,
+                    lane_id,
+                );
+                self.connect_nodes(
+                    node_id,
+                    pool_id,
+                    LifelineState::ActiveLifeline {
+                        last_node_id: node_id,
+                        token_coordinate: self.context.current_token_coordinate,
+                    },
+                )?;
+                node_id
+            }
+        };
+
+        self.context
+            .node_id_matcher
+            .register(node_id, ids, &self.graph);
+
+        if meta.shorthand_syntax {
+            self.context.shorthand_blank_events.insert(node_id);
+        }
+
+        Ok(())
+    }
+
+    fn parse_activity(&mut self, meta: ActivityMeta) -> Result<(), ParseError> {
+        let (pool_id, lane_id) = self.manage_pool_and_lane_ids_for_new_node();
+        let ids = meta.node_meta.ids;
+        let node_id = self.graph.add_node(
+            NodeType::RealNode {
+                event: BpmnNode::Activity(meta.activity_type),
+                display_text: meta.node_meta.display_text,
+                tc: self.context.current_token_coordinate,
+                transported_data: vec![],
+                pe_bpmn_hides_protection_operations: false,
+            },
+            pool_id,
+            lane_id,
+        );
+
+        self.context
+            .node_id_matcher
+            .register(node_id, ids, &self.graph);
+
+        self.connect_nodes(
+            node_id,
+            pool_id,
+            LifelineState::ActiveLifeline {
+                last_node_id: node_id,
+                token_coordinate: self.context.current_token_coordinate,
+            },
+        )
+    }
+
+    fn parse_sequence_flow_jump(&mut self, meta: SequenceFlowMeta) -> Result<(), ParseError> {
+        let (pool_id, _lane_id) = self.manage_pool_and_lane_ids_for_new_node();
+        let old_state = std::mem::replace(
+            &mut self.context.lifeline_state,
+            LifelineState::NoLifelineActive {
+                previous_lifeline_termination_statement: Some(
+                    self.context.current_token_coordinate,
+                ),
+            },
+        );
+        let known_node_id = match old_state {
+            LifelineState::ActiveLifeline { last_node_id, .. } => last_node_id,
+            a => {
+                return Err(err_from_no_lifeline_active(
+                    a,
+                    self.context.current_token_coordinate,
                 ));
-            } 
-        }
+            }
+        };
+
+        if let NodeType::RealNode { ref mut tc, .. } = self.graph.nodes[known_node_id.0].node_type {
+            tc.end = self.context.current_token_coordinate.end;
+        } else {
+            panic!("in the beginning there are no dummy nodes.");
+        };
+
+        self.context
+            .dangling_sequence_flows
+            .entry(pool_id)
+            .or_default()
+            .dangling_end_map
+            .entry(meta.sequence_flow_jump_meta.target)
+            .or_default()
+            .push(DanglingEdgeInfo {
+                known_node_id,
+                edge_text: meta.sequence_flow_jump_meta.text_label,
+                tc: self.context.current_token_coordinate,
+            });
+
         Ok(())
     }
 
-    fn handle_go_from(
-        &mut self,
-        from_id: Option<usize>,
-        go_from_map: &mut HashMap<usize, Vec<(String, Option<String>)>>,
-    ) -> Result<(), ParseError> {
-        while let Token::Branch(label, text) = &self.context.current_token {
-            // Unwrap or return an error if `from_id` is `None`
-            let last_node_id = from_id.ok_or_else(|| ParseError::GoFromError(
-                self.lexer.line,
-                self.lexer.highlight_error()
-            ))?;
+    fn parse_sequence_flow_land(&mut self, meta: SequenceFlowMeta) -> Result<(), ParseError> {
+        // Make sure that this is not in some weird position.
+        let (_pool_id, _lane_id) = self.manage_pool_and_lane_ids_for_new_node();
 
-            let edge_text = if text.is_empty() { None } else { Some(text.clone()) };
-            go_from_map.entry(last_node_id).or_insert_with(Vec::new).push((label.clone(), edge_text));
-    
-            self.advance()?;
-        }
-    
-        Ok(())
-    }
-    
-    /// Handle parsing for a join 'Go' token
-    fn handle_go_to(
-        &mut self,
-        next_node_id: usize,
-        go_to_map: &mut HashMap<String, Vec<usize>>,
-    ) -> Result<(), ParseError> {    
         // Check that a valid node type follows
-        let next_token = self.peek().unwrap();
-        if !self.is_token_a_node(&next_token) {
-            return Err(ParseError::GoToError(
-                self.lexer.line,
-                self.lexer.highlight_error()
-            ));
-        }
-    
-        // Loop through all join labels and store the node IDs
-        while let Token::JoinLabel(label) = &self.context.current_token {
-            go_to_map.entry(
-                label.clone())
-                .or_insert_with(Vec::new)
-                .push(next_node_id);
-            self.advance()?;
-        }
-    
+        self.context.lifeline_state = LifelineState::StartedFromSequenceFlowLanding {
+            name: meta.sequence_flow_jump_meta.target,
+            token_coordinate: self.context.current_token_coordinate,
+        };
+
         Ok(())
     }
 
-    fn is_token_a_node(&self, token: &Token) -> bool {
-        matches!(
-            token,
-            Token::EventStart(_)    | 
-            Token::EventMiddle(_)   | 
-            Token::EventEnd(_)      | 
-            Token::ActivityTask(_)  | 
-            Token::GatewayExclusive
-        )
+    fn parse_message_flow(&mut self, meta: MessageFlowMeta) -> Result<(), ParseError> {
+        let sender_node = self
+            .context
+            .node_id_matcher
+            .find_node_id(&meta.sender_id, None)
+            .ok_or_else(|| {
+                vec![(
+                    format!(
+                        "Sender node with id {:?} was not found. Have you defined it?",
+                        meta.sender_id
+                    ),
+                    self.context.current_token_coordinate,
+                    Level::Error,
+                )]
+            })?;
+
+        let receiver_node = self
+            .context
+            .node_id_matcher
+            .find_node_id(&meta.receiver_id, None)
+            .ok_or_else(|| {
+                vec![(
+                    format!(
+                        "Receiver node with id {:?} was not found. Have you defined it?",
+                        meta.receiver_id
+                    ),
+                    self.context.current_token_coordinate,
+                    Level::Error,
+                )]
+            })?;
+
+        self.graph.add_edge(
+            sender_node,
+            receiver_node,
+            EdgeType::Regular {
+                text: Some(meta.display_text),
+                bend_points: RegularEdgeBendPoints::ToBeDeterminedOrStraight,
+            },
+            FlowType::MessageFlow(MessageFlowAux {
+                transported_data: vec![],
+                pebpmn_protection: vec![],
+            }),
+        );
+        Ok(())
     }
 
-    fn is_event_a_gateway(&self, token: &BpmnEvent) -> bool {
-        matches!(
-            token,
-            BpmnEvent::GatewayExclusive | 
-            BpmnEvent::GatewayParallel  | 
-            BpmnEvent::GatewayInclusive | 
-            BpmnEvent::GatewayEvent
-        )
+    fn parse_data(&mut self, meta: DataMeta) -> Result<(), ParseError> {
+        let mut pool_id = None;
+        let mut lane_ids = Vec::<usize>::new();
+        let mut edges = Vec::new();
+
+        if meta.data_flow_metas.is_empty() {
+            return Err(vec![(
+                "Data element without recipients is unsupported at the moment.".to_string(),
+                self.context.current_token_coordinate,
+                Level::Error,
+            )]);
+        }
+
+        for DataFlowMeta {
+            direction,
+            target,
+            text_label,
+        } in meta.data_flow_metas
+        {
+            let Some(node_id) = self.find_node_id(&target) else {
+                // TODO this should not only print the `target` but also underline it. But for that
+                // the DataFlowMeta must also record its TokenCoordinate.
+                return Err(vec![(
+                    format!(
+                        "Data node recipient {target:?} has not yet been defined within the current pool. (Have you defined it afterwards? TODO).",
+                    ),
+                    self.context.current_token_coordinate,
+                    Level::Error,
+                )]);
+            };
+            let recipient_node = &self.graph.nodes[node_id];
+            if let Some(prev_pool_id) = pool_id {
+                if prev_pool_id != recipient_node.pool {
+                    return Err(vec![(
+                        format!(
+                            "Data node recipient {target:?} is in another pool than the previous recipients. However, they must appear within the same pool (but may appear in different lanes)."
+                        ),
+                        self.context.current_token_coordinate,
+                        Level::Error,
+                    )]);
+                }
+            }
+            pool_id = Some(recipient_node.pool);
+            lane_ids.push(recipient_node.lane.0);
+            edges.push((direction, node_id, text_label));
+        }
+
+        let sde_id;
+        if meta.is_continuation {
+            sde_id = SdeId(self.graph.data_elements.len() - 1);
+        } else {
+            sde_id = self
+                .graph
+                .add_sde(meta.node_meta.display_text.clone(), vec![]);
+        }
+
+        let event = BpmnNode::Data(
+            meta.data_type,
+            DataAux {
+                sde_id: sde_id.clone(),
+                pebpmn_protection: vec![],
+            },
+        );
+
+        assert!(!lane_ids.is_empty());
+        let data_node_id = self.graph.add_node(
+            NodeType::RealNode {
+                event,
+                display_text: meta.node_meta.display_text,
+                tc: self.context.current_token_coordinate,
+                transported_data: vec![],
+                pe_bpmn_hides_protection_operations: false,
+            },
+            pool_id.unwrap(),
+            LaneId(
+                (lane_ids.iter().sum::<usize>() as f64 / lane_ids.len() as f64).round() as usize,
+            ),
+        );
+        self.graph.data_elements[sde_id]
+            .data_element
+            .push(data_node_id);
+
+        for (direction, node_id, text_label) in edges {
+            let (from, to) = match direction {
+                Direction::Outgoing => (data_node_id, node_id),
+                Direction::Incoming => (node_id, data_node_id),
+            };
+            self.graph.add_edge(
+                from,
+                to,
+                EdgeType::Regular {
+                    text: Some(text_label),
+                    bend_points: RegularEdgeBendPoints::ToBeDeterminedOrStraight,
+                },
+                FlowType::DataFlow(DataFlowAux {
+                    transported_data: vec![sde_id],
+                }),
+            );
+        }
+        let ids = meta.node_meta.ids;
+        self.context
+            .node_id_matcher
+            .register(data_node_id, ids, &self.graph);
+
+        Ok(())
+    }
+
+    fn manage_pool_and_lane_ids_for_new_node(&mut self) -> (PoolId, LaneId) {
+        match self.context.grouping_state {
+            GroupingState::Init => {
+                let pool_id = self.graph.add_pool(None);
+                let lane_id = self.graph.pools[pool_id.0].add_lane(None);
+                self.context.grouping_state = GroupingState::WithinAnonymousPool {
+                    first_encountered_node: self.context.current_token_coordinate,
+                    pool_id,
+                    lane_id,
+                };
+                (pool_id, lane_id)
+            }
+            GroupingState::WithinAnonymousPool {
+                pool_id, lane_id, ..
+            } => (pool_id, lane_id),
+            GroupingState::WithinPool { pool_id, ptc } => {
+                let lane_id = self.graph.pools[pool_id.0].add_lane(None);
+                self.context.grouping_state = GroupingState::WithinAnonymousLane {
+                    first_encountered_node: self.context.current_token_coordinate,
+                    pool_id,
+                    lane_id,
+                    ptc,
+                };
+                (pool_id, lane_id)
+            }
+            GroupingState::WithinAnonymousLane {
+                pool_id, lane_id, ..
+            } => (pool_id, lane_id),
+            GroupingState::WithinLane {
+                pool_id, lane_id, ..
+            } => (pool_id, lane_id),
+        }
+    }
+
+    pub fn find_node_id(&self, needle: &str) -> Option<NodeId> {
+        self.context.node_id_matcher.find_node_id(needle, None)
+    }
+
+    fn process_shorthand_blank_events(&mut self) -> Result<(), ParseError> {
+        for node_id in &self.context.shorthand_blank_events {
+            let node = &mut self.graph.nodes[*node_id];
+            if node
+                .incoming
+                .iter()
+                .any(|edge_id| self.graph.edges[*edge_id].is_message_flow())
+            {
+                let NodeType::RealNode { event, .. } = &mut node.node_type else {
+                    panic!("During graph construction there are only real nodes");
+                };
+                *event = BpmnNode::Event(
+                    EventType::Message,
+                    if node.outgoing.is_empty() {
+                        EventVisual::End
+                    } else {
+                        EventVisual::Catch(InterruptingKind::Interrupting)
+                    },
+                );
+            } else if node
+                .outgoing
+                .iter()
+                .any(|edge_id| self.graph.edges[*edge_id].is_message_flow())
+            {
+                let NodeType::RealNode { event, .. } = &mut node.node_type else {
+                    panic!("During graph construction there are only real nodes");
+                };
+                *event = BpmnNode::Event(
+                    EventType::Message,
+                    if node.incoming.is_empty() {
+                        EventVisual::Start(InterruptingKind::Interrupting)
+                    } else {
+                        EventVisual::Throw
+                    },
+                );
+            }
+        }
+        Ok(())
+    }
+}
+
+#[track_caller]
+fn err_from_no_lifeline_active(
+    l: LifelineState,
+    current_token_coordinate: TokenCoordinate,
+) -> ParseError {
+    match l {
+            LifelineState::NoLifelineActive { previous_lifeline_termination_statement: None } => vec![
+(
+                "This statement requires an active sequence flow. Try to add a start event `#` before this line.".to_string(),
+                current_token_coordinate, Level::Error
+)]
+            ,
+            LifelineState::NoLifelineActive { previous_lifeline_termination_statement: Some(tc) } => vec![
+(
+                "This statement requires an active sequence flow.".to_string(),
+                current_token_coordinate, Level::Error
+),(
+                "The sequence flow was previously terminated here.".to_string(),
+                tc, Level::Note
+)]
+            ,
+            LifelineState::StartedFromSequenceFlowLanding { token_coordinate, .. } => vec![
+(
+                "This statement requires an active sequence flow.".to_string(),
+                current_token_coordinate, Level::Error
+),(
+                "This statement itself is just a meta instruction and does not add a node. Try adding a `- Some Activity` after this statement.".to_string(),
+                token_coordinate, Level::Note
+)]
+            ,
+        l => panic!("{l:?}, {current_token_coordinate:?}"),
+    }
+}
+
+fn err_from_unfinished_lifeline(
+    l: LifelineState,
+    current_token_coordinate: TokenCoordinate,
+) -> Result<(), ParseError> {
+    match l {
+        LifelineState::StartedFromSequenceFlowLanding {
+            token_coordinate, ..
+        } => Err(vec![
+            (
+                "This statement cannot appear within an active sequence flow.".to_string(),
+                current_token_coordinate,
+                Level::Error,
+            ),
+            (
+                // Have a slightly clearer error message here.
+                "This statement introduced a sequence flow.".to_string(),
+                token_coordinate,
+                Level::Note,
+            ),
+        ]),
+        LifelineState::ActiveLifeline {
+            token_coordinate, ..
+        } => Err(vec![
+            (
+                "This statement cannot appear within an active sequence flow.".to_string(),
+                current_token_coordinate,
+                Level::Error,
+            ),
+            (
+                "This statement is part of the currently active sequence flow.".to_string(),
+                token_coordinate,
+                Level::Note,
+            ),
+        ]),
+        LifelineState::NoLifelineActive { .. } => Ok(()),
+    }
+}
+
+pub fn parse(input: String) -> Result<Graph, Box<dyn std::error::Error>> {
+    Parser::new().parse(input.clone(), lex(input)?)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn basic() -> Result<(), Box<dyn std::error::Error>> {
+        let input = r#"
+# Start Event
+- Middle Event
+. End Event
+"#;
+
+        let graph = parse(input.to_string())?;
+        assert!(
+            graph.edges.len() == 2,
+            "Edge count is wrong, should be: {}",
+            graph.edges.len()
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn gateway() -> Result<(), Box<dyn std::error::Error>> {
+        let input = r#"
+# Start Event
+X ->Branch1 "Condition 1" ->Branch2 "Cond 2"
+
+G <- Branch1
+- Task B1
+G ->JoinPoint "Joining Branches"
+
+G <- Branch2
+- Task B1
+G ->JoinPoint "Joining Branches"
+
+X<-JoinPoint
+. End Event
+"#;
+
+        let graph = parse(input.to_string())?;
+        assert!(
+            graph.edges.len() == 6,
+            "Edge count is wrong, should be: {}",
+            graph.edges.len()
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn pool() -> Result<(), Box<dyn std::error::Error>> {
+        let input = r#"
+= Pool
+== Lane1
+# Start Event
+- Task1
+. End Event
+== Lane2
+# Start Event2
+- Task2
+. End Event 2
+"#;
+
+        let graph = parse(input.to_string())?;
+        assert!(
+            graph.edges.len() == 4,
+            "Edge count is wrong, should be: {}",
+            graph.edges.len()
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn jump() -> Result<(), Box<dyn std::error::Error>> {
+        let input = r#"
+= Pool
+== Lane1
+# Start Event
+- Task
+F ->jump
+== Lane2
+F <-jump
+- Task
+. End Event
+"#;
+
+        let graph = parse(input.to_string())?;
+        assert!(
+            graph.edges.len() == 3,
+            "Edge count is wrong, should be: {}",
+            graph.edges.len()
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn message_flow() -> Result<(), Box<dyn std::error::Error>> {
+        let input = r#"
+= Pool 1
+# Start Event
+- Task @sender
+. End Event 
+= Pool 2
+# Start Event
+- Task @receiver
+. End Event
+
+MF <-sender ->receiver
+"#;
+
+        let graph = parse(input.to_string())?;
+        assert!(
+            graph.edges.len() == 5,
+            "Edge count is wrong, should be: {}",
+            graph.edges.len()
+        );
+
+        assert!(
+            graph.edges.iter().any(|x| x.from.0 == 1 && x.to.0 == 4),
+            "No edge found for the message flow between node ids 1 to 4"
+        );
+        Ok(())
     }
 }

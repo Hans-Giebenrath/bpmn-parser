@@ -1,0 +1,74 @@
+// GENERATE VISIBILITY TABLE
+
+= Client 1
+# s
+- Encrypt Data @c1-encrypt
+# send @send1
+# receive @receive1
+- Decrypt Data @c1-decrypt
+. Done
+
+= Service Provider
+# s
++ ->sf-from-c1 ->sf-from-c2
+
+F <-sf-from-c1
+# Receive message from Client 1 @sp-receive1
+F ->join
+
+F <-sf-from-c2
+# Receive message from Client 2 @sp-receive2
+F ->join
+
++ <-join
+- Process Data
++ ->fin1 ->fin2
+
+F <-fin1
+. send-to-c1 @send-to-c1
+
+F <-fin2
+. send-to-c2 @send-to-c2
+
+= Client 2
+# s
+- Encrypt Data @c2-encrypt
+# send @send2
+# receive @receive2
+- Decrypt Data @c2-decrypt
+. Done
+
+= Ext
+
+MF <-client1-send ->sp-receive1
+MF <-client2-send ->sp-receive2
+
+MF <-send-to-c1 ->receive1
+MF <-send-to-c2 ->receive2
+
+OD Input Data 1 ->c1-encrypt
+ & Input Data 1 [Protected] <-c1-encrypt ->c1-send
+ & Input Data 1 [Protected] <-sp-receive1 ->process
+
+OD Input Data 2 ->c2-encrypt
+ & Input Data 2 [Protected] <-c2-encrypt ->c2-send
+ & Input Data 2 [Protected] <-sp-receive2 ->process
+
+OD Result 1 <-process ->sp-send-c1
+ & Result 1 [Protected] <-c1-receive ->c1-decrypt
+ & Result 1 <-c1-decrypt
+
+OD Result 2 <-process ->sp-send-c2
+ & Result 2 [Protected] <-c2-receive ->c2-decrypt
+ & Result 2 <-c2-decrypt
+
+[pe-bpmn
+  (tee-tasks @process-data)
+  (tee-in-protect @c1-encrypt no-rv)
+  (tee-in-protect @c2-encrypt no-rv)
+  (tee-out-unprotect @c1-decrypt no-rv)
+  (tee-out-unprotect @c2-decrypt no-rv)
+  (tee-external-root-access @ext)
+  (stroke-color #0063B2)
+  (fill-color #9CC3D5)
+]

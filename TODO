@@ -1,0 +1,20 @@
+* Add more checks for the correctness of the BPMN semantics:
+  * Check that the gateway branching and joining nodes match (use a dedicated graph analysis phase, not in the parser)
+  * (TODO what else? likely a lot)
+* Syntax for cross-pool message sending
+* Syntax for all kinds of events and boundary events
+* Crossing minimization
+* ILP based edge routing (with modifications for north and south ports)
+* Plugin integration (PLEAK!)
+* Better documentation of the math in each step
+* ...
+* Maybe implement a custom BPMN renderer?
+
+* LSP language server protocol
+* treesitter syntax highlighting
+* asciidoctor integration
+* `import` statement
+
+* In the same lane, if a node goes into another lane (`F ->another-lane`), and then a coming back (`F <-back-again`), then these two nodes of the same lane should have a `leftof` relationship. Otherwise they might be layouted in a stacked way.
+
+* Saw some youtuber who talks about generating BPMNs via ChatGPT. I guess I should write him when the tool is in a more usable state, then he can evaluate that: https://www.youtube.com/watch?v=StqnUeWv6Lc

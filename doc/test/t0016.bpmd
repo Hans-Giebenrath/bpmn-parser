@@ -1,0 +1,18 @@
+// GENERATE VISIBILITY TABLE
+= Pool1
+# Start Event
+- Task1 @t1
+- Task2 @t2
+. End
+
+
+= Pool2
+# Start Event
+- Task3 @t3
+- Task4 @t4
+. End
+
+OD Object ->t1
+& <-t3
+
+OD Object2 ->t2

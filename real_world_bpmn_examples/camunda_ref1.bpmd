@@ -1,0 +1,45 @@
+=== order processing
+
+M# order received <-
+.- check availability
+XG article available? ->"yes" ->"no"
+
+F <-yes
+.- ship article
+F ->fm
+
+F <-no
+C- procurement
+  E! ->"not available"
+  ^+ ->"late delivery"
+F ->fm
+
+F <-fm
+S- financial management
+.. end
+
+F <-late-delivery
+.- inform customer
+.. end
+
+F <-not-available
+.- informm customer
+.- delete article from catalogue
+.. end
+
+C= procurement
+
+.# start
+.- place order
+XG available? ->fast"in <2 days" ->slow"in >2 days" ->"no"
+
+F <-fast
+.- expect delivery
+.. end
+
+F <-slow
+^# late dellivery ->
+.. // The BPMN diagram from Camunda is wrong here, I believe. It misses an end event after the throwing escalation marker.
+
+F <-no
+E! not available

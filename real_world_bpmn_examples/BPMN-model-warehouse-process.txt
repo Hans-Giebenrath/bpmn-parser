@@ -1,0 +1,4 @@
+* a joining gateway node does not need to have a matching branching gateway node
+* We need automatic leftof constraints for nodes without direct edges:
+  Robot's "Move to Material" and "Check Material Weight" should be in one line.
+  Without an additional "leftof" constraint the latter one would be placed under the first one.

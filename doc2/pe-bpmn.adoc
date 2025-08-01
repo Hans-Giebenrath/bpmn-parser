@@ -1,0 +1,275 @@
+= PE-BPMN Plugin
+
+TODO for all the different kinds and combinations, also cut in pieces, make lots of examples.
+
+== Introduction
+
+PE-BPMN enhances the BPMN standard to model cryptographic aspects and analyse who can see what data.
+The most important analyses are (1) simple disclosure analysis and (2) data dependency analysis.
+
+== Simple Disclosure Analysis
+
+The goal is to render a table which says what data a given pool, or the network, can see:
+
+V:: plaintext Visible
+H:: the plaintext is Hidden, it is only present in some encrypted/secret shared/etc form
+A:: Accessible, as in the ciphertext/... and the key/... are at some point present within this pool, even though it has not been explicitly present at the same time or brought together in some task.
+
+This means that we are primarily interested in confidentiality.
+Integrity etc is not relevant here, nor do we want to create a proof that e.g. a specific diffie-hellman key exchange is secure against spoofing or a specific MPC protocol is secure.
+So it is more like "under the assumption, that the system implemented the building blocks correctly, then these are the implications".
+The PE part should be an addition to the otherwise business oriented diagram. This means, that it should be possible to declare helper elements (private keys, TEE reference values) inline in the PE-BPMN DSL.
+The following cryptographic building blocks are considered:
+
+Symmetric Keys:: 
+Asymmetric Keys::
+MPC::
+TEE:: TEEs only provide 
+
+=== Generic Directives
+
+[source]
+----
+// One pe-bpmn block per distinct TEE. 
+[pe-bpmn 
+  (color-nodes #rgb) // to highlight what is part of this pe-thingy.
+
+  // Can be used to override the template how the automatically transformed protected
+  // data is used.
+  (tee-protected-data-display-text "{} (Protected Data)")
+  (mpc-protected-data-display-text "{} (Shared Data)")
+  // Similar for the tasks.
+  (tee-protection-task-display-text "TEE-Protect Data")
+  (mpc-protection-task-display-text "Create MPC Shares")
+]
+----
+
+[source]
+----
+// Just per pool - I think otherwise this is cognitively too heavy.
+// For substituting in the next pool, create a new `substitute` block.
+[substitute (@node1 @optionally-more-nodes)
+  // The new nodes must replace the nodes in the (...) list. Their incoming and
+  // outgoing connections are copied over.
+  // Also, the substituted subgraph must be complete, so there can't be any other
+  // incoming edges, otherwise the compiler errors (should list the conflicting
+  // nodes such that they can be added to the (...) list)
+  .- New Nodes @node1
+  ... possibly more
+  // Note: this 
+]
+----
+
+[source]
+----
+// Adds brand new stuff to the diagram.
+[inject (into @optionally-pool-target)
+  // Just new stuff. Could be new data objects, comments, standalone interrupt handling blocks,
+  // or even new pools or lanes (to be combinated with the `substitute` block).
+]
+
+// Shortcut for data nodes:
+[pe-bpmn
+  (...)
+  (new-data-node @target-pool-or-lane (OD Reference Values @something ->t1 !"{} (Examined)" ->t2))
+]
+----
+
+=== Symmetric Keys
+
+Distribution of symmetric keys is important, but I am not sure if it makes sense to show that on the diagram?
+I mean, it should probably be 
+
+[source]
+----
+// One pe-bpmn block per distinct TEE. 
+[pe-bpmn 
+  // All the data objects which are semantically the same symmetric key, just in different pools.
+  (sk-key @data-ob1 @data-obj2)
+]
+----
+
+=== Asymmetric Keys
+=== Secure Channel
+
+[source]
+----
+// One pe-bpmn block per distinct secure communication channel. 
+[pe-bpmn 
+  // The easiest way - just a secure communication channel between
+  // two pools, or even the same pool when the data is sent away to another pool for storage.
+  // In case the diagram is split (just part of the secure channel is visible), then
+  // the protected object can be specified to tell that it is part of the secure channel
+  // (in principle this should be derivable - if e.g. only a receive task is specified,
+  // one can check what is incoming, and wherever that incoming object is located at, it
+  // is assumed to be encrypted (before it is received). But in that case it would be easy
+  // to simply forget the send-side and thus unintentionally create an error? not sure.
+  // But specifying the object here would mean something different if the
+  // `secure-channel-secret` would be added, as then it is not the object under
+  // protection of the channel but of the secret, that would be bad)
+  // Analysis: 
+  (secure-channel @send-task @receive-task @optionally-obj-already-protected-by-the-channel)
+]
+----
+
+
+[source]
+----
+// One pe-bpmn block per distinct secure communication channel. 
+// This is another variant where the secure channel is extended to have a
+// dedicated channel secret, and send/receive events must be accompanied with a
+// "protect"/"unprotect" step.
+// The secrets very likely must be previously added to the diagram with an `inject`
+// primitive.
+[pe-bpmn 
+  // Not yet sure exactly what is the semantics here.
+  (secure-channel @send-task @receive-task @obj-already-protected-by-the-secret)
+  // Here we could identify (enforce!) that a @keyobj goes into a block with another
+  // object, and hence the other object will be protected. And when the other object
+  // (now protected) reaches another task where the @keyobj is also used, then it goes
+  // out decrypted.
+  // Problem: This must also work when there is no @keyobj, yet, i.e. some automatic
+  // transformation. So 
+  (secure-channel-secret @keyobj @optionally-the-same-secret-on-another-pool)
+  (secure-channel-display-text @keyobj @optionally-the-same-secret-on-another-pool)
+
+  // Optionally if 
+  (secure-channel-setup @sent-event @receive-event)
+]
+----
+
+=== TEE
+
+For TEEs we have the following considerations:
+
+Origin of the Reference Values:: If the link:https://www.ietf.org/rfc/rfc9334.html#section-8.3[reference values] (like MRENCLAVE in Intel® SGX) is acquired from the host of TEE software, then the host could just swap out the good TEE with a bad TEE software and provide bad reference values. In that case the confidentiality is endangered and one needs to consider that the data is **A**ccessible to the host. +
+At least with Intel® SGX and Intel® TDX, there is some additional infrastructure (the so-called PCCS) to get attestation collateral (certificate chain) from the so-called PCS - what they do exactly does not matter here, but the point is that for PE-BPMN this is 
+What parts of the model are the TEE?:: Some models use a full pool (with a single lane) for the whole TEE. Others just have a single or a couple of tasks (possibly not directly connected in a chain), so one needs to be able to say what is the TEE (and what is another TEE, if there are multiple).
+Is there admin access to the TEE?:: If some pool has ssh access into the 
+Is there some update mechanism for the TEE?:: Well, this kinda goes a bit out of hand I'd say. If there is an update mechanism, then the updaters might be also nice to mention in some place.
+Mimicking the DFC:: It might be a good idea to allow specifying who will be granted to access the result data. So if the analysis detects that someone else has _A_ or _V_, then it can create an error (or highlight the error math).
+
+[source]
+----
+// One pe-bpmn block per distinct TEE. 
+[pe-bpmn 
+  (color-nodes #rgb) // to highlight what is part of this pe-thingy.
+
+  // For entering reference value data objects, if they haven't been present before.
+  // Or, for that matter, all of the data objects, if they have been left out for brevity.
+  (new-data-node @target-pool-or-lane (OD Reference Values @something ->t1))
+  (new-data-node @other-pool (OD Reference Values @something2 ->t1))
+
+  // Say *what* of the model exactly is this TEE (other TEEs should be in other pe-bpmn nodes).
+  // It could also be that the same TEE software is running on multiple pools,
+  // e.g. for protecting MPC nodes as in the Eurostat JOCONDE project. All the
+  // components are then listed here, they are treated as one.
+  // But then they all share the same characteristicts. If there is some difference,
+  // e.g. who is the admin, then it should be different pe-bpmn nodes.
+  (tee-components @pool @or-tasks @data-obj-which-is-already-under-tee-protection) // but not @lanes, since they don't allow for the correct modeling of the message transfer
+
+  // Specifies a list of all reference value roots. pe-bpmn itself looks for an existing way from the roots to all `tee-protect` instances.
+  (tee-reference-value-roots @something2)
+
+  // Upload and download support. Should do a transformation to add an additional step to
+  // protect the data objects, similar to SGXProtect.
+  // (OD Data ->sendmsg) ==> (OD Data ->prep; OD Data (TEE Protected) <-prep ->sendmsg; `prep` is a new task added before `sendmsg`)
+  // The algorithm should follow the data objects itself
+  // throughout the diagram until it reaches a TEE component (`tee-components`) which
+  // consumes the data (or from a TEE component to the receive task). If the target TEE component is a task which consumes it, then
+  // all is good, no further transformations required. But if it is a pool, then
+  // according to the data object rules, there should be a (OD Data <-recvmsg ->somewhereelse)
+  // and we need to do a similar transform, manually adding  `prep` task which
+  // decrypts the received value (`Data (TEE Protected)`, names must match afterall).
+  // Send and receive tasks on the end-user side (those communicating with the TEE)
+  // must have an incoming reference value, otherwise
+  // it errors.
+  // Optional data objects just need to be specified when multiple data objects are sent
+  // at once per send event (or received) and only a subset of those is protected.
+  // If none are specified then all are protected ("all-or-some").
+  // IDEA: Maybe it would be useful to be able to specify an explicit communication 
+  //       key (data object) to come out of the protection task, which then replaces the
+  //       reference values in future communications. That key could then be sent to
+  //       other pools, too. Would be more logical than sending the reference values.
+  //       Or instead the reference values should be renamable? Effect is not totally
+  //       the same, as if someone else has that key as well, they might be able to 
+  //       read the exchanged messages. Thought this is not necessarily true for if
+  //       that key is just used for additional ephemeral key setup, instead of directly
+  //       as the encryption key. So it is complicated, better only model if all other
+  //       parts are working.
+  (tee-communication @send_message-task-or-event @receive_message-task-or-event @optional-data-obj1 @optional-data-objN)
+
+  // This is more of a safe-guard, not sure if this should be here. To write who should be able to get data from here.
+  // Probably not a good thing to focus on?
+  (tee-recipients @pool1 @pooln)
+
+  // If some pool has unrestricted `ssh` access or similar into the TEE, then this is written like so:
+  // This does not have any influence on the diagram, but changes the visibility table.
+  (tee-external-root-access @pool1 @pool2)
+
+  // The visibility table usually should only contain pools and the network operator.
+  // If a whole pool is listed in the `tee-component`, then it shall be removed from
+  // that table. But if this option is present, then the TEE is included in the table
+  // with the given name (or if omitted, with the name of the pool if it was a
+  // pool, or "TEE of $pool_name1, $pool_name2, ..." otherwise).
+  (tee-in-table Some Display Text)
+]
+----
+
+TODO what about models which are broken down, e.g. one showing the upload, one the computation, and one the download?
+In that case a meaningful table should also be possible, somehow?
+
+If a TEE is defined, then the `tee-components` part is mandatory.
+MPC stuff, if present in the same model, must be declared in another pe-bpmn node.
+
+=== MPC
+
+For MPC there is no identity thing. It would be a bit convoluted to 
+
+[source]
+----
+[pe-bpmn
+  // Mark this block as being an MPC block.
+  // This should always list multiple pools, or tasks in multiple pools.
+  // If it is only a single (task inside of a) pool, then that pool must have the "Multiple-Instance Participant" marker (3 bars, `~multiple`).
+  (mpc-components @pool @or-tasks)
+
+  // Look at `tee-communication` for some documentation. For MPC there is an equal setup required.
+  // Note that there should only be a single send-message arrow, to the closest MPC instance.
+  // This does hide the fact that there is a lot more communication, but the MPC computation task
+  // itself also does not show any communication, so this is already violated anyway and
+  // would only clutter the diagram in horrible ways.
+  (mpc-communication @send_message-task-or-event @receive_message-task-or-event @data-obj1)
+]
+----
+
+=== Additional Goodies
+
+. The visibility table maybe reveals some flaw (Pool A should not be able to have access to data object X!). It would be cool to be able to tell the tool to highlight a specific accessibility path.
+. 
+
+=== Pseudocode
+
+The steps are as follows:
+
+. Identify the unique data objects within the model:
+  some ODs will be actually the same semantic object, but they are duplicated in different pools, or have been wrapped within some encryption/sharing layer. The goal is to identify what different ``OD``s are actually the same semantic object. This is done via something akin to a union-find structure (or exactly like?).
+. For each `OD` of a given data object 
+
+
+The pseudocode for 
+
+[source]
+----
+Function: Determine visibility of one data object.
+Inputs:
+ - Graph $g
+ // "Root" means, that the following condition is false:
+ // (1) Some incoming data flow edge is from a receive-msg tasks/events which received
+ //     the same-named (display text) data object from another pool.
+ - Root Data Object $obj
+Output $result: Map (PoolName or TEE or NetworkOperator) -> ("" | "H" | "A" | "V")
+
+Algorithm:
+
+----

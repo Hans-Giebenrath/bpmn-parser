@@ -1,0 +1,48 @@
+// GENERATE VISIBILITY TABLE
+= Client
+
+# Incoming Data
+- secure-channel sender
+# tee-protect
+# tee-unprotect
+- secure-channel receiver
+. end
+
+= Tee
+
+# Receiving
+- Echo in TEE task
+# Sending
+. Finish
+
+= Hacker
+
+# steal
+- can't decrypt @fail
+. no profit
+
+OD Input <-incoming-data ->sec-chan-sender
+ & Input [sc] <-sc-sender ->tee-protect
+ & Input [sc&tee] <-receiving ->echo
+ & Output [sc&tee] <-echo ->sending
+ & Output [sc] <-tee-unprotect ->sc-recver
+ & Output <-sc-recver
+
+ & Stolen Data <-steal ->fail
+
+MF <-tee-protect ->receiving
+MF <-sending ->tee-unprotect
+MF <-sending ->steal
+
+[pe-bpmn
+  (secure-channel @sc-sender @sc-receiver)
+  (stroke-color #77a)
+]
+
+[pe-bpmn
+  (tee-tasks @echo)
+  (tee-in-protect @tee-protect no-rv)
+  (tee-out-unprotect @tee-unprotect no-rv)
+  (tee-external-root-access)
+  (stroke-color #5a5)
+]

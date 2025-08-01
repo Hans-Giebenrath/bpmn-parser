@@ -1,93 +1,58 @@
+use std::collections::{HashMap, HashSet};
+use vecset::VecSet;
+
 // pool.rs
+use crate::common::graph::{LaneId, NodeId};
+use crate::common::graph::{PoolId, SdeId};
 use crate::common::lane::Lane;
-use crate::common::node::Node;
-use std::collections::HashMap;
+use crate::common::macros::impl_index;
 pub struct Pool {
-    pool_name: String,
+    /// None: Anonymous Pool. Invariant: If a graph contains a pool with a None name, then this is
+    /// the only pool in the graph. In this case the pool is not rendered at all, and its contained
+    /// only lane must have a None name as well.
+    pub name: Option<String>,
     pub lanes: Vec<Lane>,
-    pub x: Option<f64>,
-    pub y: Option<f64>,
-    pub width: Option<f64>,
-    pub height: Option<f64>,
+    /// Pools can be put on one vertical line. In this case, this is set to true.
+    /// Note: This is not yet integrated correctly, only in the xy_ilp function.
+    pub is_right_of_the_previous_pool: bool,
+    pub x: usize,
+    pub y: usize,
+    pub width: usize,
+    pub height: usize,
+    pub stroke_color: Option<String>,
+    pub fill_color: Option<String>,
+
+    pub tee_admin_has_pe_bpmn_visibility_A_for: VecSet<SdeId>,
+    pub tee_admin_has_pe_bpmn_visibility_H_for: VecSet<SdeId>,
+    pub tee_external_root_access: HashSet<SdeId>,
 }
 
 impl Pool {
-    pub fn new(pool_name: String) -> Self {
+    pub fn new(name: Option<String>) -> Self {
         Pool {
-            pool_name,
+            name,
             lanes: Vec::new(),
-            x: None,
-            y: None,
-            width: None,
-            height: None,
+            x: 0,
+            y: 0,
+            width: 0,
+            height: 0,
+            is_right_of_the_previous_pool: false,
+            stroke_color: None,
+            fill_color: None,
+            tee_admin_has_pe_bpmn_visibility_A_for: VecSet::new(),
+            tee_admin_has_pe_bpmn_visibility_H_for: VecSet::new(),
+            tee_external_root_access: HashSet::new(),
         }
     }
 
-    pub fn add_node(&mut self, node: Node) {
-        let node_lane = node
-            .lane
-            .clone()
-            .unwrap_or_else(|| "default_lane".to_string());
-        if let Some(lane) = self.lanes.iter_mut().find(|l| l.get_lane() == &node_lane) {
-            lane.add_node(node);
-        } else {
-            let mut new_lane = Lane::new(node_lane);
-            new_lane.add_node(node);
-            self.lanes.push(new_lane);
-        }
+    pub fn add_lane(&mut self, lane: Option<String>) -> LaneId {
+        self.lanes.push(Lane::new(lane));
+        LaneId(self.lanes.len() - 1)
     }
 
-    pub fn add_lane(&mut self, lane: Lane) {
-        self.lanes.push(lane);
-    }
-
-    pub fn get_lanes(&self) -> &Vec<Lane> {
-        &self.lanes
-    }
-
-    pub fn get_lanes_mut(&mut self) -> &mut Vec<Lane> {
-        &mut self.lanes
-    }
-
-    pub fn get_pool_name(&self) -> String {
-        self.pool_name.clone()
-    }
-
-    pub fn get_node_by_id(&self, id: usize) -> Option<&Node> {
-        for lane in &self.lanes {
-            if let Some(node) = lane.get_node_by_id(id) {
-                return Some(node);
-            }
-        }
-        None
-    }
-
-    pub fn get_nodes_by_id(&self) -> HashMap<usize, Node> {
-        let mut nodes_by_id = HashMap::new();
-        for lane in &self.lanes {
-            for node in lane.get_layers() {
-                nodes_by_id.insert(node.id, node.clone());
-            }
-        }
-        nodes_by_id
-    }
-
-    pub fn set_height(&mut self, height: f64) {
-        self.height = Some(height);
-    }
-
-    pub fn set_width(&mut self, width: f64) {
-        self.width = Some(width);
-    }
-
-    pub fn set_position(&mut self, x: f64, y: f64) {
-        self.x = Some(x);
-        self.y = Some(y);
-    }
-
-    pub fn set_lane_width(&mut self, width: f64) {
-        for lane in &mut self.lanes {
-            lane.set_width(width);
-        }
+    pub fn add_node(&mut self, lane: LaneId, node_id: NodeId) {
+        self.lanes[lane.0].nodes.push(node_id);
     }
 }
+
+impl_index!(PoolId, Pool, pool_idx);
