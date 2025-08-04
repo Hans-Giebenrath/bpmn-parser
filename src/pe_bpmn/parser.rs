@@ -4,7 +4,7 @@ use std::collections::HashSet;
 
 use crate::common::graph::PoolId;
 use crate::common::node::NodeType;
-use crate::lexer::{PeBpmnProtection, TeeNode, TeeType};
+use crate::lexer::{PeBpmnProtection, PeBpmnSubType, TeeNode};
 use crate::parser::Parser;
 use crate::{
     common::{
@@ -198,7 +198,7 @@ impl Parser {
                 let out_unprotect = self.parse_tee_nodes(&lexer_tee.out_unprotect, "outgoing")?;
 
                 let (tee_type, admin) = match lexer_tee.tee_type {
-                    TeeType::TeePool(pool_str) => {
+                    PeBpmnSubType::Pool(pool_str) => {
                         let pool_id = self.find_pool_id_or_error(&pool_str)?;
                         let admin_str = lexer_tee
                             .admin
@@ -207,7 +207,7 @@ impl Parser {
                         let admin = self.find_pool_id_or_error(admin_str)?;
                         (TeeTypeParse::TeePool(pool_id), admin)
                     }
-                    TeeType::TeeTasks(tasks) => {
+                    PeBpmnSubType::Tasks(tasks) => {
                         let task_ids = tasks
                             .iter()
                             .map(|task_str| self.find_node_id_or_error(task_str, "tee-tasks"))
@@ -248,7 +248,7 @@ impl Parser {
                             }),
                     );
 
-                // For all tee-in-protect nodes that the admin either owns or are unassigned, give the admin visibility H to all the SDEs those nodes carry.
+                // For all tee-out-unprotect nodes that the admin either owns or are unassigned, give the admin visibility H to all the SDEs those nodes carry.
                 self.graph.pools[admin]
                     .tee_admin_has_pe_bpmn_visibility_H_for
                     .extend(
@@ -343,6 +343,13 @@ impl Parser {
                         self.tee_tasks(tasks.clone(), &tee, &pe_bpmn.meta, enforce_reach_end)
                     }
                 }?
+            }
+            PeBpmnType::Mpc(_) => {
+                return Err(vec![(
+                    "MPC is not supported yet.".to_string(),
+                    self.context.current_token_coordinate,
+                    Level::Error,
+                )]);
             }
         }
         Ok(())
@@ -647,7 +654,7 @@ impl Parser {
             };
         }
 
-        let mut reach_end = false;        
+        let mut reach_end = false;
         for next_edge_id in next_edges {
             if self.protection_channel(
                 next_edge_id,
@@ -660,7 +667,7 @@ impl Parser {
             )? {
                 reach_end = true;
             };
-        };
+        }
         Ok(reach_end)
     }
 
@@ -1018,12 +1025,14 @@ OD Data Element 2 <-task1 ->forward1
                     pebpmn_protection, ..
                 }) = &edge.flow_type
                 {
-                    assert!(pebpmn_protection
-                        .iter()
-                        .find(|e| e.0 == SdeId(i))
-                        .unwrap()
-                        .1
-                        .contains(&PeBpmnProtection::SecureChannel));
+                    assert!(
+                        pebpmn_protection
+                            .iter()
+                            .find(|e| e.0 == SdeId(i))
+                            .unwrap()
+                            .1
+                            .contains(&PeBpmnProtection::SecureChannel)
+                    );
                 }
             }
         }
@@ -1031,8 +1040,8 @@ OD Data Element 2 <-task1 ->forward1
     }
 
     #[test]
-    fn secure_channel_only_applied_to_middle_nodes_of_first_sde(
-    ) -> Result<(), Box<dyn std::error::Error>> {
+    fn secure_channel_only_applied_to_middle_nodes_of_first_sde()
+    -> Result<(), Box<dyn std::error::Error>> {
         let input = r#"
 = Pool1
 # Start1
