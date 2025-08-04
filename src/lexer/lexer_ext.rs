@@ -11,7 +11,7 @@ pub(crate) enum PeBpmnType {
     SecureChannel(SecureChannel),
     //SecureChannelWithExplicitSecret(SecureChannelWithExplicitSecret),
     Tee(Tee),
-    //Mpc(Mpc),
+    Mpc(Mpc),
 }
 
 #[derive(Debug, Clone, PartialEq, Default)]
@@ -21,9 +21,27 @@ pub(crate) struct SecureChannel {
     pub argument_ids: Vec<String>,
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Default)]
+pub(crate) struct Mpc {
+    pub mpc_type: PeBpmnSubType,
+    pub in_protect: Vec<TeeNode>,
+    pub in_unprotect: Vec<TeeNode>,
+    pub out_protect: Vec<TeeNode>,
+    pub out_unprotect: Vec<TeeNode>,
+    pub data_without_protection: Vec<String>,
+    pub data_already_protected: Vec<String>,
+    pub admin: Option<String>,
+    pub external_root_access: Vec<String>,
+    // TODO: Add the correct type and usage for this field
+    // pub mpc_in_protect_pre_sent: <Type>,
+    // pub mpc_in_protect_post_received: <Type>,
+    // pub mpc_in_channel: <Type>,
+    // pub mpc_out_channel: <Type>,
+}
+
+#[derive(Debug, Clone, PartialEq, Default)]
 pub(crate) struct Tee {
-    pub tee_type: TeeType,
+    pub tee_type: PeBpmnSubType,
     pub in_protect: Vec<TeeNode>,
     pub in_unprotect: Vec<TeeNode>,
     pub out_protect: Vec<TeeNode>,
@@ -35,9 +53,15 @@ pub(crate) struct Tee {
 }
 
 #[derive(Debug, Clone, PartialEq)]
-pub(crate) enum TeeType {
-    TeePool(String),
-    TeeTasks(Vec<String>),
+pub(crate) enum PeBpmnSubType {
+    Pool(String),
+    Tasks(Vec<String>),
+}
+
+impl Default for PeBpmnSubType {
+    fn default() -> Self {
+        PeBpmnSubType::Pool(String::new())
+    }
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -92,7 +116,7 @@ fn assemble_secure_channel(mut tokens: Tokens, mut tc: TokenCoordinate) -> AResu
                         return Err((it.0, "There is already a stroke-color defined".to_string()));
                     }
                     let nt = tokens.next();
-                    let color = check_color_format(it, nt)?;
+                    let color = check_color_format(&it, nt)?;
                     pe_bpmn_meta.stroke_color = Some(color);
                     check_end_block(tokens.next())?;
                 }
@@ -101,7 +125,7 @@ fn assemble_secure_channel(mut tokens: Tokens, mut tc: TokenCoordinate) -> AResu
                         return Err((it.0, "There is already a fill-color defined".to_string()));
                     }
                     let nt = tokens.next();
-                    let color = check_color_format(it, nt)?;
+                    let color = check_color_format(&it, nt)?;
                     pe_bpmn_meta.fill_color = Some(color);
                     check_end_block(tokens.next())?;
                 }
@@ -119,19 +143,32 @@ fn assemble_secure_channel(mut tokens: Tokens, mut tc: TokenCoordinate) -> AResu
     }))
 }
 
-fn assemble_tee(mut tokens: Tokens, mut tc: TokenCoordinate, is_pool: bool) -> AResult {
+fn assemble_tee_or_mpc(
+    mut tokens: Tokens,
+    mut tc: TokenCoordinate,
+    pe_bpmn_type: PeBpmnType,
+    is_pool: bool,
+) -> AResult {
     let ids = parse_optional_ids(&mut tokens)?;
-    let tee_type = if !ids.is_empty() {
+    let sub_type = if !ids.is_empty() {
         match (is_pool, ids.as_slice()) {
-            (true, [single_id]) => Ok(TeeType::TeePool(single_id.to_string())),
-            (true, _) => Err((
-                tc,
-                "Please define a single ID which pool forms the TEE".to_string(),
-            )),
-            (false, _) => Ok(TeeType::TeeTasks(ids)),
-        }?
+            (true, [single_id]) => PeBpmnSubType::Pool(single_id.to_string()),
+            (true, _) => {
+                return Err((
+                    tc,
+                    "Expected exactly one ID for pool-based TEE or MPC".to_string(),
+                ));
+            }
+            (false, _) => PeBpmnSubType::Tasks(ids),
+        }
     } else {
-        Err((tc, "Missing an ID. Please add it.".to_string()))?
+        return Err((tc, "Missing an ID. Please add it.".to_string()));
+    };
+
+    let tee_or_mpc = match pe_bpmn_type {
+        PeBpmnType::Tee(_) => "tee",
+        PeBpmnType::Mpc(_) => "mpc",
+        _ => return Err((tc, "Invalid pe-bpmn type for tee or mpc".to_string())),
     };
 
     let mut pe_bpmn_meta = PeBpmnMeta {
@@ -152,78 +189,131 @@ fn assemble_tee(mut tokens: Tokens, mut tc: TokenCoordinate, is_pool: bool) -> A
 
     while let Some(it) = tokens.next() {
         tc.end = it.0.end;
-        match it.1.clone() {
-            Token::ExtensionArgument(val) => match val.as_str() {
-                "tee-data-without-protection" => {
-                    data_without_protection.append(&mut parse_optional_ids(&mut tokens)?);
-                }
-                "tee-already-protected" => {
-                    data_already_protected.append(&mut parse_optional_ids(&mut tokens)?);
-                }
-                "tee-in-protect" => in_protect.push(parse_tee_node(&mut tokens, tc, true, true)?),
-                "tee-in-unprotect" => {
-                    if !is_pool {
-                        return Err((it.0, "tee-tasks dosen't allow tee-in-unprotect statements. Allowed are tee-in-protect and tee-out-unprotect.".to_string()));
+        // Check if the token is an extension argument
+        if let Token::ExtensionArgument(val) = it.1.clone() {
+            // Check for common arguments for tee and mpc
+            if let Some(suffix) = val.strip_prefix(&format!("{tee_or_mpc}-")) {
+                match suffix {
+                    "data-without-protection" => {
+                        data_without_protection.append(&mut parse_optional_ids(&mut tokens)?);
+                        continue;
                     }
-                    in_unprotect.push(parse_tee_node(&mut tokens, tc, true, false)?);
-                }
-                "tee-out-protect" => {
-                    if !is_pool {
-                        return Err((it.0, "tee-tasks dosen't allow tee-out-protect statements. Allowed are tee-in-protect and tee-out-unprotect.".to_string()));
+                    "already-protected" => {
+                        data_already_protected.append(&mut parse_optional_ids(&mut tokens)?);
+                        continue;
                     }
-                    out_protect.push(parse_tee_node(&mut tokens, tc, false, true)?);
-                }
-                "tee-out-unprotect" => {
-                    out_unprotect.push(parse_tee_node(&mut tokens, tc, false, false)?)
-                }
-                "tee-admin" => {
-                    if admin.is_some() {
-                        return Err((it.0, "There is already a tee-admin defined. Multiple tee-admin entries are not allowed.".to_string()));
+                    "in-protect" => {
+                        in_protect.push(parse_tee_node(&mut tokens, tc, true, true)?);
+                        continue;
                     }
-
-                    admin = match tokens.next() {
-                        Some((_, Token::Id(id))) => Ok(Some(id)),
-                        Some((tc, _)) => {
-                            Err((tc, "Unexpected argument. Only accepting IDs".to_string()))
+                    "in-unprotect" => {
+                        if !is_pool {
+                            return Err((
+                                it.0,
+                                format!(
+                                    "{tee_or_mpc}-tasks doesn't allow {tee_or_mpc}-in-unprotect statements. Allowed are {tee_or_mpc}-in-protect and {tee_or_mpc}-out-unprotect."
+                                ),
+                            ));
                         }
-                        None => return Err((tc, "Missing ID. Add an ID.".to_string())),
-                    }?;
+                        in_unprotect.push(parse_tee_node(&mut tokens, tc, true, false)?);
+                        continue;
+                    }
+                    "out-protect" => {
+                        if !is_pool {
+                            return Err((
+                                it.0,
+                                format!(
+                                    "{tee_or_mpc}-tasks doesn't allow {tee_or_mpc}-out-protect statements. Allowed are {tee_or_mpc}-in-protect and {tee_or_mpc}-out-unprotect."
+                                ),
+                            ));
+                        }
+                        out_protect.push(parse_tee_node(&mut tokens, tc, false, true)?);
+                        continue;
+                    }
+                    "out-unprotect" => {
+                        out_unprotect.push(parse_tee_node(&mut tokens, tc, false, false)?);
+                        continue;
+                    }
+                    "admin" => {
+                        if admin.is_some() {
+                            return Err((
+                                it.0,
+                                format!(
+                                    "There is already a {tee_or_mpc}-admin defined. Multiple {tee_or_mpc}-admin entries are not allowed."
+                                ),
+                            ));
+                        }
 
-                    check_end_block(tokens.next())?;
-                }
-                "tee-external-root-access" => {
-                    if !external_root_access.is_empty() {
-                        return Err((it.0, "tee-external-root-access is already defined. To add multiple pools, append them in one declaration, E.g.: (tee-external-root-access @pool1 @pool2 ...).".to_string()));
+                        admin = match tokens.next() {
+                            Some((_, Token::Id(id))) => Ok(Some(id)),
+                            Some((tc, _)) => {
+                                Err((tc, "Unexpected argument. Only accepting IDs".to_string()))
+                            }
+                            None => return Err((tc, "Missing ID. Add an ID.".to_string())),
+                        }?;
+
+                        check_end_block(tokens.next())?;
+                        continue;
                     }
-                    seen_external_root_access = true;
-                    external_root_access = parse_optional_ids(&mut tokens)?;
-                }
-                "stroke-color" => {
-                    if pe_bpmn_meta.stroke_color.is_some() {
-                        return Err((it.0, "There is already a stroke-color defined".to_string()));
+                    "external-root-access" => {
+                        if !external_root_access.is_empty() {
+                            return Err((
+                                it.0,
+                                format!(
+                                    "{tee_or_mpc}-external-root-access is already defined. To add multiple pools, append them in one declaration, E.g.: ({tee_or_mpc}-external-root-access @pool1 @pool2 ...)."
+                                ),
+                            ));
+                        }
+                        seen_external_root_access = true;
+                        external_root_access = parse_optional_ids(&mut tokens)?;
+                        continue;
                     }
-                    let nt = tokens.next();
-                    let color = check_color_format(it, nt)?;
-                    pe_bpmn_meta.stroke_color = Some(color);
-                    check_end_block(tokens.next())?;
+                    _ => {}
                 }
-                "fill-color" => {
-                    if pe_bpmn_meta.fill_color.is_some() {
-                        return Err((it.0, "There is already a fill-color defined".to_string()));
+            } else {
+                // Handle specific tee or mpc arguments
+                match tee_or_mpc {
+                    "tee" => {}
+                    "mpc" => {}
+                    _ => {}
+                }
+                // Check the rest
+                match val.as_str() {
+                    "stroke-color" => {
+                        if pe_bpmn_meta.stroke_color.is_some() {
+                            return Err((
+                                it.0,
+                                "There is already a stroke-color defined".to_string(),
+                            ));
+                        }
+                        let nt = tokens.next();
+                        let color = check_color_format(&it, nt)?;
+                        pe_bpmn_meta.stroke_color = Some(color);
+                        check_end_block(tokens.next())?;
+                        continue;
                     }
-                    let nt = tokens.next();
-                    let color = check_color_format(it, nt)?;
-                    pe_bpmn_meta.fill_color = Some(color);
-                    check_end_block(tokens.next())?;
+                    "fill-color" => {
+                        if pe_bpmn_meta.fill_color.is_some() {
+                            return Err((
+                                it.0,
+                                "There is already a fill-color defined".to_string(),
+                            ));
+                        }
+                        let nt = tokens.next();
+                        let color = check_color_format(&it, nt)?;
+                        pe_bpmn_meta.fill_color = Some(color);
+                        check_end_block(tokens.next())?;
+                        continue;
+                    }
+                    _ => {}
                 }
-                _ => {
-                    return Err((
-                        it.0,
-                        "tee does not allow this extension argument type.".to_string(),
-                    ));
-                }
-            },
-            _ => return Err((it.0, "Expected an extension argument".to_string())),
+            }
+            return Err((
+                it.0,
+                format!("{tee_or_mpc} does not allow this extension argument type"),
+            ));
+        } else {
+            return Err((it.0, "Expected an extension argument".to_string()));
         }
     }
 
@@ -234,20 +324,37 @@ fn assemble_tee(mut tokens: Tokens, mut tc: TokenCoordinate, is_pool: bool) -> A
         ));
     }
 
-    Ok(Statement::PeBpmn(PeBpmn {
-        r#type: PeBpmnType::Tee(Tee {
-            tee_type,
-            in_protect,
-            in_unprotect,
-            out_protect,
-            out_unprotect,
-            data_without_protection,
-            data_already_protected,
-            admin,
-            external_root_access,
-        }),
-        meta: pe_bpmn_meta,
-    }))
+    return match pe_bpmn_type {
+        PeBpmnType::Tee(_) => Ok(Statement::PeBpmn(PeBpmn {
+            r#type: PeBpmnType::Tee(Tee {
+                tee_type: sub_type,
+                in_protect,
+                in_unprotect,
+                out_protect,
+                out_unprotect,
+                data_without_protection,
+                data_already_protected,
+                admin,
+                external_root_access,
+            }),
+            meta: pe_bpmn_meta,
+        })),
+        PeBpmnType::Mpc(_) => Ok(Statement::PeBpmn(PeBpmn {
+            r#type: PeBpmnType::Mpc(Mpc {
+                mpc_type: sub_type,
+                in_protect,
+                in_unprotect,
+                out_protect,
+                out_unprotect,
+                data_without_protection,
+                data_already_protected,
+                admin,
+                external_root_access,
+            }),
+            meta: pe_bpmn_meta,
+        })),
+        _ => return Err((tc, "Invalid pe-bpmn type for tee or mpc".to_string())),
+    };
 }
 
 pub fn to_pe_bpmn(mut tokens: Tokens) -> AResult {
@@ -258,8 +365,10 @@ pub fn to_pe_bpmn(mut tokens: Tokens) -> AResult {
         // Implement extension types
         match extension_type.as_str() {
             "secure-channel" => assemble_secure_channel(tokens, tc),
-            "tee-pool" => assemble_tee(tokens, tc, true),
-            "tee-tasks" => assemble_tee(tokens, tc, false),
+            "tee-pool" => assemble_tee_or_mpc(tokens, tc, PeBpmnType::Tee(Tee::default()), true),
+            "tee-tasks" => assemble_tee_or_mpc(tokens, tc, PeBpmnType::Tee(Tee::default()), false),
+            "mpc-pool" => assemble_tee_or_mpc(tokens, tc, PeBpmnType::Mpc(Mpc::default()), true),
+            "mpc-tasks" => assemble_tee_or_mpc(tokens, tc, PeBpmnType::Mpc(Mpc::default()), false),
             _ => Err((tc, "Unknown pe-bpmn extension type".to_string())),
         }
     } else if let Some((tc, Token::Text(text))) = first_token {
@@ -526,7 +635,7 @@ fn check_end_block(
         Some((_, Token::Separator)) => Ok(()),
         Some((tc, _)) => Err((
             tc,
-            "The block dosen't take any more arguments. Please remove it.".to_string(),
+            "The block doesn't take any more arguments. Please remove it.".to_string(),
         )),
         None => Ok(()),
     }?;
@@ -591,7 +700,7 @@ fn parse_optional_ids(
 }
 
 fn check_color_format(
-    it: (TokenCoordinate, Token),
+    it: &(TokenCoordinate, Token),
     nt: Option<(TokenCoordinate, Token)>,
 ) -> Result<String, (TokenCoordinate, String)> {
     if let Some(meta) = nt {
