@@ -4,7 +4,7 @@ use std::collections::HashSet;
 
 use crate::common::graph::PoolId;
 use crate::common::node::NodeType;
-use crate::lexer::{PeBpmnProtection, PeBpmnSubType, TeeNode};
+use crate::lexer::{ComputationCommon, DataFlowAnnotationLexer, PeBpmnProtection, PeBpmnSubType};
 use crate::parser::Parser;
 use crate::{
     common::{
@@ -16,13 +16,13 @@ use crate::{
 };
 
 #[derive(Debug, Clone, PartialEq)]
-pub(crate) struct TeeParse {
-    pub tee_type: TeeTypeParse,
+pub(crate) struct ComputationCommonParse {
+    pub pebpmn_type: PeBpmnTypeParse,
 
-    pub in_protect: Vec<TeeNodeParse>,
-    pub in_unprotect: Vec<TeeNodeParse>,
-    pub out_protect: Vec<TeeNodeParse>,
-    pub out_unprotect: Vec<TeeNodeParse>,
+    pub in_protect: Vec<DataFlowAnnotation>,
+    pub in_unprotect: Vec<DataFlowAnnotation>,
+    pub out_protect: Vec<DataFlowAnnotation>,
+    pub out_unprotect: Vec<DataFlowAnnotation>,
 
     pub data_without_protection: Vec<SdeId>,
     pub data_already_protected: Vec<SdeId>,
@@ -31,13 +31,13 @@ pub(crate) struct TeeParse {
 }
 
 #[derive(Debug, Clone, PartialEq)]
-pub(crate) enum TeeTypeParse {
-    TeePool(PoolId),
-    TeeTasks(Vec<NodeId>),
+pub(crate) enum PeBpmnTypeParse {
+    Pool(PoolId),
+    Tasks(Vec<NodeId>),
 }
 
 #[derive(Debug, Clone, PartialEq)]
-pub struct TeeNodeParse {
+pub struct DataFlowAnnotation {
     pub node: NodeId,
     pub rv_source: Option<PoolId>,
 }
@@ -192,145 +192,13 @@ impl Parser {
                 }
             }
             PeBpmnType::Tee(lexer_tee) => {
-                let in_protect = self.parse_tee_nodes(&lexer_tee.in_protect, "incoming")?;
-                let in_unprotect = self.parse_tee_nodes(&lexer_tee.in_unprotect, "incoming")?;
-                let out_protect = self.parse_tee_nodes(&lexer_tee.out_protect, "outgoing")?;
-                let out_unprotect = self.parse_tee_nodes(&lexer_tee.out_unprotect, "outgoing")?;
+                let tee = self.parse_tee_or_mpc(lexer_tee.common, "tee")?;
 
-                let (tee_type, admin) = match lexer_tee.tee_type {
-                    PeBpmnSubType::Pool(pool_str) => {
-                        let pool_id = self.find_pool_id_or_error(&pool_str)?;
-                        let admin_str = lexer_tee
-                            .admin
-                            .as_ref()
-                            .ok_or_else(|| self.tee_admin_missing_error(""))?;
-                        let admin = self.find_pool_id_or_error(admin_str)?;
-                        (TeeTypeParse::TeePool(pool_id), admin)
+                match &tee.pebpmn_type {
+                    PeBpmnTypeParse::Pool(pool) => {
+                        self.parse_pebpmn_pool(*pool, &tee, &pe_bpmn.meta, enforce_reach_end, "tee")
                     }
-                    PeBpmnSubType::Tasks(tasks) => {
-                        let task_ids = tasks
-                            .iter()
-                            .map(|task_str| self.find_node_id_or_error(task_str, "tee-tasks"))
-                            .collect::<Result<Vec<NodeId>, _>>()?;
-
-                        let first_node_id = task_ids.first().ok_or_else(|| self.tee_admin_missing_error("In tee-tasks, the pool of the tee-tasks is used as the tee-admin by default"))?;
-                        let admin = self.graph.nodes[*first_node_id].pool;
-
-                        if let Some(admin_str) = &lexer_tee.admin {
-                            let node_id = self.find_node_id_or_error(admin_str, "tee-admin")?;
-                            let tee_admin = self.graph.nodes[node_id].pool;
-                            if admin != tee_admin {
-                                return Err(vec![(
-                                    format!(
-                                        "The specified tee-admin with ID {admin_str} does not match the pool of the tee-tasks. In tee-tasks, the pool of the tee-tasks is used as the tee-admin by default. If you specify an admin explicitly, it must be the same as the task's pool."
-                                    ),
-                                    self.context.current_token_coordinate,
-                                    Level::Error,
-                                )]);
-                            }
-                        }
-                        (TeeTypeParse::TeeTasks(task_ids), admin)
-                    }
-                };
-
-                // For all tee-in-protect nodes that the admin either owns or are unassigned, give the admin visibility A to all the SDEs those nodes carry.
-                self.graph.pools[admin]
-                    .tee_admin_has_pe_bpmn_visibility_A_for
-                    .extend(
-                        in_protect
-                            .iter()
-                            .filter(|tee| tee.rv_source.is_none() || tee.rv_source == Some(admin))
-                            .flat_map(|tee| {
-                                self.graph.nodes[tee.node]
-                                    .get_node_transported_data()
-                                    .iter()
-                                    .copied()
-                            }),
-                    );
-
-                // For all tee-out-unprotect nodes that the admin either owns or are unassigned, give the admin visibility H to all the SDEs those nodes carry.
-                self.graph.pools[admin]
-                    .tee_admin_has_pe_bpmn_visibility_H_for
-                    .extend(
-                        out_unprotect
-                            .iter()
-                            .filter(|tee| tee.rv_source.is_none() || tee.rv_source == Some(admin))
-                            .flat_map(|tee| {
-                                self.graph.nodes[tee.node]
-                                    .get_node_transported_data()
-                                    .iter()
-                                    .copied()
-                            }),
-                    );
-
-                let data_without_protection = self.parse_tee_data_nodes(
-                    &lexer_tee.data_without_protection,
-                    "data-without-protection",
-                )?;
-
-                let data_already_protected = self.parse_tee_data_nodes(
-                    &lexer_tee.data_already_protected,
-                    "data-already-protected",
-                )?;
-
-                let external_root_access = lexer_tee.external_root_access.iter().map(|pool_str| {
-                    self.context.pool_id_matcher.find_pool_id(pool_str).ok_or_else(|| vec![(
-                        format!("external_root_access pool with ID ({pool_str}) was not found. Have you defined it?"),
-                        self.context.current_token_coordinate,
-                        Level::Error,
-                    )])
-                }).collect::<Result<Vec<PoolId>, _>>()?;
-
-                let all_node_ids_in_tee = std::iter::empty::<&TeeNodeParse>()
-                    .chain(in_protect.iter())
-                    .chain(in_unprotect.iter())
-                    .chain(out_protect.iter())
-                    .chain(out_unprotect.iter())
-                    .map(|tee_node| tee_node.node)
-                    .collect_vec();
-
-                if !all_node_ids_in_tee.iter().all_unique() {
-                    return Err(vec![(
-                        "Each ID may only be used once within the entire [pe-bpmn] block."
-                            .to_string(),
-                        self.context.current_token_coordinate,
-                        Level::Error,
-                    )]);
-                }
-
-                let all_sdes_in_tee = all_node_ids_in_tee
-                    .iter()
-                    .flat_map(|&id| {
-                        self.graph.nodes[id]
-                            .get_node_transported_data()
-                            .iter()
-                            .copied()
-                    })
-                    .collect::<HashSet<SdeId>>();
-
-                for pool in &external_root_access {
-                    self.graph.pools[*pool]
-                        .tee_external_root_access
-                        .extend(all_sdes_in_tee.iter().copied());
-                }
-
-                let tee = TeeParse {
-                    tee_type,
-                    in_protect,
-                    in_unprotect,
-                    out_protect,
-                    out_unprotect,
-                    data_without_protection,
-                    data_already_protected,
-                    admin,
-                    external_root_access,
-                };
-
-                match &tee.tee_type {
-                    TeeTypeParse::TeePool(pool) => {
-                        self.tee_pool(*pool, &tee, &pe_bpmn.meta, enforce_reach_end)
-                    }
-                    TeeTypeParse::TeeTasks(tasks) => {
+                    PeBpmnTypeParse::Tasks(tasks) => {
                         for task in tasks {
                             if let NodeType::RealNode {
                                 pe_bpmn_hides_protection_operations,
@@ -340,26 +208,195 @@ impl Parser {
                                 *pe_bpmn_hides_protection_operations = true;
                             }
                         }
-                        self.tee_tasks(tasks.clone(), &tee, &pe_bpmn.meta, enforce_reach_end)
+                        self.parse_pebpmn_tasks(
+                            tasks.clone(),
+                            &tee,
+                            &pe_bpmn.meta,
+                            enforce_reach_end,
+                            "tee",
+                        )
                     }
                 }?
             }
-            PeBpmnType::Mpc(_) => {
-                return Err(vec![(
-                    "MPC is not supported yet.".to_string(),
-                    self.context.current_token_coordinate,
-                    Level::Error,
-                )]);
+            PeBpmnType::Mpc(lexer_mpc) => {
+                let mpc = self.parse_tee_or_mpc(lexer_mpc.common, "mpc")?;
+
+                match &mpc.pebpmn_type {
+                    PeBpmnTypeParse::Pool(pool) => {
+                        self.parse_pebpmn_pool(*pool, &mpc, &pe_bpmn.meta, enforce_reach_end, "mpc")
+                    }
+                    PeBpmnTypeParse::Tasks(tasks) => {
+                        for task in tasks {
+                            if let NodeType::RealNode {
+                                pe_bpmn_hides_protection_operations,
+                                ..
+                            } = &mut self.graph.nodes[*task].node_type
+                            {
+                                *pe_bpmn_hides_protection_operations = true;
+                            }
+                        }
+                        self.parse_pebpmn_tasks(
+                            tasks.clone(),
+                            &mpc,
+                            &pe_bpmn.meta,
+                            enforce_reach_end,
+                            "mpc",
+                        )
+                    }
+                }?
             }
         }
         Ok(())
     }
 
-    fn parse_tee_nodes(
+    fn parse_tee_or_mpc(
         &mut self,
-        entries: &[TeeNode],
+        lexer: ComputationCommon,
+        tee_or_mpc: &str,
+    ) -> Result<ComputationCommonParse, ParseError> {
+        let in_protect = self.parse_pebpmn_nodes(&lexer.in_protect, "incoming")?;
+        let in_unprotect = self.parse_pebpmn_nodes(&lexer.in_unprotect, "incoming")?;
+        let out_protect = self.parse_pebpmn_nodes(&lexer.out_protect, "outgoing")?;
+        let out_unprotect = self.parse_pebpmn_nodes(&lexer.out_unprotect, "outgoing")?;
+
+        let (pebpmn_type, admin) = match lexer.pebpmn_type {
+            PeBpmnSubType::Pool(pool_str) => {
+                let pool_id = self.find_pool_id_or_error(&pool_str)?;
+                let admin_str = lexer
+                    .admin
+                    .as_ref()
+                    .ok_or_else(|| self.admin_missing_error(tee_or_mpc, ""))?;
+                let admin = self.find_pool_id_or_error(admin_str)?;
+                (PeBpmnTypeParse::Pool(pool_id), admin)
+            }
+            PeBpmnSubType::Tasks(tasks) => {
+                let task_ids = tasks
+                    .iter()
+                    .map(|task_str| {
+                        self.find_node_id_or_error(task_str, &format!("{tee_or_mpc}-tasks"))
+                    })
+                    .collect::<Result<Vec<NodeId>, _>>()?;
+
+                let first_node_id = task_ids.first().ok_or_else(|| self.admin_missing_error(tee_or_mpc, &format!("In {tee_or_mpc}-tasks, the pool of the {tee_or_mpc}-tasks is used as the {tee_or_mpc}-admin by default")))?;
+                let admin = self.graph.nodes[*first_node_id].pool;
+
+                if let Some(admin_str) = &lexer.admin {
+                    let node_id =
+                        self.find_node_id_or_error(admin_str, &format!("{tee_or_mpc}-admin"))?;
+                    if admin != self.graph.nodes[node_id].pool {
+                        return Err(vec![(
+                            format!(
+                                "The specified {tee_or_mpc}-admin with ID {admin_str} does not match the pool of the {tee_or_mpc}-tasks. In {tee_or_mpc}-tasks, the pool of the {tee_or_mpc}-tasks is used as the {tee_or_mpc}-admin by default. If you specify an admin explicitly, it must be the same as the task's pool."
+                            ),
+                            self.context.current_token_coordinate,
+                            Level::Error,
+                        )]);
+                    }
+                }
+                (PeBpmnTypeParse::Tasks(task_ids), admin)
+            }
+        };
+
+        // For all in-protect nodes that the admin either owns or are unassigned, give the admin visibility A to all the SDEs those nodes carry.
+        self.graph.pools[admin]
+            .tee_admin_has_pe_bpmn_visibility_A_for
+            .extend(
+                in_protect
+                    .iter()
+                    .filter(|data_flow_annotation| {
+                        data_flow_annotation.rv_source.is_none()
+                            || data_flow_annotation.rv_source == Some(admin)
+                    })
+                    .flat_map(|data_flow_annotation| {
+                        self.graph.nodes[data_flow_annotation.node]
+                            .get_node_transported_data()
+                            .iter()
+                            .copied()
+                    }),
+            );
+
+        // For all out-unprotect nodes that the admin either owns or are unassigned, give the admin visibility H to all the SDEs those nodes carry.
+        self.graph.pools[admin]
+            .tee_admin_has_pe_bpmn_visibility_H_for
+            .extend(
+                out_unprotect
+                    .iter()
+                    .filter(|data_flow_annotation| {
+                        data_flow_annotation.rv_source.is_none()
+                            || data_flow_annotation.rv_source == Some(admin)
+                    })
+                    .flat_map(|data_flow_annotation| {
+                        self.graph.nodes[data_flow_annotation.node]
+                            .get_node_transported_data()
+                            .iter()
+                            .copied()
+                    }),
+            );
+
+        let data_without_protection =
+            self.parse_data_nodes(&lexer.data_without_protection, "data-without-protection")?;
+
+        let data_already_protected =
+            self.parse_data_nodes(&lexer.data_already_protected, "data-already-protected")?;
+
+        let external_root_access = lexer.external_root_access.iter().map(|pool_str| {
+                    self.context.pool_id_matcher.find_pool_id(pool_str).ok_or_else(|| vec![(
+                        format!("external_root_access pool with ID ({pool_str}) was not found. Have you defined it?"),
+                        self.context.current_token_coordinate,
+                        Level::Error,
+                    )])
+                }).collect::<Result<Vec<PoolId>, _>>()?;
+
+        let all_node_ids = std::iter::empty::<&DataFlowAnnotation>()
+            .chain(in_protect.iter())
+            .chain(in_unprotect.iter())
+            .chain(out_protect.iter())
+            .chain(out_unprotect.iter())
+            .map(|data_flow_annotation| data_flow_annotation.node)
+            .collect_vec();
+
+        if !all_node_ids.iter().all_unique() {
+            return Err(vec![(
+                "Each ID may only be used once within the entire [pe-bpmn] block.".to_string(),
+                self.context.current_token_coordinate,
+                Level::Error,
+            )]);
+        }
+
+        let all_sdes = all_node_ids
+            .iter()
+            .flat_map(|&id| {
+                self.graph.nodes[id]
+                    .get_node_transported_data()
+                    .iter()
+                    .copied()
+            })
+            .collect::<HashSet<SdeId>>();
+
+        for pool in &external_root_access {
+            self.graph.pools[*pool]
+                .tee_external_root_access
+                .extend(all_sdes.iter().copied());
+        }
+
+        Ok(ComputationCommonParse {
+            pebpmn_type,
+            in_protect,
+            in_unprotect,
+            out_protect,
+            out_unprotect,
+            data_without_protection,
+            data_already_protected,
+            admin,
+            external_root_access,
+        })
+    }
+
+    fn parse_pebpmn_nodes(
+        &mut self,
+        entries: &[DataFlowAnnotationLexer],
         label: &str,
-    ) -> Result<Vec<TeeNodeParse>, ParseError> {
+    ) -> Result<Vec<DataFlowAnnotation>, ParseError> {
         entries
             .iter()
             .map(|entry| {
@@ -377,7 +414,7 @@ impl Parser {
                     None
                 };
 
-                Ok(TeeNodeParse { node: node_id, rv_source })
+                Ok(DataFlowAnnotation { node: node_id, rv_source })
             })
             .collect()
     }
@@ -405,15 +442,15 @@ impl Parser {
             })
     }
 
-    fn tee_admin_missing_error(&self, optional_text: &str) -> ParseError {
+    fn admin_missing_error(&self, tee_or_mpc: &str, optional_text: &str) -> ParseError {
         vec![(
-            "tee-admin is missing. Please define it.".to_string() + optional_text,
+            format!("{tee_or_mpc}-admin is missing. Please define it.") + optional_text,
             self.context.current_token_coordinate,
             Level::Error,
         )]
     }
 
-    fn parse_tee_data_nodes(
+    fn parse_data_nodes(
         &self,
         node_ids: &[String],
         kind: &str,
@@ -441,50 +478,61 @@ impl Parser {
             .collect()
     }
 
-    fn tee_pool(
+    fn parse_pebpmn_pool(
         &mut self,
         pool_id: PoolId,
-        tee: &TeeParse,
+        common: &ComputationCommonParse,
         meta: &PeBpmnMeta,
         enforce_reach_end: bool,
+        tee_or_mpc: &str,
     ) -> Result<(), ParseError> {
         self.graph.pools[pool_id].fill_color = meta.fill_color.clone();
         self.graph.pools[pool_id].stroke_color = meta.stroke_color.clone();
 
-        if tee.admin == pool_id {
+        if common.admin == pool_id {
             return Err(vec![(
-                "The pool already represents the TEE. It cannot represent the administrator at the same time. Change the pool id of tee-pool or tee-admin.".to_string(),
+                format!(
+                    "The pool already represents the {tee_or_mpc}. It cannot represent the administrator at the same time. Change the pool id of {tee_or_mpc}-pool or {tee_or_mpc}-admin."
+                ),
                 self.context.current_token_coordinate,
                 Level::Error,
             )]);
         }
 
-        if tee
+        if common
             .in_protect
             .iter()
-            .any(|tee_node| self.graph.nodes[tee_node.node].pool == pool_id)
+            .any(|node| self.graph.nodes[node.node].pool == pool_id)
         {
             return Err(vec![(
-                "'tee-in-protect' is not allowed inside tee pool.".to_string(),
+                format!("'{tee_or_mpc}-in-protect' is not allowed inside {tee_or_mpc} pool."),
                 self.context.current_token_coordinate,
                 Level::Error,
             )]);
         }
 
-        if tee
+        if common
             .out_unprotect
             .iter()
             .any(|tee_node| self.graph.nodes[tee_node.node].pool == pool_id)
         {
             return Err(vec![(
-                "'tee-out-unprotect' is not allowed inside tee pool.".to_string(),
+                format!("'{tee_or_mpc}-out-unprotect' is not allowed inside {tee_or_mpc} pool."),
                 self.context.current_token_coordinate,
                 Level::Error,
             )]);
         }
 
-        let mut check_protected = |protect_nodes: &Vec<TeeNodeParse>,
-                                   unprotect_nodes: &Vec<TeeNodeParse>,
+        let protection = match tee_or_mpc {
+            "tee" => PeBpmnProtection::Tee,
+            "mpc" => PeBpmnProtection::Mpc,
+            _ => {
+                unreachable!()
+            }
+        };
+
+        let mut check_protected = |protect_nodes: &Vec<DataFlowAnnotation>,
+                                   unprotect_nodes: &Vec<DataFlowAnnotation>,
                                    is_reverse: bool|
          -> Result<(), ParseError> {
             let unprotected_nodes = unprotect_nodes.iter().map(|n| n.node).collect_vec();
@@ -500,7 +548,7 @@ impl Parser {
                     is_reverse,
                     meta,
                     &unprotected_nodes,
-                    &PeBpmnProtection::Tee,
+                    &protection,
                     |sde_id| node_transported_data.contains(sde_id),
                     true,
                     enforce_reach_end,
@@ -509,18 +557,19 @@ impl Parser {
             Ok(())
         };
 
-        check_protected(&tee.in_protect, &tee.in_unprotect, false)?;
-        check_protected(&tee.out_protect, &tee.out_unprotect, true)?;
+        check_protected(&common.in_protect, &common.in_unprotect, false)?;
+        check_protected(&common.out_protect, &common.out_unprotect, true)?;
 
         Ok(())
     }
 
-    fn tee_tasks(
+    fn parse_pebpmn_tasks(
         &mut self,
         tasks: Vec<NodeId>,
-        tee: &TeeParse,
+        tee: &ComputationCommonParse,
         meta: &PeBpmnMeta,
         enforce_reach_end: bool,
+        tee_or_mpc: &str,
     ) -> Result<(), ParseError> {
         let end_out = tee
             .out_unprotect
@@ -529,7 +578,9 @@ impl Parser {
             .collect_vec();
         if !tee.out_protect.is_empty() {
             return Err(vec![(
-                "tee-tasks does not allow the tee-out-protect attribute, as created data is implicitly protected. You may opt-out of encryption using the tee-already-protected attribute.".to_string(),
+                format!(
+                    "{tee_or_mpc}-tasks does not allow the {tee_or_mpc}-out-protect attribute, as created data is implicitly protected. You may opt-out of encryption using the {tee_or_mpc}-already-protected attribute."
+                ),
                 self.context.current_token_coordinate,
                 Level::Error,
             )]);
@@ -542,31 +593,41 @@ impl Parser {
             .collect_vec();
         if !tee.in_unprotect.is_empty() {
             return Err(vec![(
-                "tee-tasks does not allow the tee-in-unprotect attribute, as created data is implicitly protected. You may opt-out of encryption using the tee-already-protected attribute.".to_string(),
+                format!(
+                    "{tee_or_mpc}-tasks does not allow the {tee_or_mpc}-in-unprotect attribute, as created data is implicitly protected. You may opt-out of encryption using the {tee_or_mpc}-already-protected attribute."
+                ),
                 self.context.current_token_coordinate,
                 Level::Error,
             )]);
         }
 
-        let Some(_) = tasks
-            .iter()
-            .map(|id| self.graph.nodes[*id].pool)
-            .dedup()
-            .exactly_one()
-            .ok()
-        else {
-            return Err(vec![(
-                "All tee-tasks must be in the same pool.".to_string(),
-                self.context.current_token_coordinate,
-                Level::Error,
-            )]);
-        };
+        let protection = match tee_or_mpc {
+            "tee" => {
+                let unique_pools: Vec<_> = tasks
+                    .iter()
+                    .map(|id| self.graph.nodes[*id].pool)
+                    .unique()
+                    .collect();
 
+                if unique_pools.len() != 1 {
+                    return Err(vec![(
+                        "All tee-tasks must be in the same pool.".to_string(),
+                        self.context.current_token_coordinate,
+                        Level::Error,
+                    )]);
+                }
+                PeBpmnProtection::Tee
+            }
+            "mpc" => PeBpmnProtection::Mpc,
+            _ => {
+                unreachable!()
+            }
+        };
         for node_id in tasks {
             let node = &mut self.graph.nodes[node_id];
             node.fill_color = meta.fill_color.clone();
             node.stroke_color = meta.stroke_color.clone();
-            node.set_pebpmn_protection(PeBpmnProtection::Tee);
+            node.set_pebpmn_protection(protection.clone());
 
             for (is_reverse, ends) in [(false, end_out.as_slice()), (true, end_in.as_slice())] {
                 self.check_protection_paths(
@@ -574,7 +635,7 @@ impl Parser {
                     is_reverse,
                     meta,
                     ends,
-                    &PeBpmnProtection::Tee,
+                    &protection,
                     |sde_id| !tee.data_without_protection.contains(sde_id),
                     false,
                     enforce_reach_end,

@@ -93,6 +93,7 @@ pub struct DataAux {
 pub enum PeBpmnProtection {
     SecureChannel,
     Tee,
+    Mpc,
 }
 
 #[derive(Debug, Clone, Eq, PartialEq)]
@@ -764,7 +765,6 @@ pub enum Token {
     // == Real Tokens ==
     // =================
     // Usually the order is (regex-ish): Text? (Id|Flow)*
-
     /// Any freeform test. This should always come first.
     Text(String), // `# This is freeform test ->this-is-not`
 
@@ -779,11 +779,9 @@ pub enum Token {
     // type. Usually the statement type is represented by the `StatementCallback`, but for
     // additional meta information these virtual tokens are used (to avoid having too manu
     // `StatementCallback` functions around with otherwise duplicated code.
-
     GatewayType(GatewayType),
     DataKind(DataType, bool),
     UsedShorthandSyntax,
-
 
     // ======================
     // == Extension Tokens ==
@@ -1132,7 +1130,8 @@ impl<'a> Lexer<'a> {
                     let tc = self.current_coord();
                     self.advance();
                     self.sas.next_statement(tc, self.position, to_event)?;
-                    self.sas.add_implicit_fragment(tc, self.position, Token::UsedShorthandSyntax);
+                    self.sas
+                        .add_implicit_fragment(tc, self.position, Token::UsedShorthandSyntax);
                 }
                 Some('-') if self.sas.allow_new_statement => {
                     let tc = self.current_coord();
@@ -1144,7 +1143,8 @@ impl<'a> Lexer<'a> {
                     let tc = self.current_coord();
                     self.advance();
                     self.sas.next_statement(tc, self.position, to_event_end)?;
-                    self.sas.add_implicit_fragment(tc, self.position, Token::UsedShorthandSyntax);
+                    self.sas
+                        .add_implicit_fragment(tc, self.position, Token::UsedShorthandSyntax);
                 }
                 Some('X') if self.sas.allow_new_statement => {
                     let tc = self.current_coord();

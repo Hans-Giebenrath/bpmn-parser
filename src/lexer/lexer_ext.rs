@@ -22,30 +22,27 @@ pub(crate) struct SecureChannel {
 }
 
 #[derive(Debug, Clone, PartialEq, Default)]
-pub(crate) struct Mpc {
-    pub mpc_type: PeBpmnSubType,
-    pub in_protect: Vec<TeeNode>,
-    pub in_unprotect: Vec<TeeNode>,
-    pub out_protect: Vec<TeeNode>,
-    pub out_unprotect: Vec<TeeNode>,
-    pub data_without_protection: Vec<String>,
-    pub data_already_protected: Vec<String>,
-    pub admin: Option<String>,
-    pub external_root_access: Vec<String>,
-    // TODO: Add the correct type and usage for this field
-    // pub mpc_in_protect_pre_sent: <Type>,
-    // pub mpc_in_protect_post_received: <Type>,
-    // pub mpc_in_channel: <Type>,
-    // pub mpc_out_channel: <Type>,
+pub struct Tee {
+    pub common: ComputationCommon,
 }
 
 #[derive(Debug, Clone, PartialEq, Default)]
-pub(crate) struct Tee {
-    pub tee_type: PeBpmnSubType,
-    pub in_protect: Vec<TeeNode>,
-    pub in_unprotect: Vec<TeeNode>,
-    pub out_protect: Vec<TeeNode>,
-    pub out_unprotect: Vec<TeeNode>,
+pub struct Mpc {
+    pub common: ComputationCommon,
+    // TODO: Add the correct type and usage for this field
+    // pub in_protect_pre_sent: <Type>,
+    // pub in_protect_post_received: <Type>,
+    // pub in_channel: <Type>,
+    // pub out_channel: <Type>,
+}
+
+#[derive(Debug, Clone, PartialEq, Default)]
+pub(crate) struct ComputationCommon {
+    pub pebpmn_type: PeBpmnSubType,
+    pub in_protect: Vec<DataFlowAnnotationLexer>,
+    pub in_unprotect: Vec<DataFlowAnnotationLexer>,
+    pub out_protect: Vec<DataFlowAnnotationLexer>,
+    pub out_unprotect: Vec<DataFlowAnnotationLexer>,
     pub data_without_protection: Vec<String>,
     pub data_already_protected: Vec<String>,
     pub admin: Option<String>,
@@ -65,7 +62,7 @@ impl Default for PeBpmnSubType {
 }
 
 #[derive(Debug, Clone, PartialEq)]
-pub struct TeeNode {
+pub struct DataFlowAnnotationLexer {
     pub node: String,
     pub rv: Option<String>,
 }
@@ -150,7 +147,7 @@ fn assemble_tee_or_mpc(
     is_pool: bool,
 ) -> AResult {
     let ids = parse_optional_ids(&mut tokens)?;
-    let sub_type = if !ids.is_empty() {
+    let pebpmn_type = if !ids.is_empty() {
         match (is_pool, ids.as_slice()) {
             (true, [single_id]) => PeBpmnSubType::Pool(single_id.to_string()),
             (true, _) => {
@@ -203,7 +200,7 @@ fn assemble_tee_or_mpc(
                         continue;
                     }
                     "in-protect" => {
-                        in_protect.push(parse_tee_node(&mut tokens, tc, true, true)?);
+                        in_protect.push(parse_data_flow_annotation(&mut tokens, tc, true, true)?);
                         continue;
                     }
                     "in-unprotect" => {
@@ -215,7 +212,12 @@ fn assemble_tee_or_mpc(
                                 ),
                             ));
                         }
-                        in_unprotect.push(parse_tee_node(&mut tokens, tc, true, false)?);
+                        in_unprotect.push(parse_data_flow_annotation(
+                            &mut tokens,
+                            tc,
+                            true,
+                            false,
+                        )?);
                         continue;
                     }
                     "out-protect" => {
@@ -227,11 +229,16 @@ fn assemble_tee_or_mpc(
                                 ),
                             ));
                         }
-                        out_protect.push(parse_tee_node(&mut tokens, tc, false, true)?);
+                        out_protect.push(parse_data_flow_annotation(&mut tokens, tc, false, true)?);
                         continue;
                     }
                     "out-unprotect" => {
-                        out_unprotect.push(parse_tee_node(&mut tokens, tc, false, false)?);
+                        out_unprotect.push(parse_data_flow_annotation(
+                            &mut tokens,
+                            tc,
+                            false,
+                            false,
+                        )?);
                         continue;
                     }
                     "admin" => {
@@ -324,32 +331,28 @@ fn assemble_tee_or_mpc(
         ));
     }
 
+    let computation_common = ComputationCommon {
+        pebpmn_type,
+        in_protect,
+        in_unprotect,
+        out_protect,
+        out_unprotect,
+        data_without_protection,
+        data_already_protected,
+        admin,
+        external_root_access,
+    };
+
     return match pe_bpmn_type {
         PeBpmnType::Tee(_) => Ok(Statement::PeBpmn(PeBpmn {
             r#type: PeBpmnType::Tee(Tee {
-                tee_type: sub_type,
-                in_protect,
-                in_unprotect,
-                out_protect,
-                out_unprotect,
-                data_without_protection,
-                data_already_protected,
-                admin,
-                external_root_access,
+                common: computation_common,
             }),
             meta: pe_bpmn_meta,
         })),
         PeBpmnType::Mpc(_) => Ok(Statement::PeBpmn(PeBpmn {
             r#type: PeBpmnType::Mpc(Mpc {
-                mpc_type: sub_type,
-                in_protect,
-                in_unprotect,
-                out_protect,
-                out_unprotect,
-                data_without_protection,
-                data_already_protected,
-                admin,
-                external_root_access,
+                common: computation_common,
             }),
             meta: pe_bpmn_meta,
         })),
@@ -586,12 +589,12 @@ impl<'a> Lexer<'a> {
     }
 }
 
-fn parse_tee_node(
+fn parse_data_flow_annotation(
     tokens: &mut Tokens,
     tc: TokenCoordinate,
     is_in: bool,
     is_protected: bool,
-) -> Result<TeeNode, (TokenCoordinate, String)> {
+) -> Result<DataFlowAnnotationLexer, (TokenCoordinate, String)> {
     let id = match tokens.next() {
         Some((_, Token::Id(id))) => Ok(id),
         Some((tc, Token::Separator)) => Err((tc, "Missing ID. Add an ID.".to_string())),
@@ -620,7 +623,7 @@ fn parse_tee_node(
 
     check_end_block(tokens.next())?;
 
-    let result = TeeNode {
+    let result = DataFlowAnnotationLexer {
         node: id,
         rv: arg.flatten(),
     };
