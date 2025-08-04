@@ -3,7 +3,6 @@
 set -euo pipefail
 
 dir="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
-
 pushd "$dir"
 
 
@@ -15,10 +14,14 @@ cat <<EOF >"$adoc_file"
 :icons: font
 
 EOF
-for f in doc/test/t0016.bpmd; do
+for f in doc/test/t0022.bpmd; do
     {
+        basename=$(basename "$f" .bpmd)
+        csv_file="$dir/${basename}.csv"
+        correct_csv_file="$dir/${basename}.csv.correct"
+
         if grep -q '// GENERATE VISIBILITY TABLE' "$f"; then
-            cargo run -- -i "$f" -o "${f%.bpmd}.xml" -v "${f%.bpmd}.csv" && \
+            cargo run -- -i "$f" -o "${f%.bpmd}.xml" -v "$csv_file" && \
             echo "finished generating ${f%.bpmd}.xml, now generating the png" && \
             doc/node_modules/.bin/bpmn-to-image "${f%.bpmd}.xml":"${f%.bpmd}.png" && \
             : #rm "${f%.bpmd}.xml"
@@ -28,30 +31,70 @@ for f in doc/test/t0016.bpmd; do
             doc/node_modules/.bin/bpmn-to-image "${f%.bpmd}.xml":"${f%.bpmd}.png" && \
             : #rm "${f%.bpmd}.xml"
         fi
-    } &
-    if grep -q '// GENERATE VISIBILITY TABLE' "$f"; then
+
         cat <<EOF >>"$adoc_file"
 == $(basename "$f")
 image::$(basename "$f" .bpmd).png[width=60%]
+EOF
+
+        if grep -q '// GENERATE VISIBILITY TABLE' "$f"; then
+            if [[ -f "$correct_csv_file" ]]; then
+                if diff -q "$csv_file" "$correct_csv_file" > /dev/null; then
+                    echo "✓ Visibility table for $basename matches reference."
+                else
+                    echo "⚠ Visibility table for $basename differs from reference!"
+                    cat <<EOF >>"$adoc_file"
+[WARNING]
+====
+The visibility table differs from the reference: $(basename "$correct_csv_file")
+
+Make sure that:
+
+- The generated output in $(basename "$csv_file") is correct and expected.
+- You're intentionally updating the reference.
+
+If so, update it with:
+
+  cp "$(basename "$csv_file")" "$(basename "$correct_csv_file")"
+
+====
+EOF
+                fi
+            else
+                echo "⚠ No reference CSV found: $correct_csv_file. Generating warning."
+                cat <<EOF >>"$adoc_file"
+[WARNING]
+====
+No reference visibility table found: $(basename "$correct_csv_file")
+
+Make sure that:
+
+- The generated output in $(basename "$csv_file") is correct and expected.
+- You're intentionally updating the reference.
+
+If so, run:
+  
+  cp "$(basename "$csv_file")" "$(basename "$correct_csv_file")"
+
+====
+EOF
+            fi
+
+            cat <<EOF >>"$adoc_file"
 [%header,format=csv]
 |===
-include::$(basename "$f" .bpmd).csv[]
+include::$csv_file[]
 |===
-[source]
-----
-include::$(basename "$f")[]
-----
 EOF
-    else
+        fi
+
         cat <<EOF >>"$adoc_file"
-== $(basename "$f")
-image::$(basename "$f" .bpmd).png[width=60%]
 [source]
 ----
 include::$(basename "$f")[]
 ----
 EOF
-    fi
+    } &
 done
 
 wait
