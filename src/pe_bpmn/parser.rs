@@ -2,7 +2,7 @@ use annotate_snippets::Level;
 use itertools::Itertools;
 use std::collections::HashSet;
 
-use crate::common::graph::PoolId;
+use crate::common::graph::{LaneId, PoolId};
 use crate::common::node::NodeType;
 use crate::lexer::{ComputationCommon, DataFlowAnnotationLexer, PeBpmnProtection, PeBpmnSubType};
 use crate::parser::Parser;
@@ -33,6 +33,7 @@ pub(crate) struct ComputationCommonParse {
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) enum PeBpmnTypeParse {
     Pool(PoolId),
+    Lane { pool_id: PoolId, lane_id: LaneId },
     Tasks(Vec<NodeId>),
 }
 
@@ -118,6 +119,7 @@ impl Parser {
                         |sde_id| permitted_sdes.is_empty() || permitted_sdes.contains(sde_id),
                         false,
                         enforce_reach_end,
+                        "secure-channel",
                     )?,
                     (Some(sender), None) => self.check_protection_paths(
                         sender,
@@ -128,6 +130,7 @@ impl Parser {
                         |sde_id| permitted_sdes.is_empty() || permitted_sdes.contains(sde_id),
                         false,
                         false,
+                        "secure-channel",
                     )?,
                     (None, Some(receiver)) => self.check_protection_paths(
                         receiver,
@@ -138,6 +141,7 @@ impl Parser {
                         |sde_id| permitted_sdes.is_empty() || permitted_sdes.contains(sde_id),
                         false,
                         false,
+                        "secure-channel",
                     )?,
                     (None, None) => {
                         if permitted_sdes.is_empty() {
@@ -195,9 +199,22 @@ impl Parser {
                 let tee = self.parse_tee_or_mpc(lexer_tee.common, "tee")?;
 
                 match &tee.pebpmn_type {
-                    PeBpmnTypeParse::Pool(pool) => {
-                        self.parse_pebpmn_pool(*pool, &tee, &pe_bpmn.meta, enforce_reach_end, "tee")
-                    }
+                    PeBpmnTypeParse::Pool(pool_id) => self.parse_pebpmn_participant(
+                        *pool_id,
+                        &tee,
+                        &pe_bpmn.meta,
+                        enforce_reach_end,
+                        "tee",
+                        None,
+                    ),
+                    PeBpmnTypeParse::Lane { pool_id, lane_id } => self.parse_pebpmn_participant(
+                        *pool_id,
+                        &tee,
+                        &pe_bpmn.meta,
+                        enforce_reach_end,
+                        "tee",
+                        Some(lane_id),
+                    ),
                     PeBpmnTypeParse::Tasks(tasks) => {
                         for task in tasks {
                             if let NodeType::RealNode {
@@ -222,9 +239,22 @@ impl Parser {
                 let mpc = self.parse_tee_or_mpc(lexer_mpc.common, "mpc")?;
 
                 match &mpc.pebpmn_type {
-                    PeBpmnTypeParse::Pool(pool) => {
-                        self.parse_pebpmn_pool(*pool, &mpc, &pe_bpmn.meta, enforce_reach_end, "mpc")
-                    }
+                    PeBpmnTypeParse::Pool(pool_id) => self.parse_pebpmn_participant(
+                        *pool_id,
+                        &mpc,
+                        &pe_bpmn.meta,
+                        enforce_reach_end,
+                        "mpc",
+                        None,
+                    ),
+                    PeBpmnTypeParse::Lane { pool_id, lane_id } => self.parse_pebpmn_participant(
+                        *pool_id,
+                        &mpc,
+                        &pe_bpmn.meta,
+                        enforce_reach_end,
+                        "mpc",
+                        Some(lane_id),
+                    ),
                     PeBpmnTypeParse::Tasks(tasks) => {
                         for task in tasks {
                             if let NodeType::RealNode {
@@ -269,6 +299,27 @@ impl Parser {
                 let admin = self.find_pool_id_or_error(admin_str)?;
                 (PeBpmnTypeParse::Pool(pool_id), admin)
             }
+            PeBpmnSubType::Lane(lane_str) => {
+                let (pool_id, lane_id) = self.context.pool_id_matcher.find_pool_and_lane_id_by_lane_name_fuzzy(&self.graph, &lane_str).ok_or_else(|| vec![(
+                    format!("Lane with name {lane_str} was not found in any pool. Have you defined it?"),
+                    self.context.current_token_coordinate,
+                    Level::Error,
+                )])?;
+                if let Some(admin_str) = &lexer.admin {
+                    let node_id =
+                        self.find_node_id_or_error(admin_str, &format!("{tee_or_mpc}-admin"))?;
+                    if pool_id != self.graph.nodes[node_id].pool {
+                        return Err(vec![(
+                            format!(
+                                "The specified {tee_or_mpc}-admin with ID {admin_str} does not match the pool of the {tee_or_mpc}-lane. In {tee_or_mpc}-lane, the pool of the {tee_or_mpc}-lane is used as the {tee_or_mpc}-admin by default. If you specify an admin explicitly, it must be the same as the lane's pool."
+                            ),
+                            self.context.current_token_coordinate,
+                            Level::Error,
+                        )])?;
+                    }
+                }
+                (PeBpmnTypeParse::Lane { pool_id, lane_id }, pool_id)
+            }
             PeBpmnSubType::Tasks(tasks) => {
                 let task_ids = tasks
                     .iter()
@@ -290,7 +341,7 @@ impl Parser {
                             ),
                             self.context.current_token_coordinate,
                             Level::Error,
-                        )]);
+                        )])?;
                     }
                 }
                 (PeBpmnTypeParse::Tasks(task_ids), admin)
@@ -450,11 +501,7 @@ impl Parser {
         )]
     }
 
-    fn parse_data_nodes(
-        &self,
-        node_ids: &[String],
-        kind: &str,
-    ) -> Result<Vec<SdeId>, ParseError> {
+    fn parse_data_nodes(&self, node_ids: &[String], kind: &str) -> Result<Vec<SdeId>, ParseError> {
         node_ids
             .iter()
             .map(|data_str| {
@@ -478,49 +525,82 @@ impl Parser {
             .collect()
     }
 
-    fn parse_pebpmn_pool(
+    fn parse_pebpmn_participant(
         &mut self,
         pool_id: PoolId,
         common: &ComputationCommonParse,
         meta: &PeBpmnMeta,
         enforce_reach_end: bool,
         tee_or_mpc: &str,
+        lane_id: Option<&LaneId>,
     ) -> Result<(), ParseError> {
-        self.graph.pools[pool_id].fill_color = meta.fill_color.clone();
-        self.graph.pools[pool_id].stroke_color = meta.stroke_color.clone();
-
-        if common.admin == pool_id {
-            return Err(vec![(
-                format!(
-                    "The pool already represents the {tee_or_mpc}. It cannot represent the administrator at the same time. Change the pool id of {tee_or_mpc}-pool or {tee_or_mpc}-admin."
-                ),
-                self.context.current_token_coordinate,
-                Level::Error,
-            )]);
+        if let Some(lane_id) = lane_id {
+            self.graph.pools[pool_id].lanes[*lane_id].fill_color = meta.fill_color.clone();
+            self.graph.pools[pool_id].lanes[*lane_id].stroke_color = meta.stroke_color.clone();
+        } else {
+            if common.admin == pool_id {
+                return Err(vec![(
+                    format!(
+                        "The pool already represents the {tee_or_mpc}. It cannot represent the administrator at the same time. Change the pool id of {tee_or_mpc}-pool or {tee_or_mpc}-admin."
+                    ),
+                    self.context.current_token_coordinate,
+                    Level::Error,
+                )]);
+            }
+            self.graph.pools[pool_id].fill_color = meta.fill_color.clone();
+            self.graph.pools[pool_id].stroke_color = meta.stroke_color.clone();
         }
 
-        if common
-            .in_protect
-            .iter()
-            .any(|node| self.graph.nodes[node.node].pool == pool_id)
-        {
-            return Err(vec![(
-                format!("'{tee_or_mpc}-in-protect' is not allowed inside {tee_or_mpc} pool."),
-                self.context.current_token_coordinate,
-                Level::Error,
-            )]);
-        }
+        if let Some(lane_id) = lane_id {
+            if common.in_protect.iter().any(|node| {
+                self.graph.nodes[node.node].pool == pool_id
+                    && self.graph.nodes[node.node].lane == *lane_id
+            }) {
+                return Err(vec![(
+                    format!("'{tee_or_mpc}-in-protect' is not allowed inside {tee_or_mpc} lane."),
+                    self.context.current_token_coordinate,
+                    Level::Error,
+                )]);
+            }
 
-        if common
-            .out_unprotect
-            .iter()
-            .any(|tee_node| self.graph.nodes[tee_node.node].pool == pool_id)
-        {
-            return Err(vec![(
-                format!("'{tee_or_mpc}-out-unprotect' is not allowed inside {tee_or_mpc} pool."),
-                self.context.current_token_coordinate,
-                Level::Error,
-            )]);
+            if common.out_unprotect.iter().any(|node| {
+                self.graph.nodes[node.node].pool == pool_id
+                    && self.graph.nodes[node.node].lane == *lane_id
+            }) {
+                return Err(vec![(
+                    format!(
+                        "'{tee_or_mpc}-out-unprotect' is not allowed inside {tee_or_mpc} lane."
+                    ),
+                    self.context.current_token_coordinate,
+                    Level::Error,
+                )]);
+            }
+        } else {
+            if common
+                .in_protect
+                .iter()
+                .any(|node| self.graph.nodes[node.node].pool == pool_id)
+            {
+                return Err(vec![(
+                    format!("'{tee_or_mpc}-in-protect' is not allowed inside {tee_or_mpc} pool."),
+                    self.context.current_token_coordinate,
+                    Level::Error,
+                )]);
+            }
+
+            if common
+                .out_unprotect
+                .iter()
+                .any(|node| self.graph.nodes[node.node].pool == pool_id)
+            {
+                return Err(vec![(
+                    format!(
+                        "'{tee_or_mpc}-out-unprotect' is not allowed inside {tee_or_mpc} pool."
+                    ),
+                    self.context.current_token_coordinate,
+                    Level::Error,
+                )]);
+            }
         }
 
         let protection = match tee_or_mpc {
@@ -552,6 +632,7 @@ impl Parser {
                     |sde_id| node_transported_data.contains(sde_id),
                     true,
                     enforce_reach_end,
+                    tee_or_mpc,
                 )?
             }
             Ok(())
@@ -639,6 +720,7 @@ impl Parser {
                     |sde_id| !tee.data_without_protection.contains(sde_id),
                     false,
                     enforce_reach_end,
+                    tee_or_mpc,
                 )?
             }
         }
@@ -742,6 +824,7 @@ impl Parser {
         filter: impl Fn(&SdeId) -> bool,
         is_pool: bool,
         enforce_reach_end: bool,
+        pe_bpmn_type: &str,
     ) -> Result<(), ParseError> {
         let edges = if is_reverse {
             &self.graph.nodes[node_id].incoming
@@ -785,6 +868,7 @@ impl Parser {
                         is_reverse,
                         is_pool,
                         protection_type,
+                        pe_bpmn_type,
                     )?
                 }
             }
@@ -943,6 +1027,7 @@ impl Parser {
         is_reverse: bool,
         is_pool: bool,
         protection: &PeBpmnProtection,
+        pe_bpmn_type: &str,
     ) -> Result<(), ParseError> {
         let node_str = self.graph.nodes[node_id]
             .display_text()
@@ -960,7 +1045,7 @@ impl Parser {
                 false => "in",
             };
             format!(
-                "'tee-{direction}-protect' node{node_str}does not reach any 'tee-{direction}-unprotect' nodes in the tee path. Make sure there is a full path.",
+                "'{pe_bpmn_type}-{direction}-protect' node{node_str}does not reach any '{pe_bpmn_type}-{direction}-unprotect' nodes in the {pe_bpmn_type} path. Make sure there is a full path.",
             )
         } else {
             let (direction, prot) = match is_reverse {
@@ -968,7 +1053,7 @@ impl Parser {
                 false => ("out", "unprotect"),
             };
             format!(
-                "'tee-tasks' node{node_str}has a data element that does not reach 'tee-{direction}-{prot}' node in the tee path. Make sure there is a full path or exclude it with 'tee-data-without-protection'.",
+                "'{pe_bpmn_type}-tasks' node{node_str}has a data element that does not reach '{pe_bpmn_type}-{direction}-{prot}' node in the {pe_bpmn_type} path. Make sure there is a full path or exclude it with '{pe_bpmn_type}-data-without-protection'.",
             )
         };
 

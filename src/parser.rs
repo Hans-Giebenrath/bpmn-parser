@@ -1210,4 +1210,26 @@ MF <-sender ->receiver
         );
         Ok(())
     }
+
+    #[test]
+    fn illegal_message_flow_between_lanes() -> Result<(), Box<dyn std::error::Error>> {
+        let input = r#"
+= Pool
+== Lane1
+# Start Event
+- Task @sender
+. End Event
+== Lane2
+# Start Event
+- Task @receiver
+. End Event
+MF <-sender ->receiver
+"#;
+        let result = parse(input.to_string());
+        assert!(
+            result.is_err(),
+            "Expected an error for illegal message flow between lanes"
+        );
+        Ok(())
+    }
 }

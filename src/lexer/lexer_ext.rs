@@ -52,6 +52,7 @@ pub(crate) struct ComputationCommon {
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) enum PeBpmnSubType {
     Pool(String),
+    Lane(String),
     Tasks(Vec<String>),
 }
 
@@ -144,28 +145,42 @@ fn assemble_tee_or_mpc(
     mut tokens: Tokens,
     mut tc: TokenCoordinate,
     pe_bpmn_type: PeBpmnType,
-    is_pool: bool,
+    pe_bpmn_subtype: PeBpmnSubType,
 ) -> AResult {
-    let ids = parse_optional_ids(&mut tokens)?;
-    let pebpmn_type = if !ids.is_empty() {
-        match (is_pool, ids.as_slice()) {
-            (true, [single_id]) => PeBpmnSubType::Pool(single_id.to_string()),
-            (true, _) => {
-                return Err((
-                    tc,
-                    "Expected exactly one ID for pool-based TEE or MPC".to_string(),
-                ));
-            }
-            (false, _) => PeBpmnSubType::Tasks(ids),
-        }
-    } else {
-        return Err((tc, "Missing an ID. Please add it.".to_string()));
-    };
-
     let tee_or_mpc = match pe_bpmn_type {
         PeBpmnType::Tee(_) => "tee",
         PeBpmnType::Mpc(_) => "mpc",
         _ => return Err((tc, "Invalid pe-bpmn type for tee or mpc".to_string())),
+    };
+    let ids = parse_optional_ids(&mut tokens)?;
+    let pebpmn_type = if !ids.is_empty() {
+        match pe_bpmn_subtype {
+            PeBpmnSubType::Pool(_) => {
+                if ids.len() > 1 {
+                    return Err((
+                        tc,
+                        format!(
+                            "Expected exactly one ID for {tee_or_mpc}-pool. Please remove the others."
+                        ),
+                    ));
+                }
+                PeBpmnSubType::Pool(ids[0].clone())
+            }
+            PeBpmnSubType::Lane(_) => {
+                if ids.len() > 1 {
+                    return Err((
+                        tc,
+                        format!(
+                            "Expected exactly one ID for {tee_or_mpc}-lane. Please remove the others."
+                        ),
+                    ));
+                }
+                PeBpmnSubType::Lane(ids[0].clone())
+            }
+            PeBpmnSubType::Tasks(_) => PeBpmnSubType::Tasks(ids.clone()),
+        }
+    } else {
+        return Err((tc, "Missing an ID. Please add it.".to_string()));
     };
 
     let mut pe_bpmn_meta = PeBpmnMeta {
@@ -204,7 +219,7 @@ fn assemble_tee_or_mpc(
                         continue;
                     }
                     "in-unprotect" => {
-                        if !is_pool {
+                        if matches!(pe_bpmn_subtype, PeBpmnSubType::Tasks(_)) {
                             return Err((
                                 it.0,
                                 format!(
@@ -221,7 +236,7 @@ fn assemble_tee_or_mpc(
                         continue;
                     }
                     "out-protect" => {
-                        if !is_pool {
+                        if matches!(pe_bpmn_subtype, PeBpmnSubType::Tasks(_)) {
                             return Err((
                                 it.0,
                                 format!(
@@ -368,10 +383,42 @@ pub fn to_pe_bpmn(mut tokens: Tokens) -> AResult {
         // Implement extension types
         match extension_type.as_str() {
             "secure-channel" => assemble_secure_channel(tokens, tc),
-            "tee-pool" => assemble_tee_or_mpc(tokens, tc, PeBpmnType::Tee(Tee::default()), true),
-            "tee-tasks" => assemble_tee_or_mpc(tokens, tc, PeBpmnType::Tee(Tee::default()), false),
-            "mpc-pool" => assemble_tee_or_mpc(tokens, tc, PeBpmnType::Mpc(Mpc::default()), true),
-            "mpc-tasks" => assemble_tee_or_mpc(tokens, tc, PeBpmnType::Mpc(Mpc::default()), false),
+            "tee-pool" => assemble_tee_or_mpc(
+                tokens,
+                tc,
+                PeBpmnType::Tee(Tee::default()),
+                PeBpmnSubType::Pool(String::new()),
+            ),
+            "tee-lane" => assemble_tee_or_mpc(
+                tokens,
+                tc,
+                PeBpmnType::Tee(Tee::default()),
+                PeBpmnSubType::Lane(String::new()),
+            ),
+            "tee-tasks" => assemble_tee_or_mpc(
+                tokens,
+                tc,
+                PeBpmnType::Tee(Tee::default()),
+                PeBpmnSubType::Tasks(Vec::new()),
+            ),
+            "mpc-pool" => assemble_tee_or_mpc(
+                tokens,
+                tc,
+                PeBpmnType::Mpc(Mpc::default()),
+                PeBpmnSubType::Pool(String::new()),
+            ),
+            "mpc-lane" => assemble_tee_or_mpc(
+                tokens,
+                tc,
+                PeBpmnType::Mpc(Mpc::default()),
+                PeBpmnSubType::Lane(String::new()),
+            ),
+            "mpc-tasks" => assemble_tee_or_mpc(
+                tokens,
+                tc,
+                PeBpmnType::Mpc(Mpc::default()),
+                PeBpmnSubType::Tasks(Vec::new()),
+            ),
             _ => Err((tc, "Unknown pe-bpmn extension type".to_string())),
         }
     } else if let Some((tc, Token::Text(text))) = first_token {
