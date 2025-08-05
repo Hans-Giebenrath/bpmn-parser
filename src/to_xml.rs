@@ -258,10 +258,12 @@ pub fn generate_bpmn(graph: &Graph) -> String {
                 continue;
             }
             bpmn.push_str(&format!(
-                r#"      <bpmndi:BPMNShape id="Lane_{pool_id}_{lane_id}_di" bpmnElement="Lane_{pool_id}_{lane_id}" isHorizontal="true">
+                r#"      <bpmndi:BPMNShape id="Lane_{pool_id}_{lane_id}_di" bpmnElement="Lane_{pool_id}_{lane_id}" isHorizontal="true" color:background-color="{}" color:border-color="{}">
         <dc:Bounds x="{:.2}" y="{:.2}" width="{:.2}" height="{:.2}" />
       </bpmndi:BPMNShape>
 "#,
+                /* fill color */ lane.fill_color.as_deref().unwrap_or("#ffffff"),
+                /* stroke color */ lane.stroke_color.as_deref().unwrap_or("#000000"),
                 /* x */ lane.x,
                 /* y */ lane.y,
                 /* width */ lane.width,

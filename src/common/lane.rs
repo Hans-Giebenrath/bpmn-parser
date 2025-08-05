@@ -17,6 +17,9 @@ pub struct Lane {
     pub width: usize,
     /// Assigned in xy_ilp phase.
     pub height: usize,
+
+    pub stroke_color: Option<String>,
+    pub fill_color: Option<String>,
 }
 
 impl Lane {
