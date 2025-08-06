@@ -49,30 +49,32 @@ impl Parser {
         self.create_transported_data();
         match pe_bpmn.r#type {
             PeBpmnType::SecureChannel(secure_channel) => {
-                let sender_id = secure_channel
-                    .sender
-                    .as_ref()
-                    .map_or(Ok(None), |sender_name| {
-                        self.find_node_id(sender_name).map(Some).ok_or(vec![(
+                let sender_ids: Vec<NodeId> = secure_channel
+                    .protect
+                    .iter()
+                    .map(|sender_name| {
+                        self.find_node_id(sender_name).ok_or(vec![(
                             format!("Sender node with ID ({sender_name}) was not found. Have you defined it?"),
                             self.context.current_token_coordinate,
                             Level::Error,
                         )])
-                    })?;
+                    })
+                    .collect::<Result<Vec<NodeId>, _>>()?;
 
-                let receiver_id = secure_channel
-                    .receiver
-                    .as_ref()
-                    .map_or(Ok(None), |receiver_name| {
-                        self.find_node_id(receiver_name).map(Some).ok_or(vec![(
+                let receiver_ids: Vec<NodeId> = secure_channel
+                    .unprotect
+                    .iter()
+                    .map(|receiver_name| {
+                        self.find_node_id(receiver_name).ok_or(vec![(
                             format!("Receiver node with ID ({receiver_name}) was not found. Have you defined it?"),
                             self.context.current_token_coordinate,
                             Level::Error,
                         )])
-                    })?;
+                    })
+                    .collect::<Result<Vec<NodeId>, _>>()?;
 
                 let permitted_sdes: HashSet<SdeId> = secure_channel
-                    .argument_ids
+                    .restrictions
                     .iter()
                     .map(|string_id| {
                         let node_id = self.find_node_id(string_id).ok_or(vec![(
@@ -100,50 +102,62 @@ impl Parser {
                     })
                     .collect();
 
-                if let (Some(sender_id), Some(sender)) = (sender_id, secure_channel.sender) {
-                    self.check_connection(sender_id, sender, &permitted_sdes, true)?;
-                }
+                // if let (Some(sender_id), Some(sender)) = (sender_ids, secure_channel.protect) {
+                //     self.check_connection(sender_id, sender, &permitted_sdes, true)?;
+                // }
 
-                if let (Some(receiver_id), Some(receiver)) = (receiver_id, secure_channel.receiver)
-                {
-                    self.check_connection(receiver_id, receiver, &permitted_sdes, false)?;
-                }
+                // if let (Some(receiver_id), Some(receiver)) = (receiver_ids, secure_channel.unprotect)
+                // {
+                //     self.check_connection(receiver_id, receiver, &permitted_sdes, false)?;
+                // }
 
-                match (sender_id, receiver_id) {
-                    (Some(sender), Some(receiver)) => self.check_protection_paths(
-                        sender,
-                        false,
-                        &pe_bpmn.meta,
-                        &[receiver],
-                        &PeBpmnProtection::SecureChannel,
-                        |sde_id| permitted_sdes.is_empty() || permitted_sdes.contains(sde_id),
-                        false,
-                        enforce_reach_end,
-                        "secure-channel",
-                    )?,
-                    (Some(sender), None) => self.check_protection_paths(
-                        sender,
-                        false,
-                        &pe_bpmn.meta,
-                        &[],
-                        &PeBpmnProtection::SecureChannel,
-                        |sde_id| permitted_sdes.is_empty() || permitted_sdes.contains(sde_id),
-                        false,
-                        false,
-                        "secure-channel",
-                    )?,
-                    (None, Some(receiver)) => self.check_protection_paths(
-                        receiver,
-                        true,
-                        &pe_bpmn.meta,
-                        &[receiver],
-                        &PeBpmnProtection::SecureChannel,
-                        |sde_id| permitted_sdes.is_empty() || permitted_sdes.contains(sde_id),
-                        false,
-                        false,
-                        "secure-channel",
-                    )?,
-                    (None, None) => {
+                match (!sender_ids.is_empty(), !receiver_ids.is_empty()) {
+                    (true, true) => {
+                        for sender in sender_ids {
+                            self.check_protection_paths(
+                            sender,
+                            false,
+                            &pe_bpmn.meta,
+                            &receiver_ids,
+                            &PeBpmnProtection::SecureChannel,
+                            |sde_id| permitted_sdes.is_empty() || permitted_sdes.contains(sde_id),
+                            false,
+                            enforce_reach_end,
+                            "secure-channel",
+                            )?
+                        }
+                    },
+                    (true, false) => {
+                        for sender in sender_ids {
+                            self.check_protection_paths(
+                            sender,
+                            false,
+                            &pe_bpmn.meta,
+                            &[],
+                            &PeBpmnProtection::SecureChannel,
+                            |sde_id| permitted_sdes.is_empty() || permitted_sdes.contains(sde_id),
+                            false,
+                            false,
+                            "secure-channel",
+                            )?
+                        }
+                    }
+                    (false, true) => {
+                        for receiver in receiver_ids {
+                            self.check_protection_paths(
+                            receiver,
+                            true,
+                            &pe_bpmn.meta,
+                            &[],
+                            &PeBpmnProtection::SecureChannel,
+                            |sde_id| permitted_sdes.is_empty() || permitted_sdes.contains(sde_id),
+                            false,
+                            false,
+                            "secure-channel",
+                            )?
+                        }
+                    },
+                    (false, false) => {
                         if permitted_sdes.is_empty() {
                             return Err(vec![
                                 ("You need to define IDs when you use pre-sent and post-received simultaneously".to_string(), 
@@ -387,15 +401,19 @@ impl Parser {
         let data_without_protection =
             self.parse_data_nodes(&lexer.data_without_protection, "data-without-protection")?;
 
-        let data_already_protected = lexer.data_already_protected.iter().filter_map(|data_str| {
-            self.find_node_id(data_str).and_then(|node_id| {
-                if self.graph.nodes[node_id].is_data() {
-                    Some(node_id)
-                } else {
-                    None
-                }
+        let data_already_protected = lexer
+            .data_already_protected
+            .iter()
+            .filter_map(|data_str| {
+                self.find_node_id(data_str).and_then(|node_id| {
+                    if self.graph.nodes[node_id].is_data() {
+                        Some(node_id)
+                    } else {
+                        None
+                    }
+                })
             })
-        }).collect::<Vec<NodeId>>();
+            .collect::<Vec<NodeId>>();
 
         let external_root_access = lexer.external_root_access.iter().map(|pool_str| {
                     self.context.pool_id_matcher.find_pool_id(pool_str).ok_or_else(|| vec![(
@@ -599,13 +617,13 @@ impl Parser {
                 unreachable!()
             }
         };
-        
+
         common.data_already_protected.iter().for_each(|node_id| {
             let node = &mut self.graph.nodes[*node_id];
             node.set_pebpmn_protection(protection.clone());
             node.fill_color = meta.fill_color.clone();
             node.stroke_color = meta.stroke_color.clone();
-            
+
             for edge_id in node.incoming.iter().chain(&node.outgoing) {
                 self.graph.edges[*edge_id].stroke_color = meta.stroke_color.clone();
             }
@@ -705,16 +723,19 @@ impl Parser {
             }
         };
 
-        pebpmn_tasks.data_already_protected.iter().for_each(|node_id| {
-            let node = &mut self.graph.nodes[*node_id];
-            node.set_pebpmn_protection(protection.clone());
-            node.fill_color = meta.fill_color.clone();
-            node.stroke_color = meta.stroke_color.clone();
-            
-            for edge_id in node.incoming.iter().chain(&node.outgoing) {
-                self.graph.edges[*edge_id].stroke_color = meta.stroke_color.clone();
-            }
-        });
+        pebpmn_tasks
+            .data_already_protected
+            .iter()
+            .for_each(|node_id| {
+                let node = &mut self.graph.nodes[*node_id];
+                node.set_pebpmn_protection(protection.clone());
+                node.fill_color = meta.fill_color.clone();
+                node.stroke_color = meta.stroke_color.clone();
+
+                for edge_id in node.incoming.iter().chain(&node.outgoing) {
+                    self.graph.edges[*edge_id].stroke_color = meta.stroke_color.clone();
+                }
+            });
 
         for node_id in tasks {
             let node = &mut self.graph.nodes[node_id];

@@ -16,9 +16,10 @@ pub(crate) enum PeBpmnType {
 
 #[derive(Debug, Clone, PartialEq, Default)]
 pub(crate) struct SecureChannel {
-    pub sender: Option<String>,
-    pub receiver: Option<String>,
-    pub argument_ids: Vec<String>,
+    pub protect: Vec<String>,
+    pub unprotect: Vec<String>,
+    pub restrictions: Vec<String>,
+    pub secret: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Default)]
@@ -86,21 +87,31 @@ fn assemble_secure_channel(mut tokens: Tokens, mut tc: TokenCoordinate) -> AResu
         fill_color: None,
     };
 
-    let sender = parse_id_or_placeholder(tokens.next(), tc, "pre-sent", "sender")?;
-    tc.end += sender.len() + 1;
-    secure_channel
-        .get_or_insert_with(SecureChannel::default)
-        .sender = Some(sender).filter(|s| !s.is_empty());
+    let next_token = tokens.next();
+    if let Some((_, token)) = &next_token {
+        if !matches!(token, Token::Separator) {
+            let sender = parse_id_or_placeholder(next_token, tc, Some("pre-sent"), "sender")?;
+            tc.end += sender.len() + 1;
+            secure_channel.get_or_insert_with(SecureChannel::default).protect.push(sender);
 
-    let receiver = parse_id_or_placeholder(tokens.next(), tc, "post-received", "receiver")?;
-    secure_channel
-        .get_or_insert_with(SecureChannel::default)
-        .receiver = Some(receiver).filter(|s| !s.is_empty());
+            let receiver =
+                parse_id_or_placeholder(tokens.next(), tc, Some("post-received"), "receiver")?;
+            secure_channel
+                .get_or_insert_with(SecureChannel::default)
+                .unprotect.push(receiver);
 
-    let args = parse_optional_ids(&mut tokens)?;
-    secure_channel
-        .get_or_insert_with(SecureChannel::default)
-        .argument_ids = args;
+            let mut restrictions = parse_optional_ids(&mut tokens)?;
+            secure_channel
+                .get_or_insert_with(SecureChannel::default)
+                .restrictions.append(&mut restrictions);
+        }
+    } else {
+        return Err((
+            tc,
+            "Missing secure-channel arguments. Add a sender, receiver, and optional restrictions."
+                .to_string(),
+        ));
+    };
 
     while let Some(it) = tokens.next() {
         tc.end = it.0.end;
@@ -108,6 +119,32 @@ fn assemble_secure_channel(mut tokens: Tokens, mut tc: TokenCoordinate) -> AResu
             Token::ExtensionArgument(val) => match val.as_str() {
                 "secure-channel" => {
                     return Err((it.0, "There is already a secure-channel defined".to_string()));
+                }
+                "secure-channel-protect" => {
+                    let id = parse_id_or_placeholder(tokens.next(), tc, None, "secure-channel-protect")?;
+                    secure_channel
+                        .get_or_insert_with(SecureChannel::default)
+                        .protect.push(id);
+                    check_end_block(tokens.next())?;
+                }
+                "secure-channel-unprotect" => {
+                    let id = parse_id_or_placeholder(tokens.next(), tc, None, "secure-channel-unprotect")?;
+                    secure_channel
+                        .get_or_insert_with(SecureChannel::default)
+                        .unprotect.push(id);
+                    check_end_block(tokens.next())?;
+                }
+                "secure-channel-already-protected" => {
+                    let mut restrictions = parse_optional_ids(&mut tokens)?;
+                    secure_channel
+                        .get_or_insert_with(SecureChannel::default)
+                        .restrictions.append(&mut restrictions);
+                }
+                "secure-channel-secret" => {
+                    let id = parse_id_or_placeholder(tokens.next(), tc, None, "secure-channel-secret")?;
+                    secure_channel
+                        .get_or_insert_with(SecureChannel::default)
+                        .secret = Some(id);
                 }
                 "stroke-color" => {
                     if pe_bpmn_meta.stroke_color.is_some() {
@@ -135,7 +172,7 @@ fn assemble_secure_channel(mut tokens: Tokens, mut tc: TokenCoordinate) -> AResu
 
     Ok(Statement::PeBpmn(PeBpmn {
         r#type: PeBpmnType::SecureChannel(
-            secure_channel.expect("Programming error: an secure channel should always be created."),
+            secure_channel.ok_or_else(|| (tc, "Unfinished extension. Add secure-channel-protect, secure-channel-unprotect or secure-already-protected block.".to_string()))?,
         ),
         meta: pe_bpmn_meta,
     }))
@@ -695,36 +732,45 @@ fn check_end_block(
 fn parse_id_or_placeholder(
     token: Option<(TokenCoordinate, Token)>,
     prev_tc: TokenCoordinate,
-    placeholder: &str,
+    placeholder: Option<&str>,
     actor: &str,
 ) -> Result<String, (TokenCoordinate, String)> {
-    if let Some((tc, token)) = token {
-        match token {
-            Token::Id(id) => Ok(id),
-            Token::Text(text) => {
-                if text == placeholder {
-                    Ok(String::new())
-                } else {
-                    Err((
-                        tc,
-                        format!("Unexpected argument. Did you mean \"{placeholder}\"?",),
-                    ))
-                }
+    match placeholder {
+        None => {
+            // Only accept an ID if no placeholder is provided
+            if let Some((_, Token::Id(id))) = token {
+                Ok(id)
+            } else {
+                Err((prev_tc, format!("Missing {actor} ID.")))
             }
-            Token::Separator => Err((
-                tc,
-                format!("Expected more arguments. Add a {actor} ID or \"{placeholder}\""),
-            )),
-            _ => Err((
-                tc,
-                format!("Unexpected argument. Did you mean \"{placeholder}\"?",),
-            )),
         }
-    } else {
-        Err((
-            prev_tc,
-            format!("Missing {actor}. Add a {actor} ID or \"{placeholder}\"",),
-        ))
+        Some(placeholder_str) => {
+            if let Some((tc, token)) = token {
+                match token {
+                    Token::Id(id) => Ok(id),
+                    Token::Text(text) if text == placeholder_str => Ok(String::new()),
+                    Token::Text(_) => Err((
+                        tc,
+                        format!("Unexpected argument. Did you mean \"{placeholder_str}\"?"),
+                    )),
+                    Token::Separator => Err((
+                        tc,
+                        format!(
+                            "Expected more arguments. Add a {actor} ID or \"{placeholder_str}\""
+                        ),
+                    )),
+                    _ => Err((
+                        tc,
+                        format!("Unexpected argument. Did you mean \"{placeholder_str}\"?"),
+                    )),
+                }
+            } else {
+                Err((
+                    prev_tc,
+                    format!("Missing {actor}. Add a {actor} ID or \"{placeholder_str}\""),
+                ))
+            }
+        }
     }
 }
 

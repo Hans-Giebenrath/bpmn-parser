@@ -1,0 +1,34 @@
+// GENERATE VISIBILITY TABLE
+
+= Pool
+== Lane1
+# Start
+# Receive @receive-receiver
+- Process Data @process
+. Send @send-receiver
+
+== Lane2
+# Start
+- Prepare Data @prepare
+# Send @send-sender
+# Receive Processed @receive-sender
+. Done
+
+OD Input Data <-prepare ->send-sender
+ & Input Data <-send-sender ->receive-receiver
+ & Input Data <-receive-receiver ->process
+
+OD Result <-process ->send-receiver
+ & Result <-send-receiver ->receive-sender
+ & Result <-receive-sender
+
+[pe-bpmn
+  (tee-lane @p-l1)
+  (tee-in-protect @send-sender no-rv)
+  (tee-in-unprotect @receive-receiver)
+  (tee-out-protect @send-receiver)
+  (tee-out-unprotect @receive-sender no-rv)
+  (tee-external-root-access)
+  (stroke-color #0063B2)
+  (fill-color #9CC3D5)
+]
