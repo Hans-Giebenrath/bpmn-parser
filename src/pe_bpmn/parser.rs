@@ -25,7 +25,7 @@ pub(crate) struct ComputationCommonParse {
     pub out_unprotect: Vec<DataFlowAnnotation>,
 
     pub data_without_protection: Vec<SdeId>,
-    pub data_already_protected: Vec<SdeId>,
+    pub data_already_protected: Vec<NodeId>,
     pub admin: PoolId,
     pub external_root_access: Vec<PoolId>,
 }
@@ -387,8 +387,15 @@ impl Parser {
         let data_without_protection =
             self.parse_data_nodes(&lexer.data_without_protection, "data-without-protection")?;
 
-        let data_already_protected =
-            self.parse_data_nodes(&lexer.data_already_protected, "data-already-protected")?;
+        let data_already_protected = lexer.data_already_protected.iter().filter_map(|data_str| {
+            self.find_node_id(data_str).and_then(|node_id| {
+                if self.graph.nodes[node_id].is_data() {
+                    Some(node_id)
+                } else {
+                    None
+                }
+            })
+        }).collect::<Vec<NodeId>>();
 
         let external_root_access = lexer.external_root_access.iter().map(|pool_str| {
                     self.context.pool_id_matcher.find_pool_id(pool_str).ok_or_else(|| vec![(
@@ -552,54 +559,36 @@ impl Parser {
         }
 
         if let Some(lane_id) = lane_id {
-            if common.in_protect.iter().any(|node| {
-                self.graph.nodes[node.node].pool == pool_id
-                    && self.graph.nodes[node.node].lane == *lane_id
-            }) {
-                return Err(vec![(
-                    format!("'{tee_or_mpc}-in-protect' is not allowed inside {tee_or_mpc} lane."),
-                    self.context.current_token_coordinate,
-                    Level::Error,
-                )]);
-            }
-
-            if common.out_unprotect.iter().any(|node| {
-                self.graph.nodes[node.node].pool == pool_id
-                    && self.graph.nodes[node.node].lane == *lane_id
-            }) {
-                return Err(vec![(
-                    format!(
-                        "'{tee_or_mpc}-out-unprotect' is not allowed inside {tee_or_mpc} lane."
-                    ),
-                    self.context.current_token_coordinate,
-                    Level::Error,
-                )]);
+            for (label, nodes) in [
+                ("in-protect", &common.in_protect),
+                ("out-unprotect", &common.out_unprotect),
+            ] {
+                if nodes.iter().any(|node| {
+                    let n = &self.graph.nodes[node.node];
+                    n.pool == pool_id && n.lane == *lane_id
+                }) {
+                    return Err(vec![(
+                        format!("'{tee_or_mpc}-{label}' is not allowed inside {tee_or_mpc} lane."),
+                        self.context.current_token_coordinate,
+                        Level::Error,
+                    )]);
+                }
             }
         } else {
-            if common
-                .in_protect
-                .iter()
-                .any(|node| self.graph.nodes[node.node].pool == pool_id)
-            {
-                return Err(vec![(
-                    format!("'{tee_or_mpc}-in-protect' is not allowed inside {tee_or_mpc} pool."),
-                    self.context.current_token_coordinate,
-                    Level::Error,
-                )]);
-            }
-
-            if common
-                .out_unprotect
-                .iter()
-                .any(|node| self.graph.nodes[node.node].pool == pool_id)
-            {
-                return Err(vec![(
-                    format!(
-                        "'{tee_or_mpc}-out-unprotect' is not allowed inside {tee_or_mpc} pool."
-                    ),
-                    self.context.current_token_coordinate,
-                    Level::Error,
-                )]);
+            for (label, nodes) in [
+                ("in-protect", &common.in_protect),
+                ("out-unprotect", &common.out_unprotect),
+            ] {
+                if nodes
+                    .iter()
+                    .any(|node| self.graph.nodes[node.node].pool == pool_id)
+                {
+                    return Err(vec![(
+                        format!("'{tee_or_mpc}-{label}' is not allowed inside {tee_or_mpc} pool."),
+                        self.context.current_token_coordinate,
+                        Level::Error,
+                    )]);
+                }
             }
         }
 
@@ -610,6 +599,17 @@ impl Parser {
                 unreachable!()
             }
         };
+        
+        common.data_already_protected.iter().for_each(|node_id| {
+            let node = &mut self.graph.nodes[*node_id];
+            node.set_pebpmn_protection(protection.clone());
+            node.fill_color = meta.fill_color.clone();
+            node.stroke_color = meta.stroke_color.clone();
+            
+            for edge_id in node.incoming.iter().chain(&node.outgoing) {
+                self.graph.edges[*edge_id].stroke_color = meta.stroke_color.clone();
+            }
+        });
 
         let mut check_protected = |protect_nodes: &Vec<DataFlowAnnotation>,
                                    unprotect_nodes: &Vec<DataFlowAnnotation>,
@@ -647,17 +647,17 @@ impl Parser {
     fn parse_pebpmn_tasks(
         &mut self,
         tasks: Vec<NodeId>,
-        tee: &ComputationCommonParse,
+        pebpmn_tasks: &ComputationCommonParse,
         meta: &PeBpmnMeta,
         enforce_reach_end: bool,
         tee_or_mpc: &str,
     ) -> Result<(), ParseError> {
-        let end_out = tee
+        let end_out = pebpmn_tasks
             .out_unprotect
             .iter()
             .map(|tee_node| tee_node.node)
             .collect_vec();
-        if !tee.out_protect.is_empty() {
+        if !pebpmn_tasks.out_protect.is_empty() {
             return Err(vec![(
                 format!(
                     "{tee_or_mpc}-tasks does not allow the {tee_or_mpc}-out-protect attribute, as created data is implicitly protected. You may opt-out of encryption using the {tee_or_mpc}-already-protected attribute."
@@ -667,12 +667,12 @@ impl Parser {
             )]);
         }
 
-        let end_in = tee
+        let end_in = pebpmn_tasks
             .in_protect
             .iter()
             .map(|tee_node| tee_node.node)
             .collect_vec();
-        if !tee.in_unprotect.is_empty() {
+        if !pebpmn_tasks.in_unprotect.is_empty() {
             return Err(vec![(
                 format!(
                     "{tee_or_mpc}-tasks does not allow the {tee_or_mpc}-in-unprotect attribute, as created data is implicitly protected. You may opt-out of encryption using the {tee_or_mpc}-already-protected attribute."
@@ -704,6 +704,18 @@ impl Parser {
                 unreachable!()
             }
         };
+
+        pebpmn_tasks.data_already_protected.iter().for_each(|node_id| {
+            let node = &mut self.graph.nodes[*node_id];
+            node.set_pebpmn_protection(protection.clone());
+            node.fill_color = meta.fill_color.clone();
+            node.stroke_color = meta.stroke_color.clone();
+            
+            for edge_id in node.incoming.iter().chain(&node.outgoing) {
+                self.graph.edges[*edge_id].stroke_color = meta.stroke_color.clone();
+            }
+        });
+
         for node_id in tasks {
             let node = &mut self.graph.nodes[node_id];
             node.fill_color = meta.fill_color.clone();
@@ -717,7 +729,7 @@ impl Parser {
                     meta,
                     ends,
                     &protection,
-                    |sde_id| !tee.data_without_protection.contains(sde_id),
+                    |sde_id| !pebpmn_tasks.data_without_protection.contains(sde_id),
                     false,
                     enforce_reach_end,
                     tee_or_mpc,
