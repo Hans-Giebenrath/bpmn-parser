@@ -14,7 +14,11 @@ cat <<EOF >"$adoc_file"
 :icons: font
 
 EOF
-for f in doc/test/t0022.bpmd; do
+all=(doc/test/*.bpmd)
+if [ -n "${BDT:-}" ]; then
+    all=("doc/test/${BDT}")
+fi
+for f in "${all[@]}"; do
     {
         basename=$(basename "$f" .bpmd)
         csv_file="$dir/${basename}.csv"
@@ -83,7 +87,7 @@ EOF
             cat <<EOF >>"$adoc_file"
 [%header,format=csv]
 |===
-include::$csv_file[]
+include::${csv_file}[]
 |===
 EOF
         fi
