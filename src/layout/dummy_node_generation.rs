@@ -2,6 +2,7 @@ use crate::common::edge::DummyEdgeBendPoints;
 use crate::common::edge::EdgeType;
 use crate::common::graph::EdgeId;
 use crate::common::graph::Graph;
+use crate::common::node::LayerId;
 use crate::common::node::NodeType;
 
 pub fn generate_dummy_nodes(graph: &mut Graph) {
@@ -10,11 +11,13 @@ pub fn generate_dummy_nodes(graph: &mut Graph) {
     // New edges are added to graph.edges, so we can't iterate over it at the same time.
     // Hence we store the number.
     let num_real_edges = graph.edges.len();
-    for edge_idx in 0..num_real_edges {
+    for edge_id in (0..num_real_edges).map(EdgeId) {
         let current_num_edges = graph.edges.len();
-        let edge = &mut graph.edges[edge_idx];
-        let from = &graph.nodes[edge.from.0];
-        let to = &graph.nodes[edge.to.0];
+        let edge = &mut graph.edges[edge_id];
+        let from_id = edge.from;
+        let to_id = edge.to;
+        let from = &graph.nodes[from_id];
+        let to = &graph.nodes[to_id];
         let pool = from.pool;
 
         // The edge spans just a single layer -> ignore.
@@ -59,14 +62,18 @@ pub fn generate_dummy_nodes(graph: &mut Graph) {
         };
 
         let mut previous_node_id = from.id;
+        let mut layer_id = LayerId(from.layer_id.0 + 1);
         let to_node_id = to.id;
         for lane_id in node_lane_ids {
             let dummy_node_id = graph.add_node(NodeType::DummyNode, pool, lane_id);
+            graph.nodes[dummy_node_id].layer_id = layer_id;
+            layer_id.0 += 1;
+
             graph.add_edge(
                 previous_node_id,
                 dummy_node_id,
                 EdgeType::DummyEdge {
-                    original_edge: EdgeId(edge_idx),
+                    original_edge: edge_id,
                     bend_points: DummyEdgeBendPoints::ToBeDeterminedOrStraight,
                 },
                 flow_type.clone(),
@@ -77,10 +84,12 @@ pub fn generate_dummy_nodes(graph: &mut Graph) {
             previous_node_id,
             to_node_id,
             EdgeType::DummyEdge {
-                original_edge: EdgeId(edge_idx),
+                original_edge: edge_id,
                 bend_points: DummyEdgeBendPoints::ToBeDeterminedOrStraight,
             },
             flow_type,
         );
+        graph.nodes[from_id].outgoing.retain(|outgoing_edge_idx| *outgoing_edge_idx != edge_id);
+        graph.nodes[to_id].incoming.retain(|incoming_edge_idx| *incoming_edge_idx != edge_id);
     }
 }
