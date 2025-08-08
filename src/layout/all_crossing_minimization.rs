@@ -1,7 +1,6 @@
 use crate::common::edge::DummyEdgeBendPoints;
 use crate::common::edge::Edge;
 use crate::common::edge::EdgeType;
-use crate::common::edge::FlowType;
 use crate::common::graph::EdgeId;
 use crate::common::graph::PoolId;
 use crate::common::graph::{Graph, NodeId};
@@ -10,6 +9,7 @@ use crate::common::node::Node;
 use crate::common::node::NodePhaseAuxData;
 use crate::common::node::NodeType;
 use good_lp::*;
+use itertools::Itertools;
 use rustc_hash::FxBuildHasher;
 use std::cmp::Ordering;
 use std::collections::HashMap;
@@ -239,14 +239,18 @@ impl Vars {
             }
         }
 
+        // debug_print_graph(&v, &ilp_graph, graph);
         (vars, v, ilp_graph)
     }
 
+    #[track_caller]
     fn x_orig(&mut self, node_idces: IlpNodeSiblingPair) -> Variable {
-        *self
+        match self
             .x_vars
-            .get(&node_idces)
-            .expect("should have been prepared previously")
+            .get(&node_idces) {
+                Some(v) => *v,
+                None => panic!("should have been prepared previously for ilpn({})-ilpn({})", node_idces.0.0, node_idces.1.0),
+        }
     }
 
     // `x_ij == 1` means that i is above j. Otherwise 0.
@@ -254,6 +258,7 @@ impl Vars {
     // https://ieeevis.b-cdn.net/vis_2024/pdfs/v-full-1874.pdf
     // The extended version would be to have both x variables, and then an additional constraint
     // would be necessary (x_ij + x_ji = 1).
+    #[track_caller]
     fn x(&mut self, ij: IlpNodeSiblingPair) -> Expression {
         if ij.0.0 < ij.1.0 {
             self.x_orig(ij).into_expression()
@@ -262,11 +267,12 @@ impl Vars {
         }
     }
 
+    #[track_caller]
     fn c(&mut self, ijkl: &Ijkl) -> Variable {
-        *self
-            .c_vars
-            .get(ijkl)
-            .expect("should have been prepared previously")
+        match self .c_vars .get(ijkl) {
+            Some(v) => *v,
+            None => panic!("should have been prepared previously for ilpn({})-ilpn({})-ilpn({})-ilpn({})", ijkl.i().0, ijkl.j().0, ijkl.k().0, ijkl.l().0),
+        }
     }
 }
 
@@ -682,7 +688,7 @@ fn sort_incoming_and_outgoing(graph: &mut Graph) {
                     assert!(
                         to_node.pool != from_node.pool
                             || from_node.layer_id.0 + 1 == to_node.layer_id.0,
-                        "{from_node:?}, {to_node:?}"
+                        "{from_node:#?}, {to_node:#?}"
                     );
                     // Some upper pool, lower pool, or going right in the same pool.
                     let group_order = 1;
@@ -987,4 +993,81 @@ fn remove_temporarily_added_dummy_nodes_for_edges_within_same_layer(graph: &mut 
 
     graph.nodes.truncate(num_nodes_to_retain);
     graph.edges.truncate(num_edges_to_retain);
+}
+
+// Only necessary for debugging.
+#[allow(dead_code)]
+fn debug_print_graph(v: &Vars, ig: &IlpGraph, g: &Graph) {
+    let node_str = |n: &Node| -> String {
+        let aux = match aux(n) {
+            Some(IlpNodeId(idx)) => idx.to_string(),
+            None => "-".to_string(),
+        };
+        let layer = n.layer_id.0;
+        let what = match &n.node_type {
+            NodeType::RealNode { display_text, .. } => display_text.as_str(),
+            NodeType::DummyNode => "(dummy node)",
+        };
+        format!("nid({}) {what} ilpn({aux}) - Lyr({layer})", n.id)
+    };
+
+    println!("Nodes:");
+    for n in &g.nodes {
+        println!("{}", node_str(n));
+    }
+
+    println!();
+    println!("Edges:");
+    for (edge_idx, e) in g.edges.iter().enumerate() {
+        let flow_type = match e.flow_type {
+            crate::common::edge::FlowType::MessageFlow(_) => "MF",
+            crate::common::edge::FlowType::DataFlow(_) => "DF",
+            crate::common::edge::FlowType::SequenceFlow => "SF",
+        };
+
+        match &e.edge_type {
+            EdgeType::Regular { text, .. } => {
+                println!("{} --[{flow_type} eid({edge_idx}) {}]--> {}", node_str(&g.nodes[e.from]), text.as_ref().map(|s| s.as_str()).unwrap_or(""), node_str(&g.nodes[e.to]));
+            }
+            EdgeType::ReplacedByDummies { text, .. } => {
+                println!("(replaced by dummies {} --[{flow_type} eid({edge_idx}) {}]--> {})", node_str(&g.nodes[e.from]), text.as_ref().map(|s| s.as_str()).unwrap_or(""),node_str(&g.nodes[e.to]));
+            }
+            EdgeType::DummyEdge { original_edge, .. } => {
+                println!("{} --[{flow_type} eid({edge_idx}), orig: {}]--> {})", node_str(&g.nodes[e.from]), original_edge.0, node_str(&g.nodes[e.to]));
+            }
+        }
+    }
+
+    println!();
+    println!("X Vars:");
+    for pair in v.x_vars.keys() {
+        println!("X var ilpn({}) - ilpn({})", pair.0.0, pair.1.0);
+    }
+
+    println!();
+    println!("C Vars:");
+    for ijkl in v.c_vars.keys() {
+        println!("C var ilpn({}) - ilpn({}) - ilpn({}) - ilpn({})", ijkl.i().0, ijkl.j().0, ijkl.k().0, ijkl.l().0);
+    }
+
+    println!();
+    println!("Ilp Layers:");
+    for (layer_idx, layer) in ig.layers.iter().enumerate() {
+        println!("IlpLayer {layer_idx}:");
+        for (start, group_size) in &layer.groups {
+            println!("    group {}", (start.0 .. start.0 + group_size).join(" "));
+        }
+        println!("    iterate_node_ids_1: {}",
+            layer.iterate_node_ids_1().map(|id| format!("({id})")).join(" ")
+        );
+        println!("    iterate_node_ids_2: {}",
+            layer.iterate_node_ids_2().map(|pair| format!("({} {})", pair.0.0, pair.1.0)).join(" ")
+        );
+        println!("    iterate_node_ids_3: {}",
+            layer.iterate_node_ids_3().map(|pair| format!("({} {} {})", pair.0.0, pair.1.0, pair.2.0)).join(" ")
+        );
+        println!("    iter_ijkl: {}",
+            layer.iter_ijkl(&ig.all_nodes).map(|ijkl| format!("({} {} {} {})", ijkl.i().0, ijkl.j().0, ijkl.k().0, ijkl.l().0)).join(" ")
+        );
+    }
 }
