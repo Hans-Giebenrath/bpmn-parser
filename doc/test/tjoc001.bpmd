@@ -1,0 +1,33 @@
+= Input Party
+
+# Receive CTA
+- P3.1 Prepare Input Data
+- P3.2 Validate Input Data Quality
+- P3.3 Apply Protection To Input Data
+- P3.4 Submit Protected Input Data
+. Input Data Submitted
+
+= Computing Parties
+
+== TEEs
+
+# Computation Task is Deployed
+# Received Input Data
+- P3.5.1 Validate Input Data Quality
+X Validated? ->no"no" ->yes"yes"
+
+G <-no
+. Notify Input Party
+
+G <-yes
+- P3.5.2 Store Protected Input Data
+. Protected Input Data Received
+
+= Output Party
+
+
+OD E2.4 CTA ->p3.1
+OD E3.1 Input Data <-p3.1 ->p3.2 ->p3.3
+ & E3.2 Protected Input Data <-p3.3 ->p3.4
+ & E3.2 Protected Input Data <-tee-received-input-data ->p3.5.1 ->p3.5.2
+ & E3.3 Protected Input Data Store <-p3.5.2

@@ -1,0 +1,10 @@
+= pool
+
+== lane
+
+# data-producer
+- intermediate 1
+- intermediate 2
+. data-consumer
+
+OD E3.2 Protected Input Data <-produce ->consume
