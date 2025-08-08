@@ -141,7 +141,7 @@ pub fn generate_bpmn(graph: &Graph) -> String {
         bpmn.push_str(&format!(
             "  <bpmn:process id=\"Process_{pool_id}\" isExecutable=\"true\">\n"
         ));
-        if pool.lanes.len() > 0 && pool.lanes[0].name.is_some() {
+        if !pool.lanes.is_empty() && pool.lanes[0].name.is_some() {
             bpmn.push_str(&format!("    <bpmn:laneSet id=\"LaneSet_{}\">\n", pool_id));
 
             for (lane_id, lane) in pool.lanes.iter().enumerate() {

@@ -159,8 +159,8 @@ impl Vars {
             all_nodes: vec![],
         };
         let mut v = Vars {
-            x_vars: HashMap::with_hasher(rustc_hash::FxBuildHasher::default()),
-            c_vars: HashMap::with_hasher(rustc_hash::FxBuildHasher::default()),
+            x_vars: HashMap::with_hasher(FxBuildHasher),
+            c_vars: HashMap::with_hasher(FxBuildHasher),
         };
 
         // For every horizontal group (lane, later maybe also standalone interrupt nodes),
@@ -486,7 +486,7 @@ fn handle_message_flows(graph: &Graph, v: &mut Vars, objective: &mut Expression)
                 .iter()
                 .filter(|outgoing| edge_under_iteration.0 < outgoing.0)
                 .map(|edge_id| &graph.edges[*edge_id])
-                .filter(|e| Edge::is_message_flow(&e))
+                .filter(|e| Edge::is_message_flow(e))
                 .map(|e| &graph.nodes[e.to])
                 .chain(
                     neighbor_node
@@ -494,7 +494,7 @@ fn handle_message_flows(graph: &Graph, v: &mut Vars, objective: &mut Expression)
                         .iter()
                         .filter(|incoming| edge_under_iteration.0 < incoming.0)
                         .map(|edge_id| &graph.edges[*edge_id])
-                        .filter(|e| Edge::is_message_flow(&e))
+                        .filter(|e| Edge::is_message_flow(e))
                         .map(|e| &graph.nodes[e.from]),
                 )
             {
@@ -527,7 +527,7 @@ fn handle_message_flows(graph: &Graph, v: &mut Vars, objective: &mut Expression)
                     .outgoing
                     .iter()
                     .map(|edge_id| &graph.edges[*edge_id])
-                    .filter(|e| Edge::is_message_flow(&e))
+                    .filter(|e| Edge::is_message_flow(e))
                     .count();
             }
             if goes_left {
@@ -535,7 +535,7 @@ fn handle_message_flows(graph: &Graph, v: &mut Vars, objective: &mut Expression)
                     .incoming
                     .iter()
                     .map(|edge_id| &graph.edges[*edge_id])
-                    .filter(|e| Edge::is_message_flow(&e))
+                    .filter(|e| Edge::is_message_flow(e))
                     .count();
             }
             // It might be that there are no edges to the given direction on other nodes. In that
@@ -557,7 +557,7 @@ fn handle_message_flows(graph: &Graph, v: &mut Vars, objective: &mut Expression)
         .edges
         .iter()
         .enumerate()
-        .filter(|(_, e)| Edge::is_message_flow(&e))
+        .filter(|(_, e)| Edge::is_message_flow(e))
     {
         let from_node = &graph.nodes[edge.from];
         let to_node = &graph.nodes[edge.to];
