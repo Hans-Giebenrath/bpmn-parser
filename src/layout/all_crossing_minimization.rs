@@ -221,7 +221,7 @@ impl Vars {
                 .iter()
                 .map(|edge_id| &graph.edges[edge_id.0])
                 // Message flows are handled directly in the minimisation objective.
-                .filter(|edge| !Edge::is_message_flow(&edge))
+                .filter(|edge| !Edge::is_message_flow(edge))
                 .flat_map(|edge| aux(&graph.nodes[edge.to.0]))
             {
                 node.outgoing.push(outgoing);
