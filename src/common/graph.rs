@@ -313,3 +313,14 @@ fn check_if_valid_message_flow_end(node: &Node, errors: &mut ValidationErrors) {
         }
     }
 }
+
+/// Very small function, does not really deserve it's own file? Is also just a helper thingy, not
+/// really a dedicated phase.
+pub(crate) fn sort_lanes_by_layer(graph: &mut Graph) {
+    for pool in &mut graph.pools {
+        for lane in &mut pool.lanes {
+            lane.nodes
+                .sort_unstable_by_key(|node_id| graph.nodes[node_id.0].layer_id.0);
+        }
+    }
+}

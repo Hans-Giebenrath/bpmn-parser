@@ -15,8 +15,6 @@ pub fn solve_layer_assignment(graph: &mut Graph) {
     }
 
     solve_data_object_layers_via_arithmetic_mean(graph);
-
-    sort_lanes_by_layer(graph);
 }
 
 // TODO Imagine this situation:
@@ -166,13 +164,4 @@ fn solve_data_object_layers_via_arithmetic_mean(graph: &mut Graph) {
     // recipients are spread far away. Probably it makes sense to allow 2 per sequence flow and
     // then two "floating" ones. Or one could dictate that floating ones actually don't spread
     // across gateways, but this seems like a rather random restriction.
-}
-
-fn sort_lanes_by_layer(graph: &mut Graph) {
-    for pool in &mut graph.pools {
-        for lane in &mut pool.lanes {
-            lane.nodes
-                .sort_unstable_by_key(|node_id| graph.nodes[node_id.0].layer_id.0);
-        }
-    }
 }

@@ -22,7 +22,7 @@ use layout::replace_dummy_nodes::replace_dummy_nodes;
 use layout::solve_layer_assignment::solve_layer_assignment;
 use layout::xy_ilp::assign_xy_ilp;
 
-use crate::common::graph::Graph;
+use crate::common::graph::{sort_lanes_by_layer, Graph};
 
 #[derive(Parser)]
 #[command(version, about, long_about = None)]
@@ -69,6 +69,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 pub fn layout_graph(graph: &mut Graph) {
     solve_layer_assignment(graph);
     generate_dummy_nodes(graph);
+    sort_lanes_by_layer(graph);
     reduce_all_crossings(graph);
     assign_xy_ilp(graph);
     reduce_half_layer_crossings(graph);
