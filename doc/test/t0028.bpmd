@@ -1,0 +1,14 @@
+# start
+X gateway ->intermediate2 ->intermediate
+
+G <-intermediate
+- Task
+G ->end
+
+G <-intermediate2
+- event
+G ->end
+
+X <-end
+. end
+
