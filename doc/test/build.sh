@@ -7,6 +7,10 @@ pushd "$dir"
 
 
 pushd "../.."
+cargo build
+run() {
+    time "${CARGO_TARGET_DIR:-./target}"/debug/bpmn-parser "$@"
+}
 file_stem=compiled
 adoc_file="doc/test/$file_stem.adoc"
 cat <<EOF >"$adoc_file"
@@ -25,12 +29,12 @@ for f in "${all[@]}"; do
         correct_csv_file="$dir/${basename}.csv.correct"
 
         if grep -q '// GENERATE VISIBILITY TABLE' "$f"; then
-            cargo run -- -i "$f" -o "${f%.bpmd}.xml" -v "$csv_file" && \
+            run -i "$f" -o "${f%.bpmd}.xml" -v "$csv_file" && \
             echo "finished generating ${f%.bpmd}.xml, now generating the png" && \
             doc/node_modules/.bin/bpmn-to-image "${f%.bpmd}.xml":"${f%.bpmd}.png" && \
             : #rm "${f%.bpmd}.xml"
         else
-            cargo run -- -i "$f" -o "${f%.bpmd}.xml" && \
+            run -i "$f" -o "${f%.bpmd}.xml" && \
             echo "finished generating ${f%.bpmd}.xml, now generating the png" && \
             doc/node_modules/.bin/bpmn-to-image "${f%.bpmd}.xml":"${f%.bpmd}.png" && \
             : #rm "${f%.bpmd}.xml"
