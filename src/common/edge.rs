@@ -90,6 +90,10 @@ impl Edge {
         matches!(self.edge_type, EdgeType::Regular { .. })
     }
 
+    pub fn is_sequence_flow(&self) -> bool {
+        matches!(self.flow_type, FlowType::SequenceFlow)
+    }
+
     pub fn is_message_flow(&self) -> bool {
         matches!(self.flow_type, FlowType::MessageFlow(_))
     }
