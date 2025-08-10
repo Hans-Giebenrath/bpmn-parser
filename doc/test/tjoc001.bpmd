@@ -1,3 +1,4 @@
+// GENERATE VISIBILITY TABLE
 = Input Party
 
 # Receive CTA
@@ -21,13 +22,60 @@ G <-no
 
 G <-yes
 - P3.5.2 Store Protected Input Data
-. Protected Input Data Received
+- P4.1 Execute Computation
+- P4.2 Delete Input and Interim Data
+X Computation successful? ->success"yes" ->go_to_delete"no"
+
+// G <-failure
+// - P4.3 Delete Protected Output Data
+// . CT terminated
+
+G <-success
+# Wait for incoming download request
+- P5.2 Send Protected Output Data Store
+G ->go_to_delete
+
+X <-go_to_delete
+- P5.3 Delete Protected Output Data
+. Cease to Exist
 
 = Output Party
 
+# Random Awakening
+- P5.1 Retrieve Protected Output Data
+- P5.4 Remove protection of the Output Data
+. Fin
 
 OD E2.4 CTA ->p3.1
 OD E3.1 Input Data <-p3.1 ->p3.2 ->p3.3
  & E3.2 Protected Input Data <-p3.3 ->p3.4
  & E3.2 Protected Input Data <-tee-received-input-data ->p3.5.1 ->p3.5.2
- & E3.3 Protected Input Data Store <-p3.5.2
+ & E3.3 Protected Input Data Store <-p3.5.2 ->p4.1 ->p4.2
+ & E3.3 Protected Input Data Store <-p4.2
+SD E4.1 Protected Output Data Store <-p4.1 ->p5.2 ->p5.3
+ & E4.1 Protected Output Data Store <-p5.3
+ & E4.1 Protected Output Data Store <-p5.1 ->p5.4
+ & E4.1 Output Data <-p5.4
+
+MF <-p3.4 ->tee-received
+
+MF Request for Protected Output Data <-p5.1 ->tee-wait-download-req
+MF ->p5.1 <-p5.2
+
+[pe-bpmn
+  (tee-tasks @p3.5.1 @p4.1)
+  (tee-external-root-access)
+  (tee-in-protect @p3.3 @input-party)
+  (tee-out-unprotect @p5.4 @output-party)
+  (stroke-color #a9d31e)
+  (fill-color #eef7d0)
+]
+
+[pe-bpmn
+  (mpc-tasks @p3.5.1 @p4.1)
+  (mpc-external-root-access)
+  (mpc-in-protect @p3.3 @input-party)
+  (mpc-out-unprotect @p5.4 @output-party)
+  (stroke-color #1ed39f)
+  (fill-color #d0f7ec)
+]
