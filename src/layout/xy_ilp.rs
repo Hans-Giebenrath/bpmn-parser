@@ -1,7 +1,9 @@
+use crate::common::edge::Edge;
 use crate::common::edge::FlowType;
 use crate::common::graph::Graph;
 use crate::common::graph::LaneId;
 use crate::common::graph::PoolId;
+use crate::common::iter_ext::IteratorExt;
 use crate::common::node::Node;
 use crate::common::node::NodePhaseAuxData;
 use good_lp::*;
@@ -107,6 +109,15 @@ fn assign_y(graph: &mut Graph, pool: PoolId, lane: LaneId, min_y_value: usize) -
         .filter(|e| e.stays_within_lane)
     {
         assert!(!edge.is_replaced_by_dummies());
+
+        if is_gateway_branching_flow_within_same_lane(edge, graph) {
+            // The weight for gateway-connected edges is assigned through the
+            // "gateway_balancing_constraint_vars", so don't assign anything additional here.
+            // Otherwise this interferes in weird ways.
+            // NB: Prioritizing some branch to be "straight to the right" should be done
+            // separately as well.
+            continue;
+        }
 
         let diff_var = vars.add(variable().min(0.0));
         diff_vars.push((edge.from.0, edge.to.0, diff_var));
@@ -339,4 +350,32 @@ fn assign_x(graph: &mut Graph) {
             lane.width = pool.width - graph.config.pool_header_width;
         }
     }
+}
+
+fn is_gateway_branching_flow_within_same_lane(edge: &Edge, graph: &Graph) -> bool {
+    let from_is_branching = || {
+        let n = &graph.nodes[edge.from];
+        n.is_gateway()
+            && n.outgoing
+                .iter()
+                .map(|e| &graph.edges[*e])
+                .filter(|e| e.flow_type == FlowType::SequenceFlow)
+                .map(|e| &graph.nodes[e.to])
+                .filter(|other| other.pool_and_lane() == n.pool_and_lane())
+                .has_at_least(2)
+    };
+    let to_is_joining = || {
+        let n = &graph.nodes[edge.to];
+        n.is_gateway()
+            && n.incoming
+                .iter()
+                .map(|e| &graph.edges[*e])
+                .filter(|e| e.flow_type == FlowType::SequenceFlow)
+                .map(|e| &graph.nodes[e.from])
+                .filter(|other| other.pool_and_lane() == n.pool_and_lane())
+                .has_at_least(2)
+    };
+    edge.is_sequence_flow()
+        && (graph.nodes[edge.from].pool_and_lane() == graph.nodes[edge.to].pool_and_lane())
+        && (from_is_branching() || to_is_joining())
 }
