@@ -2,9 +2,20 @@
 
 set -euo pipefail
 
-dir="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
+dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 pushd "$dir"
 
+# The TMPDIR stores intermediate .adoc and .csv fragments.
+# All the BPMD are compiled in parallel. To ensure that the resulting document
+# contains the fragments in the correct order (glob order .. maybe improve),
+# the fragments are first written in parallel into smaller files, and then
+# in the end all those files are combined sequentially.
+TMPDIR=$(mktemp -d -t 'bpmn-parser-doc_test_build.sh.XXXXXXXX')
+
+cleanup() {
+    rm -rf "$TMPDIR"
+}
+trap cleanup EXIT
 
 pushd "../.."
 cargo build
@@ -13,11 +24,10 @@ run() {
 }
 file_stem=compiled
 adoc_file="doc/test/$file_stem.adoc"
-cat <<EOF >"$adoc_file"
-= BPMD - Business Process Modeling DSL
-:icons: font
 
-EOF
+# Environment variable BDT can be used to select just one file for compilation.
+# Usually one wants to test all files at once, or one composes a new file or
+# debugs on one file. Hence no `many` selection at the moment, either one or all.
 all=(doc/test/*.bpmd)
 if [ -n "${BDT:-}" ]; then
     all=("doc/test/${BDT}")
@@ -25,33 +35,34 @@ fi
 for f in "${all[@]}"; do
     {
         basename=$(basename "$f" .bpmd)
+        tmp_adoc_file="$TMPDIR/$basename.tmp.adoc"
         csv_file="$dir/${basename}.csv"
         correct_csv_file="$dir/${basename}.csv.correct"
 
         if grep -q '// GENERATE VISIBILITY TABLE' "$f"; then
-            run -i "$f" -o "${f%.bpmd}.xml" -v "$csv_file" && \
-            echo "finished generating ${f%.bpmd}.xml, now generating the png" && \
-            doc/node_modules/.bin/bpmn-to-image "${f%.bpmd}.xml":"${f%.bpmd}.png" && \
-            : #rm "${f%.bpmd}.xml"
+            run -i "$f" -o "${f%.bpmd}.xml" -v "$csv_file" &&
+                echo "finished generating ${f%.bpmd}.xml, now generating the png" &&
+                doc/node_modules/.bin/bpmn-to-image "${f%.bpmd}.xml":"${f%.bpmd}.png" &&
+                : #rm "${f%.bpmd}.xml"
         else
-            run -i "$f" -o "${f%.bpmd}.xml" && \
-            echo "finished generating ${f%.bpmd}.xml, now generating the png" && \
-            doc/node_modules/.bin/bpmn-to-image "${f%.bpmd}.xml":"${f%.bpmd}.png" && \
-            : #rm "${f%.bpmd}.xml"
+            run -i "$f" -o "${f%.bpmd}.xml" &&
+                echo "finished generating ${f%.bpmd}.xml, now generating the png" &&
+                doc/node_modules/.bin/bpmn-to-image "${f%.bpmd}.xml":"${f%.bpmd}.png" &&
+                : #rm "${f%.bpmd}.xml"
         fi
 
-        cat <<EOF >>"$adoc_file"
+        cat <<EOF >>"$tmp_adoc_file"
 == $(basename "$f")
 image::$(basename "$f" .bpmd).png[width=60%]
 EOF
 
         if grep -q '// GENERATE VISIBILITY TABLE' "$f"; then
             if [[ -f "$correct_csv_file" ]]; then
-                if diff -q "$csv_file" "$correct_csv_file" > /dev/null; then
+                if diff -q "$csv_file" "$correct_csv_file" >/dev/null; then
                     echo "✓ Visibility table for $basename matches reference."
                 else
                     echo "⚠ Visibility table for $basename differs from reference!"
-                    cat <<EOF >>"$adoc_file"
+                    cat <<EOF >>"$tmp_adoc_file"
 [WARNING]
 ====
 The visibility table differs from the reference: $(basename "$correct_csv_file")
@@ -70,7 +81,7 @@ EOF
                 fi
             else
                 echo "⚠ No reference CSV found: $correct_csv_file. Generating warning."
-                cat <<EOF >>"$adoc_file"
+                cat <<EOF >>"$tmp_adoc_file"
 [WARNING]
 ====
 No reference visibility table found: $(basename "$correct_csv_file")
@@ -88,7 +99,7 @@ If so, run:
 EOF
             fi
 
-            cat <<EOF >>"$adoc_file"
+            cat <<EOF >>"$tmp_adoc_file"
 [%header,format=csv]
 |===
 include::${csv_file}[]
@@ -96,7 +107,7 @@ include::${csv_file}[]
 EOF
         fi
 
-        cat <<EOF >>"$adoc_file"
+        cat <<EOF >>"$tmp_adoc_file"
 [source]
 ----
 include::$(basename "$f")[]
@@ -106,6 +117,18 @@ EOF
 done
 
 wait
+
+cat <<EOF >"$adoc_file"
+= BPMD - Business Process Modeling DSL
+:icons: font
+
+EOF
+
+for f in "${all[@]}"; do
+    basename=$(basename "$f" .bpmd)
+    tmp_adoc_file="$TMPDIR/$basename.tmp.adoc"
+    cat "$tmp_adoc_file" >>"$adoc_file"
+done
 
 popd
 asciidoctor -o $file_stem.html $file_stem.adoc
