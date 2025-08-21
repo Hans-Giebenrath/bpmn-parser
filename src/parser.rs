@@ -20,6 +20,8 @@ use crate::lexer::{self, MessageFlowMeta};
 use crate::lexer::{DataAux, DataFlowMeta};
 use crate::lexer::{Statement, StatementStream, TokenCoordinate};
 use crate::node_id_matcher::NodeIdMatcher;
+use crate::pe_bpmn::parser::ComputationCommonParse;
+use crate::pe_bpmn::parser::SecureChannelParse;
 use crate::pool_id_matcher::PoolIdMatcher;
 use std::collections::HashMap;
 use std::collections::HashSet;
@@ -43,6 +45,9 @@ pub struct ParseContext {
     shorthand_blank_events: HashSet<NodeId>,
     node_id_matcher: NodeIdMatcher,
     pub pool_id_matcher: PoolIdMatcher,
+    /// Pending checks for the PE-BPMN extension, which are checked at the end of parsing.
+    pub pe_bpmn_pending_sc: Vec<SecureChannelParse>,
+    pub pe_bpmn_pending_tt: Vec<ComputationCommonParse>,
 }
 
 // X ->l1 ; l1: - task; J end; X<-end
@@ -145,6 +150,8 @@ impl Parser {
                 shorthand_blank_events: Default::default(),
                 node_id_matcher: NodeIdMatcher::new(),
                 pool_id_matcher: PoolIdMatcher::new(),
+                pe_bpmn_pending_sc: Vec::new(),
+                pe_bpmn_pending_tt: Vec::new(),
             },
         }
     }
@@ -285,6 +292,7 @@ impl Parser {
             }
         }
 
+        self.check_secure_channel_secret()?;
         self.process_shorthand_blank_events()?;
 
         crate::common::graph::validate_invariants(&self.graph)?;

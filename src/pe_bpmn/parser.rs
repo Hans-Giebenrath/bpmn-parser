@@ -4,7 +4,10 @@ use std::collections::HashSet;
 
 use crate::common::graph::{LaneId, PoolId};
 use crate::common::node::NodeType;
-use crate::lexer::{ComputationCommon, DataFlowAnnotationLexer, PeBpmnProtection, PeBpmnSubType};
+use crate::lexer::{
+    ComputationCommon, DataFlowAnnotationLexer, PeBpmnProtection, PeBpmnProtectionSubType,
+    PeBpmnSubType,
+};
 use crate::parser::Parser;
 use crate::{
     common::{
@@ -35,6 +38,14 @@ pub(crate) enum PeBpmnTypeParse {
     Pool(PoolId),
     Lane { pool_id: PoolId, lane_id: LaneId },
     Tasks(Vec<NodeId>),
+}
+
+#[derive(Debug, Clone, PartialEq, Default)]
+pub(crate) struct SecureChannelParse {
+    pub protect: Vec<NodeId>,
+    pub unprotect: Vec<NodeId>,
+    pub restrictions: HashSet<SdeId>,
+    pub secret: NodeId,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -102,7 +113,6 @@ impl Parser {
                     })
                     .collect();
 
-                // Check if the secure channel secret is defined and connected to all protect and unprotect tasks
                 if let Some(secret_str) = secure_channel.secret.as_ref() {
                     let secret_node_id = self.find_node_id(secret_str).ok_or(vec![(
                         format!("secure-channel-secret with ID ({secret_str}) was not found. Have you defined it?"),
@@ -110,44 +120,12 @@ impl Parser {
                         Level::Error,
                     )])?;
 
-                    let data_aux = self.graph.nodes[secret_node_id].get_data_aux();
-                    if let Some(data_aux) = data_aux {
-                        if data_aux.pebpmn_protection.is_empty() {
-                            for id in sender_ids.iter().chain(&receiver_ids) {
-                                if !self.graph.nodes[*id].incoming.iter().any(|edge_id| {
-                                    let node_id = self.graph.edges[*edge_id].from;
-                                    let node = &self.graph.nodes[node_id];
-                                    node.get_data_aux().map(|node_aux| node_aux.sde_id)
-                                        == Some(data_aux.sde_id)
-                                }) {
-                                    return Err(vec![(
-                                        format!(
-                                            "secure-channel-secret with ID ({secret_str}) needs to be connected to all protect and unprotect tasks"
-                                        ),
-                                        self.context.current_token_coordinate,
-                                        Level::Error,
-                                    )]);
-                                }
-                            }
-                        } else {
-                            // Note: Special case of tee-task is not implemented!
-                            return Err(vec![(
-                                format!(
-                                    "secure-channel-secret with ID ({secret_str}) has a protection applied. It can't be used as a secret."
-                                ),
-                                self.context.current_token_coordinate,
-                                Level::Error,
-                            )]);
-                        }
-                    } else {
-                        return Err(vec![(
-                            format!(
-                                "secure-channel-secret with ID ({secret_str}) is not a data element"
-                            ),
-                            self.context.current_token_coordinate,
-                            Level::Error,
-                        )]);
-                    }
+                    self.context.pe_bpmn_pending_sc.push(SecureChannelParse {
+                        protect: sender_ids.clone(),
+                        unprotect: receiver_ids.clone(),
+                        restrictions: permitted_sdes.clone(),
+                        secret: secret_node_id,
+                    });
                 }
 
                 // Check connections for sender nodes
@@ -288,6 +266,7 @@ impl Parser {
                         Some(lane_id),
                     ),
                     PeBpmnTypeParse::Tasks(tasks) => {
+                        self.context.pe_bpmn_pending_tt.push(tee.clone());
                         for task in tasks {
                             if let NodeType::RealNode {
                                 pe_bpmn_hides_protection_operations,
@@ -328,6 +307,7 @@ impl Parser {
                         Some(lane_id),
                     ),
                     PeBpmnTypeParse::Tasks(tasks) => {
+                        self.context.pe_bpmn_pending_tt.push(mpc.clone());
                         for task in tasks {
                             if let NodeType::RealNode {
                                 pe_bpmn_hides_protection_operations,
@@ -668,9 +648,11 @@ impl Parser {
             }
         }
 
-        let protection = match tee_or_mpc {
-            "tee" => PeBpmnProtection::Tee,
-            "mpc" => PeBpmnProtection::Mpc,
+        let protection = match (tee_or_mpc, lane_id) {
+            ("tee", Some(_)) => PeBpmnProtection::Tee(PeBpmnProtectionSubType::Lane),
+            ("tee", None) => PeBpmnProtection::Tee(PeBpmnProtectionSubType::Pool),
+            ("mpc", Some(_)) => PeBpmnProtection::Mpc(PeBpmnProtectionSubType::Lane),
+            ("mpc", None) => PeBpmnProtection::Mpc(PeBpmnProtectionSubType::Pool),
             _ => {
                 unreachable!()
             }
@@ -773,9 +755,9 @@ impl Parser {
                         Level::Error,
                     )]);
                 }
-                PeBpmnProtection::Tee
+                PeBpmnProtection::Tee(PeBpmnProtectionSubType::Tasks)
             }
-            "mpc" => PeBpmnProtection::Mpc,
+            "mpc" => PeBpmnProtection::Mpc(PeBpmnProtectionSubType::Tasks),
             _ => {
                 unreachable!()
             }
@@ -1153,6 +1135,93 @@ impl Parser {
             self.context.current_token_coordinate,
             Level::Error,
         )])
+    }
+
+    pub fn check_secure_channel_secret(&self) -> Result<(), ParseError> {
+        // Collect all TEE tasks
+        let mut tee_tasks = HashSet::new();
+
+        for tee in &self.context.pe_bpmn_pending_tt {
+            match &tee.pebpmn_type {
+                PeBpmnTypeParse::Pool(_) => {
+                    unreachable!()
+                }
+                PeBpmnTypeParse::Lane { .. } => {
+                    unreachable!()
+                }
+                PeBpmnTypeParse::Tasks(tasks) => {
+                    for task in tasks {
+                        tee_tasks.insert(*task);
+                    }
+                }
+            }
+        }
+
+        // Precompute all nodes in TEE (for fast lookup)
+        let mut tee_nodes = HashSet::new();
+
+        // Add TEE tasks
+        tee_tasks.iter().for_each(|id| {
+            tee_nodes.insert(*id);
+        });
+
+        // Add nodes connected to TEE tasks
+        for task_id in &tee_tasks {
+            for edge_id in &self.graph.nodes[*task_id].incoming {
+                tee_nodes.insert(self.graph.edges[*edge_id].from);
+            }
+        }
+
+        // Now validate each secure channel
+        for secure_channel in &self.context.pe_bpmn_pending_sc {
+            let secret_node_id = secure_channel.secret;
+
+            // 1. Check if secret node exists
+            if !self.graph.nodes.get(secret_node_id.0).is_some() {
+                return Err(vec![(
+                    format!(
+                        "secure-channel-secret with ID ({}) was not found",
+                        secret_node_id
+                    ),
+                    self.context.current_token_coordinate,
+                    Level::Error,
+                )]);
+            }
+
+            let data_aux = self.graph.nodes[secret_node_id].get_data_aux();
+            if let Some(data_aux) = data_aux {
+                // 2. Check if secret is protected by SecureChannel
+                let is_secure_channel_protected = data_aux
+                    .pebpmn_protection
+                    .contains(&PeBpmnProtection::SecureChannel);
+
+                // 3. Check if secret is in TEE
+                let is_in_tee = tee_nodes.contains(&secret_node_id);
+
+                // 4. If protected by SecureChannel, must be in TEE
+                if is_secure_channel_protected && !is_in_tee {
+                    return Err(vec![(
+                        format!(
+                            "secure-channel-secret with ID ({}) is protected by secure channel but not inside TEE",
+                            secret_node_id
+                        ),
+                        self.context.current_token_coordinate,
+                        Level::Error,
+                    )]);
+                }
+            } else {
+                return Err(vec![(
+                    format!(
+                        "secure-channel-secret with ID ({}) is not a data element",
+                        secret_node_id
+                    ),
+                    self.context.current_token_coordinate,
+                    Level::Error,
+                )]);
+            }
+        }
+
+        Ok(())
     }
 }
 

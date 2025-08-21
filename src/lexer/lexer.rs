@@ -92,8 +92,15 @@ pub struct DataAux {
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub enum PeBpmnProtection {
     SecureChannel,
-    Tee,
-    Mpc,
+    Tee(PeBpmnProtectionSubType),
+    Mpc(PeBpmnProtectionSubType),
+}
+
+#[derive(Debug, Clone, Eq, PartialEq)]
+pub enum PeBpmnProtectionSubType {
+    Pool,
+    Lane,
+    Tasks,
 }
 
 #[derive(Debug, Clone, Eq, PartialEq)]
