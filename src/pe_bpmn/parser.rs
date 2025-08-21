@@ -102,61 +102,119 @@ impl Parser {
                     })
                     .collect();
 
-                // if let (Some(sender_id), Some(sender)) = (sender_ids, secure_channel.protect) {
-                //     self.check_connection(sender_id, sender, &permitted_sdes, true)?;
-                // }
+                // Check if the secure channel secret is defined and connected to all protect and unprotect tasks
+                if let Some(secret_str) = secure_channel.secret.as_ref() {
+                    let secret_node_id = self.find_node_id(secret_str).ok_or(vec![(
+                        format!("secure-channel-secret with ID ({secret_str}) was not found. Have you defined it?"),
+                        self.context.current_token_coordinate,
+                        Level::Error,
+                    )])?;
 
-                // if let (Some(receiver_id), Some(receiver)) = (receiver_ids, secure_channel.unprotect)
-                // {
-                //     self.check_connection(receiver_id, receiver, &permitted_sdes, false)?;
-                // }
+                    let data_aux = self.graph.nodes[secret_node_id].get_data_aux();
+                    if let Some(data_aux) = data_aux {
+                        if data_aux.pebpmn_protection.is_empty() {
+                            for id in sender_ids.iter().chain(&receiver_ids) {
+                                if !self.graph.nodes[*id].incoming.iter().any(|edge_id| {
+                                    let node_id = self.graph.edges[*edge_id].from;
+                                    let node = &self.graph.nodes[node_id];
+                                    node.get_data_aux().map(|node_aux| node_aux.sde_id)
+                                        == Some(data_aux.sde_id)
+                                }) {
+                                    return Err(vec![(
+                                        format!(
+                                            "secure-channel-secret with ID ({secret_str}) needs to be connected to all protect and unprotect tasks"
+                                        ),
+                                        self.context.current_token_coordinate,
+                                        Level::Error,
+                                    )]);
+                                }
+                            }
+                        } else {
+                            // Note: Special case of tee-task is not implemented!
+                            return Err(vec![(
+                                format!(
+                                    "secure-channel-secret with ID ({secret_str}) has a protection applied. It can't be used as a secret."
+                                ),
+                                self.context.current_token_coordinate,
+                                Level::Error,
+                            )]);
+                        }
+                    } else {
+                        return Err(vec![(
+                            format!(
+                                "secure-channel-secret with ID ({secret_str}) is not a data element"
+                            ),
+                            self.context.current_token_coordinate,
+                            Level::Error,
+                        )]);
+                    }
+                }
+
+                // Check connections for sender nodes
+                for (sender_id, sender_name) in sender_ids.iter().zip(secure_channel.protect.iter())
+                {
+                    self.check_connection(sender_id, sender_name, &permitted_sdes, true)?;
+                }
+
+                // Check connections for receiver nodes
+                for (receiver_id, receiver_name) in
+                    receiver_ids.iter().zip(secure_channel.unprotect.iter())
+                {
+                    self.check_connection(receiver_id, receiver_name, &permitted_sdes, false)?;
+                }
 
                 match (!sender_ids.is_empty(), !receiver_ids.is_empty()) {
                     (true, true) => {
                         for sender in sender_ids {
                             self.check_protection_paths(
-                            sender,
-                            false,
-                            &pe_bpmn.meta,
-                            &receiver_ids,
-                            &PeBpmnProtection::SecureChannel,
-                            |sde_id| permitted_sdes.is_empty() || permitted_sdes.contains(sde_id),
-                            false,
-                            enforce_reach_end,
-                            "secure-channel",
+                                sender,
+                                false,
+                                &pe_bpmn.meta,
+                                &receiver_ids,
+                                &PeBpmnProtection::SecureChannel,
+                                |sde_id| {
+                                    permitted_sdes.is_empty() || permitted_sdes.contains(sde_id)
+                                },
+                                false,
+                                enforce_reach_end,
+                                "secure-channel",
                             )?
                         }
-                    },
+                    }
                     (true, false) => {
                         for sender in sender_ids {
                             self.check_protection_paths(
-                            sender,
-                            false,
-                            &pe_bpmn.meta,
-                            &[],
-                            &PeBpmnProtection::SecureChannel,
-                            |sde_id| permitted_sdes.is_empty() || permitted_sdes.contains(sde_id),
-                            false,
-                            false,
-                            "secure-channel",
+                                sender,
+                                false,
+                                &pe_bpmn.meta,
+                                &[],
+                                &PeBpmnProtection::SecureChannel,
+                                |sde_id| {
+                                    permitted_sdes.is_empty() || permitted_sdes.contains(sde_id)
+                                },
+                                false,
+                                false,
+                                "secure-channel",
                             )?
                         }
                     }
                     (false, true) => {
                         for receiver in receiver_ids {
                             self.check_protection_paths(
-                            receiver,
-                            true,
-                            &pe_bpmn.meta,
-                            &[],
-                            &PeBpmnProtection::SecureChannel,
-                            |sde_id| permitted_sdes.is_empty() || permitted_sdes.contains(sde_id),
-                            false,
-                            false,
-                            "secure-channel",
+                                receiver,
+                                true,
+                                &pe_bpmn.meta,
+                                &[],
+                                &PeBpmnProtection::SecureChannel,
+                                |sde_id| {
+                                    permitted_sdes.is_empty() || permitted_sdes.contains(sde_id)
+                                },
+                                false,
+                                false,
+                                "secure-channel",
                             )?
                         }
-                    },
+                    }
                     (false, false) => {
                         if permitted_sdes.is_empty() {
                             return Err(vec![
@@ -1003,8 +1061,8 @@ impl Parser {
 
     fn check_connection(
         &self,
-        node_id: NodeId,
-        name: String,
+        node_id: &NodeId,
+        name: &String,
         permitted_sdes: &HashSet<SdeId>,
         is_sender: bool,
     ) -> Result<(), ParseError> {
@@ -1013,9 +1071,9 @@ impl Parser {
 
             let is_connected = sde.data_element.iter().any(|&node_node_id| {
                 let edge_ids = if is_sender {
-                    &self.graph.nodes[node_id].incoming
+                    &self.graph.nodes[*node_id].incoming
                 } else {
-                    &self.graph.nodes[node_id].outgoing
+                    &self.graph.nodes[*node_id].outgoing
                 };
 
                 edge_ids.iter().any(|&eid| {
@@ -1034,7 +1092,7 @@ impl Parser {
                 format!("Data element '{}'", sde.name)
             };
 
-            let display_name = self.graph.nodes[node_id]
+            let display_name = self.graph.nodes[*node_id]
                 .display_text()
                 .map(|s| s.to_owned())
                 .unwrap_or("@".to_owned() + &name);

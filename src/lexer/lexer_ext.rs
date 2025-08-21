@@ -30,11 +30,6 @@ pub struct Tee {
 #[derive(Debug, Clone, PartialEq, Default)]
 pub struct Mpc {
     pub common: ComputationCommon,
-    // TODO: Add the correct type and usage for this field
-    // pub in_protect_pre_sent: <Type>,
-    // pub in_protect_post_received: <Type>,
-    // pub in_channel: <Type>,
-    // pub out_channel: <Type>,
 }
 
 #[derive(Debug, Clone, PartialEq, Default)]
@@ -92,23 +87,28 @@ fn assemble_secure_channel(mut tokens: Tokens, mut tc: TokenCoordinate) -> AResu
         if !matches!(token, Token::Separator) {
             let sender = parse_id_or_placeholder(next_token, tc, Some("pre-sent"), "sender")?;
             tc.end += sender.len() + 1;
-            secure_channel.get_or_insert_with(SecureChannel::default).protect.push(sender);
+            secure_channel
+                .get_or_insert_with(SecureChannel::default)
+                .protect
+                .push(sender);
 
             let receiver =
                 parse_id_or_placeholder(tokens.next(), tc, Some("post-received"), "receiver")?;
             secure_channel
                 .get_or_insert_with(SecureChannel::default)
-                .unprotect.push(receiver);
+                .unprotect
+                .push(receiver);
 
             let mut restrictions = parse_optional_ids(&mut tokens)?;
             secure_channel
                 .get_or_insert_with(SecureChannel::default)
-                .restrictions.append(&mut restrictions);
+                .restrictions
+                .append(&mut restrictions);
         }
     } else {
         return Err((
             tc,
-            "Missing secure-channel arguments. Add a sender, receiver, and optional restrictions."
+            "secure-channel extension is not finished, add closing bracket or arguments (sender, receiver, optional restrictions)"
                 .to_string(),
         ));
     };
@@ -142,9 +142,12 @@ fn assemble_secure_channel(mut tokens: Tokens, mut tc: TokenCoordinate) -> AResu
                 }
                 "secure-channel-secret" => {
                     let id = parse_id_or_placeholder(tokens.next(), tc, None, "secure-channel-secret")?;
-                    secure_channel
-                        .get_or_insert_with(SecureChannel::default)
-                        .secret = Some(id);
+                    let sc = secure_channel.get_or_insert_with(SecureChannel::default);
+                    if sc.secret.is_some() {
+                        return Err((tc, "There is already a secure-channel-secret defined. Multiple secure-channel-secret entries are not allowed.".to_string()));
+                    }
+                    sc.secret = Some(id);
+                    check_end_block(tokens.next())?;
                 }
                 "stroke-color" => {
                     if pe_bpmn_meta.stroke_color.is_some() {
