@@ -1138,83 +1138,120 @@ impl Parser {
     }
 
     pub fn check_secure_channel_secret(&self) -> Result<(), ParseError> {
-        // Collect all TEE tasks
-        let mut tee_tasks = HashSet::new();
+        // Go through all secure-channel definitions
+        for secure_channel in &self.context.pe_bpmn_pending_sc {
+            let secret_data_aux = self.graph.nodes[secure_channel.secret].get_data_aux();
 
-        for tee in &self.context.pe_bpmn_pending_tt {
-            match &tee.pebpmn_type {
-                PeBpmnTypeParse::Pool(_) => {
-                    unreachable!()
-                }
-                PeBpmnTypeParse::Lane { .. } => {
-                    unreachable!()
-                }
-                PeBpmnTypeParse::Tasks(tasks) => {
-                    for task in tasks {
-                        tee_tasks.insert(*task);
+            // Check that the secret is a data element
+            if let Some(secret_data_aux) = secret_data_aux {
+                // Check that the secret is connected to all protect tasks
+                for node_id in secure_channel.protect.iter() {
+                    let sde_ids: Vec<SdeId> = self.graph.nodes[*node_id]
+                        .incoming
+                        .iter()
+                        .filter_map(|edge_id| {
+                            let edge = &self.graph.edges[*edge_id];
+                            if edge.is_data_flow() {
+                                self.graph.nodes[edge.from]
+                                    .get_data_aux()
+                                    .filter(|aux| aux.pebpmn_protection.is_empty())
+                                    .map(|aux| aux.sde_id)
+                            } else {
+                                None
+                            }
+                        })
+                        .collect();
+
+                    if !sde_ids.contains(&secret_data_aux.sde_id) {
+                        return Err(vec![(
+                            format!(
+                                "secure-channel-secret needs to be input to all secure-channel-protect tasks. Currently node ({}) is not connected to secure-channel-secret",
+                                self.graph.nodes[*node_id]
+                                    .display_text()
+                                    .unwrap_or_else(|| "unknown"),
+                            ),
+                            self.context.current_token_coordinate,
+                            Level::Error,
+                        )]);
                     }
                 }
-            }
-        }
 
-        // Precompute all nodes in TEE (for fast lookup)
-        let mut tee_nodes = HashSet::new();
+                // Check that the secret is connected to all unprotect tasks
+                for node_id in secure_channel.unprotect.iter() {
+                    let sde_ids: Vec<SdeId> = self.graph.nodes[*node_id]
+                        .incoming
+                        .iter()
+                        .filter_map(|edge_id| {
+                            let edge = &self.graph.edges[*edge_id];
+                            if edge.is_data_flow() {
+                                let from_node = edge.from;
+                                self.graph.nodes[from_node]
+                                    .get_data_aux()
+                                    .filter(|aux| aux.pebpmn_protection.is_empty())
+                                    .map(|aux| aux.sde_id)
+                            } else {
+                                None
+                            }
+                        })
+                        .collect();
 
-        // Add TEE tasks
-        tee_tasks.iter().for_each(|id| {
-            tee_nodes.insert(*id);
-        });
+                    // Special case: If the unprotect task is part of tee-tasks
+                    let is_valid = if self.context.pe_bpmn_pending_tt.iter().any(|tt| {
+                        if let PeBpmnTypeParse::Tasks(tasks) = &tt.pebpmn_type {
+                            tasks.contains(node_id)
+                        } else {
+                            false
+                        }
+                    }) {
+                        // Search for the secure-channel-secret
+                        let node = &self.graph.nodes[*node_id];
+                        let secret_node = node.incoming.iter().find_map(|edge_id| {
+                            let edge = &self.graph.edges[*edge_id];
+                            if edge.is_data_flow()
+                                && edge
+                                    .get_transported_data()
+                                    .contains(&secret_data_aux.sde_id)
+                            {
+                                self.graph.nodes[edge.from].get_data_aux()
+                            } else {
+                                None
+                            }
+                        });
 
-        // Add nodes connected to TEE tasks
-        for task_id in &tee_tasks {
-            for edge_id in &self.graph.nodes[*task_id].incoming {
-                tee_nodes.insert(self.graph.edges[*edge_id].from);
-            }
-        }
+                        // Check that the secret data element is protected only with secure-channel or tee-tasks
+                        if let Some(data_aux) = secret_node {
+                            !data_aux
+                                .pebpmn_protection
+                                .iter()
+                                .any(|protection| match protection {
+                                    PeBpmnProtection::SecureChannel => false,
+                                    PeBpmnProtection::Tee(PeBpmnProtectionSubType::Tasks) => false,
+                                    _ => true,
+                                })
+                        } else {
+                            false
+                        }
+                    } else {
+                        false
+                    };
 
-        // Now validate each secure channel
-        for secure_channel in &self.context.pe_bpmn_pending_sc {
-            let secret_node_id = secure_channel.secret;
-
-            // 1. Check if secret node exists
-            if !self.graph.nodes.get(secret_node_id.0).is_some() {
-                return Err(vec![(
-                    format!(
-                        "secure-channel-secret with ID ({}) was not found",
-                        secret_node_id
-                    ),
-                    self.context.current_token_coordinate,
-                    Level::Error,
-                )]);
-            }
-
-            let data_aux = self.graph.nodes[secret_node_id].get_data_aux();
-            if let Some(data_aux) = data_aux {
-                // 2. Check if secret is protected by SecureChannel
-                let is_secure_channel_protected = data_aux
-                    .pebpmn_protection
-                    .contains(&PeBpmnProtection::SecureChannel);
-
-                // 3. Check if secret is in TEE
-                let is_in_tee = tee_nodes.contains(&secret_node_id);
-
-                // 4. If protected by SecureChannel, must be in TEE
-                if is_secure_channel_protected && !is_in_tee {
-                    return Err(vec![(
-                        format!(
-                            "secure-channel-secret with ID ({}) is protected by secure channel but not inside TEE",
-                            secret_node_id
-                        ),
-                        self.context.current_token_coordinate,
-                        Level::Error,
-                    )]);
+                    // Check that the secret is connected to the unprotect task or that it is part of tee-tasks and the secret is protected with secure-channel or tee-tasks
+                    if !sde_ids.contains(&secret_data_aux.sde_id) && !is_valid {
+                        return Err(vec![(
+                            format!(
+                                "secure-channel-secret needs to be input to all secure-channel-unprotect tasks. Only exception is when the unprotect task is part of tee-tasks and the secure-channel-secret is protected with secure-channel or tee-tasks. Currently node ({}) is not connected to secure-channel-secret",
+                                self.graph.nodes[*node_id]
+                                    .display_text()
+                                    .unwrap_or_else(|| "unknown"),
+                            ),
+                            self.context.current_token_coordinate,
+                            Level::Error,
+                        )]);
+                    }
                 }
             } else {
                 return Err(vec![(
-                    format!(
-                        "secure-channel-secret with ID ({}) is not a data element",
-                        secret_node_id
-                    ),
+                    format!("secure-channel-secret is not a data element",),
                     self.context.current_token_coordinate,
                     Level::Error,
                 )]);
