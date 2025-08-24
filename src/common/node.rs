@@ -71,16 +71,29 @@ pub struct Node {
     //   from: Vec<EdgeId>
     //   to:   Vec<struct{EdgeId, FlowType, stays_within_lane}>
     /// Invariant: After global crossing minimization, this is sorted.
-    /// TODO did I implement this?
     pub incoming: Vec<EdgeId>,
     pub outgoing: Vec<EdgeId>,
+
+    pub incoming_ports: Vec<Port>,
+    pub outgoing_ports: Vec<Port>,
 
     pub aux: NodePhaseAuxData,
 }
 
+#[derive(Debug)]
 pub struct XY {
     pub x: usize,
     pub y: usize,
+}
+
+#[derive(Debug)]
+pub struct Port {
+    pub x: usize,
+    pub y: usize,
+    /// If this is true, then the edge segment first leaves in a vertical way, until it hits its
+    /// direct target or a "bend point" dummy node (this "bend point" dedication is not explicitly
+    /// expressed in the type system).
+    pub on_top_or_bottom: bool,
 }
 
 impl Node {

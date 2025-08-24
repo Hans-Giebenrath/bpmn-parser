@@ -245,11 +245,12 @@ impl Vars {
 
     #[track_caller]
     fn x_orig(&mut self, node_idces: IlpNodeSiblingPair) -> Variable {
-        match self
-            .x_vars
-            .get(&node_idces) {
-                Some(v) => *v,
-                None => panic!("should have been prepared previously for ilpn({})-ilpn({})", node_idces.0.0, node_idces.1.0),
+        match self.x_vars.get(&node_idces) {
+            Some(v) => *v,
+            None => panic!(
+                "should have been prepared previously for ilpn({})-ilpn({})",
+                node_idces.0.0, node_idces.1.0
+            ),
         }
     }
 
@@ -269,9 +270,15 @@ impl Vars {
 
     #[track_caller]
     fn c(&mut self, ijkl: &Ijkl) -> Variable {
-        match self .c_vars .get(ijkl) {
+        match self.c_vars.get(ijkl) {
             Some(v) => *v,
-            None => panic!("should have been prepared previously for ilpn({})-ilpn({})-ilpn({})-ilpn({})", ijkl.i().0, ijkl.j().0, ijkl.k().0, ijkl.l().0),
+            None => panic!(
+                "should have been prepared previously for ilpn({})-ilpn({})-ilpn({})-ilpn({})",
+                ijkl.i().0,
+                ijkl.j().0,
+                ijkl.k().0,
+                ijkl.l().0
+            ),
         }
     }
 }
@@ -662,7 +669,7 @@ fn sort_incoming_and_outgoing(graph: &mut Graph) {
                     && to_node.layer_id == from_node.layer_id
                     && from_rank_within_lane < to_rank_within_lane
                 {
-                    // Looping upwards in the same pool
+                    // Looping downwards (toward this node) in the same pool
                     let group_order = 0;
                     (
                         group_order,
@@ -675,7 +682,7 @@ fn sort_incoming_and_outgoing(graph: &mut Graph) {
                     && to_node.layer_id == from_node.layer_id
                     && from_rank_within_lane > to_rank_within_lane
                 {
-                    // Looping upwards in the same pool
+                    // Looping upwards (towards this node) in the same pool
                     let group_order = 2;
                     (
                         group_order,
@@ -1027,13 +1034,28 @@ fn debug_print_graph(v: &Vars, ig: &IlpGraph, g: &Graph) {
 
         match &e.edge_type {
             EdgeType::Regular { text, .. } => {
-                println!("{} --[{flow_type} eid({edge_idx}) {}]--> {}", node_str(&g.nodes[e.from]), text.as_ref().map(|s| s.as_str()).unwrap_or(""), node_str(&g.nodes[e.to]));
+                println!(
+                    "{} --[{flow_type} eid({edge_idx}) {}]--> {}",
+                    node_str(&g.nodes[e.from]),
+                    text.as_ref().map(|s| s.as_str()).unwrap_or(""),
+                    node_str(&g.nodes[e.to])
+                );
             }
             EdgeType::ReplacedByDummies { text, .. } => {
-                println!("(replaced by dummies {} --[{flow_type} eid({edge_idx}) {}]--> {})", node_str(&g.nodes[e.from]), text.as_ref().map(|s| s.as_str()).unwrap_or(""),node_str(&g.nodes[e.to]));
+                println!(
+                    "(replaced by dummies {} --[{flow_type} eid({edge_idx}) {}]--> {})",
+                    node_str(&g.nodes[e.from]),
+                    text.as_ref().map(|s| s.as_str()).unwrap_or(""),
+                    node_str(&g.nodes[e.to])
+                );
             }
             EdgeType::DummyEdge { original_edge, .. } => {
-                println!("{} --[{flow_type} eid({edge_idx}), orig: {}]--> {})", node_str(&g.nodes[e.from]), original_edge.0, node_str(&g.nodes[e.to]));
+                println!(
+                    "{} --[{flow_type} eid({edge_idx}), orig: {}]--> {})",
+                    node_str(&g.nodes[e.from]),
+                    original_edge.0,
+                    node_str(&g.nodes[e.to])
+                );
             }
         }
     }
@@ -1047,7 +1069,13 @@ fn debug_print_graph(v: &Vars, ig: &IlpGraph, g: &Graph) {
     println!();
     println!("C Vars:");
     for ijkl in v.c_vars.keys() {
-        println!("C var ilpn({}) - ilpn({}) - ilpn({}) - ilpn({})", ijkl.i().0, ijkl.j().0, ijkl.k().0, ijkl.l().0);
+        println!(
+            "C var ilpn({}) - ilpn({}) - ilpn({}) - ilpn({})",
+            ijkl.i().0,
+            ijkl.j().0,
+            ijkl.k().0,
+            ijkl.l().0
+        );
     }
 
     println!();
@@ -1055,19 +1083,41 @@ fn debug_print_graph(v: &Vars, ig: &IlpGraph, g: &Graph) {
     for (layer_idx, layer) in ig.layers.iter().enumerate() {
         println!("IlpLayer {layer_idx}:");
         for (start, group_size) in &layer.groups {
-            println!("    group {}", (start.0 .. start.0 + group_size).join(" "));
+            println!("    group {}", (start.0..start.0 + group_size).join(" "));
         }
-        println!("    iterate_node_ids_1: {}",
-            layer.iterate_node_ids_1().map(|id| format!("({id})")).join(" ")
+        println!(
+            "    iterate_node_ids_1: {}",
+            layer
+                .iterate_node_ids_1()
+                .map(|id| format!("({id})"))
+                .join(" ")
         );
-        println!("    iterate_node_ids_2: {}",
-            layer.iterate_node_ids_2().map(|pair| format!("({} {})", pair.0.0, pair.1.0)).join(" ")
+        println!(
+            "    iterate_node_ids_2: {}",
+            layer
+                .iterate_node_ids_2()
+                .map(|pair| format!("({} {})", pair.0.0, pair.1.0))
+                .join(" ")
         );
-        println!("    iterate_node_ids_3: {}",
-            layer.iterate_node_ids_3().map(|pair| format!("({} {} {})", pair.0.0, pair.1.0, pair.2.0)).join(" ")
+        println!(
+            "    iterate_node_ids_3: {}",
+            layer
+                .iterate_node_ids_3()
+                .map(|pair| format!("({} {} {})", pair.0.0, pair.1.0, pair.2.0))
+                .join(" ")
         );
-        println!("    iter_ijkl: {}",
-            layer.iter_ijkl(&ig.all_nodes).map(|ijkl| format!("({} {} {} {})", ijkl.i().0, ijkl.j().0, ijkl.k().0, ijkl.l().0)).join(" ")
+        println!(
+            "    iter_ijkl: {}",
+            layer
+                .iter_ijkl(&ig.all_nodes)
+                .map(|ijkl| format!(
+                    "({} {} {} {})",
+                    ijkl.i().0,
+                    ijkl.j().0,
+                    ijkl.k().0,
+                    ijkl.l().0
+                ))
+                .join(" ")
         );
     }
 }

@@ -52,7 +52,7 @@ pub struct PoolId(pub usize);
 pub struct LaneId(pub usize);
 
 // TODO make use of
-#[derive(PartialEq, Default, Clone, Debug, Copy, Hash, Eq)]
+#[derive(PartialEq, Default, Clone, Debug, Copy, Hash, Eq, PartialOrd, Ord)]
 pub struct PoolAndLane {
     pub pool: PoolId,
     pub lane: LaneId,

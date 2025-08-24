@@ -17,12 +17,13 @@ use layout::all_crossing_minimization::reduce_all_crossings;
 use layout::data_edge_routing::find_straight_edges;
 use layout::dummy_node_generation::generate_dummy_nodes;
 use layout::edge_routing::edge_routing;
+use layout::port_assignment::port_assignment;
 use layout::reduce_half_layer_crossings::reduce_half_layer_crossings;
 use layout::replace_dummy_nodes::replace_dummy_nodes;
 use layout::solve_layer_assignment::solve_layer_assignment;
 use layout::xy_ilp::assign_xy_ilp;
 
-use crate::common::graph::{sort_lanes_by_layer, Graph};
+use crate::common::graph::{Graph, sort_lanes_by_layer};
 
 #[derive(Parser)]
 #[command(version, about, long_about = None)]
@@ -67,11 +68,19 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 }
 
 pub fn layout_graph(graph: &mut Graph) {
+    // Phase 2
     solve_layer_assignment(graph);
     generate_dummy_nodes(graph);
     sort_lanes_by_layer(graph);
+
+    // Phase 3
     reduce_all_crossings(graph);
+    port_assignment(graph);
+
+    // Phase 4
     assign_xy_ilp(graph);
+
+    // Phase 5
     reduce_half_layer_crossings(graph);
     find_straight_edges(graph);
     edge_routing(graph);
