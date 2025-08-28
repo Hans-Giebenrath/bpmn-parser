@@ -253,6 +253,10 @@ impl Node {
             lane: self.lane,
         }
     }
+
+    pub fn is_boundary_event(&self, _edge_id: EdgeId) -> bool {
+        todo!()
+    }
 }
 
 impl std::fmt::Display for Node {

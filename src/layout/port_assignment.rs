@@ -1,6 +1,7 @@
 use crate::common::graph::EdgeId;
 use crate::common::graph::Graph;
 use crate::common::graph::NodeId;
+use crate::common::node::Port;
 use crate::common::node::XY;
 
 pub fn port_assignment(graph: &mut Graph) {
@@ -100,35 +101,191 @@ pub fn port_assignment(graph: &mut Graph) {
 ///  
 fn handle_nongateway_node(node_id: NodeId, graph: &mut Graph) {
     let this_node = &graph.nodes[node_id];
-    let mut incoming_ports = Vec::<XY>::new();
-    let mut outgoing_ports = Vec::<XY>::new();
+    let mut incoming_ports = Vec::<Port>::new();
+    let mut outgoing_ports = Vec::<Port>::new();
 
     let mut above_inc = 0;
     let mut above_out = 0;
     let mut below_inc = 0;
     let mut below_out = 0;
-    'incomings: {
-        let mut first_encountered =
-        for edge_id in this_node.incoming.iter().cloned() {
-        match is_vertical_edge(edge_id, graph) {
+
+    let mut has_vertical_edge_above = false;
+    let mut has_vertical_edge_below = false;
+
+    match &this_node.incoming[..] {
+        [] => (),
+        [single] => match is_vertical_edge(*single, graph, node_id) {
             None => (),
             Some(VerticalEdgeDocks::Above) => {
-                assert!(above_inc == 0);
-                above_inc += 1;
+                above_inc = 1;
+                has_vertical_edge_above = true;
             }
             Some(VerticalEdgeDocks::Below) => {
-                below_inc += 1;
-                // If this comes directly from below, then it must be the very last.
-                assert!(incomings.next().is_none());
-                break 'incomings;
+                below_inc = 1;
+                has_vertical_edge_below = true;
+            }
+        },
+        [first, .., last] => {
+            match is_vertical_edge(*first, graph, node_id) {
+                None => (),
+                Some(VerticalEdgeDocks::Above) => {
+                    above_inc = 1;
+                    has_vertical_edge_above = true;
+                }
+                Some(VerticalEdgeDocks::Below) => {
+                    unreachable!("Can't be")
+                }
+            }
+            match is_vertical_edge(*last, graph, node_id) {
+                None => (),
+                Some(VerticalEdgeDocks::Above) => {
+                    unreachable!("Can't be")
+                }
+                Some(VerticalEdgeDocks::Below) => {
+                    below_inc = 1;
+                    has_vertical_edge_below = true;
+                }
             }
         }
-        for edge_id in incomings {
-            let edge = &graph.edges[edge_id];
-            let from = &graph.nodes[edge.from];
-            //if from.layer_id == this_node.layer_id
+    }
+
+    match &this_node.outgoing[..] {
+        [] => (),
+        [single] => match is_vertical_edge(*single, graph, node_id) {
+            None => {
+                // A single boundary event usually is placed on the bottom side.
+                if this_node.is_boundary_event(single) {
+                    below_out = 1;
+                }
+            }
+            Some(VerticalEdgeDocks::Above) => {
+                above_out = 1;
+                assert!(!has_vertical_edge_above);
+                has_vertical_edge_above = true;
+            }
+            Some(VerticalEdgeDocks::Below) => {
+                below_out = 1;
+                assert!(!has_vertical_edge_below);
+                has_vertical_edge_below = true;
+            }
+        },
+        many @ [first, .., last] => {
+            // First check if the ends are vertical edges.
+            match is_vertical_edge(*first, graph, node_id) {
+                None => (),
+                Some(VerticalEdgeDocks::Above) => {
+                    above_out += 1;
+                    assert!(!has_vertical_edge_above);
+                    has_vertical_edge_above = true;
+                }
+                Some(VerticalEdgeDocks::Below) => {
+                    unreachable!("Can't be")
+                }
+            }
+            match is_vertical_edge(*last, graph, node_id) {
+                None => (),
+                Some(VerticalEdgeDocks::Above) => {
+                    unreachable!("Can't be")
+                }
+                Some(VerticalEdgeDocks::Below) => {
+                    below_out += 1;
+                    assert!(!has_vertical_edge_below);
+                    has_vertical_edge_below = true;
+                }
+            }
+
+            // Now refine that number by looking at boundary events.
+            // By default boundary events are placed below the node. So
+            // start from the end to look for boundary events and a sequence flow.
+            // The sequence flow flips over from moving stuff on the `below` side to putting
+            // stuff on the `above` side. For example:
+            //       (DF, BE1, DF, BE2, DF, MF, SF, DF, BE3, DF, BE4, DF)
+            // Then everything up to (including) BE2 is on `above`, and everything
+            // starting from BE3 is on `below`. If there would be no SF, then instead
+            // everything starting from BE1 would be on `below`, and the first DF would be on
+            // `right`.
+            let mut it = many
+                .iter()
+                .cloned()
+                .enumerate()
+                // That one was already covered, no need to process it again.
+                .skip(above_out)
+                .rev()
+                .enumerate()
+                // If the last one was actually a vertical sequence flow, then we *still* want
+                // to continue putting BEs on `below`. So just skip the vertical edge.
+                .skip(below_out);
+            for (rev_idx, (_, edge_id)) in it {
+                if this_node.is_boundary_event(edge_id) {
+                    // rev_idx starts at 0, but if the 0th element is on `below` we want to
+                    // have `below_out == 1`.
+                    below_out = rev_idx + 1;
+                } else if graph.edges[edge_id].is_sequence_flow() {
+                    break;
+                }
+            }
+            for (_, (idx, edge_id)) in it {
+                if this_node.is_boundary_event(edge_id) {
+                    // idx starts at 0, but if the 0th element is on `above` we want to
+                    // have `above_out == 1`.
+                    above_out = idx + 1;
+                    // We found the right-most boundary event, so we can short-circuit away
+                    // here. Everything else left of it now must be on `above` as well.
+                    break;
+                }
+            }
         }
     }
+
+    // At this point we know exactly how many ports are at what side, so we can do simple math
+    // stuff to place the ports using `points_on_segment`.
+    let mut above_coordinates =
+        points_on_side(this_node.width, above_inc + above_out).map(|x| Port {
+            x,
+            y: 0,
+            on_top_or_bottom: true,
+        });
+    let mut below_coordinates =
+        points_on_side(this_node.width, below_inc + below_out).map(|x| Port {
+            x,
+            y: 0,
+            on_top_or_bottom: true,
+        });
+    if above_inc > 0 {
+        assert_eq!(above_inc, 1);
+        incoming_ports.push(above_coordinates.next().unwrap());
+    }
+    incoming_ports.extend(
+        points_on_side(
+            this_node.height,
+            this_node.incoming.len() - above_inc - below_inc,
+        )
+        .map(|y| Port {
+            x: 0,
+            y,
+            on_top_or_bottom: false,
+        }),
+    );
+    if below_inc > 0 {
+        assert_eq!(below_inc, 1);
+        incoming_ports.push(below_coordinates.next().unwrap());
+    }
+
+    outgoing_ports.extend(above_coordinates);
+    outgoing_ports.extend(
+        points_on_side(
+            this_node.height,
+            this_node.outgoing.len() - above_out - below_out,
+        )
+        .map(|y| Port {
+            x: 0,
+            y,
+            on_top_or_bottom: false,
+        }),
+    );
+    outgoing_ports.extend(below_coordinates);
+
+    // now comes another hairy part:
 }
 
 fn handle_gateway_node(node_id: NodeId, graph: &mut Graph) {
@@ -229,4 +386,15 @@ fn is_vertical_edge(
     unreachable!(
         "We did not find the other end of the edge in the same layer. Very, verrryyyy strange. Smells like ... a ... BUG?!"
     );
+}
+
+/// Return an iterator over `k` equally spaced interior points
+/// on the line segment [x1, x2].
+///
+/// Example:
+///   points_on_segment(0.0, 10.0, 3).collect::<Vec<_>>()
+///       == [2.5, 5.0, 7.5]
+pub fn points_on_side(side_len: usize, k: usize) -> impl Iterator<Item = usize> {
+    let step = side_len as f64 / (k as f64 + 1.0);
+    (1..=k).map(move |i| ((i as f64) * step) as usize)
 }

@@ -41,7 +41,11 @@ pub fn replace_dummy_nodes(graph: &mut Graph) {
                 let text = text.clone();
                 let first_dummy_edge_id = *first_dummy_edge;
 
-                for edge in graph.edges.iter().skip(first_dummy_edge_id.0) {
+                let mut edge_id = first_dummy_edge_id;
+                // This loop hops along the edges via node.incoming/.outgoing, as dummy edges might
+                // not necessarily be consecutive in `graph.edges`.
+                loop {
+                    let edge = &graph.edges[first_dummy_edge_id];
                     match edge.edge_type {
                         EdgeType::DummyEdge {
                             original_edge,
@@ -58,6 +62,30 @@ pub fn replace_dummy_nodes(graph: &mut Graph) {
                             bend_points.push(segment_to);
                         }
                         _ => break,
+                    }
+                    let to_node = &graph.nodes[edge.to];
+                    let mut next_edge_it = to_node
+                        .incoming
+                        .iter()
+                        .filter(|e| **e != edge_id)
+                        .chain(to_node.outgoing.iter().filter(|e| **e != edge_id));
+                    match (next_edge_it.next(), next_edge_it.next()) {
+                        (Some(_), Some(_)) => {
+                            // There are multiple other edges, which means we reached some target node
+                            // which is not a dummy node (dummies only have two connected edges, one of
+                            // them being filtered out). So we are done.
+                            break;
+                        }
+                        (None, _) => {
+                            // Done as well, probably reached an end node.
+                            break;
+                        }
+                        (Some(e), None) => {
+                            // Only one success edge is present, here. This could mean that the
+                            // original ReplacedByDummies edge continues, but not necessarily.
+                            // This is checked in the `match` in the beginning of the loop.
+                            edge_id = *e;
+                        }
                     }
                 }
                 bend_points.push(to);
@@ -80,32 +108,38 @@ pub fn replace_dummy_nodes(graph: &mut Graph) {
 
     // Remove all the unneeded dummy nodes in the end. Otherwise it becomes too noisy to filter
     // them away in the output phase.
-    while graph.nodes.pop_if(|node| node.is_dummy()).is_some() { }
+    while graph.nodes.pop_if(|node| node.is_dummy()).is_some() {}
     // Then fix the dummy edge references in incoming and outgoing.
     for node in &mut graph.nodes {
         let incoming = std::mem::take(&mut node.incoming);
-        let incoming = incoming.into_iter().map(|edge_id| {
-            match graph.edges[edge_id].edge_type {
+        let incoming = incoming
+            .into_iter()
+            .map(|edge_id| match graph.edges[edge_id].edge_type {
                 EdgeType::DummyEdge { original_edge, .. } => original_edge,
-                EdgeType::ReplacedByDummies { .. } => unreachable!("should be converted back to a Regular in the loop above"),
-                EdgeType::Regular {..} => edge_id,
-            }
-        }).collect::<Vec<_>>();
+                EdgeType::ReplacedByDummies { .. } => {
+                    unreachable!("should be converted back to a Regular in the loop above")
+                }
+                EdgeType::Regular { .. } => edge_id,
+            })
+            .collect::<Vec<_>>();
         node.incoming = incoming;
 
         let outgoing = std::mem::take(&mut node.outgoing);
-        let outgoing = outgoing.into_iter().map(|edge_id| {
-            match graph.edges[edge_id].edge_type {
+        let outgoing = outgoing
+            .into_iter()
+            .map(|edge_id| match graph.edges[edge_id].edge_type {
                 EdgeType::DummyEdge { original_edge, .. } => original_edge,
-                EdgeType::ReplacedByDummies { .. } => unreachable!("should be converted back to a Regular in the loop above"),
-                EdgeType::Regular {..} => edge_id,
-            }
-        }).collect::<Vec<_>>();
+                EdgeType::ReplacedByDummies { .. } => {
+                    unreachable!("should be converted back to a Regular in the loop above")
+                }
+                EdgeType::Regular { .. } => edge_id,
+            })
+            .collect::<Vec<_>>();
         node.outgoing = outgoing;
     }
 
     // And now remove all the dummy edges, which should not be referenced any longer at this point.
-    while graph.edges.pop_if(|edge| edge.is_dummy()).is_some() { }
+    while graph.edges.pop_if(|edge| edge.is_dummy()).is_some() {}
 
     for pool in &mut graph.pools {
         for lane in &mut pool.lanes {
