@@ -1,8 +1,10 @@
+use crate::common::edge::DummyEdgeBendPoints;
+use crate::common::edge::EdgeType;
 use crate::common::graph::EdgeId;
 use crate::common::graph::Graph;
 use crate::common::graph::NodeId;
+use crate::common::node::NodeType;
 use crate::common::node::Port;
-use crate::common::node::XY;
 
 pub fn port_assignment(graph: &mut Graph) {
     for node_id in (0..graph.nodes.len()).map(NodeId) {
@@ -301,32 +303,69 @@ fn handle_nongateway_node(node_id: NodeId, graph: &mut Graph) {
 
     // The straight-up/down vertical edges are the first (left-most) one on the above/below sides.
     assert!(above_inc <= 1);
+    assert!(below_inc <= 1);
     // If there is an above_inc edge, then that one is the vertical one.
     assert!(above_inc == 0 || has_vertical_edge_above);
+    assert!(below_inc == 0 || has_vertical_edge_below);
     let mut above_edges_which_require_bendpoint = this_node
-        .incoming
+        .outgoing
         .iter()
-        .take(above_inc)
-        .skip(has_vertical_edge_above as usize)
-        .chain(
-            this_node
-                .outgoing
-                .iter()
-                .take(above_out)
-                .skip((has_vertical_edge_above as usize) - above_inc),
-        );
+        .take(above_out)
+        .skip((has_vertical_edge_above as usize) - above_inc);
     let mut below_edges_which_require_bendpoint = this_node
-        .incoming
+        .outgoing
         .iter()
-        .take(below_inc)
-        .skip(has_vertical_edge_below as usize)
-        .chain(
-            this_node
-                .outgoing
-                .iter()
-                .take(below_out)
-                .skip((has_vertical_edge_below as usize) - below_inc),
-        );
+        .skip(this_node.outgoing.len() - below_out)
+        .skip((has_vertical_edge_below as usize) - below_inc);
+    for edge_id in above_edges_which_require_bendpoint {
+        let cur_edge = &mut graph.edges[*edge_id];
+        let flow_type = cur_edge.flow_type.clone();
+        match &cur_edge.edge_type {
+            EdgeType::Regular { text, .. } => {
+                let current_num_edges = graph.edges.len();
+                let text = text.clone();
+                let from_id = cur_edge.from;
+                let to_id = cur_edge.to;
+                let from = &graph.nodes[from_id];
+                let to = &graph.nodes[to_id];
+                let pool = from.pool;
+                let lane = to.lane;
+                cur_edge.edge_type = EdgeType::ReplacedByDummies {
+                    first_dummy_edge: EdgeId(current_num_edges),
+                    text,
+                };
+                let to_node_id = to.id;
+                let dummy_node_id = graph.add_node(NodeType::DummyNode, pool, lane);
+                graph.nodes[dummy_node_id].layer_id = from.layer_id;
+
+                graph.add_edge(
+                    from.id,
+                    dummy_node_id,
+                    EdgeType::DummyEdge {
+                        original_edge: *edge_id,
+                        bend_points: DummyEdgeBendPoints::ToBeDeterminedOrStraight,
+                    },
+                    flow_type.clone(),
+                );
+                graph.add_edge(
+                    dummy_node_id,
+                    to_node_id,
+                    EdgeType::DummyEdge {
+                        original_edge: *edge_id,
+                        bend_points: DummyEdgeBendPoints::ToBeDeterminedOrStraight,
+                    },
+                    flow_type,
+                );
+                graph.nodes[from_id]
+                    .outgoing
+                    .retain(|outgoing_edge_idx| *outgoing_edge_idx != *edge_id);
+                graph.nodes[to_id]
+                    .incoming
+                    .retain(|incoming_edge_idx| *incoming_edge_idx != *edge_id);
+                todo!("Set the node_above_in_same_lane and node_above_in_same_lane fields");
+            }
+        }
+    }
 }
 
 fn handle_gateway_node(node_id: NodeId, graph: &mut Graph) {
