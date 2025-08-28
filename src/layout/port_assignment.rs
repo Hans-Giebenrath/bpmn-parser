@@ -112,6 +112,11 @@ fn handle_nongateway_node(node_id: NodeId, graph: &mut Graph) {
     let mut has_vertical_edge_above = false;
     let mut has_vertical_edge_below = false;
 
+    /***********************************************************************/
+    /*  PHASE 1: Determine how many ports are above, below, right and low  */
+    /***********************************************************************/
+
+    // Determine how many incoming ports are `above` and `below` (and implicitly `left`).
     match &this_node.incoming[..] {
         [] => (),
         [single] => match is_vertical_edge(*single, graph, node_id) {
@@ -149,6 +154,7 @@ fn handle_nongateway_node(node_id: NodeId, graph: &mut Graph) {
         }
     }
 
+    // Determine how many outgoing ports are `above` and `below` (and implicitly `right`).
     match &this_node.outgoing[..] {
         [] => (),
         [single] => match is_vertical_edge(*single, graph, node_id) {
@@ -237,6 +243,10 @@ fn handle_nongateway_node(node_id: NodeId, graph: &mut Graph) {
         }
     }
 
+    /********************************************************/
+    /*  PHASE 2: Assign specific XY positions to each port  */
+    /********************************************************/
+
     // At this point we know exactly how many ports are at what side, so we can do simple math
     // stuff to place the ports using `points_on_segment`.
     let mut above_coordinates =
@@ -285,7 +295,38 @@ fn handle_nongateway_node(node_id: NodeId, graph: &mut Graph) {
     );
     outgoing_ports.extend(below_coordinates);
 
-    // now comes another hairy part:
+    /***************************************************************************/
+    /*  PHASE 3: Add additional dummy nodes & edges for above and below ports  */
+    /***************************************************************************/
+
+    // The straight-up/down vertical edges are the first (left-most) one on the above/below sides.
+    assert!(above_inc <= 1);
+    // If there is an above_inc edge, then that one is the vertical one.
+    assert!(above_inc == 0 || has_vertical_edge_above);
+    let mut above_edges_which_require_bendpoint = this_node
+        .incoming
+        .iter()
+        .take(above_inc)
+        .skip(has_vertical_edge_above as usize)
+        .chain(
+            this_node
+                .outgoing
+                .iter()
+                .take(above_out)
+                .skip((has_vertical_edge_above as usize) - above_inc),
+        );
+    let mut below_edges_which_require_bendpoint = this_node
+        .incoming
+        .iter()
+        .take(below_inc)
+        .skip(has_vertical_edge_below as usize)
+        .chain(
+            this_node
+                .outgoing
+                .iter()
+                .take(below_out)
+                .skip((has_vertical_edge_below as usize) - below_inc),
+        );
 }
 
 fn handle_gateway_node(node_id: NodeId, graph: &mut Graph) {
