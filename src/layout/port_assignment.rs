@@ -97,7 +97,7 @@ pub fn port_assignment(graph: &mut Graph) {
 ///  Gateways are treated slightly differently:
 ///  They are expected to have *only* SFs. No DFs, no MFs, no boundary events. (Maybe comments but
 ///  these are likely treated differently then, not sure yet)
-///  The side which has only one SF simply will be have its port on W or E (in the middle).
+///  The side which has only one SF simply will have its port on W or E (in the middle).
 ///  The other side will have them all connected to the new dummy nodes, they are all expected to
 ///  go out at the top or bottom. But with the big caveat: Since we don't know really what of them
 ///  shall leave below or above the node, the dummy nodes are not enforced to be above or below
@@ -347,20 +347,29 @@ fn handle_nongateway_node(this_node_id: NodeId, graph: &mut Graph) {
                 .map(|x| (x, IsWhere::Below)),
         );
 
-    let Coord3 { pool, layer, .. } = this_node.coord3();
+    let Coord3 {
+        pool: from_pool,
+        layer,
+        lane: from_lane,
+        ..
+    } = this_node.coord3();
 
     for (edge_id, is_where) in united_edges_which_require_bendpoint {
         let current_num_edges = graph.edges.len();
         let cur_edge = &mut graph.edges[edge_id];
         let flow_type = cur_edge.flow_type.clone();
         let to_id = cur_edge.to;
-        let Coord3 { lane, .. } = graph.nodes[to_id].coord3();
+        let Coord3 {
+            lane: to_lane,
+            pool: to_pool,
+            ..
+        } = graph.nodes[to_id].coord3();
         let dummy_node_id = add_node(
             &mut graph.nodes,
             &mut graph.pools,
             NodeType::DummyNode,
-            pool,
-            lane,
+            to_pool,
+            to_lane,
         );
         graph.nodes[dummy_node_id].layer_id = layer;
         match &cur_edge.edge_type {
@@ -434,22 +443,57 @@ fn handle_nongateway_node(this_node_id: NodeId, graph: &mut Graph) {
                 unreachable!("This edge should not be part of the graph")
             }
         }
-        if matches!(is_where, IsWhere::Above) {
-            todo!("fix for when the dummy node is actually on another lane!");
-            adjust_above_and_below_for_new_inbetween(
-                dummy_node_id,
-                graph.nodes[this_node_id].node_above_in_same_lane,
-                Some(this_node_id),
-                graph,
-            );
-        } else {
-            todo!("fix for when the dummy node is actually on another lane!");
-            adjust_above_and_below_for_new_inbetween(
-                dummy_node_id,
-                Some(this_node_id),
-                graph.nodes[this_node_id].node_below_in_same_lane,
-                graph,
-            );
+        let is_same_lane = (from_pool, from_lane) == (to_pool, to_lane);
+        #[allow(clippy::collapsible_else_if)]
+        match is_where {
+            IsWhere::Above if is_same_lane => {
+                adjust_above_and_below_for_new_inbetween(
+                    dummy_node_id,
+                    graph.nodes[this_node_id].node_above_in_same_lane,
+                    Some(this_node_id),
+                    graph,
+                );
+            }
+            IsWhere::Above => {
+                // In the target lane above, go to the lower end.
+                // TODO is this actually useful? Or should the bend point actually be in the
+                // from_lane? Or is it wrong anyway because, if the other-lane-border-node is
+                // a dummy node we might want to be on its other side, not become ourselves the
+                // border node? This seems to be unhandeable at the moment, maybe needs more
+                // thought later.
+                for node_id in &graph.pools[to_pool].lanes[to_lane].nodes {
+                    let node = &mut graph.nodes[*node_id];
+                    if node.node_below_in_same_lane.is_none() {
+                        node.node_below_in_same_lane = Some(dummy_node_id);
+                        graph.nodes[dummy_node_id].node_above_in_same_lane = Some(*node_id);
+                        break;
+                    }
+                }
+            }
+            IsWhere::Below if is_same_lane => {
+                adjust_above_and_below_for_new_inbetween(
+                    dummy_node_id,
+                    Some(this_node_id),
+                    graph.nodes[this_node_id].node_below_in_same_lane,
+                    graph,
+                );
+            }
+            IsWhere::Below => {
+                // In the target lane below, go to the upper end.
+                // TODO is this actually useful? Or should the bend point actually be in the
+                // from_lane? Or is it wrong anyway because, if the other-lane-border-node is
+                // a dummy node we might want to be on its other side, not become ourselves the
+                // border node? This seems to be unhandeable at the moment, maybe needs more
+                // thought later.
+                for node_id in &graph.pools[to_pool].lanes[to_lane].nodes {
+                    let node = &mut graph.nodes[*node_id];
+                    if node.node_above_in_same_lane.is_none() {
+                        node.node_above_in_same_lane = Some(dummy_node_id);
+                        graph.nodes[dummy_node_id].node_below_in_same_lane = Some(*node_id);
+                        break;
+                    }
+                }
+            }
         }
     }
 }
@@ -463,6 +507,13 @@ enum VerticalEdgeDocks {
     Above,
 }
 
+/// Returns true if the start and end of the given edge are two real nodes (i.e. not dummy nodes)
+/// which are in the same layer, and have no real nodes in between (only dummy nodes, if any).
+/// This goes across lanes and pools for message flows.
+/// Note: In the initial version this does *not* allow message flows to go up if they reach the
+/// designated inter-pool space for horizontal travel. Message flows which are not strictly
+/// vertical right now still need to move through the sides. But maybe this changes at some point
+/// and I forget to update this comment.
 fn is_vertical_edge(
     edge_id: EdgeId,
     graph: &Graph,
@@ -478,7 +529,7 @@ fn is_vertical_edge(
     }
 
     // We look from the upper node to the lower node
-    let (start, end) = match from.pool_and_lane().cmp(&to.pool_and_lane()) {
+    let (start_above, end_below) = match from.pool_and_lane().cmp(&to.pool_and_lane()) {
         std::cmp::Ordering::Less => (from, to),
         std::cmp::Ordering::Greater => (to, from),
         std::cmp::Ordering::Equal => {
@@ -489,12 +540,10 @@ fn is_vertical_edge(
                 if below == edge.to {
                     if obstacle_in_the_way {
                         return None;
+                    } else if current_node == below {
+                        return Some(VerticalEdgeDocks::Above);
                     } else {
-                        if current_node == below {
-                            return Some(VerticalEdgeDocks::Above);
-                        } else {
-                            return Some(VerticalEdgeDocks::Below);
-                        }
+                        return Some(VerticalEdgeDocks::Below);
                     }
                 }
                 node = &graph.nodes[below];
@@ -508,7 +557,7 @@ fn is_vertical_edge(
         }
     };
 
-    let mut node = Some(start);
+    let mut node = Some(start_above);
     for pool in graph.pools.iter().skip(node.map_or(0, |n| n.pool.0)) {
         'lane: for lane in pool.lanes.iter().skip(node.map_or(0, |n| n.lane.0)) {
             // make sure that the outer `node` is None afterwards.
@@ -519,9 +568,10 @@ fn is_vertical_edge(
                 loop {
                     if let Some(node_id) = it.next()
                         && let node = &graph.nodes[node_id]
-                        && node.layer_id <= start.layer_id
+                        && node.layer_id <= start_above.layer_id
                     {
-                        if node.layer_id == start.layer_id && node.node_above_in_same_lane.is_none()
+                        if node.layer_id == start_above.layer_id
+                            && node.node_above_in_same_lane.is_none()
                         {
                             break node;
                         }
@@ -534,7 +584,7 @@ fn is_vertical_edge(
                 }
             };
             while let Some(below) = node.node_below_in_same_lane {
-                if below == end.id {
+                if below == end_below.id {
                     if current_node == below {
                         return Some(VerticalEdgeDocks::Above);
                     } else {
