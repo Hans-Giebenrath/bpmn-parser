@@ -2,6 +2,7 @@
 
 use super::macros::impl_index;
 use crate::common::bpmn_node::*;
+use crate::common::graph::Coord3;
 use crate::common::graph::EdgeId;
 use crate::common::graph::LaneId;
 use crate::common::graph::NodeId;
@@ -96,6 +97,12 @@ pub struct Port {
     pub on_top_or_bottom: bool,
 }
 
+pub(crate) enum LoneDataElement {
+    Nope,
+    IsInput(EdgeId),
+    IsOutput(EdgeId),
+}
+
 impl Node {
     pub fn is_data(&self) -> bool {
         matches!(
@@ -165,8 +172,16 @@ impl Node {
     /// or a left-right constraint dictates to not place them in the same layer.
     /// `shall_be_placed_next_to_only_connected_node = No, Above, Below` as a property,
     /// to be determined in a preprocessing phase before layer assignment.
+    pub fn data_with_only_one_edge(&self) -> LoneDataElement {
+        match (self.is_data(), &self.incoming[..], &self.outgoing[..]) {
+            (true, &[edge_id], &[]) => LoneDataElement::IsOutput(edge_id),
+            (true, &[], &[edge_id]) => LoneDataElement::IsInput(edge_id),
+            _ => LoneDataElement::Nope,
+        }
+    }
+
     pub fn is_data_with_only_one_edge(&self) -> bool {
-        self.is_data() && (self.incoming.len() + self.outgoing.len() == 1)
+        !matches!(self.data_with_only_one_edge(), LoneDataElement::Nope)
     }
 
     pub fn is_dummy(&self) -> bool {
@@ -251,6 +266,15 @@ impl Node {
         PoolAndLane {
             pool: self.pool,
             lane: self.lane,
+        }
+    }
+
+    pub fn coord3(&self) -> Coord3 {
+        Coord3 {
+            pool: self.pool,
+            lane: self.lane,
+            layer: self.layer_id,
+            half_layer: self.uses_half_layer,
         }
     }
 

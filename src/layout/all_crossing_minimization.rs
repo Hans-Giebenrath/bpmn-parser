@@ -3,8 +3,10 @@ use crate::common::edge::Edge;
 use crate::common::edge::EdgeType;
 use crate::common::graph::EdgeId;
 use crate::common::graph::PoolId;
+use crate::common::graph::adjust_above_and_below_for_new_inbetween;
 use crate::common::graph::{Graph, NodeId};
 use crate::common::node::LayerId;
+use crate::common::node::LoneDataElement;
 use crate::common::node::Node;
 use crate::common::node::NodePhaseAuxData;
 use crate::common::node::NodeType;
@@ -775,41 +777,28 @@ fn sort_incoming_and_outgoing(graph: &mut Graph) {
 fn process_data_nodes_which_should_become_immediate_neighbors(graph: &mut Graph) {
     for data_node_id in (0..graph.nodes.len()).map(NodeId) {
         let node = &graph.nodes[data_node_id];
-        if !node.is_data_with_only_one_edge() {
-            continue;
-        }
-        let (above_id, below_id) = if let &[edge_id] = &node.incoming[..] {
-            // have it that OD -> is above, ..
-            let above_id = graph.edges[edge_id].from;
-            let above_node = &graph.nodes[above_id];
-            assert!(
-                above_node.pool_and_lane() == node.pool_and_lane(),
-                "data_node = {node}, regular_node = {above_node}"
-            );
-            let below_id = above_node.node_below_in_same_lane;
-            (Some(above_id), below_id)
-        } else if let &[edge_id] = &node.outgoing[..] {
-            // .. and OD <- is below.
-            let below_id = graph.edges[edge_id].to;
-            let above_id = graph.nodes[below_id].node_above_in_same_lane;
-            (above_id, Some(below_id))
-        } else {
-            // TODO probably the ID of the connected edge should be put into the node itself,
-            // so we avoid this panic situation.
-            unreachable!(
-                "This is not possible, as the `is_data_with_only_one_edge` property implies that there is one edge only"
-            );
+        let (above_id, below_id) = match node.data_with_only_one_edge() {
+            LoneDataElement::IsOutput(edge_id) => {
+                // have it that OD -> is above, ..
+                let above_id = graph.edges[edge_id].from;
+                let above_node = &graph.nodes[above_id];
+                assert!(
+                    above_node.pool_and_lane() == node.pool_and_lane(),
+                    "data_node = {node}, regular_node = {above_node}"
+                );
+                let below_id = above_node.node_below_in_same_lane;
+                (Some(above_id), below_id)
+            }
+            LoneDataElement::IsInput(edge_id) => {
+                // .. and OD <- is below.
+                let below_id = graph.edges[edge_id].to;
+                let above_id = graph.nodes[below_id].node_above_in_same_lane;
+                (above_id, Some(below_id))
+            }
+            LoneDataElement::Nope => continue,
         };
 
-        if let Some(above_id) = above_id {
-            graph.nodes[above_id].node_below_in_same_lane = Some(data_node_id);
-        }
-
-        if let Some(below_id) = below_id {
-            graph.nodes[below_id].node_above_in_same_lane = Some(data_node_id);
-        }
-        graph.nodes[data_node_id].node_above_in_same_lane = above_id;
-        graph.nodes[data_node_id].node_below_in_same_lane = below_id;
+        adjust_above_and_below_for_new_inbetween(data_node_id, above_id, below_id, graph);
     }
 }
 

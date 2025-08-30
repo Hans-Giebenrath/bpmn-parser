@@ -61,7 +61,7 @@ pub struct PoolAndLane {
 pub struct Coord3 {
     pub pool: PoolId,
     pub lane: LaneId,
-    pub layer: usize,
+    pub layer: LayerId,
     pub half_layer: bool,
 }
 
@@ -86,34 +86,13 @@ impl Graph {
     }
 
     pub fn add_node(&mut self, node_type: NodeType, pool_id: PoolId, lane_id: LaneId) -> NodeId {
-        let node_id = NodeId(self.nodes.len());
-
-        // Add node ID to the pool and lane stuff
-        self.pools[pool_id.0].add_node(lane_id, node_id);
-
-        let (width, height) = node_size(&node_type);
-
-        self.nodes.push(Node {
-            id: node_id,
+        add_node(
+            &mut self.nodes,
+            &mut self.pools,
             node_type,
-            pool: pool_id,
-            lane: lane_id,
-            x: 0,
-            y: 0,
-            width,
-            height,
-            stroke_color: None,
-            fill_color: None,
-            layer_id: LayerId(0),
-            node_above_in_same_lane: None,
-            node_below_in_same_lane: None,
-            uses_half_layer: false,
-            incoming: Vec::new(),
-            outgoing: Vec::new(),
-            aux: super::node::NodePhaseAuxData::None,
-        });
-
-        node_id
+            pool_id,
+            lane_id,
+        )
     }
 
     pub fn add_edge(
@@ -323,4 +302,67 @@ pub(crate) fn sort_lanes_by_layer(graph: &mut Graph) {
                 .sort_unstable_by_key(|node_id| graph.nodes[node_id.0].layer_id.0);
         }
     }
+}
+
+pub(crate) fn adjust_above_and_below_for_new_inbetween(
+    inbetween: NodeId,
+    above: Option<NodeId>,
+    below: Option<NodeId>,
+    graph: &mut Graph,
+) {
+    if let Some(above) = above {
+        let above = &mut graph.nodes[above];
+        assert!(above.node_below_in_same_lane == below);
+        above.node_below_in_same_lane = Some(inbetween);
+    }
+
+    if let Some(below) = below {
+        let below = &mut graph.nodes[below];
+        assert!(below.node_above_in_same_lane == above);
+        below.node_above_in_same_lane = Some(inbetween);
+    }
+
+    graph.nodes[inbetween].node_above_in_same_lane = above;
+    graph.nodes[inbetween].node_below_in_same_lane = below;
+}
+
+/// Helper function to not call graph.add_node(..) directly, as this cancels borrows of graph.edges
+/// as well.
+pub(crate) fn add_node(
+    nodes: &mut Vec<Node>,
+    pools: &mut Vec<Pool>,
+    node_type: NodeType,
+    pool_id: PoolId,
+    lane_id: LaneId,
+) -> NodeId {
+    let node_id = NodeId(nodes.len());
+
+    // Add node ID to the pool and lane stuff
+    pools[pool_id.0].add_node(lane_id, node_id);
+
+    let (width, height) = node_size(&node_type);
+
+    nodes.push(Node {
+        id: node_id,
+        node_type,
+        pool: pool_id,
+        lane: lane_id,
+        x: 0,
+        y: 0,
+        width,
+        height,
+        stroke_color: None,
+        fill_color: None,
+        layer_id: LayerId(0),
+        node_above_in_same_lane: None,
+        node_below_in_same_lane: None,
+        uses_half_layer: false,
+        incoming: Vec::new(),
+        outgoing: Vec::new(),
+        incoming_ports: Vec::new(),
+        outgoing_ports: Vec::new(),
+        aux: super::node::NodePhaseAuxData::None,
+    });
+
+    node_id
 }

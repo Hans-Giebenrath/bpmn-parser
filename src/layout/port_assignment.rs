@@ -1,8 +1,11 @@
 use crate::common::edge::DummyEdgeBendPoints;
 use crate::common::edge::EdgeType;
+use crate::common::graph::Coord3;
 use crate::common::graph::EdgeId;
 use crate::common::graph::Graph;
 use crate::common::graph::NodeId;
+use crate::common::graph::add_node;
+use crate::common::graph::adjust_above_and_below_for_new_inbetween;
 use crate::common::node::NodeType;
 use crate::common::node::Port;
 
@@ -101,8 +104,8 @@ pub fn port_assignment(graph: &mut Graph) {
 ///  the gateway node. Consequently, some dummy node may be located "within" the gateway node,
 ///  and in that case the outgoing edge will be assigned the respective E or W.
 ///  
-fn handle_nongateway_node(node_id: NodeId, graph: &mut Graph) {
-    let this_node = &graph.nodes[node_id];
+fn handle_nongateway_node(this_node_id: NodeId, graph: &mut Graph) {
+    let this_node = &graph.nodes[this_node_id];
     let mut incoming_ports = Vec::<Port>::new();
     let mut outgoing_ports = Vec::<Port>::new();
 
@@ -121,7 +124,7 @@ fn handle_nongateway_node(node_id: NodeId, graph: &mut Graph) {
     // Determine how many incoming ports are `above` and `below` (and implicitly `left`).
     match &this_node.incoming[..] {
         [] => (),
-        [single] => match is_vertical_edge(*single, graph, node_id) {
+        [single] => match is_vertical_edge(*single, graph, this_node_id) {
             None => (),
             Some(VerticalEdgeDocks::Above) => {
                 above_inc = 1;
@@ -133,7 +136,7 @@ fn handle_nongateway_node(node_id: NodeId, graph: &mut Graph) {
             }
         },
         [first, .., last] => {
-            match is_vertical_edge(*first, graph, node_id) {
+            match is_vertical_edge(*first, graph, this_node_id) {
                 None => (),
                 Some(VerticalEdgeDocks::Above) => {
                     above_inc = 1;
@@ -143,7 +146,7 @@ fn handle_nongateway_node(node_id: NodeId, graph: &mut Graph) {
                     unreachable!("Can't be")
                 }
             }
-            match is_vertical_edge(*last, graph, node_id) {
+            match is_vertical_edge(*last, graph, this_node_id) {
                 None => (),
                 Some(VerticalEdgeDocks::Above) => {
                     unreachable!("Can't be")
@@ -159,10 +162,10 @@ fn handle_nongateway_node(node_id: NodeId, graph: &mut Graph) {
     // Determine how many outgoing ports are `above` and `below` (and implicitly `right`).
     match &this_node.outgoing[..] {
         [] => (),
-        [single] => match is_vertical_edge(*single, graph, node_id) {
+        [single] => match is_vertical_edge(*single, graph, this_node_id) {
             None => {
                 // A single boundary event usually is placed on the bottom side.
-                if this_node.is_boundary_event(single) {
+                if this_node.is_boundary_event(*single) {
                     below_out = 1;
                 }
             }
@@ -179,7 +182,7 @@ fn handle_nongateway_node(node_id: NodeId, graph: &mut Graph) {
         },
         many @ [first, .., last] => {
             // First check if the ends are vertical edges.
-            match is_vertical_edge(*first, graph, node_id) {
+            match is_vertical_edge(*first, graph, this_node_id) {
                 None => (),
                 Some(VerticalEdgeDocks::Above) => {
                     above_out += 1;
@@ -190,7 +193,7 @@ fn handle_nongateway_node(node_id: NodeId, graph: &mut Graph) {
                     unreachable!("Can't be")
                 }
             }
-            match is_vertical_edge(*last, graph, node_id) {
+            match is_vertical_edge(*last, graph, this_node_id) {
                 None => (),
                 Some(VerticalEdgeDocks::Above) => {
                     unreachable!("Can't be")
@@ -223,7 +226,7 @@ fn handle_nongateway_node(node_id: NodeId, graph: &mut Graph) {
                 // If the last one was actually a vertical sequence flow, then we *still* want
                 // to continue putting BEs on `below`. So just skip the vertical edge.
                 .skip(below_out);
-            for (rev_idx, (_, edge_id)) in it {
+            while let Some((rev_idx, (_, edge_id))) = it.next() {
                 if this_node.is_boundary_event(edge_id) {
                     // rev_idx starts at 0, but if the 0th element is on `below` we want to
                     // have `below_out == 1`.
@@ -232,7 +235,7 @@ fn handle_nongateway_node(node_id: NodeId, graph: &mut Graph) {
                     break;
                 }
             }
-            for (_, (idx, edge_id)) in it {
+            while let Some((_, (idx, edge_id))) = it.next() {
                 if this_node.is_boundary_event(edge_id) {
                     // idx starts at 0, but if the 0th element is on `above` we want to
                     // have `above_out == 1`.
@@ -307,63 +310,146 @@ fn handle_nongateway_node(node_id: NodeId, graph: &mut Graph) {
     // If there is an above_inc edge, then that one is the vertical one.
     assert!(above_inc == 0 || has_vertical_edge_above);
     assert!(below_inc == 0 || has_vertical_edge_below);
-    let mut above_edges_which_require_bendpoint = this_node
+
+    // TODO use smallvec for these, usually just a small amount of edges.
+    // Dummy nodes are added top to bottom (starting with the ones farthest from this_node).
+    let above_edges_which_require_bendpoint = this_node
         .outgoing
         .iter()
         .take(above_out)
-        .skip((has_vertical_edge_above as usize) - above_inc);
-    let mut below_edges_which_require_bendpoint = this_node
+        .skip((has_vertical_edge_above as usize) - above_inc)
+        .cloned()
+        .collect::<Vec<_>>();
+    // Dummy nodes are added bottom to top (starting with the ones farthest from this_node).
+    let below_edges_which_require_bendpoint = this_node
         .outgoing
         .iter()
         .skip(this_node.outgoing.len() - below_out)
-        .skip((has_vertical_edge_below as usize) - below_inc);
-    for edge_id in above_edges_which_require_bendpoint {
-        let cur_edge = &mut graph.edges[*edge_id];
+        // A bit unsure here, better use strict_sub to panic if I messed up.
+        .take(below_out.strict_sub((has_vertical_edge_below as usize).strict_sub(below_inc)))
+        .cloned()
+        // Turn it around. Then the node_above_in_same_lane adjustment is easier since it is always
+        // relative to this_node.
+        .rev()
+        .collect::<Vec<_>>();
+
+    enum IsWhere {
+        Above,
+        Below,
+    }
+
+    let united_edges_which_require_bendpoint = above_edges_which_require_bendpoint
+        .into_iter()
+        .map(|x| (x, IsWhere::Above))
+        .chain(
+            below_edges_which_require_bendpoint
+                .into_iter()
+                .map(|x| (x, IsWhere::Below)),
+        );
+
+    let Coord3 { pool, layer, .. } = this_node.coord3();
+
+    for (edge_id, is_where) in united_edges_which_require_bendpoint {
+        let current_num_edges = graph.edges.len();
+        let cur_edge = &mut graph.edges[edge_id];
         let flow_type = cur_edge.flow_type.clone();
+        let to_id = cur_edge.to;
+        let Coord3 { lane, .. } = graph.nodes[to_id].coord3();
+        let dummy_node_id = add_node(
+            &mut graph.nodes,
+            &mut graph.pools,
+            NodeType::DummyNode,
+            pool,
+            lane,
+        );
+        graph.nodes[dummy_node_id].layer_id = layer;
         match &cur_edge.edge_type {
             EdgeType::Regular { text, .. } => {
-                let current_num_edges = graph.edges.len();
                 let text = text.clone();
-                let from_id = cur_edge.from;
-                let to_id = cur_edge.to;
-                let from = &graph.nodes[from_id];
-                let to = &graph.nodes[to_id];
-                let pool = from.pool;
-                let lane = to.lane;
+
                 cur_edge.edge_type = EdgeType::ReplacedByDummies {
                     first_dummy_edge: EdgeId(current_num_edges),
                     text,
                 };
-                let to_node_id = to.id;
-                let dummy_node_id = graph.add_node(NodeType::DummyNode, pool, lane);
-                graph.nodes[dummy_node_id].layer_id = from.layer_id;
+
+                // First remove the reference to the now-replaced edge, so there is certainly room
+                // for the new edge references, i.e. no need to allocate accidentally.
+                graph.nodes[this_node_id]
+                    .outgoing
+                    .retain(|outgoing_edge_idx| *outgoing_edge_idx != edge_id);
+                graph.nodes[to_id]
+                    .incoming
+                    .retain(|incoming_edge_idx| *incoming_edge_idx != edge_id);
 
                 graph.add_edge(
-                    from.id,
+                    this_node_id,
                     dummy_node_id,
                     EdgeType::DummyEdge {
-                        original_edge: *edge_id,
+                        original_edge: edge_id,
                         bend_points: DummyEdgeBendPoints::ToBeDeterminedOrStraight,
                     },
                     flow_type.clone(),
                 );
                 graph.add_edge(
                     dummy_node_id,
-                    to_node_id,
+                    to_id,
                     EdgeType::DummyEdge {
-                        original_edge: *edge_id,
+                        original_edge: edge_id,
                         bend_points: DummyEdgeBendPoints::ToBeDeterminedOrStraight,
                     },
                     flow_type,
                 );
-                graph.nodes[from_id]
-                    .outgoing
-                    .retain(|outgoing_edge_idx| *outgoing_edge_idx != *edge_id);
-                graph.nodes[to_id]
-                    .incoming
-                    .retain(|incoming_edge_idx| *incoming_edge_idx != *edge_id);
-                todo!("Set the node_above_in_same_lane and node_above_in_same_lane fields");
             }
+            EdgeType::DummyEdge { original_edge, .. } => {
+                let original_edge = *original_edge;
+
+                graph.nodes[this_node_id]
+                    .outgoing
+                    .retain(|outgoing_edge_idx| *outgoing_edge_idx != edge_id);
+                let new_dummy_edge_id = graph.add_edge(
+                    this_node_id,
+                    dummy_node_id,
+                    EdgeType::DummyEdge {
+                        original_edge,
+                        bend_points: DummyEdgeBendPoints::ToBeDeterminedOrStraight,
+                    },
+                    flow_type.clone(),
+                );
+                // Bend around
+                graph.edges[edge_id].from = dummy_node_id;
+                graph.nodes[dummy_node_id].outgoing.push(edge_id);
+                // The original edge might need to point to another edge as its first dummy edge.
+                let original_edge = &mut graph.edges[original_edge];
+                let EdgeType::ReplacedByDummies {
+                    first_dummy_edge, ..
+                } = &mut original_edge.edge_type
+                else {
+                    unreachable!();
+                };
+                if *first_dummy_edge == edge_id {
+                    *first_dummy_edge = new_dummy_edge_id;
+                }
+            }
+            EdgeType::ReplacedByDummies { .. } => {
+                unreachable!("This edge should not be part of the graph")
+            }
+        }
+        if matches!(is_where, IsWhere::Above) {
+            todo!("fix for when the dummy node is actually on another lane!");
+            adjust_above_and_below_for_new_inbetween(
+                dummy_node_id,
+                graph.nodes[this_node_id].node_above_in_same_lane,
+                Some(this_node_id),
+                graph,
+            );
+        } else {
+            todo!("fix for when the dummy node is actually on another lane!");
+            adjust_above_and_below_for_new_inbetween(
+                dummy_node_id,
+                Some(this_node_id),
+                graph.nodes[this_node_id].node_below_in_same_lane,
+                graph,
+            );
         }
     }
 }
