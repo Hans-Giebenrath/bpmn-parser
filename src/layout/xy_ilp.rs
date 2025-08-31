@@ -136,6 +136,7 @@ fn assign_y(graph: &mut Graph, pool: PoolId, lane: LaneId, min_y_value: usize) -
     // lane. For X gateways actually a better strategy would be to align it with the first `->` in
     // the BPMD, as this is likely the success case and should just go straight. But we will come
     // to that later.
+    // Also, right now the alignment is actually done against the helper bendpoint dummy nodes.
     let mut gateway_balancing_constraint_vars = Vec::new();
     for gateway in node_ids_iter
         .clone()

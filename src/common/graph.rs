@@ -366,3 +366,52 @@ pub(crate) fn add_node(
 
     node_id
 }
+
+pub(crate) fn contains_only_dummy_nodes_in_intermediate_lanes(
+    nodes: &[Node],
+    pools: &[Pool],
+    layer: LayerId,
+    from_lane: PoolAndLane,
+    to_lane: PoolAndLane,
+) -> bool {
+    let (from_lane, to_lane) = if from_lane < to_lane {
+        (from_lane, to_lane)
+    } else {
+        (to_lane, from_lane)
+    };
+
+    let mut cur_lane = from_lane;
+    cur_lane.lane.0 += 1;
+    loop {
+        if cur_lane == to_lane {
+            // No blocker found on the way, we reached the target lane.
+            return true;
+        }
+        let Some(pool) = pools.get(cur_lane.pool.0) else {
+            unreachable!(
+                "We should have reached to_lane? {from_lane:?}, {to_lane:?}, {cur_lane:?}"
+            );
+        };
+        let Some(lane) = pool.lanes.get(cur_lane.lane.0) else {
+            // Wrap to the next pool.
+            cur_lane.pool.0 += 1;
+            cur_lane.lane.0 = 0;
+            continue;
+        };
+
+        for node_id in &lane.nodes {
+            let node = &nodes[*node_id];
+            if node.layer_id < layer {
+                continue;
+            }
+            if node.layer_id > layer {
+                // We cleared the current layer.
+                cur_lane.lane.0 += 1;
+                break;
+            }
+            if !node.is_dummy() {
+                return false;
+            }
+        }
+    }
+}

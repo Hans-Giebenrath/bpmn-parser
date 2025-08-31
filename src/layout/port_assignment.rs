@@ -4,8 +4,10 @@ use crate::common::graph::Coord3;
 use crate::common::graph::EdgeId;
 use crate::common::graph::Graph;
 use crate::common::graph::NodeId;
+use crate::common::graph::PoolAndLane;
 use crate::common::graph::add_node;
 use crate::common::graph::adjust_above_and_below_for_new_inbetween;
+use crate::common::graph::contains_only_dummy_nodes_in_intermediate_lanes;
 use crate::common::node::NodeType;
 use crate::common::node::Port;
 
@@ -349,6 +351,577 @@ fn handle_nongateway_node(this_node_id: NodeId, graph: &mut Graph) {
 
     let Coord3 {
         pool: from_pool,
+        layer: from_layer,
+        lane: from_lane,
+        ..
+    } = this_node.coord3();
+
+    for (edge_id, is_where) in united_edges_which_require_bendpoint {
+        let current_num_edges = graph.edges.len();
+        let cur_edge = &mut graph.edges[edge_id];
+        let flow_type = cur_edge.flow_type.clone();
+        let to_id = cur_edge.to;
+        let Coord3 {
+            lane: to_lane,
+            pool: to_pool,
+            ..
+        } = graph.nodes[to_id].coord3();
+        let dummy_node_id = add_node(
+            &mut graph.nodes,
+            &mut graph.pools,
+            NodeType::DummyNode,
+            to_pool,
+            to_lane,
+        );
+        graph.nodes[dummy_node_id].layer_id = from_layer;
+        match &cur_edge.edge_type {
+            EdgeType::Regular { text, .. } => {
+                let text = text.clone();
+
+                cur_edge.edge_type = EdgeType::ReplacedByDummies {
+                    first_dummy_edge: EdgeId(current_num_edges),
+                    text,
+                };
+
+                // First remove the reference to the now-replaced edge, so there is certainly room
+                // for the new edge references, i.e. no need to allocate accidentally.
+                graph.nodes[this_node_id]
+                    .outgoing
+                    .retain(|outgoing_edge_idx| *outgoing_edge_idx != edge_id);
+                graph.nodes[to_id]
+                    .incoming
+                    .retain(|incoming_edge_idx| *incoming_edge_idx != edge_id);
+
+                graph.add_edge(
+                    this_node_id,
+                    dummy_node_id,
+                    EdgeType::DummyEdge {
+                        original_edge: edge_id,
+                        bend_points: DummyEdgeBendPoints::ToBeDeterminedOrStraight,
+                    },
+                    flow_type.clone(),
+                );
+                graph.add_edge(
+                    dummy_node_id,
+                    to_id,
+                    EdgeType::DummyEdge {
+                        original_edge: edge_id,
+                        bend_points: DummyEdgeBendPoints::ToBeDeterminedOrStraight,
+                    },
+                    flow_type,
+                );
+            }
+            EdgeType::DummyEdge { original_edge, .. } => {
+                let original_edge = *original_edge;
+
+                graph.nodes[this_node_id]
+                    .outgoing
+                    .retain(|outgoing_edge_idx| *outgoing_edge_idx != edge_id);
+                let new_dummy_edge_id = graph.add_edge(
+                    this_node_id,
+                    dummy_node_id,
+                    EdgeType::DummyEdge {
+                        original_edge,
+                        bend_points: DummyEdgeBendPoints::ToBeDeterminedOrStraight,
+                    },
+                    flow_type.clone(),
+                );
+                // Bend around
+                graph.edges[edge_id].from = dummy_node_id;
+                graph.nodes[dummy_node_id].outgoing.push(edge_id);
+                // The original edge might need to point to another edge as its first dummy edge.
+                let original_edge = &mut graph.edges[original_edge];
+                let EdgeType::ReplacedByDummies {
+                    first_dummy_edge, ..
+                } = &mut original_edge.edge_type
+                else {
+                    unreachable!();
+                };
+                if *first_dummy_edge == edge_id {
+                    *first_dummy_edge = new_dummy_edge_id;
+                }
+            }
+            EdgeType::ReplacedByDummies { .. } => {
+                unreachable!("This edge should not be part of the graph")
+            }
+        }
+        let is_same_lane = (from_pool, from_lane) == (to_pool, to_lane);
+        let way_is_free = contains_only_dummy_nodes_in_intermediate_lanes(
+            &graph.nodes,
+            &graph.pools,
+            from_layer,
+            PoolAndLane {
+                pool: from_pool,
+                lane: from_lane,
+            },
+            PoolAndLane {
+                pool: to_pool,
+                lane: to_lane,
+            },
+        );
+        #[allow(clippy::collapsible_else_if)]
+        match is_where {
+            IsWhere::Above if is_same_lane || !way_is_free => {
+                adjust_above_and_below_for_new_inbetween(
+                    dummy_node_id,
+                    graph.nodes[this_node_id].node_above_in_same_lane,
+                    Some(this_node_id),
+                    graph,
+                );
+            }
+            IsWhere::Above => {
+                // In the target lane above, go to the lower end.
+                // TODO is this actually useful? Or should the bend point actually be in the
+                // from_lane? Or is it wrong anyway because, if the other-lane-border-node is
+                // a dummy node we might want to be on its other side, not become ourselves the
+                // border node? This seems to be unhandeable at the moment, maybe needs more
+                // thought later.
+                for (idx, node_id) in graph.pools[to_pool].lanes[to_lane].nodes.iter().enumerate() {
+                    let node = &mut graph.nodes[*node_id];
+                    if node.layer_id < from_layer {
+                        continue;
+                    }
+                    if node.layer_id > from_layer {
+                        graph.pools[to_pool].lanes[to_lane]
+                            .nodes
+                            .insert(idx, dummy_node_id);
+                        break;
+                    }
+                    if node.node_below_in_same_lane.is_none() {
+                        node.node_below_in_same_lane = Some(dummy_node_id);
+                        graph.nodes[dummy_node_id].node_above_in_same_lane = Some(*node_id);
+                        graph.pools[to_pool].lanes[to_lane]
+                            .nodes
+                            .insert(idx, dummy_node_id);
+                        break;
+                    }
+                }
+            }
+            IsWhere::Below if is_same_lane || !way_is_free => {
+                adjust_above_and_below_for_new_inbetween(
+                    dummy_node_id,
+                    Some(this_node_id),
+                    graph.nodes[this_node_id].node_below_in_same_lane,
+                    graph,
+                );
+            }
+            IsWhere::Below => {
+                // In the target lane below, go to the upper end.
+                // TODO is this actually useful? Or should the bend point actually be in the
+                // from_lane? Or is it wrong anyway because, if the other-lane-border-node is
+                // a dummy node we might want to be on its other side, not become ourselves the
+                // border node? This seems to be unhandeable at the moment, maybe needs more
+                // thought later.
+                for (idx, node_id) in graph.pools[to_pool].lanes[to_lane].nodes.iter().enumerate() {
+                    let node = &mut graph.nodes[*node_id];
+                    if node.layer_id < from_layer {
+                        continue;
+                    }
+                    if node.layer_id > from_layer {
+                        graph.pools[to_pool].lanes[to_lane]
+                            .nodes
+                            .insert(idx, dummy_node_id);
+                        break;
+                    }
+                    if node.node_above_in_same_lane.is_none() {
+                        node.node_above_in_same_lane = Some(dummy_node_id);
+                        graph.nodes[dummy_node_id].node_below_in_same_lane = Some(*node_id);
+                        graph.pools[to_pool].lanes[to_lane]
+                            .nodes
+                            .insert(idx, dummy_node_id);
+                        break;
+                    }
+                }
+            }
+        }
+    }
+}
+
+fn handle_gateway_node(this_node_id: NodeId, graph: &mut Graph) {
+    let this_node = &graph.nodes[this_node_id];
+    let mut incoming_ports = Vec::<Port>::new();
+    let mut outgoing_ports = Vec::<Port>::new();
+
+    let mut above_inc = 0;
+    let mut above_out = 0;
+    let mut below_inc = 0;
+    let mut below_out = 0;
+
+    /***********************************************************************/
+    /*  PHASE 1: Determine how many ports are above, below, right and low  */
+    /***********************************************************************/
+
+    // Determine how many incoming ports are `above` and `below` (and implicitly `left`).
+    match &this_node.incoming[..] {
+        [] => {
+            // .. is this valid at all? Maybe when in draft mode, i.e. while creating the diagram
+            // and the diagram is just rendered as the BPMD text is written? So don't panic here.
+        }
+        [single] => {
+            // This edge must leave as a regular flow. Nothing shall be done here.
+            incoming_ports.push(Port {
+                x: 0,
+                y: this_node.height / 2,
+                on_top_or_bottom: true,
+            });
+        }
+        many => {
+            // Ports are in the center, since right now we don't know which one will be above, and
+            // which one will be below. They can only be corrected at a later staged.
+            incoming_ports.extend((0..many.len()).map(|y| Port {
+                x: this_node.width / 2,
+                y: this_node.height / 2,
+                on_top_or_bottom: true,
+            }));
+
+            // Add a borrow-checker circumvention hack.
+            let incoming = std::mem::take(&mut this_node.incoming);
+            let Coord3 {
+                pool: from_pool,
+                layer,
+                lane: from_lane,
+                ..
+            } = this_node.coord3();
+            let mut above_in_same_lane = this_node.node_above_in_same_lane;
+            let mut below_in_same_lane = this_node.node_below_in_same_lane;
+            for edge_id in incoming.iter().cloned() {
+                let current_num_edges = graph.edges.len();
+                let cur_edge = &mut graph.edges[edge_id];
+                let flow_type = cur_edge.flow_type.clone();
+                let to_id = cur_edge.to;
+                let Coord3 {
+                    lane: to_lane,
+                    pool: to_pool,
+                    ..
+                } = graph.nodes[to_id].coord3();
+                let dummy_node_id = add_node(
+                    &mut graph.nodes,
+                    &mut graph.pools,
+                    NodeType::DummyNode,
+                    to_pool,
+                    to_lane,
+                );
+                graph.nodes[dummy_node_id].layer_id = layer;
+                match &cur_edge.edge_type {
+                    EdgeType::Regular { text, .. } => {
+                        let text = text.clone();
+
+                        cur_edge.edge_type = EdgeType::ReplacedByDummies {
+                            first_dummy_edge: EdgeId(current_num_edges),
+                            text,
+                        };
+
+                        // First remove the reference to the now-replaced edge, so there is certainly room
+                        // for the new edge references, i.e. no need to allocate accidentally.
+                        graph.nodes[this_node_id]
+                            .outgoing
+                            .retain(|outgoing_edge_idx| *outgoing_edge_idx != edge_id);
+                        graph.nodes[to_id]
+                            .incoming
+                            .retain(|incoming_edge_idx| *incoming_edge_idx != edge_id);
+
+                        graph.add_edge(
+                            this_node_id,
+                            dummy_node_id,
+                            EdgeType::DummyEdge {
+                                original_edge: edge_id,
+                                bend_points: DummyEdgeBendPoints::ToBeDeterminedOrStraight,
+                            },
+                            flow_type.clone(),
+                        );
+                        graph.add_edge(
+                            dummy_node_id,
+                            to_id,
+                            EdgeType::DummyEdge {
+                                original_edge: edge_id,
+                                bend_points: DummyEdgeBendPoints::ToBeDeterminedOrStraight,
+                            },
+                            flow_type,
+                        );
+                    }
+                    EdgeType::DummyEdge { original_edge, .. } => {
+                        let original_edge = *original_edge;
+
+                        graph.nodes[this_node_id]
+                            .outgoing
+                            .retain(|outgoing_edge_idx| *outgoing_edge_idx != edge_id);
+                        let new_dummy_edge_id = graph.add_edge(
+                            this_node_id,
+                            dummy_node_id,
+                            EdgeType::DummyEdge {
+                                original_edge,
+                                bend_points: DummyEdgeBendPoints::ToBeDeterminedOrStraight,
+                            },
+                            flow_type.clone(),
+                        );
+                        // Bend around
+                        graph.edges[edge_id].from = dummy_node_id;
+                        graph.nodes[dummy_node_id].outgoing.push(edge_id);
+                        // The original edge might need to point to another edge as its first dummy edge.
+                        let original_edge = &mut graph.edges[original_edge];
+                        let EdgeType::ReplacedByDummies {
+                            first_dummy_edge, ..
+                        } = &mut original_edge.edge_type
+                        else {
+                            unreachable!();
+                        };
+                        if *first_dummy_edge == edge_id {
+                            *first_dummy_edge = new_dummy_edge_id;
+                        }
+                    }
+                    EdgeType::ReplacedByDummies { .. } => {
+                        unreachable!("This edge should not be part of the graph")
+                    }
+                }
+                todo!("TODO copy the stuff from the nongateway function");
+                let is_same_lane = (from_pool, from_lane) == (to_pool, to_lane);
+                #[allow(clippy::collapsible_else_if)]
+                match is_where {
+                    IsWhere::Above if is_same_lane => {
+                        adjust_above_and_below_for_new_inbetween(
+                            dummy_node_id,
+                            graph.nodes[this_node_id].node_above_in_same_lane,
+                            Some(this_node_id),
+                            graph,
+                        );
+                    }
+                    IsWhere::Above => {
+                        // In the target lane above, go to the lower end.
+                        // TODO is this actually useful? Or should the bend point actually be in the
+                        // from_lane? Or is it wrong anyway because, if the other-lane-border-node is
+                        // a dummy node we might want to be on its other side, not become ourselves the
+                        // border node? This seems to be unhandeable at the moment, maybe needs more
+                        // thought later.
+                        for node_id in &graph.pools[to_pool].lanes[to_lane].nodes {
+                            let node = &mut graph.nodes[*node_id];
+                            if node.node_below_in_same_lane.is_none() {
+                                node.node_below_in_same_lane = Some(dummy_node_id);
+                                graph.nodes[dummy_node_id].node_above_in_same_lane = Some(*node_id);
+                                break;
+                            }
+                        }
+                    }
+                    IsWhere::Below if is_same_lane => {
+                        adjust_above_and_below_for_new_inbetween(
+                            dummy_node_id,
+                            Some(this_node_id),
+                            graph.nodes[this_node_id].node_below_in_same_lane,
+                            graph,
+                        );
+                    }
+                    IsWhere::Below => {
+                        // In the target lane below, go to the upper end.
+                        // TODO is this actually useful? Or should the bend point actually be in the
+                        // from_lane? Or is it wrong anyway because, if the other-lane-border-node is
+                        // a dummy node we might want to be on its other side, not become ourselves the
+                        // border node? This seems to be unhandeable at the moment, maybe needs more
+                        // thought later.
+                        for node_id in &graph.pools[to_pool].lanes[to_lane].nodes {
+                            let node = &mut graph.nodes[*node_id];
+                            if node.node_above_in_same_lane.is_none() {
+                                node.node_above_in_same_lane = Some(dummy_node_id);
+                                graph.nodes[dummy_node_id].node_below_in_same_lane = Some(*node_id);
+                                break;
+                            }
+                        }
+                    }
+                }
+            }
+            // Undo the borrow-checker surrounding hack.
+            graph.nodes[this_node_id].incoming = incoming;
+        }
+    }
+
+    // Determine how many outgoing ports are `above` and `below` (and implicitly `right`).
+    match &this_node.outgoing[..] {
+        [] => (),
+        [single] => match is_vertical_edge(*single, graph, this_node_id) {
+            None => {
+                // A single boundary event usually is placed on the bottom side.
+                if this_node.is_boundary_event(*single) {
+                    below_out = 1;
+                }
+            }
+            Some(VerticalEdgeDocks::Above) => {
+                above_out = 1;
+                assert!(!has_vertical_edge_above);
+                has_vertical_edge_above = true;
+            }
+            Some(VerticalEdgeDocks::Below) => {
+                below_out = 1;
+                assert!(!has_vertical_edge_below);
+                has_vertical_edge_below = true;
+            }
+        },
+        many @ [first, .., last] => {
+            // First check if the ends are vertical edges.
+            match is_vertical_edge(*first, graph, this_node_id) {
+                None => (),
+                Some(VerticalEdgeDocks::Above) => {
+                    above_out += 1;
+                    assert!(!has_vertical_edge_above);
+                    has_vertical_edge_above = true;
+                }
+                Some(VerticalEdgeDocks::Below) => {
+                    unreachable!("Can't be")
+                }
+            }
+            match is_vertical_edge(*last, graph, this_node_id) {
+                None => (),
+                Some(VerticalEdgeDocks::Above) => {
+                    unreachable!("Can't be")
+                }
+                Some(VerticalEdgeDocks::Below) => {
+                    below_out += 1;
+                    assert!(!has_vertical_edge_below);
+                    has_vertical_edge_below = true;
+                }
+            }
+
+            // Now refine that number by looking at boundary events.
+            // By default boundary events are placed below the node. So
+            // start from the end to look for boundary events and a sequence flow.
+            // The sequence flow flips over from moving stuff on the `below` side to putting
+            // stuff on the `above` side. For example:
+            //       (DF, BE1, DF, BE2, DF, MF, SF, DF, BE3, DF, BE4, DF)
+            // Then everything up to (including) BE2 is on `above`, and everything
+            // starting from BE3 is on `below`. If there would be no SF, then instead
+            // everything starting from BE1 would be on `below`, and the first DF would be on
+            // `right`.
+            let mut it = many
+                .iter()
+                .cloned()
+                .enumerate()
+                // That one was already covered, no need to process it again.
+                .skip(above_out)
+                .rev()
+                .enumerate()
+                // If the last one was actually a vertical sequence flow, then we *still* want
+                // to continue putting BEs on `below`. So just skip the vertical edge.
+                .skip(below_out);
+            while let Some((rev_idx, (_, edge_id))) = it.next() {
+                if this_node.is_boundary_event(edge_id) {
+                    // rev_idx starts at 0, but if the 0th element is on `below` we want to
+                    // have `below_out == 1`.
+                    below_out = rev_idx + 1;
+                } else if graph.edges[edge_id].is_sequence_flow() {
+                    break;
+                }
+            }
+            while let Some((_, (idx, edge_id))) = it.next() {
+                if this_node.is_boundary_event(edge_id) {
+                    // idx starts at 0, but if the 0th element is on `above` we want to
+                    // have `above_out == 1`.
+                    above_out = idx + 1;
+                    // We found the right-most boundary event, so we can short-circuit away
+                    // here. Everything else left of it now must be on `above` as well.
+                    break;
+                }
+            }
+        }
+    }
+
+    /********************************************************/
+    /*  PHASE 2: Assign specific XY positions to each port  */
+    /********************************************************/
+
+    // At this point we know exactly how many ports are at what side, so we can do simple math
+    // stuff to place the ports using `points_on_segment`.
+    let mut above_coordinates =
+        points_on_side(this_node.width, above_inc + above_out).map(|x| Port {
+            x,
+            y: 0,
+            on_top_or_bottom: true,
+        });
+    let mut below_coordinates =
+        points_on_side(this_node.width, below_inc + below_out).map(|x| Port {
+            x,
+            y: 0,
+            on_top_or_bottom: true,
+        });
+    if above_inc > 0 {
+        assert_eq!(above_inc, 1);
+        incoming_ports.push(above_coordinates.next().unwrap());
+    }
+    incoming_ports.extend(
+        points_on_side(
+            this_node.height,
+            this_node.incoming.len() - above_inc - below_inc,
+        )
+        .map(|y| Port {
+            x: 0,
+            y,
+            on_top_or_bottom: false,
+        }),
+    );
+    if below_inc > 0 {
+        assert_eq!(below_inc, 1);
+        incoming_ports.push(below_coordinates.next().unwrap());
+    }
+
+    outgoing_ports.extend(above_coordinates);
+    outgoing_ports.extend(
+        points_on_side(
+            this_node.height,
+            this_node.outgoing.len() - above_out - below_out,
+        )
+        .map(|y| Port {
+            x: 0,
+            y,
+            on_top_or_bottom: false,
+        }),
+    );
+    outgoing_ports.extend(below_coordinates);
+
+    /***************************************************************************/
+    /*  PHASE 3: Add additional dummy nodes & edges for above and below ports  */
+    /***************************************************************************/
+
+    // The straight-up/down vertical edges are the first (left-most) one on the above/below sides.
+    assert!(above_inc <= 1);
+    assert!(below_inc <= 1);
+    // If there is an above_inc edge, then that one is the vertical one.
+    assert!(above_inc == 0 || has_vertical_edge_above);
+    assert!(below_inc == 0 || has_vertical_edge_below);
+
+    // TODO use smallvec for these, usually just a small amount of edges.
+    // Dummy nodes are added top to bottom (starting with the ones farthest from this_node).
+    let above_edges_which_require_bendpoint = this_node
+        .outgoing
+        .iter()
+        .take(above_out)
+        .skip((has_vertical_edge_above as usize) - above_inc)
+        .cloned()
+        .collect::<Vec<_>>();
+    // Dummy nodes are added bottom to top (starting with the ones farthest from this_node).
+    let below_edges_which_require_bendpoint = this_node
+        .outgoing
+        .iter()
+        .skip(this_node.outgoing.len() - below_out)
+        // A bit unsure here, better use strict_sub to panic if I messed up.
+        .take(below_out.strict_sub((has_vertical_edge_below as usize).strict_sub(below_inc)))
+        .cloned()
+        // Turn it around. Then the node_above_in_same_lane adjustment is easier since it is always
+        // relative to this_node.
+        .rev()
+        .collect::<Vec<_>>();
+
+    enum IsWhere {
+        Above,
+        Below,
+    }
+
+    let united_edges_which_require_bendpoint = above_edges_which_require_bendpoint
+        .into_iter()
+        .map(|x| (x, IsWhere::Above))
+        .chain(
+            below_edges_which_require_bendpoint
+                .into_iter()
+                .map(|x| (x, IsWhere::Below)),
+        );
+
+    let Coord3 {
+        pool: from_pool,
         layer,
         lane: from_lane,
         ..
@@ -496,10 +1069,6 @@ fn handle_nongateway_node(this_node_id: NodeId, graph: &mut Graph) {
             }
         }
     }
-}
-
-fn handle_gateway_node(node_id: NodeId, graph: &mut Graph) {
-    todo!();
 }
 
 enum VerticalEdgeDocks {

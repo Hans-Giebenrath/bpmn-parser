@@ -31,6 +31,16 @@ pub enum NodeType {
         transported_data: Vec<SdeId>,
         pe_bpmn_hides_protection_operations: bool,
     },
+    // Dummy nodes are inserted in three stages:
+    //  1. After the layer assignment phase, to break long edges into uniformly short edges (those
+    //     which would otherwise span multiple layers)
+    //     These are reversed/undone in the last dummy node replacement phase.
+    //  2. During all crossing optimization when there are edges in the same layer, then they are
+    //     split into two with a dummy node in the neighboring layer (or actually on both
+    //     neighboring layers).
+    //     These are reversed/undone in the same crossing optimization phase.
+    //  3. During port assignment, to handle those edges which leave above or below a node and then
+    //     bend to the right. The bendpoint is represented by a new dummy node.
     DummyNode,
 }
 
