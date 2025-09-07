@@ -195,21 +195,22 @@ impl Graph {
         }
     }
 
-    pub(crate) fn get_bottom_node_on_higher_lane(
+    pub(crate) fn get_nextup_higher_node_same_pool(
         &self,
-        lane_below_requested_one: PoolAndLane,
+        mut lane_below_requested_one: PoolAndLane,
+        final_pool_lane_to_consider: PoolAndLane,
         layer: LayerId,
-    ) -> Option<(PoolAndLane, Option<NodeId>)> {
-        let pool_lane @ PoolAndLane { mut pool, mut lane } = lane_below_requested_one;
-        if lane.0 == 0 {
-            if pool.0 == 0 {
-                return None;
+    ) -> Option<(PoolAndLane, NodeId)> {
+        assert!(final_pool_lane_to_consider < lane_below_requested_one);
+        while lane_below_requested_one.lane.0 > 0
+            || lane_below_requested_one == final_pool_lane_to_consider
+        {
+            lane_below_requested_one.lane.0 -= 1;
+            if let Some(node_id) = self.get_bottom_node(lane_below_requested_one, layer) {
+                return Some((lane_below_requested_one, node_id));
             }
-            pool.0 -= 1;
-            lane.0 = self.pools[pool].lanes.len() - 1;
         }
-
-        Some((pool_lane, self.get_bottom_node(pool_lane, layer)))
+        None
     }
 
     pub(crate) fn get_top_node(&self, pool_lane: PoolAndLane, layer: LayerId) -> Option<NodeId> {
@@ -231,7 +232,7 @@ impl Graph {
         }
     }
 
-    pub(crate) fn get_top_node_on_lower_lane(
+    pub(crate) fn get_top_node_on_lower_lane_same_pool(
         &self,
         lane_above_requested_one: PoolAndLane,
         layer: LayerId,

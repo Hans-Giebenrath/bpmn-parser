@@ -1,4 +1,3 @@
-use crate::common::node::Node;
 use crate::common::edge::DummyEdgeBendPoints;
 use crate::common::edge::EdgeType;
 use crate::common::graph::Coord3;
@@ -9,6 +8,9 @@ use crate::common::graph::PoolAndLane;
 use crate::common::graph::add_node;
 use crate::common::graph::adjust_above_and_below_for_new_inbetween;
 use crate::common::graph::contains_only_dummy_nodes_in_intermediate_lanes;
+use crate::common::node::Node;
+use std::collections::HashMap;
+use std::collections::HashSet;
 //use crate::common::macros::{from, to};
 use crate::common::node::NodeType;
 use crate::common::node::Port;
@@ -827,9 +829,10 @@ pub fn points_on_side(side_len: usize, k: usize) -> impl Iterator<Item = usize> 
 fn do_gateway_mapping(this_node_id: NodeId, graph: &mut Graph) {
     let edges = std::mem::take(&mut n!(this_node_id).outgoing);
     let this_layer = n!(this_node_id).layer_id;
-
-    let mut top_most_pool_lane =
-        to!(*edges.first().expect("caller-guaranteed this is not empty")).pool_and_lane();
+    let other_topmost_node = &to!(*edges.first().expect("caller-guaranteed this is not empty"));
+    let top_most_pool_lane = other_topmost_node.pool_and_lane();
+    let bottom_most_pool_lane =
+        to!(*edges.last().expect("caller-guaranteed this is not empty")).pool_and_lane();
 
     fn is_skippable_dummy_node(cur: NodeId, graph: &Graph) -> bool {
         let node = &n!(cur);
@@ -864,7 +867,7 @@ fn do_gateway_mapping(this_node_id: NodeId, graph: &mut Graph) {
         loop {
             match cur_above_node_in_same_lane {
                 Some(cur) => {
-                    if ! is_skippable_dummy_node(cur, graph) {
+                    if !is_skippable_dummy_node(cur, graph) {
                         break cur_above_node_in_same_lane;
                     }
 
@@ -873,14 +876,18 @@ fn do_gateway_mapping(this_node_id: NodeId, graph: &mut Graph) {
                     cur_above_node_in_same_lane = n!(cur).node_above_in_same_lane;
                 }
                 None => {
-                    if cur_pool_lane <= top_most_pool_lane {
+                    if cur_pool_lane < top_most_pool_lane {
                         // There simply is no barrier, can insert it at the top.
                         break None;
-                    } else if let Some((above_pool_lane, bottom_node)) =
-                        graph.get_bottom_node_on_higher_lane(cur_pool_lane, this_layer)
+                    } else if let Some((above_pool_lane, bottom_node)) = graph
+                        .get_nextup_higher_node_same_pool(
+                            cur_pool_lane,
+                            top_most_pool_lane,
+                            this_layer,
+                        )
                     {
                         cur_pool_lane = above_pool_lane;
-                        cur_above_node_in_same_lane = bottom_node;
+                        cur_above_node_in_same_lane = Some(bottom_node);
                     } else {
                         // There simply is no obstacle at all upwards, we left the topmost lane.
                         break None;
@@ -897,7 +904,7 @@ fn do_gateway_mapping(this_node_id: NodeId, graph: &mut Graph) {
         loop {
             match cur_below_node_in_same_lane {
                 Some(cur) => {
-                    if ! is_skippable_dummy_node(cur, graph) {
+                    if !is_skippable_dummy_node(cur, graph) {
                         break cur_below_node_in_same_lane;
                     }
 
@@ -906,11 +913,11 @@ fn do_gateway_mapping(this_node_id: NodeId, graph: &mut Graph) {
                     cur_below_node_in_same_lane = n!(cur).node_below_in_same_lane;
                 }
                 None => {
-                    if cur_pool_lane <= top_most_pool_lane {
+                    if cur_pool_lane > bottom_most_pool_lane {
                         // There simply is no barrier, can insert it at the top.
                         break None;
                     } else if let Some((below_pool_lane, top_node)) =
-                        graph.get_top_node_on_lower_lane(cur_pool_lane, this_layer)
+                        graph.get_top_node_on_lower_lane_same_pool(cur_pool_lane, this_layer)
                     {
                         cur_pool_lane = below_pool_lane;
                         cur_below_node_in_same_lane = top_node;
@@ -923,8 +930,64 @@ fn do_gateway_mapping(this_node_id: NodeId, graph: &mut Graph) {
         }
     };
 
+    let mut above_nodes_in_other_layer = {
+        let mut above_nodes_in_other_layer = HashSet::new();
+        let mut current_node = other_topmost_node;
+        let mut current_pool_and_lane = other_topmost_node.pool_and_lane();
+        loop {
+            if let Some(above) = current_node.node_above_in_same_lane {
+                above_nodes_in_other_layer.insert(above);
+                current_node = &n!(above);
+            } else if let Some((next_pool_and_lane, above)) = graph
+                .get_nextup_higher_node_same_pool(
+                    current_pool_and_lane,
+                    PoolAndLane::default(),
+                    this_layer,
+                )
+            {
+            }
+        }
+    };
+
     for edge_id in edges.iter().cloned() {
-        if cu
+        let to = &to!(edge_id);
+        let to_pool_lane = to.pool_and_lane();
+        if let Some(current_top_barrier) = current_top_barrier
+            && to_pool_lane < n!(current_top_barrier).pool_and_lane()
+        {
+            // TODO must simply insert the node below the top-most barrier node.
+            // TODO update the current_top_barrier.
+            continue;
+        }
+
+        if let Some(bottom_barrier) = bottom_barrier
+            && to_pool_lane > n!(bottom_barrier).pool_and_lane()
+        {
+            // TODO must simply insert the node above the bottom-most barrier node.
+            continue;
+        }
+
+        // Can insert the node in the actual target lane, hooray!
+        //  (1) calculate necessary helper information for crossing calculation
+        //  (2) hypothetically go from top to bottom and check where are the least crossings.
+
+        let mut surrounding_nodes = HashMap::new();
+        {
+            let mut cur_above = to.node_above_in_same_lane;
+            while let Some(above_node_id) = cur_above {
+                let above_node = &n!(above_node_id);
+                surrounding_nodes.insert(above_node_id, 1i64);
+                cur_above = above_node.node_above_in_same_lane;
+            }
+        }
+        {
+            let mut cur_below = to.node_below_in_same_lane;
+            while let Some(below_node_id) = cur_below {
+                let below_node = &n!(below_node_id);
+                surrounding_nodes.insert(below_node_id, -1i64);
+                cur_below = below_node.node_below_in_same_lane;
+            }
+        }
     }
 
     n!(this_node_id).outgoing = edges;
