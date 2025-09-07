@@ -1,4 +1,5 @@
-use std::collections::{HashMap, HashSet};
+use crate::common::node::Node;
+use std::collections::HashSet;
 use vecset::VecSet;
 
 // pool.rs
@@ -6,6 +7,7 @@ use crate::common::graph::{LaneId, NodeId};
 use crate::common::graph::{PoolId, SdeId};
 use crate::common::lane::Lane;
 use crate::common::macros::impl_index;
+use crate::common::node::LayerId;
 pub struct Pool {
     /// None: Anonymous Pool. Invariant: If a graph contains a pool with a None name, then this is
     /// the only pool in the graph. In this case the pool is not rendered at all, and its contained
@@ -22,7 +24,9 @@ pub struct Pool {
     pub stroke_color: Option<String>,
     pub fill_color: Option<String>,
 
+    #[allow(non_snake_case)]
     pub tee_admin_has_pe_bpmn_visibility_A_for: VecSet<SdeId>,
+    #[allow(non_snake_case)]
     pub tee_admin_has_pe_bpmn_visibility_H_for: VecSet<SdeId>,
     pub tee_external_root_access: HashSet<SdeId>,
 }
@@ -50,8 +54,25 @@ impl Pool {
         LaneId(self.lanes.len() - 1)
     }
 
-    pub fn add_node(&mut self, lane: LaneId, node_id: NodeId) {
-        self.lanes[lane.0].nodes.push(node_id);
+    pub fn add_node(
+        &mut self,
+        nodes: &mut Vec<Node>,
+        lane: LaneId,
+        node_id: NodeId,
+        layer: Option<LayerId>,
+    ) {
+        if let Some(layer) = layer
+            && let Some(position) = self.lanes[lane]
+                .nodes
+                .iter()
+                .position(|node_id| nodes[node_id.0].layer_id >= layer)
+        {
+            // If the layer is known, we need to insert it at the correct position in this sorted
+            // Lane::nodes vector (sorted by layer).
+            self.lanes[lane].nodes.insert(position, node_id);
+        } else {
+            self.lanes[lane].nodes.push(node_id);
+        }
     }
 }
 

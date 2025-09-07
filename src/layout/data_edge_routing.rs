@@ -1,6 +1,5 @@
 use crate::common::edge::Edge;
 use crate::common::edge::EdgeType;
-use crate::common::edge::FlowType;
 use crate::common::edge::RegularEdgeBendPoints;
 use crate::common::graph::Graph;
 use crate::common::graph::NodeId;

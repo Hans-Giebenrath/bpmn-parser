@@ -281,8 +281,7 @@ impl Node {
 
     pub fn coord3(&self) -> Coord3 {
         Coord3 {
-            pool: self.pool,
-            lane: self.lane,
+            pool_and_lane: self.pool_and_lane(),
             layer: self.layer_id,
             half_layer: self.uses_half_layer,
         }

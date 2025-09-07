@@ -43,7 +43,7 @@ pub fn generate_visibility_table(graph: &Graph) -> Result<String, Box<dyn std::e
                             .contains(&SdeId(sde_index));
 
                         let admin_accessible = graph.pools[pool_index]
-                            .tee_admin_has_pe_bpmn_visibility_A_for
+                            .tee_admin_has_pe_bpmn_visibility_a_for
                             .contains(&SdeId(sde_index));
 
                         let admin_hidden = graph.pools[pool_index]

@@ -8,6 +8,7 @@ use crate::common::pool::Pool;
 use crate::lexer::{DataType, EventType};
 use crate::parser::ParseError;
 use annotate_snippets::Level;
+use proc_macros::{e, from, n, to};
 use std::collections::{HashMap, HashSet};
 use std::fmt::{self, Debug};
 use std::mem;
@@ -51,7 +52,10 @@ pub struct PoolId(pub usize);
 #[derive(PartialEq, Default, Clone, Debug, Copy, Hash, Eq, PartialOrd, Ord)]
 pub struct LaneId(pub usize);
 
-// TODO make use of
+// TODO Naming is a bit long, but it says what it is. Maybe `PoolLane` is shorted and better than
+// `PoolAndLane`? Or maybe something funny like `Poolane`? `PoLa`? `Place2`? `Coord2`?
+// `PoolLane` seems the most reasonable. The variables could then be shortly named `poolane`,
+// `poollane` or really `pool_lane`. Probably `pool_lane` is the most readable after all.
 #[derive(PartialEq, Default, Clone, Debug, Copy, Hash, Eq, PartialOrd, Ord)]
 pub struct PoolAndLane {
     pub pool: PoolId,
@@ -59,8 +63,7 @@ pub struct PoolAndLane {
 }
 
 pub struct Coord3 {
-    pub pool: PoolId,
-    pub lane: LaneId,
+    pub pool_and_lane: PoolAndLane,
     pub layer: LayerId,
     pub half_layer: bool,
 }
@@ -85,13 +88,20 @@ impl Graph {
         PoolId(self.pools.len() - 1)
     }
 
-    pub fn add_node(&mut self, node_type: NodeType, pool_id: PoolId, lane_id: LaneId) -> NodeId {
+    pub fn add_node(
+        &mut self,
+        node_type: NodeType,
+        pool_lane: PoolAndLane,
+        // This is usually known in later stages when dummy nodes are added. Since in that case the
+        // Lane::nodes array sorted order must be uphold, this is done by this function.
+        layer: Option<LayerId>,
+    ) -> NodeId {
         add_node(
             &mut self.nodes,
             &mut self.pools,
             node_type,
-            pool_id,
-            lane_id,
+            pool_lane,
+            layer,
         )
     }
 
@@ -165,6 +175,77 @@ impl Graph {
 
         mem::swap(&mut edge.from, &mut edge.to);
         edge.is_reversed = true;
+    }
+
+    pub(crate) fn get_bottom_node(&self, pool_lane: PoolAndLane, layer: LayerId) -> Option<NodeId> {
+        let PoolAndLane { pool, lane } = pool_lane;
+        let mut it = self.pools[pool].lanes[lane].nodes.iter().cloned();
+        loop {
+            if let Some(node_id) = it.next()
+                && let node = &self.nodes[node_id]
+                && node.layer_id <= layer
+            {
+                if node.layer_id == layer && node.node_below_in_same_lane.is_none() {
+                    return Some(node_id);
+                }
+            } else {
+                // The layer within the current lane does not have any nodes.
+                return None;
+            }
+        }
+    }
+
+    pub(crate) fn get_bottom_node_on_higher_lane(
+        &self,
+        lane_below_requested_one: PoolAndLane,
+        layer: LayerId,
+    ) -> Option<(PoolAndLane, Option<NodeId>)> {
+        let pool_lane @ PoolAndLane { mut pool, mut lane } = lane_below_requested_one;
+        if lane.0 == 0 {
+            if pool.0 == 0 {
+                return None;
+            }
+            pool.0 -= 1;
+            lane.0 = self.pools[pool].lanes.len() - 1;
+        }
+
+        Some((pool_lane, self.get_bottom_node(pool_lane, layer)))
+    }
+
+    pub(crate) fn get_top_node(&self, pool_lane: PoolAndLane, layer: LayerId) -> Option<NodeId> {
+        let PoolAndLane { pool, lane } = pool_lane;
+
+        let mut it = self.pools[pool].lanes[lane].nodes.iter().cloned();
+        loop {
+            if let Some(node_id) = it.next()
+                && let node = &self.nodes[node_id]
+                && node.layer_id <= layer
+            {
+                if node.layer_id == layer && node.node_above_in_same_lane.is_none() {
+                    return Some(node_id);
+                }
+            } else {
+                // The layer within the current lane does not have any nodes.
+                return None;
+            }
+        }
+    }
+
+    pub(crate) fn get_top_node_on_lower_lane(
+        &self,
+        lane_above_requested_one: PoolAndLane,
+        layer: LayerId,
+    ) -> Option<(PoolAndLane, Option<NodeId>)> {
+        let pool_lane @ PoolAndLane { mut pool, mut lane } = lane_above_requested_one;
+        if lane.0 == self.pools[pool].lanes.len() - 1 {
+            if pool.0 == self.pools.len() - 1 {
+                return None;
+            }
+            pool.0 += 1;
+            lane.0 = 0;
+        }
+
+        Some((pool_lane, self.get_top_node(pool_lane, layer)))
     }
 }
 
@@ -332,28 +413,28 @@ pub(crate) fn add_node(
     nodes: &mut Vec<Node>,
     pools: &mut Vec<Pool>,
     node_type: NodeType,
-    pool_id: PoolId,
-    lane_id: LaneId,
+    PoolAndLane { pool, lane }: PoolAndLane,
+    layer: Option<LayerId>,
 ) -> NodeId {
     let node_id = NodeId(nodes.len());
 
     // Add node ID to the pool and lane stuff
-    pools[pool_id.0].add_node(lane_id, node_id);
+    pools[pool].add_node(nodes, lane, node_id, layer);
 
     let (width, height) = node_size(&node_type);
 
     nodes.push(Node {
         id: node_id,
         node_type,
-        pool: pool_id,
-        lane: lane_id,
+        pool,
+        lane,
         x: 0,
         y: 0,
         width,
         height,
         stroke_color: None,
         fill_color: None,
-        layer_id: LayerId(0),
+        layer_id: layer.unwrap_or(LayerId(0)),
         node_above_in_same_lane: None,
         node_below_in_same_lane: None,
         uses_half_layer: false,

@@ -2,6 +2,7 @@ use crate::common::edge::DummyEdgeBendPoints;
 use crate::common::edge::EdgeType;
 use crate::common::graph::EdgeId;
 use crate::common::graph::Graph;
+use crate::common::graph::PoolAndLane;
 use crate::common::node::LayerId;
 use crate::common::node::NodeType;
 
@@ -65,8 +66,14 @@ pub fn generate_dummy_nodes(graph: &mut Graph) {
         let mut layer_id = LayerId(from.layer_id.0 + 1);
         let to_node_id = to.id;
         for lane_id in node_lane_ids {
-            let dummy_node_id = graph.add_node(NodeType::DummyNode, pool, lane_id);
-            graph.nodes[dummy_node_id].layer_id = layer_id;
+            let dummy_node_id = graph.add_node(
+                NodeType::DummyNode,
+                PoolAndLane {
+                    pool,
+                    lane: lane_id,
+                },
+                Some(layer_id),
+            );
             layer_id.0 += 1;
 
             graph.add_edge(
@@ -89,7 +96,11 @@ pub fn generate_dummy_nodes(graph: &mut Graph) {
             },
             flow_type,
         );
-        graph.nodes[from_id].outgoing.retain(|outgoing_edge_idx| *outgoing_edge_idx != edge_id);
-        graph.nodes[to_id].incoming.retain(|incoming_edge_idx| *incoming_edge_idx != edge_id);
+        graph.nodes[from_id]
+            .outgoing
+            .retain(|outgoing_edge_idx| *outgoing_edge_idx != edge_id);
+        graph.nodes[to_id]
+            .incoming
+            .retain(|incoming_edge_idx| *incoming_edge_idx != edge_id);
     }
 }

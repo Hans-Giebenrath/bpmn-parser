@@ -4,6 +4,7 @@ use crate::common::bpmn_node::EventVisual;
 use crate::common::bpmn_node::InterruptingKind;
 use crate::common::edge::{DataFlowAux, EdgeType, FlowType};
 use crate::common::edge::{MessageFlowAux, RegularEdgeBendPoints};
+use crate::common::graph::PoolAndLane;
 use crate::common::graph::{Graph, SdeId};
 use crate::common::graph::{LaneId, NodeId, PoolId};
 use crate::common::node::NodeType;
@@ -75,6 +76,7 @@ enum GroupingState {
     /// at all (this is for the tiny examples). But also, any later encountered pool or lane
     /// statement are errors. The `first_encountered_node` is stored for better error reporting.
     WithinAnonymousPool {
+        // TODO make use of PoolAndLane
         pool_id: PoolId,
         lane_id: LaneId,
         first_encountered_node: TokenCoordinate,
@@ -89,6 +91,7 @@ enum GroupingState {
     /// the input text file, it is considered anonymous.
     /// Invariant: No explicit lane is allowed in this pool going forward.
     WithinAnonymousLane {
+        // TODO make use of PoolAndLane
         pool_id: PoolId,
         ptc: TokenCoordinate,
         lane_id: LaneId,
@@ -96,6 +99,7 @@ enum GroupingState {
     },
     /// We are in a lane, all good and regular.
     WithinLane {
+        // TODO make use of PoolAndLane
         pool_id: PoolId,
         ptc: TokenCoordinate,
         lane_id: LaneId,
@@ -303,7 +307,7 @@ impl Parser {
         err_from_unfinished_lifeline(old_state, self.context.current_token_coordinate)?;
         let pool_id = self.graph.add_pool(Some(label.to_string()));
         self.context.grouping_state = GroupingState::WithinPool {
-            pool_id: pool_id,
+            pool_id,
             ptc: self.context.current_token_coordinate,
         };
         self.context.last_node_id = None;
@@ -397,7 +401,7 @@ impl Parser {
     /// Parse a gateway
     fn parse_gateway_branch_start(&mut self, meta: GatewayNodeMeta) -> Result<(), ParseError> {
         // Assign a unique node ID to this gateway
-        let (pool_id, lane_id) = self.manage_pool_and_lane_ids_for_new_node();
+        let pool_and_lane = self.manage_pool_and_lane_ids_for_new_node();
         let node_id = self.graph.add_node(
             NodeType::RealNode {
                 event: BpmnNode::Gateway(meta.gateway_type),
@@ -406,13 +410,13 @@ impl Parser {
                 transported_data: vec![],
                 pe_bpmn_hides_protection_operations: false,
             },
-            pool_id,
-            lane_id,
+            pool_and_lane,
+            None,
         );
 
         self.connect_nodes(
             node_id,
-            pool_id,
+            pool_and_lane.pool,
             LifelineState::NoLifelineActive {
                 previous_lifeline_termination_statement: Some(
                     self.context.current_token_coordinate,
@@ -423,7 +427,7 @@ impl Parser {
         for EdgeMeta { target, text_label } in meta.sequence_flow_jump_metas.into_iter() {
             self.context
                 .dangling_sequence_flows
-                .entry(pool_id)
+                .entry(pool_and_lane.pool)
                 .or_default()
                 .dangling_end_map
                 .entry(target)
@@ -441,7 +445,7 @@ impl Parser {
     // and the intermediate labels.
     fn parse_gateway_join_end(&mut self, meta: GatewayNodeMeta) -> Result<(), ParseError> {
         // Assign a unique node ID to this gateway
-        let (pool_id, lane_id) = self.manage_pool_and_lane_ids_for_new_node();
+        let pool_and_lane = self.manage_pool_and_lane_ids_for_new_node();
         let node_id = self.graph.add_node(
             NodeType::RealNode {
                 event: BpmnNode::Gateway(meta.gateway_type),
@@ -450,8 +454,8 @@ impl Parser {
                 transported_data: vec![],
                 pe_bpmn_hides_protection_operations: false,
             },
-            pool_id,
-            lane_id,
+            pool_and_lane,
+            None,
         );
         let old_state = std::mem::replace(
             &mut self.context.lifeline_state,
@@ -464,7 +468,7 @@ impl Parser {
         for EdgeMeta { target, text_label } in meta.sequence_flow_jump_metas.into_iter() {
             self.context
                 .dangling_sequence_flows
-                .entry(pool_id)
+                .entry(pool_and_lane.pool)
                 .or_default()
                 .dangling_start_map
                 .entry(target.clone())
@@ -506,7 +510,7 @@ _ => (),
     }
 
     fn parse_gateway_join_start(&mut self, meta: GatewayInnerMeta) -> Result<(), ParseError> {
-        let (pool_id, _lane_id) = self.manage_pool_and_lane_ids_for_new_node();
+        let pool_and_lane = self.manage_pool_and_lane_ids_for_new_node();
         let old_state = std::mem::replace(
             &mut self.context.lifeline_state,
             LifelineState::NoLifelineActive {
@@ -532,7 +536,7 @@ _ => (),
         // The only place where there are multiple uses of the same label allowed.
         self.context
             .dangling_sequence_flows
-            .entry(pool_id)
+            .entry(pool_and_lane.pool)
             .or_default()
             .dangling_end_map
             .entry(meta.sequence_flow_jump_meta.target)
@@ -605,7 +609,7 @@ _ => (),
 
     /// Common function to parse an event or task
     fn parse_event(&mut self, meta: lexer::EventMeta, is_end: bool) -> Result<(), ParseError> {
-        let (pool_id, lane_id) = self.manage_pool_and_lane_ids_for_new_node();
+        let pool_and_lane = self.manage_pool_and_lane_ids_for_new_node();
         let ids = meta.node_meta.ids;
         let node_id = match self.context.lifeline_state {
             LifelineState::NoLifelineActive { .. } if !is_end => {
@@ -620,8 +624,8 @@ _ => (),
                         transported_data: vec![],
                         pe_bpmn_hides_protection_operations: false,
                     },
-                    pool_id,
-                    lane_id,
+                    pool_and_lane,
+                    None,
                 );
                 self.context.lifeline_state = LifelineState::ActiveLifeline {
                     last_node_id,
@@ -641,12 +645,12 @@ _ => (),
                         transported_data: vec![],
                         pe_bpmn_hides_protection_operations: false,
                     },
-                    pool_id,
-                    lane_id,
+                    pool_and_lane,
+                    None,
                 );
                 self.connect_nodes(
                     node_id,
-                    pool_id,
+                    pool_and_lane.pool,
                     LifelineState::NoLifelineActive {
                         previous_lifeline_termination_statement: Some(
                             self.context.current_token_coordinate,
@@ -670,12 +674,12 @@ _ => (),
                         transported_data: vec![],
                         pe_bpmn_hides_protection_operations: false,
                     },
-                    pool_id,
-                    lane_id,
+                    pool_and_lane,
+                    None,
                 );
                 self.connect_nodes(
                     node_id,
-                    pool_id,
+                    pool_and_lane.pool,
                     LifelineState::ActiveLifeline {
                         last_node_id: node_id,
                         token_coordinate: self.context.current_token_coordinate,
@@ -697,7 +701,7 @@ _ => (),
     }
 
     fn parse_activity(&mut self, meta: ActivityMeta) -> Result<(), ParseError> {
-        let (pool_id, lane_id) = self.manage_pool_and_lane_ids_for_new_node();
+        let pool_and_lane = self.manage_pool_and_lane_ids_for_new_node();
         let ids = meta.node_meta.ids;
         let node_id = self.graph.add_node(
             NodeType::RealNode {
@@ -707,8 +711,8 @@ _ => (),
                 transported_data: vec![],
                 pe_bpmn_hides_protection_operations: false,
             },
-            pool_id,
-            lane_id,
+            pool_and_lane,
+            None,
         );
 
         self.context
@@ -717,7 +721,7 @@ _ => (),
 
         self.connect_nodes(
             node_id,
-            pool_id,
+            pool_and_lane.pool,
             LifelineState::ActiveLifeline {
                 last_node_id: node_id,
                 token_coordinate: self.context.current_token_coordinate,
@@ -726,7 +730,7 @@ _ => (),
     }
 
     fn parse_sequence_flow_jump(&mut self, meta: SequenceFlowMeta) -> Result<(), ParseError> {
-        let (pool_id, _lane_id) = self.manage_pool_and_lane_ids_for_new_node();
+        let pool_and_lane = self.manage_pool_and_lane_ids_for_new_node();
         let old_state = std::mem::replace(
             &mut self.context.lifeline_state,
             LifelineState::NoLifelineActive {
@@ -753,7 +757,7 @@ _ => (),
 
         self.context
             .dangling_sequence_flows
-            .entry(pool_id)
+            .entry(pool_and_lane.pool)
             .or_default()
             .dangling_end_map
             .entry(meta.sequence_flow_jump_meta.target)
@@ -769,7 +773,7 @@ _ => (),
 
     fn parse_sequence_flow_land(&mut self, meta: SequenceFlowMeta) -> Result<(), ParseError> {
         // Make sure that this is not in some weird position.
-        let (_pool_id, _lane_id) = self.manage_pool_and_lane_ids_for_new_node();
+        let _pool_and_lane = self.manage_pool_and_lane_ids_for_new_node();
 
         // Check that a valid node type follows
         self.context.lifeline_state = LifelineState::StartedFromSequenceFlowLanding {
@@ -899,10 +903,14 @@ _ => (),
                 transported_data: vec![],
                 pe_bpmn_hides_protection_operations: false,
             },
-            pool_id.unwrap(),
-            LaneId(
-                (lane_ids.iter().sum::<usize>() as f64 / lane_ids.len() as f64).round() as usize,
-            ),
+            PoolAndLane {
+                pool: pool_id.unwrap(),
+                lane: LaneId(
+                    (lane_ids.iter().sum::<usize>() as f64 / lane_ids.len() as f64).round()
+                        as usize,
+                ),
+            },
+            None,
         );
         self.graph.data_elements[sde_id]
             .data_element
@@ -933,7 +941,7 @@ _ => (),
         Ok(())
     }
 
-    fn manage_pool_and_lane_ids_for_new_node(&mut self) -> (PoolId, LaneId) {
+    fn manage_pool_and_lane_ids_for_new_node(&mut self) -> PoolAndLane {
         match self.context.grouping_state {
             GroupingState::Init => {
                 let pool_id = self.graph.add_pool(None);
@@ -943,11 +951,17 @@ _ => (),
                     pool_id,
                     lane_id,
                 };
-                (pool_id, lane_id)
+                PoolAndLane {
+                    pool: pool_id,
+                    lane: lane_id,
+                }
             }
             GroupingState::WithinAnonymousPool {
                 pool_id, lane_id, ..
-            } => (pool_id, lane_id),
+            } => PoolAndLane {
+                pool: pool_id,
+                lane: lane_id,
+            },
             GroupingState::WithinPool { pool_id, ptc } => {
                 let lane_id = self.graph.pools[pool_id.0].add_lane(None);
                 self.context.grouping_state = GroupingState::WithinAnonymousLane {
@@ -956,14 +970,23 @@ _ => (),
                     lane_id,
                     ptc,
                 };
-                (pool_id, lane_id)
+                PoolAndLane {
+                    pool: pool_id,
+                    lane: lane_id,
+                }
             }
             GroupingState::WithinAnonymousLane {
                 pool_id, lane_id, ..
-            } => (pool_id, lane_id),
+            } => PoolAndLane {
+                pool: pool_id,
+                lane: lane_id,
+            },
             GroupingState::WithinLane {
                 pool_id, lane_id, ..
-            } => (pool_id, lane_id),
+            } => PoolAndLane {
+                pool: pool_id,
+                lane: lane_id,
+            },
         }
     }
 

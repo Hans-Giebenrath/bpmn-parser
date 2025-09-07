@@ -555,7 +555,7 @@ fn handle_message_flows(graph: &Graph, v: &mut Vars, objective: &mut Expression)
             }
             // It might be that there are no edges to the given direction on other nodes. In that
             // case we still want `the_node` to go to the border to reduce the arrow length (i.e.
-            // we need a value >0), but only if this does not introduce unneccessary crossings
+            // we need a value >0), but only if this does not introduce unnecessary crossings
             // (i.e. <1). The chosen value is just arbitrary within (0, 1).
             let nudge = 0.1;
             if goes_up {
@@ -644,7 +644,7 @@ fn handle_message_flows(graph: &Graph, v: &mut Vars, objective: &mut Expression)
 ///
 ///
 fn sort_incoming_and_outgoing(graph: &mut Graph) {
-    // Sorting is done a bit inefficiently (n^2), feel free to improvie this if it becomes a
+    // Sorting is done a bit inefficiently (n^2), feel free to improve this if it becomes a
     // bottleneck.
     // The strategy is to count how far we can go up in the `.node_above_in_same_lane` linked list.
     // The farther we can go up, the later it should come in the `.incoming`/`.outgoing` vec.
@@ -830,16 +830,20 @@ fn temporarily_add_dummy_nodes_for_edges_within_same_layer(graph: &mut Graph) ->
             continue;
         }
         let layer_id = from.layer_id;
-        let pool = from.pool;
-        let lane = from.lane;
+        let pool_and_lane = from.pool_and_lane();
 
         undo.original_edges.push((edge_id, edge.clone()));
-        let right_node_id = graph.add_node(NodeType::DummyNode, pool, lane);
-        graph.nodes[right_node_id].layer_id = LayerId(layer_id.0 + 1);
+        let right_node_id = graph.add_node(
+            NodeType::DummyNode,
+            pool_and_lane,
+            Some(LayerId(layer_id.0 + 1)),
+        );
         let left_node_id = if layer_id.0 > 0 {
-            let left_node_id = graph.add_node(NodeType::DummyNode, pool, lane);
-            graph.nodes[left_node_id].layer_id = LayerId(layer_id.0 - 1);
-            Some(left_node_id)
+            Some(graph.add_node(
+                NodeType::DummyNode,
+                pool_and_lane,
+                Some(LayerId(layer_id.0 - 1)),
+            ))
         } else {
             // No room to the left. In that case we anyway don't gain anything from having
             // additional dummy nodes there, since it wouldn't cross with anything (or at least it
