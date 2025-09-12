@@ -11,6 +11,7 @@ use annotate_snippets::Level;
 use proc_macros::{e, from, n, to};
 use std::collections::{HashMap, HashSet};
 use std::fmt::{self, Debug};
+use std::iter::from_fn;
 use std::mem;
 
 use super::edge::FlowType;
@@ -60,6 +61,17 @@ pub struct LaneId(pub usize);
 pub struct PoolAndLane {
     pub pool: PoolId,
     pub lane: LaneId,
+}
+
+impl PoolAndLane {
+    pub const MIN: Self = PoolAndLane {
+        pool: PoolId(0),
+        lane: LaneId(0),
+    };
+    pub const MAX: Self = PoolAndLane {
+        pool: PoolId(usize::MAX),
+        lane: LaneId(usize::MAX),
+    };
 }
 
 pub struct Coord3 {
@@ -198,19 +210,55 @@ impl Graph {
     pub(crate) fn get_nextup_higher_node_same_pool(
         &self,
         mut lane_below_requested_one: PoolAndLane,
-        final_pool_lane_to_consider: PoolAndLane,
+        mut final_pool_lane_to_consider: PoolAndLane,
         layer: LayerId,
     ) -> Option<(PoolAndLane, NodeId)> {
         assert!(final_pool_lane_to_consider < lane_below_requested_one);
-        while lane_below_requested_one.lane.0 > 0
-            || lane_below_requested_one == final_pool_lane_to_consider
-        {
+        if final_pool_lane_to_consider.pool != lane_below_requested_one.pool {
+            final_pool_lane_to_consider = PoolAndLane {
+                pool: lane_below_requested_one.pool,
+                lane: LaneId(0),
+            };
+        }
+        while lane_below_requested_one > final_pool_lane_to_consider {
             lane_below_requested_one.lane.0 -= 1;
             if let Some(node_id) = self.get_bottom_node(lane_below_requested_one, layer) {
                 return Some((lane_below_requested_one, node_id));
             }
         }
         None
+    }
+
+    pub(crate) fn iter_upwards_same_pool(
+        &self,
+        start_node_id: NodeId,
+        final_pool_lane_to_consider: Option<PoolAndLane>,
+    ) -> impl Iterator<Item = (PoolAndLane, &Node)> {
+        let graph = self;
+        let mut current_node = &n!(start_node_id);
+        let mut current_pool_and_lane = current_node.pool_and_lane();
+        let layer = current_node.layer_id;
+        let final_pool_lane_to_consider =
+            final_pool_lane_to_consider.unwrap_or_else(|| PoolAndLane::MIN);
+        from_fn(move || {
+            if let Some(above) = current_node.node_above_in_same_lane {
+                current_node = &n!(above);
+                Some((current_pool_and_lane, current_node))
+            } else if let Some((next_pool_and_lane, above)) = graph
+                .get_nextup_higher_node_same_pool(
+                    current_pool_and_lane,
+                    final_pool_lane_to_consider,
+                    layer,
+                )
+            {
+                current_node = &n!(above);
+                current_pool_and_lane = next_pool_and_lane;
+                Some((current_pool_and_lane, current_node))
+            } else {
+                // No more interesting stuff above.
+                None
+            }
+        })
     }
 
     pub(crate) fn get_top_node(&self, pool_lane: PoolAndLane, layer: LayerId) -> Option<NodeId> {
@@ -232,13 +280,16 @@ impl Graph {
         }
     }
 
-    pub(crate) fn get_top_node_on_lower_lane_same_pool(
+    pub(crate) fn get_next_lower_node_same_pool(
         &self,
-        lane_above_requested_one: PoolAndLane,
+        mut lane_above_requested_one: PoolAndLane,
+        final_pool_lane_to_consider: PoolAndLane,
         layer: LayerId,
     ) -> Option<(PoolAndLane, Option<NodeId>)> {
-        let pool_lane @ PoolAndLane { mut pool, mut lane } = lane_above_requested_one;
-        if lane.0 == self.pools[pool].lanes.len() - 1 {
+        assert!(final_pool_lane_to_consider > lane_above_requested_one);
+        while 1 < self.pools[lane_above_requested_one.pool].lanes.len() - lane.0
+            || lane_above_requested_one == final_pool_lane_to_consider
+        {
             if pool.0 == self.pools.len() - 1 {
                 return None;
             }

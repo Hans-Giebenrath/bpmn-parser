@@ -861,41 +861,10 @@ fn do_gateway_mapping(this_node_id: NodeId, graph: &mut Graph) {
 
     // First we search a regular (or dummy-(loop-connected)-to-regular) node as the top barrier.
     // Later these are our own newly inserted dummy nodes.
-    let mut current_top_barrier = {
-        let mut cur_above_node_in_same_lane = n!(this_node_id).node_above_in_same_lane;
-        let mut cur_pool_lane = n!(this_node_id).pool_and_lane();
-        loop {
-            match cur_above_node_in_same_lane {
-                Some(cur) => {
-                    if !is_skippable_dummy_node(cur, graph) {
-                        break cur_above_node_in_same_lane;
-                    }
-
-                    // We found a dummy node which goes to the right, and we continue our search to
-                    // go further up to find a barrier.
-                    cur_above_node_in_same_lane = n!(cur).node_above_in_same_lane;
-                }
-                None => {
-                    if cur_pool_lane < top_most_pool_lane {
-                        // There simply is no barrier, can insert it at the top.
-                        break None;
-                    } else if let Some((above_pool_lane, bottom_node)) = graph
-                        .get_nextup_higher_node_same_pool(
-                            cur_pool_lane,
-                            top_most_pool_lane,
-                            this_layer,
-                        )
-                    {
-                        cur_pool_lane = above_pool_lane;
-                        cur_above_node_in_same_lane = Some(bottom_node);
-                    } else {
-                        // There simply is no obstacle at all upwards, we left the topmost lane.
-                        break None;
-                    }
-                }
-            }
-        }
-    };
+    let mut current_top_barrier = graph
+        .iter_upwards_same_pool(this_node_id, top_most_pool_lane)
+        .map(|(_, node)| node.id)
+        .find(|node_id| !is_skippable_dummy_node(*node_id, graph));
 
     // This is always the same. We iterate always until we hit this one.
     let bottom_barrier = {
@@ -930,24 +899,11 @@ fn do_gateway_mapping(this_node_id: NodeId, graph: &mut Graph) {
         }
     };
 
-    let mut above_nodes_in_other_layer = {
-        let mut above_nodes_in_other_layer = HashSet::new();
-        let mut current_node = other_topmost_node;
-        let mut current_pool_and_lane = other_topmost_node.pool_and_lane();
-        loop {
-            if let Some(above) = current_node.node_above_in_same_lane {
-                above_nodes_in_other_layer.insert(above);
-                current_node = &n!(above);
-            } else if let Some((next_pool_and_lane, above)) = graph
-                .get_nextup_higher_node_same_pool(
-                    current_pool_and_lane,
-                    PoolAndLane::default(),
-                    this_layer,
-                )
-            {
-            }
-        }
-    };
+    let mut above_nodes_in_other_layer = HashSet::<NodeId>::from_iter(
+        graph
+            .iter_upwards_same_pool(other_topmost_node.id, PoolAndLane::default())
+            .map(|(_, node)| node.id),
+    );
 
     for edge_id in edges.iter().cloned() {
         let to = &to!(edge_id);
