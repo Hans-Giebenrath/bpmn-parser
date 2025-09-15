@@ -80,6 +80,11 @@ pub struct Coord3 {
     pub half_layer: bool,
 }
 
+pub(crate) enum LayerIterationStart {
+    Node(NodeId),
+    PoolLane(PoolAndLane),
+}
+
 /// A Newtype to make sure that code outside of the module does not modify its value.
 /// The invariant is that every created NodeId does point to some existing node.
 #[derive(PartialEq, Default, Clone, Debug, Copy, Hash, Eq)]
@@ -215,6 +220,7 @@ impl Graph {
     ) -> Option<(PoolAndLane, NodeId)> {
         assert!(final_pool_lane_to_consider < lane_below_requested_one);
         if final_pool_lane_to_consider.pool != lane_below_requested_one.pool {
+            // Bend the `final_pool_lane_to_consider` around to use it as a sentinel value.
             final_pool_lane_to_consider = PoolAndLane {
                 pool: lane_below_requested_one.pool,
                 lane: LaneId(0),
@@ -283,21 +289,83 @@ impl Graph {
     pub(crate) fn get_next_lower_node_same_pool(
         &self,
         mut lane_above_requested_one: PoolAndLane,
-        final_pool_lane_to_consider: PoolAndLane,
+        mut final_pool_lane_to_consider: PoolAndLane,
         layer: LayerId,
-    ) -> Option<(PoolAndLane, Option<NodeId>)> {
+    ) -> Option<(PoolAndLane, NodeId)> {
         assert!(final_pool_lane_to_consider > lane_above_requested_one);
-        while 1 < self.pools[lane_above_requested_one.pool].lanes.len() - lane.0
-            || lane_above_requested_one == final_pool_lane_to_consider
-        {
-            if pool.0 == self.pools.len() - 1 {
-                return None;
-            }
-            pool.0 += 1;
-            lane.0 = 0;
+        if final_pool_lane_to_consider.pool != lane_above_requested_one.pool {
+            assert!(!self.pools[lane_above_requested_one.pool].lanes.is_empty());
+            final_pool_lane_to_consider = PoolAndLane {
+                pool: lane_above_requested_one.pool,
+                lane: LaneId(self.pools[lane_above_requested_one.pool].lanes.len() - 1),
+            };
         }
+        while lane_above_requested_one < final_pool_lane_to_consider {
+            lane_above_requested_one.lane.0 += 1;
+            if let Some(node_id) = self.get_top_node(lane_above_requested_one, layer) {
+                return Some((lane_above_requested_one, node_id));
+            }
+        }
+        None
+    }
 
-        Some((pool_lane, self.get_top_node(pool_lane, layer)))
+    pub(crate) fn iter_downwards_same_pool(
+        &self,
+        start: LayerIterationStart,
+        final_pool_lane_to_consider: Option<PoolAndLane>,
+    ) -> impl Iterator<Item = (PoolAndLane, &Node)> {
+        let graph = self;
+        let mut current_node = &n!(start_node_id);
+        let mut current_pool_and_lane = current_node.pool_and_lane();
+        let layer = current_node.layer_id;
+        let final_pool_lane_to_consider =
+            final_pool_lane_to_consider.unwrap_or_else(|| PoolAndLane::MAX);
+        from_fn(move || {
+            if let Some(below) = current_node.node_below_in_same_lane {
+                current_node = &n!(below);
+                Some((current_pool_and_lane, current_node))
+            } else if let Some((next_pool_and_lane, below)) = graph.get_next_lower_node_same_pool(
+                current_pool_and_lane,
+                final_pool_lane_to_consider,
+                layer,
+            ) {
+                current_node = &n!(below);
+                current_pool_and_lane = next_pool_and_lane;
+                Some((current_pool_and_lane, current_node))
+            } else {
+                // No more interesting stuff below.
+                None
+            }
+        })
+    }
+    pub(crate) fn iter_downwards_same_pool(
+        &self,
+        start_node_id: NodeId,
+        final_pool_lane_to_consider: Option<PoolAndLane>,
+    ) -> impl Iterator<Item = (PoolAndLane, &Node)> {
+        let graph = self;
+        let mut current_node = &n!(start_node_id);
+        let mut current_pool_and_lane = current_node.pool_and_lane();
+        let layer = current_node.layer_id;
+        let final_pool_lane_to_consider =
+            final_pool_lane_to_consider.unwrap_or_else(|| PoolAndLane::MAX);
+        from_fn(move || {
+            if let Some(below) = current_node.node_below_in_same_lane {
+                current_node = &n!(below);
+                Some((current_pool_and_lane, current_node))
+            } else if let Some((next_pool_and_lane, below)) = graph.get_next_lower_node_same_pool(
+                current_pool_and_lane,
+                final_pool_lane_to_consider,
+                layer,
+            ) {
+                current_node = &n!(below);
+                current_pool_and_lane = next_pool_and_lane;
+                Some((current_pool_and_lane, current_node))
+            } else {
+                // No more interesting stuff below.
+                None
+            }
+        })
     }
 }
 
@@ -437,26 +505,42 @@ pub(crate) fn sort_lanes_by_layer(graph: &mut Graph) {
     }
 }
 
+pub(crate) enum Place {
+    AtTheTop,
+    Above(NodeId),
+    Below(NodeId),
+    AtTheBottom,
+}
+
 pub(crate) fn adjust_above_and_below_for_new_inbetween(
     inbetween: NodeId,
-    above: Option<NodeId>,
-    below: Option<NodeId>,
+    place: Place,
     graph: &mut Graph,
 ) {
+    let node = &n!(inbetween);
+    let pool_lane = node.pool_and_lane();
+    let layer = node.layer_id;
+    let (above, below) = match place {
+        Place::AtTheTop => (None, graph.get_top_node(pool_lane, layer)),
+        Place::Above(reference) => (n!(reference).node_above_in_same_lane, Some(reference)),
+        Place::Below(reference) => (Some(reference), n!(reference).node_below_in_same_lane),
+        Place::AtTheBottom => (graph.get_bottom_node(pool_lane, layer), None),
+    };
+
     if let Some(above) = above {
-        let above = &mut graph.nodes[above];
+        let above = &mut n!(above);
         assert!(above.node_below_in_same_lane == below);
         above.node_below_in_same_lane = Some(inbetween);
     }
 
     if let Some(below) = below {
-        let below = &mut graph.nodes[below];
+        let below = &mut n!(below);
         assert!(below.node_above_in_same_lane == above);
         below.node_above_in_same_lane = Some(inbetween);
     }
 
-    graph.nodes[inbetween].node_above_in_same_lane = above;
-    graph.nodes[inbetween].node_below_in_same_lane = below;
+    n!(inbetween).node_above_in_same_lane = above;
+    n!(inbetween).node_below_in_same_lane = below;
 }
 
 /// Helper function to not call graph.add_node(..) directly, as this cancels borrows of graph.edges
