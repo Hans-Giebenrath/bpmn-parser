@@ -82,7 +82,7 @@ pub struct Coord3 {
 
 pub(crate) enum LayerIterationStart {
     Node(NodeId),
-    PoolLane(PoolAndLane),
+    PoolLane(Coord3),
 }
 
 /// A Newtype to make sure that code outside of the module does not modify its value.
@@ -313,54 +313,53 @@ impl Graph {
         &self,
         start: LayerIterationStart,
         final_pool_lane_to_consider: Option<PoolAndLane>,
-    ) -> impl Iterator<Item = (PoolAndLane, &Node)> {
+    ) -> impl Iterator<Item = &Node> {
         let graph = self;
-        let mut current_node = &n!(start_node_id);
-        let mut current_pool_and_lane = current_node.pool_and_lane();
-        let layer = current_node.layer_id;
-        let final_pool_lane_to_consider =
-            final_pool_lane_to_consider.unwrap_or_else(|| PoolAndLane::MAX);
-        from_fn(move || {
-            if let Some(below) = current_node.node_below_in_same_lane {
-                current_node = &n!(below);
-                Some((current_pool_and_lane, current_node))
-            } else if let Some((next_pool_and_lane, below)) = graph.get_next_lower_node_same_pool(
-                current_pool_and_lane,
-                final_pool_lane_to_consider,
-                layer,
-            ) {
-                current_node = &n!(below);
-                current_pool_and_lane = next_pool_and_lane;
-                Some((current_pool_and_lane, current_node))
-            } else {
-                // No more interesting stuff below.
-                None
+        let (mut current_node_opt, mut current_pool_and_lane, layer) = match start {
+            LayerIterationStart::Node(start_node_id) => {
+                let current_node = &n!(start_node_id);
+                (
+                    Some(current_node),
+                    current_node.pool_and_lane(),
+                    current_node.layer_id,
+                )
             }
-        })
-    }
-    pub(crate) fn iter_downwards_same_pool(
-        &self,
-        start_node_id: NodeId,
-        final_pool_lane_to_consider: Option<PoolAndLane>,
-    ) -> impl Iterator<Item = (PoolAndLane, &Node)> {
-        let graph = self;
-        let mut current_node = &n!(start_node_id);
-        let mut current_pool_and_lane = current_node.pool_and_lane();
-        let layer = current_node.layer_id;
-        let final_pool_lane_to_consider =
-            final_pool_lane_to_consider.unwrap_or_else(|| PoolAndLane::MAX);
+            LayerIterationStart::PoolLane(Coord3 {
+                pool_and_lane,
+                layer,
+                ..
+            }) => (None, pool_and_lane, layer),
+        };
+        let final_pool_lane_to_consider = final_pool_lane_to_consider.unwrap_or(PoolAndLane::MAX);
         from_fn(move || {
+            let Some(current_node) = current_node_opt else {
+                // Should only enter this once at the beginning for `LayerIterationStart::PoolLane`.
+                current_node_opt = graph
+                    .get_top_node(current_pool_and_lane, layer)
+                    .or_else(|| {
+                        graph
+                            .get_next_lower_node_same_pool(
+                                current_pool_and_lane,
+                                final_pool_lane_to_consider,
+                                layer,
+                            )
+                            .map(|x| x.1)
+                    })
+                    .map(|node_id| &n!(node_id));
+
+                return current_node_opt;
+            };
             if let Some(below) = current_node.node_below_in_same_lane {
-                current_node = &n!(below);
-                Some((current_pool_and_lane, current_node))
+                current_node_opt = Some(&n!(below));
+                current_node_opt
             } else if let Some((next_pool_and_lane, below)) = graph.get_next_lower_node_same_pool(
                 current_pool_and_lane,
                 final_pool_lane_to_consider,
                 layer,
             ) {
-                current_node = &n!(below);
+                current_node_opt = Some(&n!(below));
                 current_pool_and_lane = next_pool_and_lane;
-                Some((current_pool_and_lane, current_node))
+                current_node_opt
             } else {
                 // No more interesting stuff below.
                 None
