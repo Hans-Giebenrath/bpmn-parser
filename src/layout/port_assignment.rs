@@ -3,6 +3,7 @@ use crate::common::edge::EdgeType;
 use crate::common::graph::Coord3;
 use crate::common::graph::EdgeId;
 use crate::common::graph::Graph;
+use crate::common::graph::LayerIterationStart;
 use crate::common::graph::NodeId;
 use crate::common::graph::Place;
 use crate::common::graph::PoolAndLane;
@@ -708,20 +709,26 @@ fn do_gateway_mapping(this_node_id: NodeId, graph: &mut Graph) {
     // First we search a regular (or dummy-(loop-connected)-to-regular) node as the top barrier.
     // Later these are our own newly inserted dummy nodes.
     let mut current_top_barrier = graph
-        .iter_upwards_same_pool(this_node_id, Some(top_most_pool_lane))
-        .find(|(_, node)| !is_skippable_dummy_node(node, graph))
-        .map(|(_, node)| node.id);
+        .iter_upwards_same_pool(
+            LayerIterationStart::Node(this_node_id),
+            Some(top_most_pool_lane),
+        )
+        .find(|&node| !is_skippable_dummy_node(node, graph))
+        .map(|node| node.id);
 
     // This is always the same. We iterate always until we hit this one.
     let bottom_barrier = graph
-        .iter_downwards_same_pool(this_node_id, Some(bottom_most_pool_lane))
-        .find(|(_, node)| !is_skippable_dummy_node(node, graph))
-        .map(|(_, node)| node.id);
+        .iter_downwards_same_pool(
+            LayerIterationStart::Node(this_node_id),
+            Some(bottom_most_pool_lane),
+        )
+        .find(|node| !is_skippable_dummy_node(node, graph))
+        .map(|node| node.id);
 
     let mut above_nodes_in_other_layer = HashSet::<NodeId>::from_iter(
         graph
-            .iter_upwards_same_pool(other_topmost_node.id, None)
-            .map(|(_, node)| node.id),
+            .iter_upwards_same_pool(LayerIterationStart::Node(other_topmost_node.id), None)
+            .map(|node| node.id),
     );
 
     let mut is_above_gateway = false;

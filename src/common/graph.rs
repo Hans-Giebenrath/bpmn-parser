@@ -1,7 +1,7 @@
 use super::macros::impl_index;
 use crate::common::bpmn_node::{BpmnNode, EventVisual};
 use crate::common::config::Config;
-use crate::common::edge::{DummyEdgeBendPoints, Edge, EdgeType};
+use crate::common::edge::{Edge, EdgeType};
 use crate::common::node::LayerId;
 use crate::common::node::{Node, NodeType};
 use crate::common::pool::Pool;
@@ -237,19 +237,48 @@ impl Graph {
 
     pub(crate) fn iter_upwards_same_pool(
         &self,
-        start_node_id: NodeId,
+        start: LayerIterationStart,
         final_pool_lane_to_consider: Option<PoolAndLane>,
-    ) -> impl Iterator<Item = (PoolAndLane, &Node)> {
+    ) -> impl Iterator<Item = &Node> {
         let graph = self;
-        let mut current_node = &n!(start_node_id);
-        let mut current_pool_and_lane = current_node.pool_and_lane();
-        let layer = current_node.layer_id;
+        let (mut current_node_opt, mut current_pool_and_lane, layer) = match start {
+            LayerIterationStart::Node(start_node_id) => {
+                let current_node = &n!(start_node_id);
+                (
+                    Some(current_node),
+                    current_node.pool_and_lane(),
+                    current_node.layer_id,
+                )
+            }
+            LayerIterationStart::PoolLane(Coord3 {
+                pool_and_lane,
+                layer,
+                ..
+            }) => (None, pool_and_lane, layer),
+        };
         let final_pool_lane_to_consider =
             final_pool_lane_to_consider.unwrap_or_else(|| PoolAndLane::MIN);
         from_fn(move || {
+            let Some(current_node) = current_node_opt else {
+                // Should only enter this once at the beginning for `LayerIterationStart::PoolLane`.
+                current_node_opt = graph
+                    .get_bottom_node(current_pool_and_lane, layer)
+                    .or_else(|| {
+                        graph
+                            .get_nextup_higher_node_same_pool(
+                                current_pool_and_lane,
+                                final_pool_lane_to_consider,
+                                layer,
+                            )
+                            .map(|x| x.1)
+                    })
+                    .map(|node_id| &n!(node_id));
+
+                return current_node_opt;
+            };
             if let Some(above) = current_node.node_above_in_same_lane {
-                current_node = &n!(above);
-                Some((current_pool_and_lane, current_node))
+                current_node_opt = Some(&n!(above));
+                current_node_opt
             } else if let Some((next_pool_and_lane, above)) = graph
                 .get_nextup_higher_node_same_pool(
                     current_pool_and_lane,
@@ -257,9 +286,9 @@ impl Graph {
                     layer,
                 )
             {
-                current_node = &n!(above);
+                current_node_opt = Some(&n!(above));
                 current_pool_and_lane = next_pool_and_lane;
-                Some((current_pool_and_lane, current_node))
+                current_node_opt
             } else {
                 // No more interesting stuff above.
                 None
