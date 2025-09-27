@@ -431,142 +431,9 @@ fn handle_gateway_node(this_node_id: NodeId, graph: &mut Graph) {
                 on_top_or_bottom: true,
             }));
 
-            let Coord3 {
-                pool_and_lane: this_pool_and_lane,
-                layer,
-                ..
-            } = this_node.coord3();
-
-            let mut above_in_same_lane = this_node.node_above_in_same_lane;
-            let mut below_in_same_lane = this_node.node_below_in_same_lane;
-
-            // Add a borrow-checker circumvention hack.
-            let incoming = std::mem::take(&mut this_node.incoming);
-            // Now, we don't know which edges will be above or below. So we apply the trick to
-            // simply take this_node out of this above/below chain. The gateway balancing
-            // constraint however also leads to a correct y-assignment of the gateway.
-            // But this only works if there are at least two edges leading to the same lane.
-            // Otherwise, if there is none or just one edge, then all those dummy node shenanigans
-            // should not be done for the current lane at all (but still for those nodes on other
-            // lanes).
-            // Also, the above and below need an additional constraint to be far enough from each
-            // other to certainly let room for the gateway. This can be checked in the y-ILP by
-            // looking at the gateway nodes' above/below_in_same_lane whether these also in turn
-            // have the gateway node in place, or not. If not, then they need to get an additional
-            // distance constraint. TODO did I implement this?
-            // TODO maybe this whole sole-node stuff is irrelevant? Right now not using it.
-            let sole_this_lane_node = {
-                let mut it = incoming.iter().filter(|&&edge_id| {
-                    graph.nodes[graph.edges[edge_id].from].pool_and_lane() == this_pool_and_lane
-                });
-                let a_first_node = it.next();
-                let a_second_node = it.next();
-                if a_second_node.is_none() {
-                    a_first_node
-                } else {
-                    if let Some(above_in_same_lane) = above_in_same_lane {
-                        graph.nodes[above_in_same_lane].node_below_in_same_lane =
-                            below_in_same_lane;
-                    }
-                    if let Some(below_in_same_lane) = below_in_same_lane {
-                        graph.nodes[below_in_same_lane].node_above_in_same_lane =
-                            above_in_same_lane;
-                    }
-                    None
-                }
-            };
-            for edge_id in incoming.iter().cloned() {
-                //                if Some(edge_id) == sole_this_lane_node {
-                //                    // We don't create dummy nodes for this one, it will just leave to the right of
-                //                    // the gateway (TODO well, does it? in principle we could also apply the
-                //                    continue;
-                //                }
-                let current_num_edges = graph.edges.len();
-                let cur_edge = &mut graph.edges[edge_id];
-                let flow_type = cur_edge.flow_type.clone();
-                let to_id = cur_edge.to;
-                let to_pool_and_lane = graph.nodes[to_id].pool_and_lane();
-                let dummy_node_id = add_node(
-                    &mut graph.nodes,
-                    &mut graph.pools,
-                    NodeType::DummyNode,
-                    to_pool_and_lane,
-                    Some(layer),
-                );
-                match &cur_edge.edge_type {
-                    EdgeType::Regular { text, .. } => {
-                        let text = text.clone();
-
-                        cur_edge.edge_type = EdgeType::ReplacedByDummies {
-                            first_dummy_edge: EdgeId(current_num_edges),
-                            text,
-                        };
-
-                        // First remove the reference to the now-replaced edge, so there is certainly room
-                        // for the new edge references, i.e. no need to allocate accidentally.
-                        graph.nodes[this_node_id]
-                            .outgoing
-                            .retain(|outgoing_edge_idx| *outgoing_edge_idx != edge_id);
-                        graph.nodes[to_id]
-                            .incoming
-                            .retain(|incoming_edge_idx| *incoming_edge_idx != edge_id);
-
-                        graph.add_edge(
-                            this_node_id,
-                            dummy_node_id,
-                            EdgeType::DummyEdge {
-                                original_edge: edge_id,
-                                bend_points: DummyEdgeBendPoints::ToBeDeterminedOrStraight,
-                            },
-                            flow_type.clone(),
-                        );
-                        graph.add_edge(
-                            dummy_node_id,
-                            to_id,
-                            EdgeType::DummyEdge {
-                                original_edge: edge_id,
-                                bend_points: DummyEdgeBendPoints::ToBeDeterminedOrStraight,
-                            },
-                            flow_type,
-                        );
-                    }
-                    EdgeType::DummyEdge { original_edge, .. } => {
-                        let original_edge = *original_edge;
-
-                        graph.nodes[this_node_id]
-                            .outgoing
-                            .retain(|outgoing_edge_idx| *outgoing_edge_idx != edge_id);
-                        let new_dummy_edge_id = graph.add_edge(
-                            this_node_id,
-                            dummy_node_id,
-                            EdgeType::DummyEdge {
-                                original_edge,
-                                bend_points: DummyEdgeBendPoints::ToBeDeterminedOrStraight,
-                            },
-                            flow_type.clone(),
-                        );
-                        // Bend around
-                        graph.edges[edge_id].from = dummy_node_id;
-                        graph.nodes[dummy_node_id].outgoing.push(edge_id);
-                        // The original edge might need to point to another edge as its first dummy edge.
-                        let original_edge = &mut graph.edges[original_edge];
-                        let EdgeType::ReplacedByDummies {
-                            first_dummy_edge, ..
-                        } = &mut original_edge.edge_type
-                        else {
-                            unreachable!();
-                        };
-                        if *first_dummy_edge == edge_id {
-                            *first_dummy_edge = new_dummy_edge_id;
-                        }
-                    }
-                    EdgeType::ReplacedByDummies { .. } => {
-                        unreachable!("This edge should not be part of the graph")
-                    }
-                }
-            }
-            // Undo the borrow-checker surrounding hack.
-            graph.nodes[this_node_id].incoming = incoming;
+            // TODO this function is right now for outgoing. It needs an argument to mirror its
+            // behavior and that must be handled within macros.
+            do_gateway_mapping(this_node_id, graph);
         }
     }
 
@@ -695,6 +562,10 @@ pub fn points_on_side(side_len: usize, k: usize) -> impl Iterator<Item = usize> 
 // possible (without moving into the "wrong" lane)
 
 fn do_gateway_mapping(this_node_id: NodeId, graph: &mut Graph) {
+    use LayerIterationStart::Node as StartAtNode;
+    use LayerIterationStart::PoolLane as StartAtLane;
+
+    // borrow-checker workaround (with undo at the end)
     let edges = std::mem::take(&mut n!(this_node_id).outgoing);
     let Coord3 {
         pool_and_lane: this_pool_and_lane,
@@ -709,25 +580,19 @@ fn do_gateway_mapping(this_node_id: NodeId, graph: &mut Graph) {
     // First we search a regular (or dummy-(loop-connected)-to-regular) node as the top barrier.
     // Later these are our own newly inserted dummy nodes.
     let mut current_top_barrier = graph
-        .iter_upwards_same_pool(
-            LayerIterationStart::Node(this_node_id),
-            Some(top_most_pool_lane),
-        )
+        .iter_upwards_same_pool(StartAtNode(this_node_id), Some(top_most_pool_lane))
         .find(|&node| !is_skippable_dummy_node(node, graph))
         .map(|node| node.id);
 
     // This is always the same. We iterate always until we hit this one.
     let bottom_barrier = graph
-        .iter_downwards_same_pool(
-            LayerIterationStart::Node(this_node_id),
-            Some(bottom_most_pool_lane),
-        )
+        .iter_downwards_same_pool(StartAtNode(this_node_id), Some(bottom_most_pool_lane))
         .find(|node| !is_skippable_dummy_node(node, graph))
         .map(|node| node.id);
 
     let mut above_nodes_in_other_layer = HashSet::<NodeId>::from_iter(
         graph
-            .iter_upwards_same_pool(LayerIterationStart::Node(other_topmost_node.id), None)
+            .iter_upwards_same_pool(StartAtNode(other_topmost_node.id), None)
             .map(|node| node.id),
     );
 
@@ -740,105 +605,104 @@ fn do_gateway_mapping(this_node_id: NodeId, graph: &mut Graph) {
         if let Some(previous_other_node_id) = previous_other_node_id {
             above_nodes_in_other_layer.extend(
                 graph
-                    .iter_upwards_same_pool(to.id, None)
-                    .map(|(_, node)| node.id)
+                    .iter_upwards_same_pool(StartAtNode(to.id), None)
+                    .map(|node| node.id)
                     .take_while(|node_id| *node_id != previous_other_node_id),
             );
             above_nodes_in_other_layer.insert(previous_other_node_id);
         }
         previous_other_node_id = Some(to.id);
 
-        // TODO somehow flatten that `if`!
-        if let Some(top_barrier) = current_top_barrier {
-            let pool_and_lane = n!(top_barrier).pool_and_lane();
-            // Not sure if this special case is really necessary our sound at all?
-            //if to_pool_lane < pool_and_lane {
-            //    // The other node is higher than we can go, so we insert it as high above as possible.
-            //    let new_dummy_node = add_bend_dummy_node(
-            //        graph,
-            //        edge_id,
-            //        pool_and_lane,
-            //        this_layer,
-            //        Place::Below(top_barrier),
-            //    );
-            //    current_top_barrier = Some(new_dummy_node);
-            //    continue;
-            //}
-
-            let mut local_is_above_gateway = is_above_gateway;
-            let mut best_position = (
+        let mut local_is_above_gateway = is_above_gateway;
+        let (mut best_position, iteration_start) = if let Some(top_barrier) = current_top_barrier {
+            let best_position = (
                 local_is_above_gateway,
-                pool_and_lane,
+                n!(top_barrier).pool_and_lane(),
                 Place::Below(top_barrier),
             );
-            // Set true in case the iteration is not returning anything.
-            let mut last_iteration_was_not_a_blocker = true;
-            for (crossable_pool_lane, crossable_node) in graph
-                .iter_downwards_same_pool(
-                    top_barrier,
-                    Some(std::cmp::max(this_pool_and_lane, bottom_most_pool_lane)),
-                )
-                .take_while(|(_, crossable_node)| Some(crossable_node.id) != bottom_barrier)
+            let iteration_start = StartAtNode(top_barrier);
+            (best_position, iteration_start)
+        } else {
+            let best_position = (local_is_above_gateway, top_most_pool_lane, Place::AtTheTop);
+            let iteration_start = StartAtLane(Coord3 {
+                pool_and_lane: top_most_pool_lane,
+                layer: this_layer,
+                half_layer: false, // irrelevant
+            });
+            (best_position, iteration_start)
+        };
+        // Set true to capture the situation where we could successfully cross *all* nodes in our
+        // layer. In that case we want to manually go further downwards.
+        let mut last_iteration_was_not_a_blocker = true;
+        for crossable_node in graph
+            .iter_downwards_same_pool(
+                iteration_start,
+                Some(std::cmp::max(this_pool_and_lane, bottom_most_pool_lane)),
+            )
+            .take_while(|&crossable_node| Some(crossable_node.id) != bottom_barrier)
+        {
+            last_iteration_was_not_a_blocker = false;
+            if best_position.1 < to_pool_lane && crossable_node.pool_and_lane() >= to_pool_lane {
+                // It might be that the `to` node is actually at a place where this lane has no
+                // nodes. Then we would jump over the `to` node's pool_lane, and so we need to manually
+                // do a check here and register *that* as the best position.
+                best_position = (best_position.0, to_pool_lane, Place::AtTheTop);
+                // But also continue, since we still need to check what we got now.
+            }
+            if best_position.1 == to_pool_lane && crossable_node.pool_and_lane() > to_pool_lane {
+                // And the same for the other direction.
+                best_position = (best_position.0, to_pool_lane, Place::AtTheBottom);
+                // Now it does not make sense to continue, we don't want to make a funny down
+                // and up wiggle waggle.
+                break;
+            }
+            if crossable_node.id == this_node_id {
+                local_is_above_gateway = false;
+                continue;
+            }
+            let crossable_other_node = &to!(crossable_node.outgoing[0]);
+            if local_is_above_gateway
+                && above_nodes_in_other_layer.contains(&crossable_other_node.id)
             {
-                last_iteration_was_not_a_blocker = false;
-                if best_position.1 < to_pool_lane && crossable_pool_lane >= to_pool_lane {
-                    // It might be that the `to` node is actually at a place where this lane has no
-                    // nodes. Then we would jump over the `to` node's pool_lane, and so we need to manually
-                    // do a check here and register *that* as the best position.
-                    best_position = (best_position.0, to_pool_lane, Place::AtTheTop);
-                    // But also continue, since we still need to check what we got now.
-                }
-                if best_position.1 == to_pool_lane && crossable_pool_lane > to_pool_lane {
-                    // And the same for the other direction.
-                    best_position = (best_position.0, to_pool_lane, Place::AtTheBottom);
-                    // Now it does not make sense to continue, we don't want to make a funny down
-                    // and up wriggle wraggle.
-                    break;
-                }
-                if crossable_node.id == this_node_id {
-                    local_is_above_gateway = false;
-                    continue;
-                }
-                let crossable_other_node = &to!(crossable_node.outgoing[0]);
-                if local_is_above_gateway
-                    && above_nodes_in_other_layer.contains(&crossable_other_node.id)
-                {
+                best_position = (
+                    local_is_above_gateway,
+                    crossable_node.pool_and_lane(),
+                    Place::Below(crossable_node.id),
+                );
+                last_iteration_was_not_a_blocker = true;
+            }
+            if !local_is_above_gateway {
+                if above_nodes_in_other_layer.contains(&crossable_other_node.id) {
                     best_position = (
                         local_is_above_gateway,
-                        crossable_pool_lane,
+                        crossable_node.pool_and_lane(),
                         Place::Below(crossable_node.id),
                     );
                     last_iteration_was_not_a_blocker = true;
-                }
-                if !local_is_above_gateway {
-                    if above_nodes_in_other_layer.contains(&crossable_other_node.id) {
-                        best_position = (
-                            local_is_above_gateway,
-                            crossable_pool_lane,
-                            Place::Below(crossable_node.id),
-                        );
-                        last_iteration_was_not_a_blocker = true;
-                    } else {
-                        break;
-                    }
+                } else {
+                    break;
                 }
             }
-            if last_iteration_was_not_a_blocker {
-                // This means that we put the node right now behind the last node in our layer.
-                // But again, it could be there are more layers below, so we manually set the best
-                // position to the target one.
-                if best_position.1 < to_pool_lane {
-                    best_position = (best_position.0, to_pool_lane, Place::AtTheTop);
-                }
-            }
-            let new_dummy_node =
-                add_bend_dummy_node(graph, edge_id, best_position.1, this_layer, best_position.2);
-            is_above_gateway = best_position.0;
-            current_top_barrier = Some(new_dummy_node);
-            continue;
         }
+        if last_iteration_was_not_a_blocker {
+            // This means that right now best_position points right below the bottom-most node in our layer
+            // (whenever `last_iteration_was_not_a_blocker` is set to true, `Place::Below` was used).
+            // But again, it could be there are more lanes below, so we manually set the best
+            // position to the target lane.
+            if best_position.1 < to_pool_lane {
+                best_position = (best_position.0, to_pool_lane, Place::AtTheTop);
+            }
+        }
+        let new_dummy_node =
+            add_bend_dummy_node(graph, edge_id, best_position.1, this_layer, best_position.2);
+        is_above_gateway = best_position.0;
+        // The order is already fixed, so we are not allowed to put any of the following nodes
+        // above `new_dummy_node`. We insert from top to bottom.
+        current_top_barrier = Some(new_dummy_node);
+        continue;
     }
 
+    // borrow-checker workaround undo
     n!(this_node_id).outgoing = edges;
 }
 
