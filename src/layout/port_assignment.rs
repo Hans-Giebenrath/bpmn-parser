@@ -557,10 +557,9 @@ pub fn points_on_side(side_len: usize, k: usize) -> impl Iterator<Item = usize> 
     (1..=k).map(move |i| ((i as f64) * step) as usize)
 }
 
-// TODO actually do another strategy: Just try to push the dummy bend points as far outside as
+// Try to push the dummy bend points as far outside as
 // possible, i.e. until the crossing count increases. The goal is to "eat" as meany dummy nodes as
 // possible (without moving into the "wrong" lane)
-
 fn do_gateway_mapping(this_node_id: NodeId, graph: &mut Graph) {
     use LayerIterationStart::Node as StartAtNode;
     use LayerIterationStart::PoolLane as StartAtLane;
@@ -574,7 +573,7 @@ fn do_gateway_mapping(this_node_id: NodeId, graph: &mut Graph) {
     } = n!(this_node_id).coord3();
     let other_topmost_node = &to!(*edges.first().expect("caller-guaranteed this is not empty"));
     let top_most_pool_lane = other_topmost_node.pool_and_lane();
-    let mut bottom_most_pool_lane =
+    let bottom_most_pool_lane =
         to!(*edges.last().expect("caller-guaranteed this is not empty")).pool_and_lane();
 
     // First we search a regular (or dummy-(loop-connected)-to-regular) node as the top barrier.
@@ -823,114 +822,3 @@ fn is_skippable_dummy_node(node: &Node, graph: &Graph) -> bool {
     }
     true
 }
-
-//fn do_gateway_mapping(this_node_id: NodeId, graph: &mut Graph) {
-//    #[derive(Default)]
-//    struct Segment {
-//        pool_lane: PoolAndLane,
-//        above_in_same_lane: Option<NodeId>,
-//        below_in_same_lane: Option<NodeId>,
-//        // For understanding when there is a wrap around when traversing the next layer.
-//        above_in_same_lane_next_layer: Option<NodeId>,
-//        below_in_same_lane_next_layer: Option<NodeId>,
-//        // top to bottom
-//        // First, these are the next-layer nodes where there are references to,
-//        // then later these are the actual dummy nodes.
-//        node_id_scratchpad: Vec<NodeId>,
-//    }
-//
-//    let mut cur_pool_lane = graph.nodes[this_node_id].pool_and_lane();
-//    let mut cur_above_node_in_same_lane = graph.nodes[this_node_id].node_above_in_same_lane;
-//    let mut cur_below_node_in_same_lane = graph.nodes[this_node_id].node_below_in_same_lane;
-//    let mut segments = vec![];
-//    loop {
-//        segments.push(Segment {
-//            pool_lane: cur_pool_lane,
-//            above_in_same_lane: cur_above_node_in_same_lane,
-//            below_in_same_lane: cur_below_node_in_same_lane,
-//            ..Default::default()
-//        });
-//        match cur_above_node_in_same_lane {
-//            Some(cur) => {
-//                let node = &graph.nodes[cur];
-//                if !node.is_dummy() {
-//                    // A real node is a barrier through which we cannot send our edges further.
-//                    break;
-//                }
-//                let [single_incoming] = node.incoming[..] else {
-//                    unreachable!("or is it?");
-//                };
-//                let [single_outgoing] = node.outgoing[..] else {
-//                    unreachable!("or is it?");
-//                };
-//                let from_layer = from!(single_incoming).layer_id;
-//                let to_layer = to!(single_outgoing).layer_id;
-//                // Just some sanity checks, in case this ever changes.
-//                assert!(from_layer == node.layer_id || from_layer.0 + 1 == node.layer_id.0);
-//                assert!(to_layer == node.layer_id || node.layer_id.0 + 1 == to_layer.0);
-//                if from_layer == node.layer_id || to_layer == node.layer_id {
-//                    // A dummy which is looping in the same layer. This means that it is likely a
-//                    // helper node for a neighboring gateway or node with boundary events.
-//                    break;
-//                }
-//
-//                // At this point we found it is a regular dummy node which also goes to the right.
-//                // All good. This is a barrier to the target node layer.
-//                // TODO continue here, I just want to understand whether the Segment type is useful
-//                // or not.
-//            }
-//        }
-//    }
-//
-//    let mut edge_to_next_layer_node_it = graph.nodes[this_node_id].outgoing.iter().cloned();
-//    let mut current_edge_to_next_layer_node = edge_to_next_layer_node_it.next().expect(
-//        "There is always a first next edge, otherwise this function would not have been called.",
-//    );
-//    let mut current_next_layer_node = &mut to!(current_edge_to_next_layer_node);
-//    let mut segments_it = segments.iter_mut();
-//    let mut current_segment = segments_it.next().expect(
-//        "There is always at least the central segment where the gateway node is also part of.",
-//    );
-//    loop {
-//        if current_segment.pool_lane < current_next_layer_node.pool_and_lane() {
-//            // Need to progress the segments.
-//            if let Some(segment) = segments_it.next() {
-//                current_segment = segment;
-//                continue;
-//            } else {
-//                // We went through all segments (i.e. we hit a "real" other node), so what is left
-//                // over from the edges must be put into the last segment. First the one we are
-//                // currently looking at, ..
-//                current_segment
-//                    .node_id_scratchpad
-//                    .push(graph.edges[current_edge_to_next_layer_node].to);
-//                // .. and then the rest.
-//                current_segment
-//                    .node_id_scratchpad
-//                    .extend(edge_to_next_layer_node_it.map(|edge_id| graph.edges[edge_id].to));
-//                break;
-//            }
-//        } else if current_segment.pool_lane > current_next_layer_node.pool_and_lane() {
-//            // Need to progress the edges.
-//            if let Some(edge_id) = edge_to_next_layer_node_it.next() {
-//                current_segment
-//                    .node_id_scratchpad
-//                    .push(current_next_layer_node.id);
-//                current_edge_to_next_layer_node = edge_id;
-//                current_next_layer_node = &mut to!(edge_id);
-//                continue;
-//            } else {
-//                // Edges are finished, cannot do anything with the segments. Some simply remain
-//                // empty (which is a shame, why did we create them in the first place? Cause this
-//                // code is so crazy complex. Someone please simplify it.)
-//                break;
-//            }
-//        }
-//
-//        // At this point the current segment is at the same place as the current next layer node.
-//
-//        let current_pool_lane = current_segment.pool_lane;
-//        let scratchpad = Vec::new();
-//        loop {}
-//    }
-//}
