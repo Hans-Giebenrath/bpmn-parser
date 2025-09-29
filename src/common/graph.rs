@@ -80,7 +80,7 @@ pub struct Coord3 {
     pub half_layer: bool,
 }
 
-pub(crate) enum LayerIterationStart {
+pub(crate) enum StartAt {
     Node(NodeId),
     PoolLane(Coord3),
 }
@@ -237,12 +237,12 @@ impl Graph {
 
     pub(crate) fn iter_upwards_same_pool(
         &self,
-        start: LayerIterationStart,
+        start: StartAt,
         final_pool_lane_to_consider: Option<PoolAndLane>,
     ) -> impl Iterator<Item = &Node> {
         let graph = self;
         let (mut current_node_opt, mut current_pool_and_lane, layer) = match start {
-            LayerIterationStart::Node(start_node_id) => {
+            StartAt::Node(start_node_id) => {
                 let current_node = &n!(start_node_id);
                 (
                     Some(current_node),
@@ -250,7 +250,7 @@ impl Graph {
                     current_node.layer_id,
                 )
             }
-            LayerIterationStart::PoolLane(Coord3 {
+            StartAt::PoolLane(Coord3 {
                 pool_and_lane,
                 layer,
                 ..
@@ -340,12 +340,12 @@ impl Graph {
 
     pub(crate) fn iter_downwards_same_pool(
         &self,
-        start: LayerIterationStart,
+        start: StartAt,
         final_pool_lane_to_consider: Option<PoolAndLane>,
     ) -> impl Iterator<Item = &Node> {
         let graph = self;
         let (mut current_node_opt, mut current_pool_and_lane, layer) = match start {
-            LayerIterationStart::Node(start_node_id) => {
+            StartAt::Node(start_node_id) => {
                 let current_node = &n!(start_node_id);
                 (
                     Some(current_node),
@@ -353,7 +353,7 @@ impl Graph {
                     current_node.layer_id,
                 )
             }
-            LayerIterationStart::PoolLane(Coord3 {
+            StartAt::PoolLane(Coord3 {
                 pool_and_lane,
                 layer,
                 ..
@@ -612,51 +612,51 @@ pub(crate) fn add_node(
     node_id
 }
 
-pub(crate) fn contains_only_dummy_nodes_in_intermediate_lanes(
-    nodes: &[Node],
-    pools: &[Pool],
-    layer: LayerId,
-    from_lane: PoolAndLane,
-    to_lane: PoolAndLane,
-) -> bool {
-    let (from_lane, to_lane) = if from_lane < to_lane {
-        (from_lane, to_lane)
-    } else {
-        (to_lane, from_lane)
-    };
-
-    let mut cur_lane = from_lane;
-    cur_lane.lane.0 += 1;
-    loop {
-        if cur_lane == to_lane {
-            // No blocker found on the way, we reached the target lane.
-            return true;
-        }
-        let Some(pool) = pools.get(cur_lane.pool.0) else {
-            unreachable!(
-                "We should have reached to_lane? {from_lane:?}, {to_lane:?}, {cur_lane:?}"
-            );
-        };
-        let Some(lane) = pool.lanes.get(cur_lane.lane.0) else {
-            // Wrap to the next pool.
-            cur_lane.pool.0 += 1;
-            cur_lane.lane.0 = 0;
-            continue;
-        };
-
-        for node_id in &lane.nodes {
-            let node = &nodes[*node_id];
-            if node.layer_id < layer {
-                continue;
-            }
-            if node.layer_id > layer {
-                // We cleared the current layer.
-                cur_lane.lane.0 += 1;
-                break;
-            }
-            if !node.is_dummy() {
-                return false;
-            }
-        }
-    }
-}
+//pub(crate) fn contains_only_dummy_nodes_in_intermediate_lanes(
+//    nodes: &[Node],
+//    pools: &[Pool],
+//    layer: LayerId,
+//    from_lane: PoolAndLane,
+//    to_lane: PoolAndLane,
+//) -> bool {
+//    let (from_lane, to_lane) = if from_lane < to_lane {
+//        (from_lane, to_lane)
+//    } else {
+//        (to_lane, from_lane)
+//    };
+//
+//    let mut cur_lane = from_lane;
+//    cur_lane.lane.0 += 1;
+//    loop {
+//        if cur_lane == to_lane {
+//            // No blocker found on the way, we reached the target lane.
+//            return true;
+//        }
+//        let Some(pool) = pools.get(cur_lane.pool.0) else {
+//            unreachable!(
+//                "We should have reached to_lane? {from_lane:?}, {to_lane:?}, {cur_lane:?}"
+//            );
+//        };
+//        let Some(lane) = pool.lanes.get(cur_lane.lane.0) else {
+//            // Wrap to the next pool.
+//            cur_lane.pool.0 += 1;
+//            cur_lane.lane.0 = 0;
+//            continue;
+//        };
+//
+//        for node_id in &lane.nodes {
+//            let node = &nodes[*node_id];
+//            if node.layer_id < layer {
+//                continue;
+//            }
+//            if node.layer_id > layer {
+//                // We cleared the current layer.
+//                cur_lane.lane.0 += 1;
+//                break;
+//            }
+//            if !node.is_dummy() {
+//                return false;
+//            }
+//        }
+//    }
+//}

@@ -3,21 +3,18 @@ use crate::common::edge::EdgeType;
 use crate::common::graph::Coord3;
 use crate::common::graph::EdgeId;
 use crate::common::graph::Graph;
-use crate::common::graph::LayerIterationStart;
 use crate::common::graph::NodeId;
 use crate::common::graph::Place;
 use crate::common::graph::PoolAndLane;
+use crate::common::graph::StartAt;
 use crate::common::graph::add_node;
 use crate::common::graph::adjust_above_and_below_for_new_inbetween;
-use crate::common::graph::contains_only_dummy_nodes_in_intermediate_lanes;
 use crate::common::node::LayerId;
 use crate::common::node::Node;
-use std::collections::HashMap;
-use std::collections::HashSet;
-//use crate::common::macros::{from, to};
 use crate::common::node::NodeType;
 use crate::common::node::Port;
 use proc_macros::{e, from, n, to};
+use std::collections::HashSet;
 
 pub fn port_assignment(graph: &mut Graph) {
     for node_id in (0..graph.nodes.len()).map(NodeId) {
@@ -378,19 +375,19 @@ fn handle_nongateway_node(this_node_id: NodeId, graph: &mut Graph) {
             // thought later.
             IsWhere::Above => {
                 let barrier = graph
-                    .iter_upwards_same_pool(this_node_id, Some(to_pool_and_lane))
-                    .find(|(_, node)| !is_skippable_dummy_node(node, graph));
+                    .iter_upwards_same_pool(StartAt::Node(this_node_id), Some(to_pool_and_lane))
+                    .find(|node| !is_skippable_dummy_node(node, graph));
                 match barrier {
-                    Some((pool_lane, barrier)) => (pool_lane, Place::Below(barrier.id)),
+                    Some(barrier) => (barrier.pool_and_lane(), Place::Below(barrier.id)),
                     None => (to_pool_and_lane, Place::AtTheBottom),
                 }
             }
             IsWhere::Below => {
                 let barrier = graph
-                    .iter_downwards_same_pool(this_node_id, Some(to_pool_and_lane))
-                    .find(|(_, node)| !is_skippable_dummy_node(node, graph));
+                    .iter_downwards_same_pool(StartAt::Node(this_node_id), Some(to_pool_and_lane))
+                    .find(|node| !is_skippable_dummy_node(node, graph));
                 match barrier {
-                    Some((pool_lane, barrier)) => (pool_lane, Place::Above(barrier.id)),
+                    Some(barrier) => (barrier.pool_and_lane(), Place::Above(barrier.id)),
                     None => (to_pool_and_lane, Place::AtTheTop),
                 }
             }
@@ -401,46 +398,37 @@ fn handle_nongateway_node(this_node_id: NodeId, graph: &mut Graph) {
 }
 
 fn handle_gateway_node(this_node_id: NodeId, graph: &mut Graph) {
-    let mut incoming_ports = Vec::<Port>::new();
-    let mut _outgoing_ports = Vec::<Port>::new();
+    for direction in [Direction::Outgoing, Direction::Incoming] {
+        let this_node = &mut graph.nodes[this_node_id];
+        let (incoming_or_outgoing, ports) = match direction {
+            Direction::Outgoing => (&this_node.outgoing[..], &mut this_node.outgoing_ports),
+            Direction::Incoming => (&this_node.incoming[..], &mut this_node.incoming_ports),
+        };
+        match incoming_or_outgoing {
+            [] => {
+                // .. is this valid at all? Maybe when in draft mode, i.e. while creating the diagram
+                // and the diagram is just rendered as the BPMD text is written? So don't panic here.
+            }
+            [_single] => {
+                // This edge must leave as a regular flow. Nothing shall be done here.
+                ports.push(Port {
+                    x: 0,
+                    y: this_node.height / 2,
+                    on_top_or_bottom: true,
+                });
+            }
+            many => {
+                // Ports are in the center, since right now we don't know which one will be above, and
+                // which one will be below. They can only be corrected at a later staged.
+                ports.extend((0..many.len()).map(|_| Port {
+                    x: this_node.width / 2,
+                    y: this_node.height / 2,
+                    on_top_or_bottom: true,
+                }));
 
-    /*  PHASE 1: Determine how many ports are above, below, right and low  */
-    /***********************************************************************/
-
-    // Determine how many incoming ports are `above` and `below` (and implicitly `left`).
-    let this_node = &mut graph.nodes[this_node_id];
-    match &this_node.incoming[..] {
-        [] => {
-            // .. is this valid at all? Maybe when in draft mode, i.e. while creating the diagram
-            // and the diagram is just rendered as the BPMD text is written? So don't panic here.
+                handle_gateway_node_one_side(this_node_id, graph, direction);
+            }
         }
-        [_single] => {
-            // This edge must leave as a regular flow. Nothing shall be done here.
-            incoming_ports.push(Port {
-                x: 0,
-                y: this_node.height / 2,
-                on_top_or_bottom: true,
-            });
-        }
-        many => {
-            // Ports are in the center, since right now we don't know which one will be above, and
-            // which one will be below. They can only be corrected at a later staged.
-            incoming_ports.extend((0..many.len()).map(|_| Port {
-                x: this_node.width / 2,
-                y: this_node.height / 2,
-                on_top_or_bottom: true,
-            }));
-
-            // TODO this function is right now for outgoing. It needs an argument to mirror its
-            // behavior and that must be handled within macros.
-            do_gateway_mapping(this_node_id, graph);
-        }
-    }
-
-    // Determine how many outgoing ports are `above` and `below` (and implicitly `right`).
-    let this_node = &graph.nodes[this_node_id];
-    match &this_node.outgoing[..] {
-        _ => todo!(),
     }
 }
 
@@ -557,60 +545,77 @@ pub fn points_on_side(side_len: usize, k: usize) -> impl Iterator<Item = usize> 
     (1..=k).map(move |i| ((i as f64) * step) as usize)
 }
 
+enum Direction {
+    Incoming,
+    Outgoing,
+}
+
 // Try to push the dummy bend points as far outside as
 // possible, i.e. until the crossing count increases. The goal is to "eat" as meany dummy nodes as
 // possible (without moving into the "wrong" lane)
-fn do_gateway_mapping(this_node_id: NodeId, graph: &mut Graph) {
-    use LayerIterationStart::Node as StartAtNode;
-    use LayerIterationStart::PoolLane as StartAtLane;
-
+fn handle_gateway_node_one_side(this_node_id: NodeId, graph: &mut Graph, direction: Direction) {
     // borrow-checker workaround (with undo at the end)
-    let edges = std::mem::take(&mut n!(this_node_id).outgoing);
+    let edges = match direction {
+        Direction::Outgoing => std::mem::take(&mut n!(this_node_id).outgoing),
+        Direction::Incoming => std::mem::take(&mut n!(this_node_id).incoming),
+    };
     let Coord3 {
         pool_and_lane: this_pool_and_lane,
         layer: this_layer,
         ..
     } = n!(this_node_id).coord3();
-    let other_topmost_node = &to!(*edges.first().expect("caller-guaranteed this is not empty"));
+    let other_topmost_node = match direction {
+        Direction::Outgoing => &to!(*edges.first().expect("caller-guaranteed this is not empty")),
+        Direction::Incoming => &from!(*edges.first().expect("caller-guaranteed this is not empty")),
+    };
     let top_most_pool_lane = other_topmost_node.pool_and_lane();
-    let bottom_most_pool_lane =
-        to!(*edges.last().expect("caller-guaranteed this is not empty")).pool_and_lane();
+    let bottom_most_pool_lane = match direction {
+        Direction::Outgoing => {
+            to!(*edges.last().expect("caller-guaranteed this is not empty")).pool_and_lane()
+        }
+        Direction::Incoming => {
+            from!(*edges.last().expect("caller-guaranteed this is not empty")).pool_and_lane()
+        }
+    };
 
     // First we search a regular (or dummy-(loop-connected)-to-regular) node as the top barrier.
     // Later these are our own newly inserted dummy nodes.
     let mut current_top_barrier = graph
-        .iter_upwards_same_pool(StartAtNode(this_node_id), Some(top_most_pool_lane))
+        .iter_upwards_same_pool(StartAt::Node(this_node_id), Some(top_most_pool_lane))
         .find(|&node| !is_skippable_dummy_node(node, graph))
         .map(|node| node.id);
 
     // This is always the same. We iterate always until we hit this one.
     let bottom_barrier = graph
-        .iter_downwards_same_pool(StartAtNode(this_node_id), Some(bottom_most_pool_lane))
+        .iter_downwards_same_pool(StartAt::Node(this_node_id), Some(bottom_most_pool_lane))
         .find(|node| !is_skippable_dummy_node(node, graph))
         .map(|node| node.id);
 
     let mut above_nodes_in_other_layer = HashSet::<NodeId>::from_iter(
         graph
-            .iter_upwards_same_pool(StartAtNode(other_topmost_node.id), None)
+            .iter_upwards_same_pool(StartAt::Node(other_topmost_node.id), None)
             .map(|node| node.id),
     );
 
     let mut is_above_gateway = false;
     let mut previous_other_node_id = None;
     for edge_id in edges.iter().cloned() {
-        let to = &to!(edge_id);
-        let to_pool_lane = to.pool_and_lane();
+        let other_node = match direction {
+            Direction::Outgoing => &to!(edge_id),
+            Direction::Incoming => &from!(edge_id),
+        };
+        let other_node_pool_lane = other_node.pool_and_lane();
 
         if let Some(previous_other_node_id) = previous_other_node_id {
             above_nodes_in_other_layer.extend(
                 graph
-                    .iter_upwards_same_pool(StartAtNode(to.id), None)
+                    .iter_upwards_same_pool(StartAt::Node(other_node.id), None)
                     .map(|node| node.id)
                     .take_while(|node_id| *node_id != previous_other_node_id),
             );
             above_nodes_in_other_layer.insert(previous_other_node_id);
         }
-        previous_other_node_id = Some(to.id);
+        previous_other_node_id = Some(other_node.id);
 
         let mut local_is_above_gateway = is_above_gateway;
         let (mut best_position, iteration_start) = if let Some(top_barrier) = current_top_barrier {
@@ -619,11 +624,11 @@ fn do_gateway_mapping(this_node_id: NodeId, graph: &mut Graph) {
                 n!(top_barrier).pool_and_lane(),
                 Place::Below(top_barrier),
             );
-            let iteration_start = StartAtNode(top_barrier);
+            let iteration_start = StartAt::Node(top_barrier);
             (best_position, iteration_start)
         } else {
             let best_position = (local_is_above_gateway, top_most_pool_lane, Place::AtTheTop);
-            let iteration_start = StartAtLane(Coord3 {
+            let iteration_start = StartAt::PoolLane(Coord3 {
                 pool_and_lane: top_most_pool_lane,
                 layer: this_layer,
                 half_layer: false, // irrelevant
@@ -641,16 +646,20 @@ fn do_gateway_mapping(this_node_id: NodeId, graph: &mut Graph) {
             .take_while(|&crossable_node| Some(crossable_node.id) != bottom_barrier)
         {
             last_iteration_was_not_a_blocker = false;
-            if best_position.1 < to_pool_lane && crossable_node.pool_and_lane() >= to_pool_lane {
+            if best_position.1 < other_node_pool_lane
+                && crossable_node.pool_and_lane() >= other_node_pool_lane
+            {
                 // It might be that the `to` node is actually at a place where this lane has no
                 // nodes. Then we would jump over the `to` node's pool_lane, and so we need to manually
                 // do a check here and register *that* as the best position.
-                best_position = (best_position.0, to_pool_lane, Place::AtTheTop);
+                best_position = (best_position.0, other_node_pool_lane, Place::AtTheTop);
                 // But also continue, since we still need to check what we got now.
             }
-            if best_position.1 == to_pool_lane && crossable_node.pool_and_lane() > to_pool_lane {
+            if best_position.1 == other_node_pool_lane
+                && crossable_node.pool_and_lane() > other_node_pool_lane
+            {
                 // And the same for the other direction.
-                best_position = (best_position.0, to_pool_lane, Place::AtTheBottom);
+                best_position = (best_position.0, other_node_pool_lane, Place::AtTheBottom);
                 // Now it does not make sense to continue, we don't want to make a funny down
                 // and up wiggle waggle.
                 break;
@@ -659,7 +668,10 @@ fn do_gateway_mapping(this_node_id: NodeId, graph: &mut Graph) {
                 local_is_above_gateway = false;
                 continue;
             }
-            let crossable_other_node = &to!(crossable_node.outgoing[0]);
+            let crossable_other_node = match direction {
+                Direction::Outgoing => &to!(crossable_node.outgoing[0]),
+                Direction::Incoming => &from!(crossable_node.outgoing[0]),
+            };
             if local_is_above_gateway
                 && above_nodes_in_other_layer.contains(&crossable_other_node.id)
             {
@@ -688,8 +700,8 @@ fn do_gateway_mapping(this_node_id: NodeId, graph: &mut Graph) {
             // (whenever `last_iteration_was_not_a_blocker` is set to true, `Place::Below` was used).
             // But again, it could be there are more lanes below, so we manually set the best
             // position to the target lane.
-            if best_position.1 < to_pool_lane {
-                best_position = (best_position.0, to_pool_lane, Place::AtTheTop);
+            if best_position.1 < other_node_pool_lane {
+                best_position = (best_position.0, other_node_pool_lane, Place::AtTheTop);
             }
         }
         let new_dummy_node =
@@ -702,7 +714,10 @@ fn do_gateway_mapping(this_node_id: NodeId, graph: &mut Graph) {
     }
 
     // borrow-checker workaround undo
-    n!(this_node_id).outgoing = edges;
+    match direction {
+        Direction::Outgoing => n!(this_node_id).outgoing = edges,
+        Direction::Incoming => n!(this_node_id).incoming = edges,
+    };
 }
 
 fn add_bend_dummy_node(
