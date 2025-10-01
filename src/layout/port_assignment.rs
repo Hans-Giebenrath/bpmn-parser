@@ -427,6 +427,19 @@ fn handle_gateway_node(this_node_id: NodeId, graph: &mut Graph) {
                 }));
 
                 handle_gateway_node_one_side(this_node_id, graph, direction);
+
+                // Take the gateway node out, so the Y-ILP does not force the gateway node exactly
+                // between its above and below nodes. The idea is that it should actually be rather
+                // floaty, and if less edge crossings can be achieved by moving it over above/below
+                // nodes, then it should move to the more optimal position.
+                todo!(
+                    "Faulty: What if all go down one lane, but the node above exists and is a regular node? In that case it should not be removed. So still do that in the helper function with a boolean, we get the information there into what lane the new dummy node is inserted.."
+                );
+                let this_node = &mut n!(this_node_id);
+                let above = this_node.node_above_in_same_lane.take();
+                let below = this_node.node_below_in_same_lane.take();
+                above.map(|above| n!(above).node_below_in_same_lane = below);
+                below.map(|below| n!(below).node_above_in_same_lane = above);
             }
         }
     }
