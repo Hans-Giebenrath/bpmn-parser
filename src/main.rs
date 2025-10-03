@@ -14,13 +14,13 @@ mod pool_id_matcher;
 mod to_xml;
 use clap::Parser;
 use layout::all_crossing_minimization::reduce_all_crossings;
-use layout::data_edge_routing::find_straight_edges;
 use layout::dummy_node_generation::generate_dummy_nodes;
 use layout::edge_routing::edge_routing;
 use layout::port_assignment::port_assignment;
 use layout::reduce_half_layer_crossings::reduce_half_layer_crossings;
 use layout::replace_dummy_nodes::replace_dummy_nodes;
 use layout::solve_layer_assignment::solve_layer_assignment;
+use layout::straight_edge_routing::find_straight_edges;
 use layout::xy_ilp::assign_xy_ilp;
 
 use crate::common::graph::{Graph, sort_lanes_by_layer};

@@ -30,13 +30,13 @@ pub fn port_assignment(graph: &mut Graph) {
 /// The North, East, West and South ports, and then the four corner areas between them.
 /// ("Corner area" in the sense that it is not just the corner point, but also the parts of the
 /// edges connected to the corner up to the next N/E/W/S point.)
-///  ┌─── N ───┐   
+///  ┌─── N ───┐
 ///  │┌───────┐│  <top
-///  ││       ││   
+///  ││       ││
 ///  W│       │E  <W and E are always on the middle of left and right.
-///  ││       ││   
+///  ││       ││
 ///  │└───────┘│  <bottom
-///  └─── S ───┘   
+///  └─── S ───┘
 ///   ^       ^
 ///   left    right
 ///       ^
@@ -72,35 +72,35 @@ pub fn port_assignment(graph: &mut Graph) {
 /// Now we have edges which have an additional bend point, since they leave to the top or bottom and
 /// then must turn right. For these situations we must add additional dummy nodes above or below
 /// the current node which represents the bend point:
-///                                 
-/// ┌────────┐ current node       
-/// │        │                    
-/// │        │                    
-/// │        ├──────────          
-/// │        │                    
-/// │        │                    
-/// └──┬─┬─┬─┘                    
-///    │ │ │                      
-///    │ │ │                      
-///  ┌────────┐                   
-///  │ │ │ └──│──────────         
-///  └────────┘ new dummy node    
-///    │ │                        
-///  ┌────────┐                   
-///  │ │ └────│──────────         
-///  └────────┘ new dummy node    
-///    │                          
-///    │                          
-///    │                          
-///    │                          
-///  ┌───────┐                    
-///  │       │  Some next neighbor
-///  │       │                    
-///  │       │                    
-///  │       │                    
-///  └───────┘                    
 ///
-///  
+/// ┌────────┐ current node
+/// │        │
+/// │        │
+/// │        ├──────────
+/// │        │
+/// │        │
+/// └──┬─┬─┬─┘
+///    │ │ │
+///    │ │ │
+///  ┌────────┐
+///  │ │ │ └──│──────────
+///  └────────┘ new dummy node
+///    │ │
+///  ┌────────┐
+///  │ │ └────│──────────
+///  └────────┘ new dummy node
+///    │
+///    │
+///    │
+///    │
+///  ┌───────┐
+///  │       │  Some next neighbor
+///  │       │
+///  │       │
+///  │       │
+///  └───────┘
+///
+///
 ///  Gateways are treated slightly differently:
 ///  They are expected to have *only* SFs. No DFs, no MFs, no boundary events. (Maybe comments but
 ///  these are likely treated differently then, not sure yet)
@@ -110,7 +110,7 @@ pub fn port_assignment(graph: &mut Graph) {
 ///  shall leave below or above the node, the dummy nodes are not enforced to be above or below
 ///  the gateway node. Consequently, some dummy node may be located "within" the gateway node,
 ///  and in that case the outgoing edge will be assigned the respective E or W.
-///  
+///
 fn handle_nongateway_node(this_node_id: NodeId, graph: &mut Graph) {
     let this_node = &graph.nodes[this_node_id];
     let mut incoming_ports = Vec::<Port>::new();
@@ -393,7 +393,14 @@ fn handle_nongateway_node(this_node_id: NodeId, graph: &mut Graph) {
             }
         };
 
-        add_bend_dummy_node(graph, edge_id, pool_and_lane, from_layer, place);
+        add_bend_dummy_node(
+            graph,
+            edge_id,
+            pool_and_lane,
+            from_layer,
+            place,
+            this_node_id,
+        );
     }
 }
 
@@ -427,19 +434,6 @@ fn handle_gateway_node(this_node_id: NodeId, graph: &mut Graph) {
                 }));
 
                 handle_gateway_node_one_side(this_node_id, graph, direction);
-
-                // Take the gateway node out, so the Y-ILP does not force the gateway node exactly
-                // between its above and below nodes. The idea is that it should actually be rather
-                // floaty, and if less edge crossings can be achieved by moving it over above/below
-                // nodes, then it should move to the more optimal position.
-                todo!(
-                    "Faulty: What if all go down one lane, but the node above exists and is a regular node? In that case it should not be removed. So still do that in the helper function with a boolean, we get the information there into what lane the new dummy node is inserted.."
-                );
-                let this_node = &mut n!(this_node_id);
-                let above = this_node.node_above_in_same_lane.take();
-                let below = this_node.node_below_in_same_lane.take();
-                above.map(|above| n!(above).node_below_in_same_lane = below);
-                below.map(|below| n!(below).node_above_in_same_lane = above);
             }
         }
     }
@@ -577,6 +571,7 @@ fn handle_gateway_node_one_side(this_node_id: NodeId, graph: &mut Graph, directi
         layer: this_layer,
         ..
     } = n!(this_node_id).coord3();
+    let mut has_dummy_nodes_in_same_lane = false;
     let other_topmost_node = match direction {
         Direction::Outgoing => &to!(*edges.first().expect("caller-guaranteed this is not empty")),
         Direction::Incoming => &from!(*edges.first().expect("caller-guaranteed this is not empty")),
@@ -717,8 +712,17 @@ fn handle_gateway_node_one_side(this_node_id: NodeId, graph: &mut Graph, directi
                 best_position = (best_position.0, other_node_pool_lane, Place::AtTheTop);
             }
         }
-        let new_dummy_node =
-            add_bend_dummy_node(graph, edge_id, best_position.1, this_layer, best_position.2);
+        let new_dummy_node = add_bend_dummy_node(
+            graph,
+            edge_id,
+            best_position.1,
+            this_layer,
+            best_position.2,
+            this_node_id,
+        );
+        if best_position.1 == this_pool_and_lane {
+            has_dummy_nodes_in_same_lane = true;
+        }
         is_above_gateway = best_position.0;
         // The order is already fixed, so we are not allowed to put any of the following nodes
         // above `new_dummy_node`. We insert from top to bottom.
@@ -731,6 +735,21 @@ fn handle_gateway_node_one_side(this_node_id: NodeId, graph: &mut Graph, directi
         Direction::Outgoing => n!(this_node_id).outgoing = edges,
         Direction::Incoming => n!(this_node_id).incoming = edges,
     };
+    if has_dummy_nodes_in_same_lane {
+        // Take the gateway node out, so the Y-ILP does not force the gateway node exactly
+        // between its above and below nodes. The idea is that it should actually be rather
+        // floaty, and if less edge crossings can be achieved by moving it over above/below
+        // nodes, then it should move to the more optimal position.
+        // TODO the nodes above and below still need to leave enough room to fit the gateway node
+        // inside. This would be easier if we don't use `.take()` on the following lines, so
+        // `this_node` remembers what are its original neighbors and can assign according gap
+        // constraints.
+        let this_node = &mut n!(this_node_id);
+        let above = this_node.node_above_in_same_lane.take();
+        let below = this_node.node_below_in_same_lane.take();
+        above.map(|above| n!(above).node_below_in_same_lane = below);
+        below.map(|below| n!(below).node_above_in_same_lane = above);
+    }
 }
 
 fn add_bend_dummy_node(
@@ -739,6 +758,7 @@ fn add_bend_dummy_node(
     pool_and_lane: PoolAndLane,
     layer: LayerId,
     place: Place,
+    reference_node: NodeId,
 ) -> NodeId {
     let dummy_node_id = add_node(
         &mut graph.nodes,
@@ -750,7 +770,7 @@ fn add_bend_dummy_node(
     let current_num_edges = graph.edges.len();
     let cur_edge = &mut e!(edge_id);
     let flow_type = cur_edge.flow_type.clone();
-    let this_node_id = cur_edge.from;
+    let from_id = cur_edge.from;
     let to_id = cur_edge.to;
     match &cur_edge.edge_type {
         EdgeType::Regular { text, .. } => {
@@ -763,15 +783,15 @@ fn add_bend_dummy_node(
 
             // First remove the reference to the now-replaced edge, so there is certainly room
             // for the new edge references, i.e. no need to allocate accidentally.
-            graph.nodes[this_node_id]
+            n!(from_id)
                 .outgoing
                 .retain(|outgoing_edge_idx| *outgoing_edge_idx != edge_id);
-            graph.nodes[to_id]
+            n!(to_id)
                 .incoming
                 .retain(|incoming_edge_idx| *incoming_edge_idx != edge_id);
 
-            graph.add_edge(
-                this_node_id,
+            let edge1 = graph.add_edge(
+                from_id,
                 dummy_node_id,
                 EdgeType::DummyEdge {
                     original_edge: edge_id,
@@ -779,7 +799,7 @@ fn add_bend_dummy_node(
                 },
                 flow_type.clone(),
             );
-            graph.add_edge(
+            let edge2 = graph.add_edge(
                 dummy_node_id,
                 to_id,
                 EdgeType::DummyEdge {
@@ -788,15 +808,20 @@ fn add_bend_dummy_node(
                 },
                 flow_type,
             );
+            if reference_node == from_id {
+                e!(edge1).is_vertical = true;
+            } else {
+                e!(edge2).is_vertical = true;
+            }
         }
         EdgeType::DummyEdge { original_edge, .. } => {
             let original_edge = *original_edge;
 
-            graph.nodes[this_node_id]
+            graph.nodes[from_id]
                 .outgoing
                 .retain(|outgoing_edge_idx| *outgoing_edge_idx != edge_id);
             let new_dummy_edge_id = graph.add_edge(
-                this_node_id,
+                from_id,
                 dummy_node_id,
                 EdgeType::DummyEdge {
                     original_edge,
@@ -817,6 +842,11 @@ fn add_bend_dummy_node(
             };
             if *first_dummy_edge == edge_id {
                 *first_dummy_edge = new_dummy_edge_id;
+            }
+            if reference_node == from_id {
+                e!(new_dummy_edge_id).is_vertical = true;
+            } else {
+                e!(edge_id).is_vertical = true;
             }
         }
         EdgeType::ReplacedByDummies { .. } => {

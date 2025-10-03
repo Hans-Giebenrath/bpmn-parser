@@ -30,6 +30,7 @@ pub fn find_straight_edges(graph: &mut Graph) {
     }
 
     data_edge_routing(&matrix, graph);
+    sequence_edge_routing(graph);
     message_edge_routing(&matrix, graph);
 }
 
@@ -65,6 +66,14 @@ fn is_in_obstacle_ignore_self(
         }
     }
     false
+}
+
+fn sequence_edge_routing(graph: &mut Graph) {
+    for edge in &graph.edges {
+        if !edge.is_vertical {
+            continue;
+        }
+    }
 }
 
 fn data_edge_routing(matrix: &HashMap<usize, (usize, usize, usize, usize)>, graph: &mut Graph) {

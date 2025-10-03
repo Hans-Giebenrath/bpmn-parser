@@ -216,22 +216,22 @@ impl Node {
         return (self.width, self.height);
     }
 
-    /// Nodes have just one port where their edges are leaving (and one for entering).
-    /// TODO handle gateways differently.
-    pub fn left_port(&self) -> XY {
-        XY {
-            x: self.x,
-            y: self.y + self.height / 2,
-        }
+    pub fn port_of_incoming(&self, edge_id: EdgeId) -> Option<&Port> {
+        self.incoming
+            .iter()
+            .cloned()
+            .zip(self.incoming_ports.iter())
+            .find(|(inner_edge_id, _)| *inner_edge_id == edge_id)
+            .map(|(_, port)| port)
     }
 
-    /// Nodes have just one port where their edges are leaving (and one for entering).
-    /// TODO handle gateways differently.
-    pub fn right_port(&self) -> XY {
-        XY {
-            x: self.x + self.width,
-            y: self.y + self.height / 2,
-        }
+    pub fn port_of_outgoing(&self, edge_id: EdgeId) -> Option<&Port> {
+        self.outgoing
+            .iter()
+            .cloned()
+            .zip(self.outgoing_ports.iter())
+            .find(|(inner_edge_id, _)| *inner_edge_id == edge_id)
+            .map(|(_, port)| port)
     }
 
     //    pub fn get_mid_point(

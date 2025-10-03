@@ -135,6 +135,7 @@ impl Graph {
             to,
             edge_type,
             flow_type,
+            is_vertical: false,
             is_reversed: false,
             stroke_color: None,
             stays_within_lane: self.nodes[from.0].pool == self.nodes[to.0].pool
@@ -401,7 +402,7 @@ pub fn node_size(node_type: &NodeType) -> (usize, usize) {
     let event = match &node_type {
         NodeType::DummyNode => {
             // Height of 0 so there is just padding between the lines.
-            // Otherwise there would be too much whitespace between lines.
+            // Otherwise, there would be too much whitespace between lines.
             return (100, 0);
         }
         NodeType::RealNode { event, .. } => event,
@@ -522,7 +523,7 @@ fn check_if_valid_message_flow_end(node: &Node, errors: &mut ValidationErrors) {
     }
 }
 
-/// Very small function, does not really deserve it's own file? Is also just a helper thingy, not
+/// Very small function, does not really deserve its own file? Is also just a helper thingy, not
 /// really a dedicated phase.
 pub(crate) fn sort_lanes_by_layer(graph: &mut Graph) {
     for pool in &mut graph.pools {

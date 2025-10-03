@@ -72,6 +72,14 @@ pub struct Edge {
     pub flow_type: FlowType,
     pub stays_within_lane: bool,
 
+    // For edge segments which leave a node at the top or bottom and then go to a bend dummy.
+    // (Explicitly not meant for loop edges! They first go to the side, then up/down, and then back
+    // into the same layer. They are handled as regular sequence flows.)
+    // This information is used in the edge routing phase of direct edges. It could be derived from
+    // scratch again, but this is computationally rather complex. Since this is already computed
+    // once, the information is just stored as a bool.
+    pub is_vertical: bool,
+
     pub stroke_color: Option<String>,
     //pub bend_points: Option<Vec<(usize, usize)>>,
     //pub edge_has_direct_connection: bool,

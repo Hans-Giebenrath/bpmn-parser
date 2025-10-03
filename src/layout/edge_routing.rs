@@ -23,7 +23,7 @@
 use crate::common::edge::DummyEdgeBendPoints;
 use crate::common::edge::{EdgeType, RegularEdgeBendPoints};
 use crate::common::graph::{EdgeId, Graph};
-use crate::common::node::NodePhaseAuxData;
+use crate::common::node::Port;
 use itertools::Itertools;
 
 #[derive(Debug)]
@@ -53,13 +53,11 @@ struct SegmentLayer {
 
 #[derive(Default, Debug)]
 struct SegmentsWithYOverlap {
-    left_spread_hyperedges: Vec<Hyperedge>,
     left_loops: Vec<RegularEdge>,
     up_edges: Vec<RegularEdge>,
     ixi_crossing: Vec<(RegularEdge, RegularEdge)>,
     down_edges: Vec<RegularEdge>,
     right_loops: Vec<RegularEdge>,
-    right_spread_hyperedges: Vec<Hyperedge>,
 
     total_count_of_segmen_layers: usize,
 }
@@ -77,45 +75,6 @@ impl RegularEdge {
 
     fn max_y(&self) -> usize {
         self.segment.start_y.max(self.segment.end_y)
-    }
-}
-
-#[derive(Debug)]
-struct Hyperedge {
-    /// Invariant: Either all `start_y` values are equal, or all `end_y` values are equal.
-    segments: Vec<VerticalSegment>,
-    layer: SegmentLayer,
-}
-
-impl Hyperedge {
-    fn min_y(&self) -> usize {
-        *self.segments.iter().map(|VerticalSegment{start_y, end_y,..}|start_y.min(end_y)).min().expect("A group is only formed when we have a member and want to add it to that group, so there should not be an empty group")
-    }
-
-    fn max_y(&self) -> usize {
-        *self.segments.iter().map(|VerticalSegment{start_y, end_y,..}|start_y.max(end_y)).max().expect("A group is only formed when we have a member and want to add it to that group, so there should not be an empty group")
-    }
-}
-
-#[derive(Debug)]
-enum RoutingEdge {
-    RegularEdge(RegularEdge),
-    Hyperedge(Hyperedge),
-}
-
-impl RoutingEdge {
-    fn min_y(&self) -> usize {
-        match self {
-            RoutingEdge::RegularEdge(e) => e.min_y(),
-            RoutingEdge::Hyperedge(e) => e.min_y(),
-        }
-    }
-
-    fn max_y(&self) -> usize {
-        match self {
-            RoutingEdge::RegularEdge(e) => e.max_y(),
-            RoutingEdge::Hyperedge(e) => e.max_y(),
-        }
     }
 }
 
@@ -146,12 +105,12 @@ fn determine_segment_layers(
     // Now we need to take this information and make it into a layer assignment,
     // i.e. set values into the SegmentLayer variables.
     routing_edges.total_count_of_segmen_layers = 0;
-    routing_edges.total_count_of_segmen_layers += determine_segment_layers_hyperedges(
-        &mut routing_edges.left_spread_hyperedges,
-        max_y_per_layer_buffer,
-        routing_edges.total_count_of_segmen_layers,
-        false,
-    );
+    //routing_edges.total_count_of_segmen_layers += determine_segment_layers_hyperedges(
+    //    &mut routing_edges.left_spread_hyperedges,
+    //    max_y_per_layer_buffer,
+    //    routing_edges.total_count_of_segmen_layers,
+    //    false,
+    //);
     routing_edges.total_count_of_segmen_layers += determine_segment_layers_left_or_right_loops(
         &mut routing_edges.left_loops,
         max_y_per_layer_buffer,
@@ -181,70 +140,12 @@ fn determine_segment_layers(
         routing_edges.total_count_of_segmen_layers,
         true,
     );
-    routing_edges.total_count_of_segmen_layers += determine_segment_layers_hyperedges(
-        &mut routing_edges.right_spread_hyperedges,
-        max_y_per_layer_buffer,
-        routing_edges.total_count_of_segmen_layers,
-        true,
-    );
-}
-
-fn determine_segment_layers_hyperedges(
-    routing_edges: &mut [Hyperedge],
-    max_y_per_layer_buffer: &mut Vec</* max_y */ usize>,
-    base_segment_layer: usize,
-    reverse: bool,
-) -> usize {
-    // At this point the edges in each Vec are sorted by (min_y, max_y).
-    // Now we need to take this information and make it into a layer assignment,
-    // i.e. set values into the SegmentLayer variables.
-
-    max_y_per_layer_buffer.clear();
-    for e in routing_edges.iter_mut() {
-        let mut best_fit_layer_idx = None;
-        let min_y = e.min_y();
-        let max_y = e.max_y();
-        // Just greedily find the best place, starting from the left.
-        // This means that this Hyperedges-layer is aligned to the left.
-        for target_layer in 0..max_y_per_layer_buffer.len() {
-            let previous_edge_max_y = max_y_per_layer_buffer[target_layer];
-            assert!(previous_edge_max_y != min_y);
-            assert!(previous_edge_max_y != max_y);
-            if previous_edge_max_y < min_y {
-                best_fit_layer_idx = Some(target_layer);
-                break;
-            }
-        }
-        let layer_idx = match best_fit_layer_idx.take() {
-            None => {
-                // No good layer found, need to add a new one to the right.
-                max_y_per_layer_buffer.push(max_y);
-                max_y_per_layer_buffer.len() - 1
-            }
-            Some(layer_idx) => {
-                max_y_per_layer_buffer[layer_idx] = max_y;
-                layer_idx
-            }
-        };
-        e.layer.idx = layer_idx;
-    }
-    let total_count_of_segmen_layers = max_y_per_layer_buffer.len();
-    // TODO do the fancy stuff as mentioned above. For now this will be a lot more primitive.
-    if reverse {
-        // 0 or 2 -> 2 of 2
-        // 1 or 2 -> 1 of 2
-        // 2 or 2 -> 0 of 2
-        routing_edges
-            .iter_mut()
-            .for_each(|e| e.layer.idx = total_count_of_segmen_layers - e.layer.idx);
-    }
-
-    // Shift them all to the correct value.
-    routing_edges
-        .iter_mut()
-        .for_each(|e| e.layer.idx += base_segment_layer);
-
-    total_count_of_segmen_layers
+    //routing_edges.total_count_of_segmen_layers += determine_segment_layers_hyperedges(
+    //    &mut routing_edges.right_spread_hyperedges,
+    //    max_y_per_layer_buffer,
+    //    routing_edges.total_count_of_segmen_layers,
+    //    true,
+    //);
 }
 
 fn determine_segment_layers_left_or_right_loops(
@@ -289,7 +190,7 @@ fn determine_segment_layers_ixi(
     todo!();
 
     // TODO the longer edges should be inside, so that the if crosses overlap they will have
-    // severly different edge angles. If smaller are inside and larger outside, the nodes could in
+    // severely different edge angles. If smaller are inside and larger outside, the nodes could in
     // theory even overlap which is bad.
 
     let total_count_of_segmen_layers = max_y_per_layer_buffer.len();
@@ -367,12 +268,15 @@ fn determine_segment_layers_up_or_down_edges(
 }
 
 fn get_layered_edges(graph: &mut Graph) -> Vec<Vec<SegmentsWithYOverlap>> {
-    let mut edge_layers = Vec::<Vec<RoutingEdge>>::new();
+    let mut edge_layers = Vec::<Vec<RegularEdge>>::new();
     edge_layers.resize_with(graph.num_layers, Default::default);
 
     for (edge_idx, edge) in graph.edges.iter().enumerate() {
+        let edge_id = EdgeId(edge_idx);
         match edge.edge_type {
             EdgeType::Regular {
+                // This should cover vertical edge segments (single data node connection, gateway
+                // edges going up or down, or edges leaving from boundary events, or similar)
                 bend_points: RegularEdgeBendPoints::FullyRouted(_),
                 ..
             }
@@ -383,97 +287,32 @@ fn get_layered_edges(graph: &mut Graph) -> Vec<Vec<SegmentsWithYOverlap>> {
         let to_idx = edge.to.0;
         let from_node = &graph.nodes[from_idx];
         let to_node = &graph.nodes[to_idx];
-        let outgoing_len = from_node.outgoing.len();
-        let incoming_len = to_node.incoming.len();
         // TODO in some variant this assert needs to come back, but it should only consider
-        // SequenceFlows.
+        // SequenceFlows. Maybe this is actually a graph invariant and does not belong here?
         /*assert!(
             outgoing_len == 1 || incoming_len == 1,
             "Combining branches directly with joins has not been implemented, yet.\nEdge: {edge:?}\nFrom: {from_node:?}\nTo: {to_node:?}"
         );*/
-        let start_y = graph.nodes[from_idx].right_port().y;
-        let end_y = graph.nodes[to_idx].left_port().y;
+        let Some(&Port { y: start_y, .. }) = from_node.port_of_outgoing(edge_id) else {
+            eprint!("WARNING an edge pointed to a node but the node did not know it");
+            continue;
+        };
+        let Some(&Port { y: end_y, .. }) = to_node.port_of_incoming(edge_id) else {
+            eprint!("WARNING an edge pointed to a node but the node did not know it");
+            continue;
+        };
         if start_y == end_y {
             continue;
         }
         let segment_vec = &mut edge_layers[from_node.layer_id.0];
-        if from_node.outgoing.len() > 1 {
-            let from_node = &mut graph.nodes[from_idx];
-            let aux = match from_node.aux {
-                NodePhaseAuxData::EdgeRoutingNodeData(ref mut aux) => aux,
-                _ => {
-                    from_node.aux = NodePhaseAuxData::EdgeRoutingNodeData(EdgeRoutingNodeData {
-                        incoming_routing_edge_idx: None,
-                        outgoing_routing_edge_idx: None,
-                    });
-                    let NodePhaseAuxData::EdgeRoutingNodeData(aux) = &mut from_node.aux else {
-                        panic!("just assigned it");
-                    };
-                    aux
-                }
-            };
-            if aux.outgoing_routing_edge_idx.is_none() {
-                aux.outgoing_routing_edge_idx = Some(segment_vec.len());
-                segment_vec.push(RoutingEdge::Hyperedge(Hyperedge {
-                    segments: vec![],
-                    layer: SegmentLayer { idx: 0 },
-                }));
-            }
-            let RoutingEdge::Hyperedge(Hyperedge {
-                ref mut segments, ..
-            }) = segment_vec[aux.outgoing_routing_edge_idx.unwrap()]
-            else {
-                panic!("just assigned it");
-            };
-            segments.push(VerticalSegment {
-                id: EdgeId(edge_idx),
+        segment_vec.push(RegularEdge {
+            segment: VerticalSegment {
+                id: edge_id,
                 start_y,
                 end_y,
-            });
-        } else if incoming_len > 1 {
-            let to_node = &mut graph.nodes[to_idx];
-            let aux = match &mut to_node.aux {
-                NodePhaseAuxData::EdgeRoutingNodeData(aux) => aux,
-                _ => {
-                    to_node.aux = NodePhaseAuxData::EdgeRoutingNodeData(EdgeRoutingNodeData {
-                        incoming_routing_edge_idx: None,
-                        outgoing_routing_edge_idx: None,
-                    });
-                    let NodePhaseAuxData::EdgeRoutingNodeData(aux) = &mut to_node.aux else {
-                        panic!("just assigned it");
-                    };
-                    aux
-                }
-            };
-            if aux.incoming_routing_edge_idx.is_none() {
-                aux.incoming_routing_edge_idx = Some(segment_vec.len());
-                segment_vec.push(RoutingEdge::Hyperedge(Hyperedge {
-                    segments: vec![],
-                    layer: SegmentLayer { idx: 0 },
-                }));
-            }
-            let RoutingEdge::Hyperedge(Hyperedge {
-                ref mut segments, ..
-            }) = segment_vec[aux.incoming_routing_edge_idx.unwrap()]
-            else {
-                panic!("just assigned it");
-            };
-            segments.push(VerticalSegment {
-                id: EdgeId(edge_idx),
-                start_y,
-                end_y,
-            });
-        } else {
-            assert!(outgoing_len == 1 && incoming_len == 1);
-            segment_vec.push(RoutingEdge::RegularEdge(RegularEdge {
-                segment: VerticalSegment {
-                    id: EdgeId(edge_idx),
-                    start_y,
-                    end_y,
-                },
-                layer: SegmentLayer { idx: 0 },
-            }));
-        }
+            },
+            layer: SegmentLayer { idx: 0 },
+        });
     }
 
     let mut result = vec![];
@@ -496,53 +335,15 @@ fn get_layered_edges(graph: &mut Graph) -> Vec<Vec<SegmentsWithYOverlap>> {
         }) {
             //let a = chunk.collect::<Vec<_>>();
             let mut segments = SegmentsWithYOverlap::default();
-            chunk.into_iter().for_each(|segment| {
-                match segment {
-                    RoutingEdge::RegularEdge(
-                        e @ RegularEdge {
-                            segment:
-                                VerticalSegment {
-                                    id: _id,
-                                    start_y,
-                                    end_y,
-                                },
-                            ..
-                        },
-                    ) => {
-                        // TODO for self loops, check if edges[_id].from or .to is a special loop helper node,
-                        // in which case this should become a right_loops or left_loops member,
-                        // respectively.
-                        if start_y < end_y {
-                            segments.down_edges.push(e);
-                        } else if start_y > end_y {
-                            segments.up_edges.push(e);
-                        } else {
-                            unreachable!("start_y == end_y has been checked earlier.");
-                        }
-                    }
-                    RoutingEdge::Hyperedge(Hyperedge {
-                        segments: he_segments,
-                        layer,
-                    }) if he_segments.len() == 1 => {
-                        // We thought we had a hyperedge, but it probably consisted of just two
-                        // edges where one was straight, so we can downgrade it to a regular
-                        // edge.
-                        let segment = he_segments.into_iter().next().unwrap();
-                        if segment.start_y < segment.end_y {
-                            segments.down_edges.push(RegularEdge { segment, layer });
-                        } else if segment.start_y > segment.end_y {
-                            segments.up_edges.push(RegularEdge { segment, layer });
-                        } else {
-                            unreachable!("start_y == end_y has been checked earlier.");
-                        }
-                    }
-                    RoutingEdge::Hyperedge(e) => {
-                        // Invariant is that either all start_y are equal, or all end_y.
-                        if e.segments[0].start_y == e.segments[1].start_y {
-                            segments.right_spread_hyperedges.push(e);
-                        } else {
-                            segments.left_spread_hyperedges.push(e);
-                        }
+            chunk.into_iter().for_each(|edge| {
+                // TODO for self loops, check if edges[_id].from or .to is a special loop helper node,
+                // in which case this should become a right_loops or left_loops member,
+                // respectively.
+                match edge.segment.start_y.cmp(&edge.segment.end_y) {
+                    std::cmp::Ordering::Less => segments.down_edges.push(edge),
+                    std::cmp::Ordering::Greater => segments.up_edges.push(edge),
+                    std::cmp::Ordering::Equal => {
+                        unreachable!("start_y == end_y has been checked earlier.")
                     }
                 }
             });
@@ -619,11 +420,6 @@ fn add_bend_points_one_segment_group(
     segment_layer_width: usize,
     min_x: usize,
 ) {
-    segment.left_spread_hyperedges.iter().for_each(|e| {
-        e.segments.iter().for_each(|s| {
-            add_bend_points_one_segment(graph, s, e.layer.idx, segment_layer_width, min_x)
-        })
-    });
     segment.left_loops.iter().for_each(|e| {
         add_bend_points_one_segment(graph, &e.segment, e.layer.idx, segment_layer_width, min_x)
     });
@@ -639,11 +435,6 @@ fn add_bend_points_one_segment_group(
     });
     segment.right_loops.iter().for_each(|e| {
         add_bend_points_one_segment(graph, &e.segment, e.layer.idx, segment_layer_width, min_x)
-    });
-    segment.right_spread_hyperedges.iter().for_each(|e| {
-        e.segments.iter().for_each(|s| {
-            add_bend_points_one_segment(graph, s, e.layer.idx, segment_layer_width, min_x)
-        })
     });
 }
 
