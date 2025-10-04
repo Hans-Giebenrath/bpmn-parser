@@ -6,7 +6,7 @@ use crate::common::node::XY;
 
 pub fn replace_dummy_nodes(graph: &mut Graph) {
     for edge_idx in 0..graph.edges.len() {
-        let edge = &graph.edges[edge_idx];
+        let edge = &mut graph.edges[edge_idx];
         let XY {
             x: from_x,
             y: from_y,
@@ -14,8 +14,11 @@ pub fn replace_dummy_nodes(graph: &mut Graph) {
         let XY { x: to_x, y: to_y } = graph.nodes[edge.to.0].left_port();
         let from = (from_x, from_y);
         let to = (to_x, to_y);
-        let edge = &mut graph.edges[edge_idx];
         match &mut edge.edge_type {
+            EdgeType::DummyEdge { .. } => {
+                // skipped - these are evaluated in the context of long edges / the
+                // ReplacedByDummies match arm.
+            }
             EdgeType::Regular { bend_points, .. } => match bend_points {
                 RegularEdgeBendPoints::FullyRouted(_) => continue,
                 RegularEdgeBendPoints::ToBeDeterminedOrStraight => {
@@ -99,14 +102,10 @@ pub fn replace_dummy_nodes(graph: &mut Graph) {
                     bend_points: RegularEdgeBendPoints::FullyRouted(bend_points),
                 };
             }
-            EdgeType::DummyEdge { .. } => {
-                // skipped - these are evaluated in the context of long edges / the
-                // ReplacedByDummies match arm.
-            }
         };
     }
 
-    // Remove all the unneeded dummy nodes in the end. Otherwise it becomes too noisy to filter
+    // Remove all the unneeded dummy nodes in the end. Otherwise, it becomes too noisy to filter
     // them away in the output phase.
     while graph.nodes.pop_if(|node| node.is_dummy()).is_some() {}
     // Then fix the dummy edge references in incoming and outgoing.

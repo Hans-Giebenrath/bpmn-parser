@@ -6,7 +6,6 @@
 //!    ^ assigning this x coordinate is the hard part. The y
 //!
 //! These segments are grouped, left to right:
-//! - Hyperedges which spread to the left,
 //! - Loop edges (coming from the left, going to the left)
 //! - Downward-pointing message flows
 //! - Upward-pointing edges
@@ -23,7 +22,7 @@
 use crate::common::edge::DummyEdgeBendPoints;
 use crate::common::edge::{EdgeType, RegularEdgeBendPoints};
 use crate::common::graph::{EdgeId, Graph};
-use crate::common::node::Port;
+use crate::common::node::{AbsolutePort, RelativePort};
 use itertools::Itertools;
 
 #[derive(Debug)]
@@ -272,11 +271,12 @@ fn get_layered_edges(graph: &mut Graph) -> Vec<Vec<SegmentsWithYOverlap>> {
     edge_layers.resize_with(graph.num_layers, Default::default);
 
     for (edge_idx, edge) in graph.edges.iter().enumerate() {
+        if edge.is_vertical {
+            continue;
+        }
         let edge_id = EdgeId(edge_idx);
         match edge.edge_type {
             EdgeType::Regular {
-                // This should cover vertical edge segments (single data node connection, gateway
-                // edges going up or down, or edges leaving from boundary events, or similar)
                 bend_points: RegularEdgeBendPoints::FullyRouted(_),
                 ..
             }
@@ -293,11 +293,11 @@ fn get_layered_edges(graph: &mut Graph) -> Vec<Vec<SegmentsWithYOverlap>> {
             outgoing_len == 1 || incoming_len == 1,
             "Combining branches directly with joins has not been implemented, yet.\nEdge: {edge:?}\nFrom: {from_node:?}\nTo: {to_node:?}"
         );*/
-        let Some(&Port { y: start_y, .. }) = from_node.port_of_outgoing(edge_id) else {
+        let Some(AbsolutePort { y: start_y, .. }) = from_node.port_of_outgoing(edge_id) else {
             eprint!("WARNING an edge pointed to a node but the node did not know it");
             continue;
         };
-        let Some(&Port { y: end_y, .. }) = to_node.port_of_incoming(edge_id) else {
+        let Some(AbsolutePort { y: end_y, .. }) = to_node.port_of_incoming(edge_id) else {
             eprint!("WARNING an edge pointed to a node but the node did not know it");
             continue;
         };

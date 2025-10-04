@@ -12,7 +12,7 @@ use crate::common::graph::adjust_above_and_below_for_new_inbetween;
 use crate::common::node::LayerId;
 use crate::common::node::Node;
 use crate::common::node::NodeType;
-use crate::common::node::Port;
+use crate::common::node::RelativePort;
 use proc_macros::{e, from, n, to};
 use std::collections::HashSet;
 
@@ -113,8 +113,8 @@ pub fn port_assignment(graph: &mut Graph) {
 ///
 fn handle_nongateway_node(this_node_id: NodeId, graph: &mut Graph) {
     let this_node = &graph.nodes[this_node_id];
-    let mut incoming_ports = Vec::<Port>::new();
-    let mut outgoing_ports = Vec::<Port>::new();
+    let mut incoming_ports = Vec::<RelativePort>::new();
+    let mut outgoing_ports = Vec::<RelativePort>::new();
 
     let mut above_inc = 0;
     let mut above_out = 0;
@@ -260,15 +260,15 @@ fn handle_nongateway_node(this_node_id: NodeId, graph: &mut Graph) {
     /********************************************************/
 
     // At this point we know exactly how many ports are at what side, so we can do simple math
-    // stuff to place the ports using `points_on_segment`.
+    // stuff to place the ports using `points_on_side`.
     let mut above_coordinates =
-        points_on_side(this_node.width, above_inc + above_out).map(|x| Port {
+        points_on_side(this_node.width, above_inc + above_out).map(|x| RelativePort {
             x,
             y: 0,
             on_top_or_bottom: true,
         });
     let mut below_coordinates =
-        points_on_side(this_node.width, below_inc + below_out).map(|x| Port {
+        points_on_side(this_node.width, below_inc + below_out).map(|x| RelativePort {
             x,
             y: 0,
             on_top_or_bottom: true,
@@ -282,7 +282,7 @@ fn handle_nongateway_node(this_node_id: NodeId, graph: &mut Graph) {
             this_node.height,
             this_node.incoming.len() - above_inc - below_inc,
         )
-        .map(|y| Port {
+        .map(|y| RelativePort {
             x: 0,
             y,
             on_top_or_bottom: false,
@@ -299,7 +299,7 @@ fn handle_nongateway_node(this_node_id: NodeId, graph: &mut Graph) {
             this_node.height,
             this_node.outgoing.len() - above_out - below_out,
         )
-        .map(|y| Port {
+        .map(|y| RelativePort {
             x: 0,
             y,
             on_top_or_bottom: false,
@@ -311,6 +311,7 @@ fn handle_nongateway_node(this_node_id: NodeId, graph: &mut Graph) {
     /*  PHASE 3: Add additional dummy nodes & edges for above and below ports  */
     /***************************************************************************/
 
+    let this_node = &n!(this_node_id);
     // The straight-up/down vertical edges are the first (left-most) one on the above/below sides.
     assert!(above_inc <= 1);
     assert!(below_inc <= 1);
@@ -323,18 +324,20 @@ fn handle_nongateway_node(this_node_id: NodeId, graph: &mut Graph) {
     let above_edges_which_require_bendpoint = this_node
         .outgoing
         .iter()
+        .cloned()
+        .zip(outgoing_ports.iter().map(|x| x.x))
         .take(above_out)
         .skip((has_vertical_edge_above as usize) - above_inc)
-        .cloned()
         .collect::<Vec<_>>();
     // Dummy nodes are added bottom to top (starting with the ones farthest from this_node).
     let below_edges_which_require_bendpoint = this_node
         .outgoing
         .iter()
+        .cloned()
+        .zip(outgoing_ports.iter().map(|x| x.x))
         .skip(this_node.outgoing.len() - below_out)
         // A bit unsure here, better use strict_sub to panic if I messed up.
         .take(below_out.strict_sub((has_vertical_edge_below as usize).strict_sub(below_inc)))
-        .cloned()
         // Turn it around. Then the node_above_in_same_lane adjustment is easier since it is always
         // relative to this_node.
         .rev()
@@ -347,11 +350,11 @@ fn handle_nongateway_node(this_node_id: NodeId, graph: &mut Graph) {
 
     let united_edges_which_require_bendpoint = above_edges_which_require_bendpoint
         .into_iter()
-        .map(|x| (x, IsWhere::Above))
+        .map(|(above_edge_id, x)| (above_edge_id, x, IsWhere::Above))
         .chain(
             below_edges_which_require_bendpoint
                 .into_iter()
-                .map(|x| (x, IsWhere::Below)),
+                .map(|(below_edge_id, x)| (below_edge_id, x, IsWhere::Below)),
         );
 
     let Coord3 {
@@ -360,7 +363,7 @@ fn handle_nongateway_node(this_node_id: NodeId, graph: &mut Graph) {
         ..
     } = this_node.coord3();
 
-    for (edge_id, is_where) in united_edges_which_require_bendpoint {
+    for (edge_id, relative_port_x, is_where) in united_edges_which_require_bendpoint {
         let to_pool_and_lane = to!(edge_id).pool_and_lane();
         let is_same_lane = from_pool_and_lane == to_pool_and_lane;
         let (pool_and_lane, place) = match is_where {
@@ -400,26 +403,38 @@ fn handle_nongateway_node(this_node_id: NodeId, graph: &mut Graph) {
             from_layer,
             place,
             this_node_id,
+            relative_port_x,
         );
     }
+    n!(this_node_id).incoming_ports = incoming_ports;
+    n!(this_node_id).outgoing_ports = outgoing_ports;
 }
 
 fn handle_gateway_node(this_node_id: NodeId, graph: &mut Graph) {
+    // See comment at the end of the function.
+    let (above, below) = (
+        n!(this_node_id).node_above_in_same_lane.clone(),
+        n!(this_node_id).node_below_in_same_lane.clone(),
+    );
     for direction in [Direction::Outgoing, Direction::Incoming] {
         let this_node = &mut graph.nodes[this_node_id];
-        let (incoming_or_outgoing, ports) = match direction {
-            Direction::Outgoing => (&this_node.outgoing[..], &mut this_node.outgoing_ports),
-            Direction::Incoming => (&this_node.incoming[..], &mut this_node.incoming_ports),
+        let (incoming_or_outgoing, ports, x) = match direction {
+            Direction::Outgoing => (
+                &this_node.outgoing[..],
+                &mut this_node.outgoing_ports,
+                this_node.width,
+            ),
+            Direction::Incoming => (&this_node.incoming[..], &mut this_node.incoming_ports, 0),
         };
         match incoming_or_outgoing {
             [] => {
-                // .. is this valid at all? Maybe when in draft mode, i.e. while creating the diagram
+                // ... is this valid at all? Maybe when in draft mode, i.e. while creating the diagram
                 // and the diagram is just rendered as the BPMD text is written? So don't panic here.
             }
             [_single] => {
                 // This edge must leave as a regular flow. Nothing shall be done here.
-                ports.push(Port {
-                    x: 0,
+                ports.push(RelativePort {
+                    x,
                     y: this_node.height / 2,
                     on_top_or_bottom: true,
                 });
@@ -427,7 +442,7 @@ fn handle_gateway_node(this_node_id: NodeId, graph: &mut Graph) {
             many => {
                 // Ports are in the center, since right now we don't know which one will be above, and
                 // which one will be below. They can only be corrected at a later staged.
-                ports.extend((0..many.len()).map(|_| Port {
+                ports.extend((0..many.len()).map(|_| RelativePort {
                     x: this_node.width / 2,
                     y: this_node.height / 2,
                     on_top_or_bottom: true,
@@ -437,6 +452,24 @@ fn handle_gateway_node(this_node_id: NodeId, graph: &mut Graph) {
             }
         }
     }
+    // The gateway node might become detached if bend dummies are added in the same lane. In that
+    // case the gateway node should point to the original above and below nodes to ensure that they
+    // point to the original above/below. Note: If the original above itself was already a bend
+    // dummy, it is replaced by its originating node to ensure proper spacing as well.
+    n!(this_node_id).node_above_in_same_lane = above.map(|node_id| {
+        if let NodeType::BendDummy { originating_node } = &n!(node_id).node_type {
+            *originating_node
+        } else {
+            node_id
+        }
+    });
+    n!(this_node_id).node_below_in_same_lane = below.map(|node_id| {
+        if let NodeType::BendDummy { originating_node } = &n!(node_id).node_type {
+            *originating_node
+        } else {
+            node_id
+        }
+    });
 }
 
 enum VerticalEdgeDocks {
@@ -545,9 +578,9 @@ fn is_vertical_edge(
 /// on the line segment [x1, x2].
 ///
 /// Example:
-///   points_on_segment(0.0, 10.0, 3).collect::<Vec<_>>()
+///   points_on_side(0.0, 10.0, 3).collect::<Vec<_>>()
 ///       == [2.5, 5.0, 7.5]
-pub fn points_on_side(side_len: usize, k: usize) -> impl Iterator<Item = usize> {
+pub fn points_on_side(side_len: usize, k: usize) -> impl Iterator<Item = usize> + Clone {
     let step = side_len as f64 / (k as f64 + 1.0);
     (1..=k).map(move |i| ((i as f64) * step) as usize)
 }
@@ -571,6 +604,7 @@ fn handle_gateway_node_one_side(this_node_id: NodeId, graph: &mut Graph, directi
         layer: this_layer,
         ..
     } = n!(this_node_id).coord3();
+    let relative_port_x = n!(this_node_id).width / 2;
     let mut has_dummy_nodes_in_same_lane = false;
     let other_topmost_node = match direction {
         Direction::Outgoing => &to!(*edges.first().expect("caller-guaranteed this is not empty")),
@@ -719,6 +753,7 @@ fn handle_gateway_node_one_side(this_node_id: NodeId, graph: &mut Graph, directi
             this_layer,
             best_position.2,
             this_node_id,
+            relative_port_x,
         );
         if best_position.1 == this_pool_and_lane {
             has_dummy_nodes_in_same_lane = true;
@@ -759,11 +794,14 @@ fn add_bend_dummy_node(
     layer: LayerId,
     place: Place,
     reference_node: NodeId,
+    relative_port_x: usize,
 ) -> NodeId {
     let dummy_node_id = add_node(
         &mut graph.nodes,
         &mut graph.pools,
-        NodeType::DummyNode,
+        NodeType::BendDummy {
+            originating_node: reference_node,
+        },
         pool_and_lane,
         Some(layer),
     );
@@ -830,8 +868,8 @@ fn add_bend_dummy_node(
                 flow_type.clone(),
             );
             // Bend around
-            graph.edges[edge_id].from = dummy_node_id;
-            graph.nodes[dummy_node_id].outgoing.push(edge_id);
+            e!(edge_id).from = dummy_node_id;
+            n!(dummy_node_id).outgoing.push(edge_id);
             // The original edge might need to point to another edge as its first dummy edge.
             let original_edge = &mut graph.edges[original_edge];
             let EdgeType::ReplacedByDummies {
@@ -853,6 +891,18 @@ fn add_bend_dummy_node(
             unreachable!("This edge should not be part of the graph")
         }
     }
+
+    n!(dummy_node_id).outgoing_ports.push(RelativePort {
+        x: relative_port_x,
+        y: 0,
+        on_top_or_bottom: false,
+    });
+    n!(dummy_node_id).incoming_ports.push(RelativePort {
+        x: relative_port_x,
+        y: 0,
+        on_top_or_bottom: false,
+    });
+
     adjust_above_and_below_for_new_inbetween(dummy_node_id, place, graph);
     dummy_node_id
 }

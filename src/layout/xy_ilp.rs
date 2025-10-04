@@ -1,3 +1,4 @@
+use crate::common::config::Config;
 use crate::common::edge::Edge;
 use crate::common::edge::FlowType;
 use crate::common::graph::Graph;
@@ -7,6 +8,7 @@ use crate::common::iter_ext::IteratorExt;
 use crate::common::node::Node;
 use crate::common::node::NodePhaseAuxData;
 use good_lp::*;
+use proc_macros::n;
 
 #[derive(Debug)]
 pub struct XyIlpNodeData {
@@ -113,7 +115,7 @@ fn assign_y(graph: &mut Graph, pool: PoolId, lane: LaneId, min_y_value: usize) -
         if is_gateway_branching_flow_within_same_lane(edge, graph) {
             // The weight for gateway-connected edges is assigned through the
             // "gateway_balancing_constraint_vars", so don't assign anything additional here.
-            // Otherwise this interferes in weird ways.
+            // Otherwise, this interferes in weird ways.
             // NB: Prioritizing some branch to be "straight to the right" should be done
             // separately as well.
             continue;
@@ -122,13 +124,18 @@ fn assign_y(graph: &mut Graph, pool: PoolId, lane: LaneId, min_y_value: usize) -
         let diff_var = vars.add(variable().min(0.0));
         diff_vars.push((edge.from.0, edge.to.0, diff_var));
 
-        let edge_weight = match (edge.flow_type.clone(), edge.is_dummy()) {
+        let mut edge_weight = match (edge.flow_type.clone(), edge.is_dummy()) {
             (FlowType::SequenceFlow, false) => graph.config.short_sequence_flow_weight,
             (FlowType::SequenceFlow, true) => graph.config.long_sequence_flow_weight,
             (FlowType::DataFlow(_), false) => graph.config.short_data_flow_weight,
             (FlowType::DataFlow(_), true) => graph.config.long_data_edge_weight,
             (FlowType::MessageFlow(_), _) => graph.config.message_edge_weight,
         };
+        if edge.is_vertical {
+            // Vertical edges should also be kept short, but not at the expense of malaligning
+            // the bend dummy node and the neighboring node.
+            edge_weight *= 0.1;
+        }
         objective += diff_var * edge_weight;
     }
 
@@ -217,6 +224,13 @@ fn assign_y(graph: &mut Graph, pool: PoolId, lane: LaneId, min_y_value: usize) -
     let mut problem = vars.minimise(objective).using(default_solver);
     problem.set_parameter("loglevel", "0");
 
+    fn y_padding(n: &Node, cfg: &Config) -> usize {
+        if n.is_dummy() {
+            cfg.dummy_node_y_padding
+        } else {
+            cfg.regular_node_y_padding
+        }
+    }
     // Add padding constraints between neighboring nodes.
     node_ids_iter
         .clone()
@@ -224,16 +238,20 @@ fn assign_y(graph: &mut Graph, pool: PoolId, lane: LaneId, min_y_value: usize) -
         .flat_map(|n| {
             n.node_below_in_same_lane
                 .map(|next| (n, &graph.nodes[next.0]))
+                .into_iter()
+                .chain(
+                    // Gateway nodes are "detached" in some cases, as they are replaced by bend
+                    // dummies. But they must have a padding constraint with their above (and below
+                    // - this is already handled) as well in case the bend dummies don't need as
+                    // much of a height as the gateway node would.
+                    n.is_gateway()
+                        .then_some(())
+                        .and_then(|()| n.node_above_in_same_lane)
+                        .map(|prev| (&n!(prev), n)),
+                )
         })
         .for_each(|(above, below)| {
-            let padding = match (above.is_dummy(), below.is_dummy()) {
-                (true, true) => graph.config.dummy_node_y_padding,
-                (false, false) => graph.config.regular_node_y_padding,
-                _ => graph
-                    .config
-                    .dummy_node_y_padding
-                    .max(graph.config.regular_node_y_padding),
-            };
+            let padding = y_padding(above, &graph.config).max(y_padding(below, &graph.config));
             problem.add_constraint(
                 (aux(below).var - aux(above).var).geq((above.height + padding) as f64),
             );

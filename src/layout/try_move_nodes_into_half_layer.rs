@@ -7,7 +7,7 @@ use std::ops::RangeInclusive;
 // then it is moved instead into the regular layer (left to it). Right now the
 // y-ILP treats the data objects as if they were within the regular layer (even if they stay in
 // their half layer), so when they are moved, there is enough room between tasks.
-pub fn reduce_half_layer_crossings(graph: &mut Graph) {
+pub fn try_move_nodes_into_half_layer(graph: &mut Graph) {
     // First build a series of vertical edge segments, and then check against that.
 
     // TODO we only need to iterate through the layers where there actually are vertical segments.

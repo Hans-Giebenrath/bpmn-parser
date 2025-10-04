@@ -15,6 +15,7 @@ use crate::layout::xy_ilp::XyIlpNodeData;
 use crate::lexer::DataAux;
 use crate::lexer::PeBpmnProtection;
 use crate::lexer::TokenCoordinate;
+use std::ops::Add;
 
 // TODO this needs to move into a global configuration struct.
 pub const LAYER_WIDTH: f64 = 80.0;
@@ -42,6 +43,11 @@ pub enum NodeType {
     //  3. During port assignment, to handle those edges which leave above or below a node and then
     //     bend to the right. The bendpoint is represented by a new dummy node.
     DummyNode,
+    // Bend dummies are inserted during the port assignment phase. They help to create vertical edge
+    // segments for edges that leave at the top or bottom side of a node.
+    BendDummy {
+        originating_node: NodeId,
+    },
 }
 
 #[derive(Debug)]
@@ -85,8 +91,8 @@ pub struct Node {
     pub incoming: Vec<EdgeId>,
     pub outgoing: Vec<EdgeId>,
 
-    pub incoming_ports: Vec<Port>,
-    pub outgoing_ports: Vec<Port>,
+    pub incoming_ports: Vec<RelativePort>,
+    pub outgoing_ports: Vec<RelativePort>,
 
     pub aux: NodePhaseAuxData,
 }
@@ -98,13 +104,32 @@ pub struct XY {
 }
 
 #[derive(Debug)]
-pub struct Port {
+// Relative to the node's size.
+pub struct RelativePort {
     pub x: usize,
     pub y: usize,
     /// If this is true, then the edge segment first leaves in a vertical way, until it hits its
-    /// direct target or a "bend point" dummy node (this "bend point" dedication is not explicitly
-    /// expressed in the type system).
+    /// direct target or a "bend point" dummy node.
+    /// TODO delete?
     pub on_top_or_bottom: bool,
+}
+
+#[derive(Debug)]
+// Absolute position of the port within the diagram.
+pub struct AbsolutePort {
+    pub x: usize,
+    pub y: usize,
+}
+
+impl Add<XY> for &RelativePort {
+    type Output = AbsolutePort;
+
+    fn add(self, rhs: XY) -> Self::Output {
+        AbsolutePort {
+            x: self.x + rhs.x,
+            y: self.y + rhs.y,
+        }
+    }
 }
 
 pub(crate) enum LoneDataElement {
@@ -216,53 +241,23 @@ impl Node {
         return (self.width, self.height);
     }
 
-    pub fn port_of_incoming(&self, edge_id: EdgeId) -> Option<&Port> {
+    pub fn port_of_incoming(&self, edge_id: EdgeId) -> Option<AbsolutePort> {
         self.incoming
             .iter()
             .cloned()
             .zip(self.incoming_ports.iter())
             .find(|(inner_edge_id, _)| *inner_edge_id == edge_id)
-            .map(|(_, port)| port)
+            .map(|(_, port)| port + self.xy())
     }
 
-    pub fn port_of_outgoing(&self, edge_id: EdgeId) -> Option<&Port> {
+    pub fn port_of_outgoing(&self, edge_id: EdgeId) -> Option<AbsolutePort> {
         self.outgoing
             .iter()
             .cloned()
             .zip(self.outgoing_ports.iter())
             .find(|(inner_edge_id, _)| *inner_edge_id == edge_id)
-            .map(|(_, port)| port)
+            .map(|(_, port)| port + self.xy())
     }
-
-    //    pub fn get_mid_point(
-    //        index: &usize,
-    //        size: &usize,
-    //        from_node: &Node,
-    //        to_node: &Node,
-    //    ) -> Option<[XY; 2]> {
-    //        let XY {
-    //            x: from_x,
-    //            y: from_y,
-    //        } = from_node.right_port();
-    //        let XY { x: _, y: to_y } = to_node.left_port();
-    //        if from_y == to_y {
-    //            return None;
-    //        }
-    //
-    //        let gap = AVAILABLE_SPACE / *size as f64;
-    //        let x_start = from_x as f64 + (crate::layout::xy_ilp::LAYER_WIDTH - AVAILABLE_SPACE) / 2.0;
-    //        let mid_x = x_start + (*index as f64 * gap);
-    //        Some([
-    //            XY {
-    //                x: (mid_x) as usize,
-    //                y: (from_y) as usize,
-    //            },
-    //            XY {
-    //                x: (mid_x) as usize,
-    //                y: (to_y) as usize,
-    //            },
-    //        ])
-    //    }
 
     pub fn display_text(&self) -> Option<&str> {
         if let NodeType::RealNode { display_text, .. } = &self.node_type {
@@ -289,6 +284,13 @@ impl Node {
 
     pub fn is_boundary_event(&self, _edge_id: EdgeId) -> bool {
         todo!()
+    }
+
+    pub fn xy(&self) -> XY {
+        XY {
+            x: self.x,
+            y: self.y,
+        }
     }
 }
 

@@ -17,10 +17,10 @@ use layout::all_crossing_minimization::reduce_all_crossings;
 use layout::dummy_node_generation::generate_dummy_nodes;
 use layout::edge_routing::edge_routing;
 use layout::port_assignment::port_assignment;
-use layout::reduce_half_layer_crossings::reduce_half_layer_crossings;
 use layout::replace_dummy_nodes::replace_dummy_nodes;
 use layout::solve_layer_assignment::solve_layer_assignment;
 use layout::straight_edge_routing::find_straight_edges;
+use layout::try_move_nodes_into_half_layer::try_move_nodes_into_half_layer;
 use layout::xy_ilp::assign_xy_ilp;
 
 use crate::common::graph::{Graph, sort_lanes_by_layer};
@@ -81,7 +81,8 @@ pub fn layout_graph(graph: &mut Graph) {
     assign_xy_ilp(graph);
 
     // Phase 5
-    reduce_half_layer_crossings(graph);
+    fixup_gateway_ports(graph); // TODO write this one
+    try_move_nodes_into_half_layer(graph);
     find_straight_edges(graph);
     edge_routing(graph);
     replace_dummy_nodes(graph);
