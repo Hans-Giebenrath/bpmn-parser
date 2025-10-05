@@ -400,10 +400,11 @@ impl Graph {
 
 pub fn node_size(node_type: &NodeType) -> (usize, usize) {
     let event = match &node_type {
-        NodeType::DummyNode => {
+        NodeType::DummyNode | NodeType::BendDummy { .. } => {
+            let this_width_value_can_probably_be_smaller = 100;
             // Height of 0 so there is just padding between the lines.
             // Otherwise, there would be too much whitespace between lines.
-            return (100, 0);
+            return (this_width_value_can_probably_be_smaller, 0);
         }
         NodeType::RealNode { event, .. } => event,
     };

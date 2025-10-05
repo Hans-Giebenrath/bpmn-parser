@@ -77,13 +77,11 @@ impl RegularEdge {
     }
 }
 
-// Heuristic right now, puts every vertical edge segment onto its own x coordinate (per lane)
 pub fn edge_routing(graph: &mut Graph) {
-    let mut layered_edges = get_layered_edges(graph);
-
-    // TODO this should in principle just be Vec<Vec<RoutingEdge>>
     // Outer Vec: Per Layer across all lanes and pool,
     // Inner Vec: All the vertical edge segments within that layer.
+    let mut layered_edges = get_layered_edges(graph);
+
     let mut buffer = Vec::new();
     layered_edges
         .iter_mut()
@@ -93,9 +91,6 @@ pub fn edge_routing(graph: &mut Graph) {
     add_bend_points(graph, &layered_edges);
 }
 
-//struct MaxYPerLayer
-
-// TODO implement actual sorting of edges
 fn determine_segment_layers(
     routing_edges: &mut SegmentsWithYOverlap,
     max_y_per_layer_buffer: &mut Vec</* max_y */ usize>,
@@ -104,12 +99,6 @@ fn determine_segment_layers(
     // Now we need to take this information and make it into a layer assignment,
     // i.e. set values into the SegmentLayer variables.
     routing_edges.total_count_of_segmen_layers = 0;
-    //routing_edges.total_count_of_segmen_layers += determine_segment_layers_hyperedges(
-    //    &mut routing_edges.left_spread_hyperedges,
-    //    max_y_per_layer_buffer,
-    //    routing_edges.total_count_of_segmen_layers,
-    //    false,
-    //);
     routing_edges.total_count_of_segmen_layers += determine_segment_layers_left_or_right_loops(
         &mut routing_edges.left_loops,
         max_y_per_layer_buffer,
@@ -139,12 +128,6 @@ fn determine_segment_layers(
         routing_edges.total_count_of_segmen_layers,
         true,
     );
-    //routing_edges.total_count_of_segmen_layers += determine_segment_layers_hyperedges(
-    //    &mut routing_edges.right_spread_hyperedges,
-    //    max_y_per_layer_buffer,
-    //    routing_edges.total_count_of_segmen_layers,
-    //    true,
-    //);
 }
 
 fn determine_segment_layers_left_or_right_loops(

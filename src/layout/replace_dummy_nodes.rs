@@ -1,12 +1,14 @@
 use crate::common::edge::DummyEdgeBendPoints;
 use crate::common::edge::EdgeType;
 use crate::common::edge::RegularEdgeBendPoints;
+use crate::common::graph::EdgeId;
 use crate::common::graph::Graph;
 use crate::common::node::XY;
 
+// Assigns bend points to the Regular edges. Afterwards, no more dummy nodes or edges are present.
 pub fn replace_dummy_nodes(graph: &mut Graph) {
-    for edge_idx in 0..graph.edges.len() {
-        let edge = &mut graph.edges[edge_idx];
+    for edge_id in (0..graph.edges.len()).map(EdgeId) {
+        let edge = &mut graph.edges[edge_id];
         let XY {
             x: from_x,
             y: from_y,
@@ -44,7 +46,7 @@ pub fn replace_dummy_nodes(graph: &mut Graph) {
                 let text = text.clone();
                 let first_dummy_edge_id = *first_dummy_edge;
 
-                let mut edge_id = first_dummy_edge_id;
+                let mut cur_dummy_edge_id = first_dummy_edge_id;
                 // This loop hops along the edges via node.incoming/.outgoing, as dummy edges might
                 // not necessarily be consecutive in `graph.edges`.
                 loop {
@@ -53,14 +55,15 @@ pub fn replace_dummy_nodes(graph: &mut Graph) {
                         EdgeType::DummyEdge {
                             original_edge,
                             bend_points: DummyEdgeBendPoints::ToBeDeterminedOrStraight,
-                        } if original_edge.0 == edge_idx => {
-                            continue;
+                        } if original_edge == edge_id => {
+                            // Nothing to do, as this is straight we don't add any bend points.
+                            // So just go on jumping to the next edge.
                         }
                         EdgeType::DummyEdge {
                             original_edge,
                             bend_points:
                                 DummyEdgeBendPoints::SegmentEndpoints(segment_from, segment_to),
-                        } if original_edge.0 == edge_idx => {
+                        } if original_edge == edge_id => {
                             bend_points.push(segment_from);
                             bend_points.push(segment_to);
                         }
@@ -70,8 +73,8 @@ pub fn replace_dummy_nodes(graph: &mut Graph) {
                     let mut next_edge_it = to_node
                         .incoming
                         .iter()
-                        .filter(|e| **e != edge_id)
-                        .chain(to_node.outgoing.iter().filter(|e| **e != edge_id));
+                        .chain(to_node.outgoing.iter())
+                        .filter(|e| **e != cur_dummy_edge_id);
                     match (next_edge_it.next(), next_edge_it.next()) {
                         (Some(_), Some(_)) => {
                             // There are multiple other edges, which means we reached some target node
@@ -87,13 +90,17 @@ pub fn replace_dummy_nodes(graph: &mut Graph) {
                             // Only one success edge is present, here. This could mean that the
                             // original ReplacedByDummies edge continues, but not necessarily.
                             // This is checked in the `match` in the beginning of the loop.
-                            edge_id = *e;
+                            cur_dummy_edge_id = *e;
                         }
                     }
                 }
                 bend_points.push(to);
+                // Vertical lines ([Edge.is_vertical]) have their endpoints as their recorded
+                // `bend_points`. This means that they will duplicate info in `from` and `to`.
+                // So remove the duplicates.
+                bend_points.dedup();
 
-                let edge = &mut graph.edges[edge_idx];
+                let edge = &mut graph.edges[edge_id];
                 if edge.is_reversed {
                     bend_points.reverse();
                 }

@@ -1,8 +1,6 @@
-#![feature(let_chains)]
 #![feature(map_try_insert)]
 #![feature(never_type)]
 #![feature(array_windows)]
-#![feature(strict_overflow_ops)]
 
 mod common;
 mod layout;
@@ -16,6 +14,7 @@ use clap::Parser;
 use layout::all_crossing_minimization::reduce_all_crossings;
 use layout::dummy_node_generation::generate_dummy_nodes;
 use layout::edge_routing::edge_routing;
+use layout::fixup_gateway_ports::fixup_gateway_ports;
 use layout::port_assignment::port_assignment;
 use layout::replace_dummy_nodes::replace_dummy_nodes;
 use layout::solve_layer_assignment::solve_layer_assignment;

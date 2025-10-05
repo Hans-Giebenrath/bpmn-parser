@@ -73,6 +73,7 @@ fn sequence_edge_routing(graph: &mut Graph) {
         if !edge.is_vertical {
             continue;
         }
+        //TODO I think this function is actually not required at all.
     }
 }
 

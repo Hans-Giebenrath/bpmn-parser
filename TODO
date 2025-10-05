@@ -1,8 +1,8 @@
 Gateway/BoundaryEvt/Port/Edge refactoring:
 * [x] Check Y-ILP works with gateway stuff and bend dummies (edges in same layer)
-* [ ] `fixup_gateway_ports` Y-ILP should then fixup the edge port coordinates which are just half assedly set in the port assignment phase.
-* [ ] straight_edge_routing.rs sequence_edge_routing implement
-* [ ] edge routing: bend dummies should not be skipped, but an additional bendpoint added somewhere within their area (x not unnecessarily centered, but y should be centered)
+* [ ] `fixup_gateway_ports` Y-ILP should then fixup the edge port coordinates which are just half assedly set in the port assignment phase. Actually, it should also set the bendpoints for vertical lines, then edge routing can be fully ignored.
+* [not necessary? ] straight_edge_routing.rs sequence_edge_routing implement
+* [not necessary? ] edge routing: bend dummies should not be skipped, but an additional bendpoint added somewhere within their area (x not unnecessarily centered, but y should be centered)
 
 * Add more checks for the correctness of the BPMN semantics:
   * Check that the gateway branching and joining nodes match (use a dedicated graph analysis phase, not in the parser)
