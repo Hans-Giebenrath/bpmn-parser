@@ -220,7 +220,10 @@ impl Node {
     }
 
     pub fn is_dummy(&self) -> bool {
-        matches!(self.node_type, NodeType::DummyNode)
+        matches!(
+            self.node_type,
+            NodeType::DummyNode | NodeType::BendDummy { .. }
+        )
     }
 
     pub fn is_gateway(&self) -> bool {

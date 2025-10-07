@@ -59,6 +59,9 @@ pub enum RegularEdgeBendPoints {
 pub enum DummyEdgeBendPoints {
     ToBeDeterminedOrStraight,
     SegmentEndpoints((usize, usize), (usize, usize)),
+    VerticalBendDummy((usize, usize)),
+    /// Vertical lines from a gateway which happened to leave directly to the right side.
+    VerticalCollapsed,
 }
 
 /// `Clone` is required for the all_crossing_minimization self-layer edge replacement with dummy
