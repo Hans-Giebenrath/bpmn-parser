@@ -68,14 +68,7 @@ fn is_in_obstacle_ignore_self(
     false
 }
 
-fn sequence_edge_routing(graph: &mut Graph) {
-    for edge in &graph.edges {
-        if !edge.is_vertical {
-            continue;
-        }
-        //TODO I think this function is actually not required at all.
-    }
-}
+fn sequence_edge_routing(_graph: &mut Graph) {}
 
 fn data_edge_routing(matrix: &HashMap<usize, (usize, usize, usize, usize)>, graph: &mut Graph) {
     let mut start_point_buffer = vec![];
@@ -95,8 +88,8 @@ fn data_edge_routing(matrix: &HashMap<usize, (usize, usize, usize, usize)>, grap
         start_point_buffer.clear();
         end_point_buffer.clear();
         find_start_and_end_points(
-            &graph.nodes[data_edge.from.0],
-            &graph.nodes[data_edge.to.0],
+            &graph.nodes[data_edge.from],
+            &graph.nodes[data_edge.to],
             &mut start_point_buffer,
             &mut end_point_buffer,
         );
@@ -153,8 +146,8 @@ fn message_edge_routing(_matrix: &HashMap<usize, (usize, usize, usize, usize)>, 
         start_point_buffer.clear();
         end_point_buffer.clear();
         find_start_and_end_points(
-            &graph.nodes[data_edge.from.0],
-            &graph.nodes[data_edge.to.0],
+            &graph.nodes[data_edge.from],
+            &graph.nodes[data_edge.to],
             &mut start_point_buffer,
             &mut end_point_buffer,
         );

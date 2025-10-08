@@ -25,6 +25,8 @@ pub struct DataFlowAux {
 pub enum EdgeType {
     Regular {
         text: Option<String>,
+        /// TODO ToBeDeterminedOrStraight is confusing, better make this Option<...> and just leave
+        /// "Straight"?
         bend_points: RegularEdgeBendPoints,
     },
     // If a ReplacedByDummies node is assigned its final bend_points, e.g. when a straight edge can
@@ -43,6 +45,8 @@ pub enum EdgeType {
     DummyEdge {
         /// All the dummy edges which replace the same original edge share the same value.
         original_edge: EdgeId,
+        /// TODO ToBeDeterminedOrStraight is confusing, better make this Option<...> and just leave
+        /// "Straight"?
         bend_points: DummyEdgeBendPoints,
     },
 }
@@ -60,7 +64,8 @@ pub enum DummyEdgeBendPoints {
     ToBeDeterminedOrStraight,
     SegmentEndpoints((usize, usize), (usize, usize)),
     VerticalBendDummy((usize, usize)),
-    /// Vertical lines from a gateway which happened to leave directly to the right side.
+    /// Vertical lines from a gateway which happened to leave directly to the right side instead of
+    /// from the top or bottom edge.
     VerticalCollapsed,
 }
 

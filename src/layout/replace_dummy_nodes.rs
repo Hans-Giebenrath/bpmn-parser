@@ -3,72 +3,92 @@ use crate::common::edge::EdgeType;
 use crate::common::edge::RegularEdgeBendPoints;
 use crate::common::graph::EdgeId;
 use crate::common::graph::Graph;
+use crate::common::node::AbsolutePort;
 use crate::common::node::XY;
 
 // Assigns bend points to the Regular edges. Afterwards, no more dummy nodes or edges are present.
 pub fn replace_dummy_nodes(graph: &mut Graph) {
     for edge_id in (0..graph.edges.len()).map(EdgeId) {
         let edge = &mut graph.edges[edge_id];
-        let XY {
-            x: from_x,
-            y: from_y,
-        } = graph.nodes[edge.from.0].right_port();
-        let XY { x: to_x, y: to_y } = graph.nodes[edge.to.0].left_port();
-        let from = (from_x, from_y);
-        let to = (to_x, to_y);
         match &mut edge.edge_type {
             EdgeType::DummyEdge { .. } => {
                 // skipped - these are evaluated in the context of long edges / the
                 // ReplacedByDummies match arm.
             }
-            EdgeType::Regular { bend_points, .. } => match bend_points {
-                RegularEdgeBendPoints::FullyRouted(_) => continue,
-                RegularEdgeBendPoints::ToBeDeterminedOrStraight => {
-                    let mut points = vec![from, to];
-                    if edge.is_reversed {
-                        points.reverse();
+            EdgeType::Regular { bend_points, .. } => {
+                let AbsolutePort {
+                    x: from_x,
+                    y: from_y,
+                } = graph.nodes[edge.from.0].port_of_outgoing(edge_id).unwrap();
+                let AbsolutePort { x: to_x, y: to_y } =
+                    graph.nodes[edge.to.0].port_of_incoming(edge_id).unwrap();
+                let from_xy = (from_x, from_y);
+                let to_xy = (to_x, to_y);
+                match bend_points {
+                    RegularEdgeBendPoints::FullyRouted(_) => continue,
+                    RegularEdgeBendPoints::ToBeDeterminedOrStraight => {
+                        let mut points = vec![from_xy, to_xy];
+                        if edge.is_reversed {
+                            points.reverse();
+                        }
+                        *bend_points = RegularEdgeBendPoints::FullyRouted(points);
                     }
-                    *bend_points = RegularEdgeBendPoints::FullyRouted(points);
-                }
-                RegularEdgeBendPoints::SegmentEndpoints(segment_from, segment_to) => {
-                    let mut points = vec![from, *segment_from, *segment_to, to];
-                    if edge.is_reversed {
-                        points.reverse();
+                    RegularEdgeBendPoints::SegmentEndpoints(segment_from, segment_to) => {
+                        let mut points = vec![from_xy, *segment_from, *segment_to, to_xy];
+                        if edge.is_reversed {
+                            points.reverse();
+                        }
+                        *bend_points = RegularEdgeBendPoints::FullyRouted(points);
                     }
-                    *bend_points = RegularEdgeBendPoints::FullyRouted(points);
                 }
-            },
+            }
             EdgeType::ReplacedByDummies {
                 first_dummy_edge,
                 text,
             } => {
-                let mut bend_points = vec![from];
                 let text = text.clone();
                 let first_dummy_edge_id = *first_dummy_edge;
 
+                let AbsolutePort {
+                    x: from_x,
+                    y: from_y,
+                } = graph.nodes[edge.from]
+                    .port_of_outgoing(first_dummy_edge_id)
+                    .unwrap();
+                let to = edge.to;
+                let mut bend_points = vec![(from_x, from_y)];
                 let mut cur_dummy_edge_id = first_dummy_edge_id;
+                // This is used to access to `to` port.
+                let mut last_dummy_edge_id = cur_dummy_edge_id;
                 // This loop hops along the edges via node.incoming/.outgoing, as dummy edges might
                 // not necessarily be consecutive in `graph.edges`.
                 loop {
-                    let edge = &graph.edges[first_dummy_edge_id];
-                    match edge.edge_type {
-                        EdgeType::DummyEdge {
-                            original_edge,
-                            bend_points: DummyEdgeBendPoints::ToBeDeterminedOrStraight,
-                        } if original_edge == edge_id => {
+                    let edge = &graph.edges[cur_dummy_edge_id];
+                    let dummy_bend_points = if let EdgeType::DummyEdge {
+                        original_edge,
+                        bend_points,
+                    } = &edge.edge_type
+                        && *original_edge == edge_id
+                    {
+                        bend_points
+                    } else {
+                        break;
+                    };
+                    last_dummy_edge_id = cur_dummy_edge_id;
+                    match dummy_bend_points {
+                        DummyEdgeBendPoints::ToBeDeterminedOrStraight => {
                             // Nothing to do, as this is straight we don't add any bend points.
                             // So just go on jumping to the next edge.
                         }
-                        EdgeType::DummyEdge {
-                            original_edge,
-                            bend_points:
-                                DummyEdgeBendPoints::SegmentEndpoints(segment_from, segment_to),
-                        } if original_edge == edge_id => {
-                            bend_points.push(segment_from);
-                            bend_points.push(segment_to);
+                        DummyEdgeBendPoints::SegmentEndpoints(segment_from, segment_to) => {
+                            bend_points.push(*segment_from);
+                            bend_points.push(*segment_to);
                         }
-                        _ => break,
-                    }
+                        DummyEdgeBendPoints::VerticalBendDummy(segment) => {
+                            bend_points.push(*segment)
+                        }
+                        DummyEdgeBendPoints::VerticalCollapsed => { /* empty */ }
+                    };
                     let to_node = &graph.nodes[edge.to];
                     let mut next_edge_it = to_node
                         .incoming
@@ -94,7 +114,10 @@ pub fn replace_dummy_nodes(graph: &mut Graph) {
                         }
                     }
                 }
-                bend_points.push(to);
+                let AbsolutePort { x: to_x, y: to_y } = graph.nodes[to]
+                    .port_of_incoming(last_dummy_edge_id)
+                    .unwrap();
+                bend_points.push((to_x, to_y));
                 // Vertical lines ([Edge.is_vertical]) have their endpoints as their recorded
                 // `bend_points`. This means that they will duplicate info in `from` and `to`.
                 // So remove the duplicates.
@@ -113,7 +136,8 @@ pub fn replace_dummy_nodes(graph: &mut Graph) {
     }
 
     // Remove all the unneeded dummy nodes in the end. Otherwise, it becomes too noisy to filter
-    // them away in the output phase.
+    // them away in the output phase. This basically reshapes the graph into the same thing which we
+    // got after parsing.
     while graph.nodes.pop_if(|node| node.is_dummy()).is_some() {}
     // Then fix the dummy edge references in incoming and outgoing.
     for node in &mut graph.nodes {

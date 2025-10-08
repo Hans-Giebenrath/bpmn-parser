@@ -138,12 +138,12 @@ impl Graph {
             is_vertical: false,
             is_reversed: false,
             stroke_color: None,
-            stays_within_lane: self.nodes[from.0].pool == self.nodes[to.0].pool
-                && self.nodes[from.0].lane == self.nodes[to.0].lane,
+            stays_within_lane: self.nodes[from].pool == self.nodes[to].pool
+                && self.nodes[from].lane == self.nodes[to].lane,
         });
 
-        self.nodes[from.0].outgoing.push(edge_id);
-        self.nodes[to.0].incoming.push(edge_id);
+        self.nodes[from].outgoing.push(edge_id);
+        self.nodes[to].incoming.push(edge_id);
         edge_id
     }
 
@@ -169,27 +169,15 @@ impl Graph {
     pub fn reverse_edge(&mut self, edge_id: EdgeId) {
         // Modifies the edge in place (instead of marking it as deleted and creating a new one), so
         // no unnecessary hole is created within graph.edges.
-        let edge = &mut self.edges[edge_id.0];
-        assert!(edge.from.0 != edge.to.0);
-        assert!(
-            self.nodes[edge.from.0]
-                .outgoing
-                .iter()
-                .any(|e| e.0 == edge_id.0)
-        );
-        self.nodes[edge.from.0]
-            .outgoing
-            .retain(|e| e.0 != edge_id.0);
-        self.nodes[edge.from.0].incoming.push(edge_id);
+        let edge = &mut self.edges[edge_id];
+        assert!(edge.from != edge.to);
+        assert!(self.nodes[edge.from].outgoing.iter().any(|e| e == edge_id));
+        self.nodes[edge.from].outgoing.retain(|e| e != edge_id);
+        self.nodes[edge.from].incoming.push(edge_id);
 
-        assert!(
-            self.nodes[edge.to.0]
-                .incoming
-                .iter()
-                .any(|e| e.0 == edge_id.0)
-        );
-        self.nodes[edge.to.0].incoming.retain(|e| e.0 != edge_id.0);
-        self.nodes[edge.to.0].outgoing.push(edge_id);
+        assert!(self.nodes[edge.to].incoming.iter().any(|e| e == edge_id));
+        self.nodes[edge.to].incoming.retain(|e| e != edge_id);
+        self.nodes[edge.to].outgoing.push(edge_id);
 
         mem::swap(&mut edge.from, &mut edge.to);
         edge.is_reversed = true;
