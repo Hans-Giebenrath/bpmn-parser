@@ -171,12 +171,12 @@ impl Graph {
         // no unnecessary hole is created within graph.edges.
         let edge = &mut self.edges[edge_id];
         assert!(edge.from != edge.to);
-        assert!(self.nodes[edge.from].outgoing.iter().any(|e| e == edge_id));
-        self.nodes[edge.from].outgoing.retain(|e| e != edge_id);
+        assert!(self.nodes[edge.from].outgoing.iter().any(|e| *e == edge_id));
+        self.nodes[edge.from].outgoing.retain(|e| *e != edge_id);
         self.nodes[edge.from].incoming.push(edge_id);
 
-        assert!(self.nodes[edge.to].incoming.iter().any(|e| e == edge_id));
-        self.nodes[edge.to].incoming.retain(|e| e != edge_id);
+        assert!(self.nodes[edge.to].incoming.iter().any(|e| *e == edge_id));
+        self.nodes[edge.to].incoming.retain(|e| *e != edge_id);
         self.nodes[edge.to].outgoing.push(edge_id);
 
         mem::swap(&mut edge.from, &mut edge.to);

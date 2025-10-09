@@ -2,6 +2,7 @@ use crate::common::edge::DummyEdgeBendPoints;
 use crate::common::edge::Edge;
 use crate::common::edge::EdgeType;
 use crate::common::graph::EdgeId;
+use crate::common::graph::Place;
 use crate::common::graph::PoolId;
 use crate::common::graph::adjust_above_and_below_for_new_inbetween;
 use crate::common::graph::{Graph, NodeId};
@@ -12,6 +13,7 @@ use crate::common::node::NodePhaseAuxData;
 use crate::common::node::NodeType;
 use good_lp::*;
 use itertools::Itertools;
+use proc_macros::e;
 use rustc_hash::FxBuildHasher;
 use std::cmp::Ordering;
 use std::collections::HashMap;
@@ -256,8 +258,8 @@ impl Vars {
         }
     }
 
-    // `x_ij == 1` means that i is above j. Otherwise 0.
-    // This automatically transforms x_ji into (1 - x_ij), as described in switch 4 of
+    // `x_ij == 1` means that `i` is above `j`, 0 otherwise.
+    // This automatically transforms `x_ji` into `(1 - x_ij)`, as described in switch 4 of
     // https://ieeevis.b-cdn.net/vis_2024/pdfs/v-full-1874.pdf
     // The extended version would be to have both x variables, and then an additional constraint
     // would be necessary (x_ij + x_ji = 1).
@@ -777,28 +779,13 @@ fn sort_incoming_and_outgoing(graph: &mut Graph) {
 fn process_data_nodes_which_should_become_immediate_neighbors(graph: &mut Graph) {
     for data_node_id in (0..graph.nodes.len()).map(NodeId) {
         let node = &graph.nodes[data_node_id];
-        let (above_id, below_id) = match node.data_with_only_one_edge() {
-            LoneDataElement::IsOutput(edge_id) => {
-                // have it that OD -> is above, ..
-                let above_id = graph.edges[edge_id].from;
-                let above_node = &graph.nodes[above_id];
-                assert!(
-                    above_node.pool_and_lane() == node.pool_and_lane(),
-                    "data_node = {node}, regular_node = {above_node}"
-                );
-                let below_id = above_node.node_below_in_same_lane;
-                (Some(above_id), below_id)
-            }
-            LoneDataElement::IsInput(edge_id) => {
-                // .. and OD <- is below.
-                let below_id = graph.edges[edge_id].to;
-                let above_id = graph.nodes[below_id].node_above_in_same_lane;
-                (above_id, Some(below_id))
-            }
+        let place = match node.data_with_only_one_edge() {
+            LoneDataElement::IsOutput(edge_id) => Place::Below(e!(edge_id).from),
+            LoneDataElement::IsInput(edge_id) => Place::Above(e!(edge_id).to),
             LoneDataElement::Nope => continue,
         };
 
-        adjust_above_and_below_for_new_inbetween(data_node_id, above_id, below_id, graph);
+        adjust_above_and_below_for_new_inbetween(data_node_id, place, graph);
     }
 }
 
@@ -915,6 +902,7 @@ fn reroute_vertical_edge(
             is_reversed,
             stays_within_lane,
             stroke_color: None,
+            is_vertical: false,
         });
 
         let left_second_edge_id = EdgeId(graph.edges.len());
@@ -929,6 +917,7 @@ fn reroute_vertical_edge(
             is_reversed,
             stays_within_lane,
             stroke_color: None,
+            is_vertical: false,
         });
 
         let left_intermediate_node = &mut graph.nodes[left_intermediate_node_id];
@@ -1008,6 +997,7 @@ fn debug_print_graph(v: &Vars, ig: &IlpGraph, g: &Graph) {
         let what = match &n.node_type {
             NodeType::RealNode { display_text, .. } => display_text.as_str(),
             NodeType::DummyNode => "(dummy node)",
+            NodeType::BendDummy { .. } => "(bend dummy - IMPOSSIBLE HERE?)",
         };
         format!("nid({}) {what} ilpn({aux}) - Lyr({layer})", n.id)
     };

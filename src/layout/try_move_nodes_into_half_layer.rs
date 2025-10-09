@@ -1,5 +1,6 @@
 use crate::common::graph::Graph;
 use crate::common::node::LayerId;
+use proc_macros::to;
 use std::collections::HashMap;
 use std::ops::RangeInclusive;
 
@@ -46,12 +47,14 @@ pub fn try_move_nodes_into_half_layer(graph: &mut Graph) {
             continue;
         }
 
-        let start_y = left_node.right_port().y;
+        // Approximately correct `y` value. It just needs to be *some* `y` value across the sides of
+        // the node. Could also use the port.
+        let start_y = left_node.y;
         let vertical_segments: &mut Vec<_> = vertical_segments_per_layer
             .entry(left_node.layer_id)
             .or_default();
         for outgoing_edge_id in &left_node.outgoing {
-            let to_node = &graph.nodes[graph.edges[*outgoing_edge_id].to.0];
+            let to_node = &to!(*outgoing_edge_id);
 
             // Similar to the `left_node.is_data()` check. In the case where to_node is
             // actually just in the next half-layer, then we need to not record this edge here,
@@ -61,12 +64,10 @@ pub fn try_move_nodes_into_half_layer(graph: &mut Graph) {
                 continue;
             }
 
-            let end_y = &graph.nodes[graph.edges[*outgoing_edge_id].to.0]
-                .left_port()
-                .y;
+            let end_y = to_node.y;
             vertical_segments.push(
-                start_y.min(*end_y).saturating_sub(top_padding)
-                    ..=start_y.max(*end_y).saturating_add(bottom_padding),
+                start_y.min(end_y).saturating_sub(top_padding)
+                    ..=start_y.max(end_y).saturating_add(bottom_padding),
             );
         }
     }

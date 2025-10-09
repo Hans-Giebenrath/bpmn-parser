@@ -76,6 +76,8 @@ pub struct Node {
 
     /// Assigned in layer assignment phase.
     pub layer_id: LayerId,
+    /// Set during layer assignment, and then later used to shift the `x` value (if no obstacles are
+    /// in the way).
     pub uses_half_layer: bool,
 
     // This creates a kind of doubly linked list. Created during crossing minimisation phase,
