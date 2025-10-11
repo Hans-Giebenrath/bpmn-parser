@@ -1,4 +1,5 @@
 use super::macros::impl_index;
+use crate::common::bpmn_node::BoundaryEvent;
 use crate::common::bpmn_node::{BpmnNode, EventVisual};
 use crate::common::config::Config;
 use crate::common::edge::{Edge, EdgeType};
@@ -28,6 +29,7 @@ pub struct Graph {
     pub pools: Vec<Pool>,
 
     pub data_elements: Vec<SemanticDataElement>,
+    pub boundary_events: HashMap<(NodeId, EdgeId), BoundaryEvent>,
     pub config: Config,
 
     pub num_layers: usize,
@@ -207,7 +209,7 @@ impl Graph {
         mut final_pool_lane_to_consider: PoolAndLane,
         layer: LayerId,
     ) -> Option<(PoolAndLane, NodeId)> {
-        assert!(final_pool_lane_to_consider < lane_below_requested_one);
+        assert!(final_pool_lane_to_consider <= lane_below_requested_one);
         if final_pool_lane_to_consider.pool != lane_below_requested_one.pool {
             // Bend the `final_pool_lane_to_consider` around to use it as a sentinel value.
             final_pool_lane_to_consider = PoolAndLane {
@@ -245,8 +247,7 @@ impl Graph {
                 ..
             }) => (None, pool_and_lane, layer),
         };
-        let final_pool_lane_to_consider =
-            final_pool_lane_to_consider.unwrap_or_else(|| PoolAndLane::MIN);
+        let final_pool_lane_to_consider = final_pool_lane_to_consider.unwrap_or(PoolAndLane::MIN);
         from_fn(move || {
             let Some(current_node) = current_node_opt else {
                 // Should only enter this once at the beginning for `LayerIterationStart::PoolLane`.
@@ -266,6 +267,7 @@ impl Graph {
                 return current_node_opt;
             };
             if let Some(above) = current_node.node_above_in_same_lane {
+                assert_ne!(above, current_node.id);
                 current_node_opt = Some(&n!(above));
                 current_node_opt
             } else if let Some((next_pool_and_lane, above)) = graph
@@ -310,7 +312,7 @@ impl Graph {
         mut final_pool_lane_to_consider: PoolAndLane,
         layer: LayerId,
     ) -> Option<(PoolAndLane, NodeId)> {
-        assert!(final_pool_lane_to_consider > lane_above_requested_one);
+        assert!(final_pool_lane_to_consider >= lane_above_requested_one);
         if final_pool_lane_to_consider.pool != lane_above_requested_one.pool {
             assert!(!self.pools[lane_above_requested_one.pool].lanes.is_empty());
             final_pool_lane_to_consider = PoolAndLane {
@@ -368,6 +370,7 @@ impl Graph {
                 return current_node_opt;
             };
             if let Some(below) = current_node.node_below_in_same_lane {
+                assert_ne!(below, current_node.id);
                 current_node_opt = Some(&n!(below));
                 current_node_opt
             } else if let Some((next_pool_and_lane, below)) = graph.get_next_lower_node_same_pool(
@@ -523,11 +526,11 @@ pub(crate) fn sort_lanes_by_layer(graph: &mut Graph) {
     }
 }
 
+#[derive(Debug)]
 pub(crate) enum Place {
-    AtTheTop,
+    AsOnlyNode,
     Above(NodeId),
     Below(NodeId),
-    AtTheBottom,
 }
 
 pub(crate) fn adjust_above_and_below_for_new_inbetween(
@@ -539,10 +542,12 @@ pub(crate) fn adjust_above_and_below_for_new_inbetween(
     let pool_lane = node.pool_and_lane();
     let layer = node.layer_id;
     let (above, below) = match place {
-        Place::AtTheTop => (None, graph.get_top_node(pool_lane, layer)),
+        Place::AsOnlyNode => {
+            assert!(graph.get_top_node(pool_lane, layer).is_none());
+            (None, None)
+        }
         Place::Above(reference) => (n!(reference).node_above_in_same_lane, Some(reference)),
         Place::Below(reference) => (Some(reference), n!(reference).node_below_in_same_lane),
-        Place::AtTheBottom => (graph.get_bottom_node(pool_lane, layer), None),
     };
 
     if let Some(above) = above {
@@ -557,6 +562,9 @@ pub(crate) fn adjust_above_and_below_for_new_inbetween(
         below.node_above_in_same_lane = Some(inbetween);
     }
 
+    dbg!(place);
+    assert_ne!(Some(inbetween), above);
+    assert_ne!(Some(inbetween), below);
     n!(inbetween).node_above_in_same_lane = above;
     n!(inbetween).node_below_in_same_lane = below;
 }

@@ -23,6 +23,12 @@ pub enum BpmnNode {
     Data(DataType, DataAux), // Data store reference with label
 }
 
+#[derive(Eq, Debug, Clone, PartialEq)]
+pub(crate) struct BoundaryEvent {
+    pub(crate) event_type: BoundaryEventType,
+    pub(crate) interrupt_kind: InterruptKind,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum BoundaryEventType {
     Error,
@@ -63,8 +69,8 @@ pub enum TaskType {
 // emitting code (xml, svg, ..).
 #[derive(Eq, Debug, Clone, PartialEq)]
 pub(crate) enum EventVisual {
-    Start(InterruptingKind),
-    Catch(InterruptingKind),
+    Start(InterruptKind),
+    Catch(InterruptKind),
     Throw,
     End,
 }
@@ -75,7 +81,7 @@ impl EventVisual {
     ) -> Result<Self, ParseError> {
         use lexer::EventVisual as E;
         match lexed {
-            E::None | E::Receive | E::Catch => Ok(Self::Start(InterruptingKind::Interrupting)),
+            E::None | E::Receive | E::Catch => Ok(Self::Start(InterruptKind::Interrupting)),
             E::Send | E::Throw => Err(vec![("Start events can only be ~catch or ~receive events (or simply remove this attribute).".to_string(), tc, Level::Error)]),
         }
     }
@@ -86,15 +92,15 @@ impl EventVisual {
     ) -> Result<Self, ParseError> {
         use lexer::EventVisual as E;
         match lexed {
-            E::Receive | E::Catch => Ok(Self::Catch(InterruptingKind::Interrupting)),
+            E::Receive | E::Catch => Ok(Self::Catch(InterruptKind::Interrupting)),
             E::Send | E::Throw => Ok(Self::Throw),
             E::None => match event_type {
                 EventType::Blank => Ok(Self::Throw),
-                EventType::Message => Ok(Self::Catch(InterruptingKind::Interrupting)),
-                EventType::Timer => Ok(Self::Catch(InterruptingKind::Interrupting)),
-                EventType::Conditional => Ok(Self::Catch(InterruptingKind::Interrupting)),
-                EventType::Link => Ok(Self::Catch(InterruptingKind::Interrupting)),
-                EventType::Signal => Ok(Self::Catch(InterruptingKind::Interrupting)),
+                EventType::Message => Ok(Self::Catch(InterruptKind::Interrupting)),
+                EventType::Timer => Ok(Self::Catch(InterruptKind::Interrupting)),
+                EventType::Conditional => Ok(Self::Catch(InterruptKind::Interrupting)),
+                EventType::Link => Ok(Self::Catch(InterruptKind::Interrupting)),
+                EventType::Signal => Ok(Self::Catch(InterruptKind::Interrupting)),
                 EventType::Error => Err(vec![(
                     "Error events cannot be intermediate events, but only end or boundary events."
                         .to_string(),
@@ -115,8 +121,8 @@ impl EventVisual {
                     tc,
                     Level::Error,
                 )]),
-                EventType::Multiple => Ok(Self::Catch(InterruptingKind::Interrupting)),
-                EventType::MultipleParallel => Ok(Self::Catch(InterruptingKind::Interrupting)),
+                EventType::Multiple => Ok(Self::Catch(InterruptKind::Interrupting)),
+                EventType::MultipleParallel => Ok(Self::Catch(InterruptKind::Interrupting)),
             },
         }
     }
@@ -138,7 +144,7 @@ impl EventVisual {
 }
 
 #[derive(Eq, Debug, Clone, PartialEq)]
-pub(crate) enum InterruptingKind {
+pub(crate) enum InterruptKind {
     NonInterrupting,
     Interrupting,
 }

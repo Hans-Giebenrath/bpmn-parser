@@ -1,7 +1,7 @@
 use crate::common::bpmn_node::ActivityType;
 use crate::common::bpmn_node::BpmnNode;
 use crate::common::bpmn_node::EventVisual;
-use crate::common::bpmn_node::InterruptingKind;
+use crate::common::bpmn_node::InterruptKind;
 use crate::common::bpmn_node::TaskType;
 use crate::common::edge::Edge;
 use crate::common::edge::EdgeType;
@@ -107,7 +107,7 @@ pub fn generate_bpmn(graph: &Graph) -> String {
     xmlns:dc="http://www.omg.org/spec/DD/20100524/DC"
     xmlns:di="http://www.omg.org/spec/DD/20100524/DI"
     xmlns:bioc="http://bpmn.io/schema/bpmn/biocolor/1.0"
-    xmlns:color="http://www.omg.org/spec/BPMN/non-normative/color/1.0" 
+    xmlns:color="http://www.omg.org/spec/BPMN/non-normative/color/1.0"
     xmlns:modeler="http://camunda.org/schema/modeler/1.0" id="Definitions_1"
     targetNamespace="http://bpmn.io/schema/bpmn" exporter="Camunda Modeler"
     exporterVersion="5.17.0">
@@ -477,7 +477,7 @@ fn write_process_node(bpmn: &mut String, graph: &Graph, node_id: usize, node: &N
                 EventDefinition(event_type),
             ));
         }
-        BpmnNode::Event(event_type, EventVisual::Catch(InterruptingKind::Interrupting)) => {
+        BpmnNode::Event(event_type, EventVisual::Catch(InterruptKind::Interrupting)) => {
             bpmn.push_str(&format!(
                 r#"    <bpmn:intermediateCatchEvent id="Node_{node_id}" name="{display_text}">
 {incomingoutgoing}
@@ -486,7 +486,7 @@ fn write_process_node(bpmn: &mut String, graph: &Graph, node_id: usize, node: &N
                 EventDefinition(event_type),
             ));
         }
-        BpmnNode::Event(_, EventVisual::Catch(InterruptingKind::NonInterrupting)) => todo!(),
+        BpmnNode::Event(_, EventVisual::Catch(InterruptKind::NonInterrupting)) => todo!(),
 
         BpmnNode::Event(EventType::Blank, EventVisual::End) => {
             bpmn.push_str(&format!(

@@ -26,6 +26,14 @@ pub fn port_assignment(graph: &mut Graph) {
     }
 }
 
+#[derive(Debug)]
+pub(crate) enum PlaceForBendDummy {
+    AtTheTop,
+    Above(NodeId),
+    Below(NodeId),
+    AtTheBottom,
+}
+
 /// The boundary of a box is on a first approximation subdivided into eight areas:
 /// The North, East, West and South ports, and then the four corner areas between them.
 /// ("Corner area" in the sense that it is not just the corner point, but also the parts of the
@@ -172,7 +180,7 @@ fn handle_nongateway_node(this_node_id: NodeId, graph: &mut Graph) {
         [single] => match is_vertical_edge(*single, graph, this_node_id) {
             None => {
                 // A single boundary event usually is placed on the bottom side.
-                if this_node.is_boundary_event(*single) {
+                if graph.boundary_events.contains_key(&(this_node.id, *single)) {
                     below_out = 1;
                 }
             }
@@ -234,7 +242,7 @@ fn handle_nongateway_node(this_node_id: NodeId, graph: &mut Graph) {
                 // to continue putting BEs on `below`. So just skip the vertical edge.
                 .skip(below_out);
             while let Some((rev_idx, (_, edge_id))) = it.next() {
-                if this_node.is_boundary_event(edge_id) {
+                if graph.boundary_events.contains_key(&(this_node.id, edge_id)) {
                     // rev_idx starts at 0, but if the 0th element is on `below` we want to
                     // have `below_out == 1`.
                     below_out = rev_idx + 1;
@@ -243,7 +251,7 @@ fn handle_nongateway_node(this_node_id: NodeId, graph: &mut Graph) {
                 }
             }
             while let Some((_, (idx, edge_id))) = it.next() {
-                if this_node.is_boundary_event(edge_id) {
+                if graph.boundary_events.contains_key(&(this_node.id, edge_id)) {
                     // idx starts at 0, but if the 0th element is on `above` we want to
                     // have `above_out == 1`.
                     above_out = idx + 1;
@@ -270,7 +278,7 @@ fn handle_nongateway_node(this_node_id: NodeId, graph: &mut Graph) {
     let mut below_coordinates =
         points_on_side(this_node.width, below_inc + below_out).map(|x| RelativePort {
             x,
-            y: 0,
+            y: this_node.height,
             on_top_or_bottom: true,
         });
     if above_inc > 0 {
@@ -300,7 +308,7 @@ fn handle_nongateway_node(this_node_id: NodeId, graph: &mut Graph) {
             this_node.outgoing.len() - above_out - below_out,
         )
         .map(|y| RelativePort {
-            x: 0,
+            x: this_node.width,
             y,
             on_top_or_bottom: false,
         }),
@@ -367,8 +375,12 @@ fn handle_nongateway_node(this_node_id: NodeId, graph: &mut Graph) {
         let to_pool_and_lane = to!(edge_id).pool_and_lane();
         let is_same_lane = from_pool_and_lane == to_pool_and_lane;
         let (pool_and_lane, place) = match is_where {
-            IsWhere::Above if is_same_lane => (from_pool_and_lane, Place::Above(this_node_id)),
-            IsWhere::Below if is_same_lane => (from_pool_and_lane, Place::Below(this_node_id)),
+            IsWhere::Above if is_same_lane => {
+                (from_pool_and_lane, PlaceForBendDummy::Above(this_node_id))
+            }
+            IsWhere::Below if is_same_lane => {
+                (from_pool_and_lane, PlaceForBendDummy::Below(this_node_id))
+            }
 
             // In the target lane above, go to the lower end.
             // TODO is this actually useful? Or should the bend point actually be in the
@@ -381,8 +393,11 @@ fn handle_nongateway_node(this_node_id: NodeId, graph: &mut Graph) {
                     .iter_upwards_same_pool(StartAt::Node(this_node_id), Some(to_pool_and_lane))
                     .find(|node| !is_skippable_dummy_node(node, graph));
                 match barrier {
-                    Some(barrier) => (barrier.pool_and_lane(), Place::Below(barrier.id)),
-                    None => (to_pool_and_lane, Place::AtTheBottom),
+                    Some(barrier) => (
+                        barrier.pool_and_lane(),
+                        PlaceForBendDummy::Below(barrier.id),
+                    ),
+                    None => (to_pool_and_lane, PlaceForBendDummy::AtTheBottom),
                 }
             }
             IsWhere::Below => {
@@ -390,8 +405,11 @@ fn handle_nongateway_node(this_node_id: NodeId, graph: &mut Graph) {
                     .iter_downwards_same_pool(StartAt::Node(this_node_id), Some(to_pool_and_lane))
                     .find(|node| !is_skippable_dummy_node(node, graph));
                 match barrier {
-                    Some(barrier) => (barrier.pool_and_lane(), Place::Above(barrier.id)),
-                    None => (to_pool_and_lane, Place::AtTheTop),
+                    Some(barrier) => (
+                        barrier.pool_and_lane(),
+                        PlaceForBendDummy::Above(barrier.id),
+                    ),
+                    None => (to_pool_and_lane, PlaceForBendDummy::AtTheTop),
                 }
             }
         };
@@ -458,15 +476,19 @@ fn handle_gateway_node(this_node_id: NodeId, graph: &mut Graph) {
     // dummy, it is replaced by its originating node to ensure proper spacing as well.
     n!(this_node_id).node_above_in_same_lane = above.map(|node_id| {
         if let NodeType::BendDummy { originating_node } = &n!(node_id).node_type {
+            assert_ne!(*originating_node, this_node_id);
             *originating_node
         } else {
+            assert_ne!(node_id, this_node_id);
             node_id
         }
     });
     n!(this_node_id).node_below_in_same_lane = below.map(|node_id| {
         if let NodeType::BendDummy { originating_node } = &n!(node_id).node_type {
+            assert_ne!(*originating_node, this_node_id);
             *originating_node
         } else {
+            assert_ne!(node_id, this_node_id);
             node_id
         }
     });
@@ -664,12 +686,16 @@ fn handle_gateway_node_one_side(this_node_id: NodeId, graph: &mut Graph, directi
             let best_position = (
                 local_is_above_gateway,
                 n!(top_barrier).pool_and_lane(),
-                Place::Below(top_barrier),
+                PlaceForBendDummy::Below(top_barrier),
             );
             let iteration_start = StartAt::Node(top_barrier);
             (best_position, iteration_start)
         } else {
-            let best_position = (local_is_above_gateway, top_most_pool_lane, Place::AtTheTop);
+            let best_position = (
+                local_is_above_gateway,
+                top_most_pool_lane,
+                PlaceForBendDummy::AtTheTop,
+            );
             let iteration_start = StartAt::PoolLane(Coord3 {
                 pool_and_lane: top_most_pool_lane,
                 layer: this_layer,
@@ -694,14 +720,22 @@ fn handle_gateway_node_one_side(this_node_id: NodeId, graph: &mut Graph, directi
                 // It might be that the `to` node is actually at a place where this lane has no
                 // nodes. Then we would jump over the `to` node's pool_lane, and so we need to manually
                 // do a check here and register *that* as the best position.
-                best_position = (best_position.0, other_node_pool_lane, Place::AtTheTop);
+                best_position = (
+                    best_position.0,
+                    other_node_pool_lane,
+                    PlaceForBendDummy::AtTheTop,
+                );
                 // But also continue, since we still need to check what we got now.
             }
             if best_position.1 == other_node_pool_lane
                 && crossable_node.pool_and_lane() > other_node_pool_lane
             {
                 // And the same for the other direction.
-                best_position = (best_position.0, other_node_pool_lane, Place::AtTheBottom);
+                best_position = (
+                    best_position.0,
+                    other_node_pool_lane,
+                    PlaceForBendDummy::AtTheBottom,
+                );
                 // Now it does not make sense to continue, we don't want to make a funny down
                 // and up wiggle waggle.
                 break;
@@ -720,7 +754,7 @@ fn handle_gateway_node_one_side(this_node_id: NodeId, graph: &mut Graph, directi
                 best_position = (
                     local_is_above_gateway,
                     crossable_node.pool_and_lane(),
-                    Place::Below(crossable_node.id),
+                    PlaceForBendDummy::Below(crossable_node.id),
                 );
                 last_iteration_was_not_a_blocker = true;
             }
@@ -729,7 +763,7 @@ fn handle_gateway_node_one_side(this_node_id: NodeId, graph: &mut Graph, directi
                     best_position = (
                         local_is_above_gateway,
                         crossable_node.pool_and_lane(),
-                        Place::Below(crossable_node.id),
+                        PlaceForBendDummy::Below(crossable_node.id),
                     );
                     last_iteration_was_not_a_blocker = true;
                 } else {
@@ -743,7 +777,11 @@ fn handle_gateway_node_one_side(this_node_id: NodeId, graph: &mut Graph, directi
             // But again, it could be there are more lanes below, so we manually set the best
             // position to the target lane.
             if best_position.1 < other_node_pool_lane {
-                best_position = (best_position.0, other_node_pool_lane, Place::AtTheTop);
+                best_position = (
+                    best_position.0,
+                    other_node_pool_lane,
+                    PlaceForBendDummy::AtTheTop,
+                );
             }
         }
         let new_dummy_node = add_bend_dummy_node(
@@ -782,8 +820,14 @@ fn handle_gateway_node_one_side(this_node_id: NodeId, graph: &mut Graph, directi
         let this_node = &mut n!(this_node_id);
         let above = this_node.node_above_in_same_lane.take();
         let below = this_node.node_below_in_same_lane.take();
-        above.map(|above| n!(above).node_below_in_same_lane = below);
-        below.map(|below| n!(below).node_above_in_same_lane = above);
+        if let Some(above) = above {
+            assert_ne!(Some(above), below);
+            n!(above).node_below_in_same_lane = below;
+        }
+        if let Some(below) = below {
+            assert_ne!(above, Some(below));
+            n!(below).node_above_in_same_lane = above;
+        }
     }
 }
 
@@ -792,10 +836,22 @@ fn add_bend_dummy_node(
     edge_id: EdgeId,
     pool_and_lane: PoolAndLane,
     layer: LayerId,
-    place: Place,
+    place_for_bend_dummy: PlaceForBendDummy,
     reference_node: NodeId,
     relative_port_x: usize,
 ) -> NodeId {
+    let place = match place_for_bend_dummy {
+        PlaceForBendDummy::AtTheTop => match graph.get_top_node(pool_and_lane, layer) {
+            Some(top_node) => Place::Above(top_node),
+            None => Place::AsOnlyNode,
+        },
+        PlaceForBendDummy::AtTheBottom => match graph.get_bottom_node(pool_and_lane, layer) {
+            Some(bottom_node) => Place::Below(bottom_node),
+            None => Place::AsOnlyNode,
+        },
+        PlaceForBendDummy::Above(x) => Place::Above(x),
+        PlaceForBendDummy::Below(x) => Place::Below(x),
+    };
     let dummy_node_id = add_node(
         &mut graph.nodes,
         &mut graph.pools,

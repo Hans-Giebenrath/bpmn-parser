@@ -277,11 +277,11 @@ fn get_layered_edges(graph: &mut Graph) -> Vec<Vec<SegmentsWithYOverlap>> {
             "Combining branches directly with joins has not been implemented, yet.\nEdge: {edge:?}\nFrom: {from_node:?}\nTo: {to_node:?}"
         );*/
         let Some(AbsolutePort { y: start_y, .. }) = from_node.port_of_outgoing(edge_id) else {
-            eprint!("WARNING an edge pointed to a node but the node did not know it");
+            eprintln!("WARNING an edge pointed to a node but the node did not know it");
             continue;
         };
         let Some(AbsolutePort { y: end_y, .. }) = to_node.port_of_incoming(edge_id) else {
-            eprint!("WARNING an edge pointed to a node but the node did not know it");
+            eprintln!("WARNING an edge pointed to a node but the node did not know it");
             continue;
         };
         if start_y == end_y {

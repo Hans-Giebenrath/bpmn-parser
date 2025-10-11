@@ -256,10 +256,10 @@ impl Node {
     }
 
     pub fn port_of_outgoing(&self, edge_id: EdgeId) -> Option<AbsolutePort> {
-        self.outgoing
+        dbg!(&self.outgoing)
             .iter()
             .cloned()
-            .zip(self.outgoing_ports.iter())
+            .zip(dbg!(&self.outgoing_ports).iter())
             .find(|(inner_edge_id, _)| *inner_edge_id == edge_id)
             .map(|(_, port)| port + self.xy())
     }
@@ -285,10 +285,6 @@ impl Node {
             layer: self.layer_id,
             half_layer: self.uses_half_layer,
         }
-    }
-
-    pub fn is_boundary_event(&self, _edge_id: EdgeId) -> bool {
-        todo!()
     }
 
     pub fn xy(&self) -> XY {

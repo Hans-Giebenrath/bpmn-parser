@@ -1,27 +1,9 @@
 = BPMD - Business Process Modeling DSL
 :icons: font
 
-== tjoc001.bpmd
-image::tjoc001.png[width=60%]
-[WARNING]
-====
-No reference visibility table found: tjoc001.csv.correct
-
-Make sure that:
-
-- The generated output in tjoc001.csv is correct and expected.
-- You're intentionally updating the reference.
-
-If so, run:
-  
-  cp "tjoc001.csv" "tjoc001.csv.correct"
-
-====
-[%header,format=csv]
-|===
-include::/home/armin/dev/armin/bpmn-parser/doc/test/tjoc001.csv[]
-|===
+== t0002.bpmd
+image::t0002.png[width=60%]
 [source]
 ----
-include::tjoc001.bpmd[]
+include::t0002.bpmd[]
 ----

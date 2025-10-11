@@ -20,12 +20,15 @@ pub fn postprocess_ports_and_vertical_edges(graph: &mut Graph) {
 pub fn fixup_gateway_ports(graph: &mut Graph) {
     for node_id in (0..graph.nodes.len()).map(NodeId) {
         let node = &mut n!(node_id);
-        let mut incoming_ports = std::mem::take(&mut node.incoming_ports);
-        let mut outgoing_ports = std::mem::take(&mut node.outgoing_ports);
-        let node = &n!(node_id);
         if !node.is_gateway() {
             continue;
         }
+        // XXX make sure there is no `continue` down from here, otherwise these values are lost.
+        let mut incoming_ports = std::mem::take(&mut node.incoming_ports);
+        let mut outgoing_ports = std::mem::take(&mut node.outgoing_ports);
+        dbg!(&incoming_ports);
+        dbg!(&outgoing_ports);
+        let node = &n!(node_id);
 
         let top_border_y = node.y;
         let bottom_border_y = node.y + node.height;
@@ -62,6 +65,8 @@ pub fn fixup_gateway_ports(graph: &mut Graph) {
         let node = &mut n!(node_id);
         node.incoming_ports = incoming_ports;
         node.outgoing_ports = outgoing_ports;
+        dbg!(&node.incoming_ports);
+        dbg!(&node.outgoing_ports);
     }
 }
 

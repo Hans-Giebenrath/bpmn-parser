@@ -1,7 +1,7 @@
 use crate::common::bpmn_node;
 use crate::common::bpmn_node::BpmnNode;
 use crate::common::bpmn_node::EventVisual;
-use crate::common::bpmn_node::InterruptingKind;
+use crate::common::bpmn_node::InterruptKind;
 use crate::common::edge::{DataFlowAux, EdgeType, FlowType};
 use crate::common::edge::{MessageFlowAux, RegularEdgeBendPoints};
 use crate::common::graph::PoolAndLane;
@@ -1010,7 +1010,7 @@ _ => (),
                     if node.outgoing.is_empty() {
                         EventVisual::End
                     } else {
-                        EventVisual::Catch(InterruptingKind::Interrupting)
+                        EventVisual::Catch(InterruptKind::Interrupting)
                     },
                 );
             } else if node
@@ -1024,7 +1024,7 @@ _ => (),
                 *event = BpmnNode::Event(
                     EventType::Message,
                     if node.incoming.is_empty() {
-                        EventVisual::Start(InterruptingKind::Interrupting)
+                        EventVisual::Start(InterruptKind::Interrupting)
                     } else {
                         EventVisual::Throw
                     },
@@ -1211,7 +1211,7 @@ F <-jump
 = Pool 1
 # Start Event
 - Task @sender
-. End Event 
+. End Event
 = Pool 2
 # Start Event
 - Task @receiver
