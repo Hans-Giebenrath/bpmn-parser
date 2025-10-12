@@ -1,0 +1,8 @@
+# Above Start
+G ->endjoin
+
+# Below Start
+G ->endjoin
+
+X Gateway <-endjoin
+. Finish.

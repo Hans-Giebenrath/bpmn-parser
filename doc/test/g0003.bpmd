@@ -1,0 +1,10 @@
+// TODO the order of events should be used as a tie breaker. Right now it happens that "Below" is
+// above and "Above" is below.
+# Start Event
+X Gateway ->g1
+
+G <-g1
+. Above Finish
+
+G <-g1
+. Below Finish

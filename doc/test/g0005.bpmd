@@ -1,0 +1,18 @@
+# Start Event
+X ->g1
+
+G <-g1
+- A1
+G ->endjoin
+
+G <-g1
+- B2
+G ->endjoin
+
+G <-g1
+- C3
+G ->endjoin
+
+X <-endjoin
+. Finish.
+

@@ -8,6 +8,7 @@ use crate::common::node::Node;
 use good_lp::*;
 
 pub fn solve_layer_assignment(graph: &mut Graph) {
+    dbg!(&graph);
     for pool in &mut graph.pools {
         for lane in &mut pool.lanes {
             solve_layers(&mut graph.nodes, &graph.edges, lane, &mut graph.num_layers);
@@ -38,7 +39,7 @@ fn solve_layers(nodes: &mut [Node], edges: &[Edge], lane: &mut Lane, num_layers:
             .cloned()
             .map(|edge_id| &edges[edge_id])
             .filter(|edge| edge.flow_type == FlowType::SequenceFlow)
-            .map(|edge| &nodes[edge.to.0])
+            .map(|edge| &nodes[dbg!(&edge).to.0])
             .map(|to| (from.id, to.id))
     });
 

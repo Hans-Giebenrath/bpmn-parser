@@ -1,0 +1,24 @@
+# start
+X ->a ->b
+
+G <-a
+- task a
+X ->m ->n
+
+G <-m
+- task m
+G ->M
+
+G <-n
+- task n
+G ->M
+
+X <-M
+G ->A
+
+G <-b
+- Task b
+G ->A
+
+X <-A
+. end

@@ -8,8 +8,10 @@ use proc_macros::e;
 use proc_macros::n;
 
 pub fn postprocess_ports_and_vertical_edges(graph: &mut Graph) {
+    dbg!(&graph);
     fixup_gateway_ports(graph);
     postprocess_vertical_edges(graph);
+    dbg!(&graph);
 }
 
 /// Gateway ports were assigned {x: node_width/2, y: node_height/2} since it is unclear at what
@@ -17,7 +19,7 @@ pub fn postprocess_ports_and_vertical_edges(graph: &mut Graph) {
 /// after assigning specific y coordinates to all nodes. If the bend dummy if above/below the
 /// gateway node, the port should be in the middle of the top/bottom border. If the bend dummy is
 /// "within" the gateway, then the port should be at the left/right side.
-pub fn fixup_gateway_ports(graph: &mut Graph) {
+fn fixup_gateway_ports(graph: &mut Graph) {
     for node_id in (0..graph.nodes.len()).map(NodeId) {
         let node = &mut n!(node_id);
         if !node.is_gateway() {
@@ -26,51 +28,52 @@ pub fn fixup_gateway_ports(graph: &mut Graph) {
         // XXX make sure there is no `continue` down from here, otherwise these values are lost.
         let mut incoming_ports = std::mem::take(&mut node.incoming_ports);
         let mut outgoing_ports = std::mem::take(&mut node.outgoing_ports);
-        dbg!(&incoming_ports);
-        dbg!(&outgoing_ports);
         let node = &n!(node_id);
 
         let top_border_y = node.y;
         let bottom_border_y = node.y + node.height;
         let left_side_x = 0;
         let right_side_x = node.width;
-        let process = |incoming_ports: &mut [RelativePort], relative_x: usize| {
-            for (edge_id, relative_port) in
-                node.incoming.iter().cloned().zip(incoming_ports.iter_mut())
-            {
-                let edge = &e!(edge_id);
-                if !edge.is_vertical {
-                    continue;
+        let process =
+            |in_or_out: &[EdgeId], in_or_out_ports: &mut [RelativePort], relative_x: usize| {
+                for (edge_id, relative_port) in
+                    in_or_out.iter().cloned().zip(in_or_out_ports.iter_mut())
+                {
+                    let edge = &e!(edge_id);
+                    if !edge.is_vertical {
+                        continue;
+                    }
+                    let other_node = &n!(if edge.from == node.id {
+                        edge.to
+                    } else {
+                        edge.from
+                    });
+                    if other_node.y < top_border_y {
+                        // above
+                        relative_port.y = 0;
+                    } else if other_node.y <= bottom_border_y {
+                        // within
+                        // `y` is not *really* correct, it just puts in into the middle.
+                        // So it could be that an unnecessary bending is introduced if this and
+                        // other are slightly offset. But it probably looks awkward if the edge
+                        // exists slightly higher or lower than the right/left corner of the gateway.
+                        relative_port.y = node.height / 2;
+                        relative_port.x = relative_x;
+                    } else {
+                        // below
+                        relative_port.y = node.height;
+                    }
                 }
-                let other_node = &n!(if edge.from == node.id {
-                    edge.to
-                } else {
-                    edge.from
-                });
-                if other_node.y < top_border_y {
-                    // above
-                    relative_port.y = top_border_y;
-                } else if other_node.y <= bottom_border_y {
-                    // within
-                    relative_port.y = other_node.y;
-                    relative_port.x = relative_x;
-                } else {
-                    // below
-                    relative_port.y = bottom_border_y;
-                }
-            }
-        };
-        process(&mut incoming_ports, left_side_x);
-        process(&mut outgoing_ports, right_side_x);
+            };
+        process(&node.incoming, &mut incoming_ports, left_side_x);
+        process(&node.outgoing, &mut outgoing_ports, right_side_x);
         let node = &mut n!(node_id);
         node.incoming_ports = incoming_ports;
         node.outgoing_ports = outgoing_ports;
-        dbg!(&node.incoming_ports);
-        dbg!(&node.outgoing_ports);
     }
 }
 
-pub fn postprocess_vertical_edges(graph: &mut Graph) {
+fn postprocess_vertical_edges(graph: &mut Graph) {
     for (edge_idx, edge) in graph.edges.iter_mut().enumerate() {
         let edge_id = EdgeId(edge_idx);
         if !edge.is_vertical {
@@ -94,8 +97,8 @@ pub fn postprocess_vertical_edges(graph: &mut Graph) {
         }
 
         match (from.is_dummy(), to.is_dummy()) {
-            (true, false) => *bend_points = VerticalBendDummy((from.x, from.y)),
-            (false, true) => *bend_points = VerticalBendDummy((to.x, to.y)),
+            (true, false) => *bend_points = VerticalBendDummy((from_port.x, from_port.y)),
+            (false, true) => *bend_points = VerticalBendDummy((to_port.x, to_port.y)),
             _ => panic!(""),
         }
     }

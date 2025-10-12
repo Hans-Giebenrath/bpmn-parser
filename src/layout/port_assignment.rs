@@ -1,6 +1,8 @@
 use crate::common::edge::DummyEdgeBendPoints;
+use crate::common::edge::Edge;
 use crate::common::edge::EdgeType;
 use crate::common::graph::Coord3;
+use crate::common::graph::DUMMY_NODE_WIDTH;
 use crate::common::graph::EdgeId;
 use crate::common::graph::Graph;
 use crate::common::graph::NodeId;
@@ -9,6 +11,7 @@ use crate::common::graph::PoolAndLane;
 use crate::common::graph::StartAt;
 use crate::common::graph::add_node;
 use crate::common::graph::adjust_above_and_below_for_new_inbetween;
+use crate::common::graph::node_size;
 use crate::common::node::LayerId;
 use crate::common::node::Node;
 use crate::common::node::NodeType;
@@ -320,6 +323,7 @@ fn handle_nongateway_node(this_node_id: NodeId, graph: &mut Graph) {
     /***************************************************************************/
 
     let this_node = &n!(this_node_id);
+    let this_node_width = this_node.width;
     // The straight-up/down vertical edges are the first (left-most) one on the above/below sides.
     assert!(above_inc <= 1);
     assert!(below_inc <= 1);
@@ -371,6 +375,8 @@ fn handle_nongateway_node(this_node_id: NodeId, graph: &mut Graph) {
         ..
     } = this_node.coord3();
 
+    // TODO The relative_port_x must be relative to the created bend dummies, so there is something
+    // still wrong.
     for (edge_id, relative_port_x, is_where) in united_edges_which_require_bendpoint {
         let to_pool_and_lane = to!(edge_id).pool_and_lane();
         let is_same_lane = from_pool_and_lane == to_pool_and_lane;
@@ -414,6 +420,9 @@ fn handle_nongateway_node(this_node_id: NodeId, graph: &mut Graph) {
             }
         };
 
+        assert!(DUMMY_NODE_WIDTH >= this_node_width);
+        // relative_port_x - (((this_node_width as i64) - (DUMMY_NODE_WIDTH as i64)) / 2);
+        let relative_port_x = (relative_port_x + (DUMMY_NODE_WIDTH / 2)) - (this_node_width / 2);
         add_bend_dummy_node(
             graph,
             edge_id,
@@ -618,15 +627,19 @@ enum Direction {
 fn handle_gateway_node_one_side(this_node_id: NodeId, graph: &mut Graph, direction: Direction) {
     // borrow-checker workaround (with undo at the end)
     let edges = match direction {
-        Direction::Outgoing => std::mem::take(&mut n!(this_node_id).outgoing),
-        Direction::Incoming => std::mem::take(&mut n!(this_node_id).incoming),
+        Direction::Outgoing => n!(this_node_id).outgoing.clone(),
+        Direction::Incoming => n!(this_node_id).incoming.clone(),
     };
     let Coord3 {
         pool_and_lane: this_pool_and_lane,
         layer: this_layer,
         ..
     } = n!(this_node_id).coord3();
-    let relative_port_x = n!(this_node_id).width / 2;
+    // The x is relative to the created bend dummies.
+    let relative_port_x = node_size(&NodeType::BendDummy {
+        originating_node: Default::default(),
+    })
+    .0 / 2;
     let mut has_dummy_nodes_in_same_lane = false;
     let other_topmost_node = match direction {
         Direction::Outgoing => &to!(*edges.first().expect("caller-guaranteed this is not empty")),
@@ -804,10 +817,10 @@ fn handle_gateway_node_one_side(this_node_id: NodeId, graph: &mut Graph, directi
     }
 
     // borrow-checker workaround undo
-    match direction {
-        Direction::Outgoing => n!(this_node_id).outgoing = edges,
-        Direction::Incoming => n!(this_node_id).incoming = edges,
-    };
+    //    match direction {
+    //        Direction::Outgoing => n!(this_node_id).outgoing = edges,
+    //        Direction::Incoming => n!(this_node_id).incoming = edges,
+    //    };
     if has_dummy_nodes_in_same_lane {
         // Take the gateway node out, so the Y-ILP does not force the gateway node exactly
         // between its above and below nodes. The idea is that it should actually be rather
@@ -877,31 +890,58 @@ fn add_bend_dummy_node(
 
             // First remove the reference to the now-replaced edge, so there is certainly room
             // for the new edge references, i.e. no need to allocate accidentally.
-            n!(from_id)
-                .outgoing
-                .retain(|outgoing_edge_idx| *outgoing_edge_idx != edge_id);
-            n!(to_id)
-                .incoming
-                .retain(|incoming_edge_idx| *incoming_edge_idx != edge_id);
+            let edge1 = {
+                let edge1 = EdgeId(graph.edges.len());
+                graph.edges.push(Edge {
+                    from: from_id,
+                    to: dummy_node_id,
+                    edge_type: EdgeType::DummyEdge {
+                        original_edge: edge_id,
+                        bend_points: DummyEdgeBendPoints::ToBeDeterminedOrStraight,
+                    },
+                    flow_type: flow_type.clone(),
+                    is_vertical: false,
+                    is_reversed: false,
+                    stroke_color: None,
+                    stays_within_lane: n!(from_id).pool_and_lane() == pool_and_lane,
+                });
+                for outgoing_edge_idx in &mut n!(from_id).outgoing {
+                    if *outgoing_edge_idx == edge_id {
+                        *outgoing_edge_idx = edge1;
+                        break;
+                    }
+                }
+                n!(dummy_node_id).incoming.push(edge1);
 
-            let edge1 = graph.add_edge(
-                from_id,
-                dummy_node_id,
-                EdgeType::DummyEdge {
-                    original_edge: edge_id,
-                    bend_points: DummyEdgeBendPoints::ToBeDeterminedOrStraight,
-                },
-                flow_type.clone(),
-            );
-            let edge2 = graph.add_edge(
-                dummy_node_id,
-                to_id,
-                EdgeType::DummyEdge {
-                    original_edge: edge_id,
-                    bend_points: DummyEdgeBendPoints::ToBeDeterminedOrStraight,
-                },
-                flow_type,
-            );
+                edge1
+            };
+            let edge2 = {
+                let edge2 = EdgeId(graph.edges.len());
+                graph.edges.push(Edge {
+                    from: dummy_node_id,
+                    to: to_id,
+                    edge_type: EdgeType::DummyEdge {
+                        original_edge: edge_id,
+                        bend_points: DummyEdgeBendPoints::ToBeDeterminedOrStraight,
+                    },
+                    flow_type,
+                    is_vertical: false,
+                    is_reversed: false,
+                    stroke_color: None,
+                    stays_within_lane: pool_and_lane == n!(to_id).pool_and_lane(),
+                });
+
+                for incoming_edge_idx in &mut n!(to_id).incoming {
+                    if *incoming_edge_idx == edge_id {
+                        *incoming_edge_idx = edge2;
+                        break;
+                    }
+                }
+
+                n!(dummy_node_id).outgoing.push(edge2);
+
+                edge2
+            };
             if reference_node == from_id {
                 e!(edge1).is_vertical = true;
             } else {

@@ -1,0 +1,8 @@
+# Start Event
+X Gateway ->above"Go Here" ->below"No, here!"
+
+G <-above
+. Above Finish
+
+G <-below
+. Below Finish

@@ -256,10 +256,10 @@ impl Node {
     }
 
     pub fn port_of_outgoing(&self, edge_id: EdgeId) -> Option<AbsolutePort> {
-        dbg!(&self.outgoing)
+        self.outgoing
             .iter()
             .cloned()
-            .zip(dbg!(&self.outgoing_ports).iter())
+            .zip(self.outgoing_ports.iter())
             .find(|(inner_edge_id, _)| *inner_edge_id == edge_id)
             .map(|(_, port)| port + self.xy())
     }

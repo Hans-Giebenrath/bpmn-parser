@@ -14,8 +14,8 @@ use clap::Parser;
 use layout::all_crossing_minimization::reduce_all_crossings;
 use layout::dummy_node_generation::generate_dummy_nodes;
 use layout::edge_routing::edge_routing;
-use layout::fixup_gateway_ports::fixup_gateway_ports;
 use layout::port_assignment::port_assignment;
+use layout::postprocess_ports_and_vertical_edges::postprocess_ports_and_vertical_edges;
 use layout::replace_dummy_nodes::replace_dummy_nodes;
 use layout::solve_layer_assignment::solve_layer_assignment;
 use layout::straight_edge_routing::find_straight_edges;
@@ -27,11 +27,11 @@ use crate::common::graph::{Graph, sort_lanes_by_layer};
 #[derive(Parser)]
 #[command(version, about, long_about = None)]
 struct Cli {
-    /// Input DSL file. If missing, the input file is read from STDIN.
+    /// Input DSL file. If missing, the input file is read from standard input.
     #[arg(short, long, value_name = "IN_FILE")]
     input: Option<std::path::PathBuf>,
 
-    /// Output XML file. If missing, the xml data will be written to STDOUT.
+    /// Output XML file. If missing, the xml data will be written to standard output.
     #[arg(short, long, value_name = "OUT_FILE")]
     output: Option<std::path::PathBuf>,
 
@@ -80,7 +80,7 @@ pub fn layout_graph(graph: &mut Graph) {
     assign_xy_ilp(graph);
 
     // Phase 5
-    fixup_gateway_ports(graph); // TODO write this one
+    postprocess_ports_and_vertical_edges(graph);
     try_move_nodes_into_half_layer(graph);
     find_straight_edges(graph);
     edge_routing(graph);

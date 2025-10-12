@@ -17,6 +17,9 @@ use std::mem;
 
 use super::edge::FlowType;
 
+// Must be (one of) the widest block(s).
+pub const DUMMY_NODE_WIDTH: usize = 100;
+
 /// Represents a graph consisting of nodes and edges.
 #[derive(Default)]
 pub struct Graph {
@@ -140,8 +143,7 @@ impl Graph {
             is_vertical: false,
             is_reversed: false,
             stroke_color: None,
-            stays_within_lane: self.nodes[from].pool == self.nodes[to].pool
-                && self.nodes[from].lane == self.nodes[to].lane,
+            stays_within_lane: self.nodes[from].pool_and_lane() == self.nodes[to].pool_and_lane(),
         });
 
         self.nodes[from].outgoing.push(edge_id);
@@ -172,12 +174,14 @@ impl Graph {
         // Modifies the edge in place (instead of marking it as deleted and creating a new one), so
         // no unnecessary hole is created within graph.edges.
         let edge = &mut self.edges[edge_id];
+        // This function is not meant to be called after port assignment. Or fix the function or IDK
+        // depends on the context.
         assert!(edge.from != edge.to);
-        assert!(self.nodes[edge.from].outgoing.iter().any(|e| *e == edge_id));
+        assert!(self.nodes[edge.from].outgoing.contains(&edge_id));
         self.nodes[edge.from].outgoing.retain(|e| *e != edge_id);
         self.nodes[edge.from].incoming.push(edge_id);
 
-        assert!(self.nodes[edge.to].incoming.iter().any(|e| *e == edge_id));
+        assert!(self.nodes[edge.to].incoming.contains(&edge_id));
         self.nodes[edge.to].incoming.retain(|e| *e != edge_id);
         self.nodes[edge.to].outgoing.push(edge_id);
 
@@ -392,10 +396,9 @@ impl Graph {
 pub fn node_size(node_type: &NodeType) -> (usize, usize) {
     let event = match &node_type {
         NodeType::DummyNode | NodeType::BendDummy { .. } => {
-            let this_width_value_can_probably_be_smaller = 100;
             // Height of 0 so there is just padding between the lines.
             // Otherwise, there would be too much whitespace between lines.
-            return (this_width_value_can_probably_be_smaller, 0);
+            return (DUMMY_NODE_WIDTH, 0);
         }
         NodeType::RealNode { event, .. } => event,
     };
@@ -426,18 +429,24 @@ impl Debug for Graph {
         for n in &self.nodes {
             writeln!(
                 f,
-                "  node: {} (p: {}, l: {}, lyr: {:?}) - {:?} - in: {:?}, out: {:?}",
+                "  node: {} (p: {}, l: {}, lyr: {:?}) - {:?} - in: {:?}, out: {:?}, in_ports: {:?}, out_ports: {:?}",
                 n.id.0,
                 n.pool.0,
                 n.lane.0,
                 n.layer_id,
                 n.display_text(),
                 n.incoming,
-                n.outgoing
+                n.outgoing,
+                n.incoming_ports,
+                n.outgoing_ports,
             )?;
         }
-        for e in &self.edges {
-            writeln!(f, "  edge: {} -> {}", e.from.0, e.to.0)?;
+        for (idx, e) in self.edges.iter().enumerate() {
+            writeln!(
+                f,
+                "  edge {idx}: {} -> {}, {:?}, {:?}",
+                e.from.0, e.to.0, e.flow_type, e.edge_type
+            )?;
         }
         for (pool_idx, pool) in self.pools.iter().enumerate() {
             for (lane_idx, lane) in pool.lanes.iter().enumerate() {
@@ -562,7 +571,6 @@ pub(crate) fn adjust_above_and_below_for_new_inbetween(
         below.node_above_in_same_lane = Some(inbetween);
     }
 
-    dbg!(place);
     assert_ne!(Some(inbetween), above);
     assert_ne!(Some(inbetween), below);
     n!(inbetween).node_above_in_same_lane = above;

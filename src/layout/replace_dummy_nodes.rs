@@ -4,10 +4,10 @@ use crate::common::edge::RegularEdgeBendPoints;
 use crate::common::graph::EdgeId;
 use crate::common::graph::Graph;
 use crate::common::node::AbsolutePort;
-use crate::common::node::XY;
 
 // Assigns bend points to the Regular edges. Afterwards, no more dummy nodes or edges are present.
 pub fn replace_dummy_nodes(graph: &mut Graph) {
+    dbg!(&graph);
     for edge_id in (0..graph.edges.len()).map(EdgeId) {
         let edge = &mut graph.edges[edge_id];
         match &mut edge.edge_type {
@@ -48,7 +48,7 @@ pub fn replace_dummy_nodes(graph: &mut Graph) {
             } => {
                 let text = text.clone();
                 let first_dummy_edge_id = *first_dummy_edge;
-
+                dbg!();
                 let AbsolutePort {
                     x: from_x,
                     y: from_y,
@@ -64,6 +64,7 @@ pub fn replace_dummy_nodes(graph: &mut Graph) {
                 // not necessarily be consecutive in `graph.edges`.
                 loop {
                     let edge = &graph.edges[cur_dummy_edge_id];
+                    dbg!(&edge);
                     let dummy_bend_points = if let EdgeType::DummyEdge {
                         original_edge,
                         bend_points,
