@@ -22,18 +22,8 @@
 use crate::common::edge::DummyEdgeBendPoints;
 use crate::common::edge::{EdgeType, RegularEdgeBendPoints};
 use crate::common::graph::{EdgeId, Graph};
-use crate::common::node::{AbsolutePort, RelativePort};
+use crate::common::node::AbsolutePort;
 use itertools::Itertools;
-
-#[derive(Debug)]
-pub struct EdgeRoutingNodeData {
-    /// If this node has multiple incoming edges (is a joining gateway) then these
-    /// should be treated as one group. Since the "left" nodes::outgoing are iterated,
-    /// we use this index to add us to the already-created SegmentGroup (or if we are the first,
-    /// create it and store the EdgeRoutingNodeData).
-    incoming_routing_edge_idx: Option<usize>,
-    outgoing_routing_edge_idx: Option<usize>,
-}
 
 #[derive(Debug)]
 struct VerticalSegment {

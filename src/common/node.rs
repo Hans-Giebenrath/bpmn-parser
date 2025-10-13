@@ -10,7 +10,7 @@ use crate::common::graph::PoolAndLane;
 use crate::common::graph::PoolId;
 use crate::common::graph::SdeId;
 use crate::layout::all_crossing_minimization::CrossingMinimizationNodeData;
-use crate::layout::edge_routing::EdgeRoutingNodeData;
+use crate::layout::solve_layer_assignment::LayerAssignmentData;
 use crate::layout::xy_ilp::XyIlpNodeData;
 use crate::lexer::DataAux;
 use crate::lexer::PeBpmnProtection;
@@ -53,9 +53,9 @@ pub enum NodeType {
 #[derive(Debug)]
 pub enum NodePhaseAuxData {
     None,
+    LayerAssignmentData(LayerAssignmentData),
     CrossingMinimizationNodeData(CrossingMinimizationNodeData),
     XyIlpNodeData(XyIlpNodeData),
-    EdgeRoutingNodeData(EdgeRoutingNodeData),
 }
 
 #[derive(PartialEq, PartialOrd, Ord, Eq, Debug, Clone, Copy, Hash)]

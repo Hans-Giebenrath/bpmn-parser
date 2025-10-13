@@ -1,92 +1,74 @@
-use crate::common::node::LayerId;
-use std::collections::HashMap;
+use crate::common::node::NodePhaseAuxData;
+use proc_macros::n;
 
-use crate::common::edge::{Edge, FlowType};
 use crate::common::graph::Graph;
-use crate::common::lane::Lane;
 use crate::common::node::Node;
 use good_lp::*;
 
 pub fn solve_layer_assignment(graph: &mut Graph) {
-    dbg!(&graph);
-    for pool in &mut graph.pools {
-        for lane in &mut pool.lanes {
-            solve_layers(&mut graph.nodes, &graph.edges, lane, &mut graph.num_layers);
-        }
-    }
+    solve_layers(graph);
 
     solve_data_object_layers_via_arithmetic_mean(graph);
 }
 
-// TODO Imagine this situation:
-//   Task1 in Lane1 -> TaskA in Lane2 -> TaskB in Lane2 -> Task2 in LaneA
-// There needs to be a left-right constraint between Task1 and Task2, even though
-// they have no direct connection. Probably through some reachability analysis.
-// Not yet done as this may be a rare situation.
-fn solve_layers(nodes: &mut [Node], edges: &[Edge], lane: &mut Lane, num_layers: &mut usize) {
+#[derive(Debug)]
+pub struct LayerAssignmentData(Variable);
+
+#[track_caller]
+fn aux(node: &Node) -> Variable {
+    match node.aux {
+        NodePhaseAuxData::LayerAssignmentData(LayerAssignmentData(variable)) => variable,
+        _ => unreachable!(),
+    }
+}
+
+fn solve_layers(graph: &mut Graph) {
     let mut vars = variables!();
-    let mut layer_vars = HashMap::new();
-    // Sequence flows, within the same
-    let nodes_iter = lane
-        .nodes
-        .iter()
-        .cloned()
-        .map(|node_id| &nodes[node_id])
-        .filter(|node| !node.is_data());
-    let edges = nodes_iter.clone().flat_map(|from| {
-        from.outgoing
-            .iter()
-            .cloned()
-            .map(|edge_id| &edges[edge_id])
-            .filter(|edge| edge.flow_type == FlowType::SequenceFlow)
-            .map(|edge| &nodes[dbg!(&edge).to.0])
-            .map(|to| (from.id, to.id))
-    });
 
-    let max_layer = lane.nodes.len() as f64;
-
-    nodes_iter.clone().for_each(|n| {
-        let n = n.id;
-        let layer_var = vars.add(variable().integer().min(0).max(max_layer));
-        layer_vars.insert(n, layer_var);
-    });
+    let num_nodes = graph.nodes.len();
+    for node in graph.nodes.iter_mut().filter(|node| !node.is_data()) {
+        node.aux = NodePhaseAuxData::LayerAssignmentData(LayerAssignmentData(
+            vars.add(variable().integer().min(0).max(num_nodes as f64)),
+        ));
+    }
 
     let mut objective = Expression::from(0.0);
-    for (from, to) in edges.clone() {
-        let from_var = *layer_vars.get(&from).unwrap();
-        let to_var = *layer_vars.get(&to).unwrap();
+    for edge in graph
+        .edges
+        .iter_mut()
+        .filter(|edge| edge.is_sequence_flow())
+    {
+        let from_var = aux(&n!(edge.from));
+        let to_var = aux(&n!(edge.to));
 
+        // Favor short edges
         objective += to_var - from_var;
+        // Try to pull start nodes to the left. But only starts, let the rest be placed however the
+        // algorithm thinks. Not sure yet whether this is good.
+        if n!(edge.from).incoming.is_empty() {
+            objective += 0.1 * from_var;
+        }
     }
 
     let mut problem = vars.minimise(objective).using(default_solver);
     problem.set_parameter("loglevel", "0");
 
-    for (from, to) in edges {
-        let from_var = *layer_vars.get(&from).unwrap();
-        let to_var = *layer_vars.get(&to).unwrap();
-
+    for edge in graph
+        .edges
+        .iter_mut()
+        .filter(|edge| edge.is_sequence_flow())
+    {
+        let from_var = aux(&n!(edge.from));
+        let to_var = aux(&n!(edge.to));
         problem = problem.with((to_var - from_var).geq(1));
     }
 
     let solution = problem.solve().unwrap();
-    let mut smallest_layer = usize::MAX;
-    for layer_var in layer_vars.values() {
-        let layer_value = solution.value(*layer_var) as usize;
-        smallest_layer = smallest_layer.min(layer_value);
-    }
+    graph.num_layers = usize::MIN;
 
-    for (node_id, layer_var) in layer_vars {
-        let layer_value = solution.value(layer_var) as usize;
-        nodes[node_id].layer_id =
-            LayerId(layer_value.checked_sub(smallest_layer).expect(
-                "Did the solver change the value of the returned values between iterations?",
-            ));
-        smallest_layer = smallest_layer.min(layer_value);
-    }
-
-    if let Some(largest_layer) = lane.nodes.iter().map(|n| nodes[n.0].layer_id.0).max() {
-        *num_layers = (*num_layers).max(largest_layer + 1);
+    for node in graph.nodes.iter_mut().filter(|node| !node.is_data()) {
+        node.layer_id.0 = solution.value(aux(node)) as usize;
+        graph.num_layers = graph.num_layers.max(node.layer_id.0 + 1);
     }
 }
 
