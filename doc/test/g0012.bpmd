@@ -1,0 +1,24 @@
+= Pool
+
+== Lane 1
+# Start A 1
+G ->j1
+
+# Start C 2
+G ->j2
+
+X <-j1
+. Finish.
+
+
+== Lane 2
+
+# Start A 2
+G ->j2
+
+# Start C 1
+G ->j1
+
+
+X <-j2
+. Finish.
