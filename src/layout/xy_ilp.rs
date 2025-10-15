@@ -222,7 +222,7 @@ fn assign_y(graph: &mut Graph, pool: PoolId, lane: LaneId, min_y_value: usize) -
     }
 
     let mut problem = vars.minimise(objective).using(default_solver);
-    problem.set_parameter("loglevel", "0");
+    //problem.set_parameter("loglevel", "0");
 
     fn y_padding(n: &Node, cfg: &Config) -> usize {
         if n.is_dummy() {

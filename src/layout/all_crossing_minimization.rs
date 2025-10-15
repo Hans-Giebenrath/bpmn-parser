@@ -301,7 +301,7 @@ pub fn reduce_all_crossings(graph: &mut Graph) {
     handle_message_flows(graph, v, &mut objective);
 
     let mut problem = vars.minimise(objective).using(default_solver);
-    problem.set_parameter("loglevel", "0");
+    //problem.set_parameter("loglevel", "0");
 
     for layer in &g.layers {
         layer.iter_ijkl(&g.all_nodes).for_each(|ijkl| {

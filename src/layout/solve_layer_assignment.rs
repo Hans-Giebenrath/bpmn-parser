@@ -51,7 +51,7 @@ fn solve_layers(graph: &mut Graph) {
     }
 
     let mut problem = vars.minimise(objective).using(default_solver);
-    problem.set_parameter("loglevel", "0");
+    //problem.set_parameter("loglevel", "0");
 
     for edge in graph
         .edges
