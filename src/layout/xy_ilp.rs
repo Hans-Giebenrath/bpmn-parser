@@ -7,8 +7,12 @@ use crate::common::graph::PoolId;
 use crate::common::iter_ext::IteratorExt;
 use crate::common::node::Node;
 use crate::common::node::NodePhaseAuxData;
+use crate::common::node::NodeType;
 use good_lp::*;
+use proc_macros::e;
+use proc_macros::from;
 use proc_macros::n;
+use proc_macros::to;
 
 #[derive(Debug)]
 pub struct XyIlpNodeData {
@@ -139,6 +143,31 @@ fn assign_y(graph: &mut Graph, pool: PoolId, lane: LaneId, min_y_value: usize) -
         objective += diff_var * edge_weight;
     }
 
+    // Somehow force the bend dummies to the of the lanes. Currently this is problematic as it is
+    // too unconstrained, so if there are no other nodes blocking it, ILP will put it to infinity.
+    todo!("fix this");
+    for node_id in node_ids_iter.clone() {
+        let node = &n!(node_id);
+        if !matches!(node.node_type, NodeType::BendDummy { .. }) {
+            continue;
+        }
+        for edge_id in &node.outgoing {
+            match to!(*edge_id).pool_and_lane().cmp(&node.pool_and_lane()) {
+                std::cmp::Ordering::Less => objective += aux(node).var,
+                std::cmp::Ordering::Greater => objective -= aux(node).var,
+                _ => (),
+            }
+        }
+        for edge_id in &node.incoming {
+            match from!(*edge_id).pool_and_lane().cmp(&node.pool_and_lane()) {
+                std::cmp::Ordering::Less => objective += aux(node).var,
+                std::cmp::Ordering::Greater => objective -= aux(node).var,
+                _ => (),
+            }
+        }
+        // if (1) the edge crosses lanes and (2) the current lane is a bend dummy, then
+    }
+
     // We want to balance gateway nodes between their outgoing/incoming branching nodes of the same
     // lane. For X gateways actually a better strategy would be to align it with the first `->` in
     // the BPMD, as this is likely the success case and should just go straight. But we will come
@@ -246,7 +275,7 @@ fn assign_y(graph: &mut Graph, pool: PoolId, lane: LaneId, min_y_value: usize) -
                     // much of a height as the gateway node would.
                     n.is_gateway()
                         .then_some(())
-                        .and_then(|()| n.node_above_in_same_lane)
+                        .and(n.node_above_in_same_lane)
                         .map(|prev| (&n!(prev), n)),
                 )
         })
@@ -256,59 +285,6 @@ fn assign_y(graph: &mut Graph, pool: PoolId, lane: LaneId, min_y_value: usize) -
                 (aux(below).var - aux(above).var).geq((above.height + padding) as f64),
             );
         });
-
-    // TODO the thing is that when gateways start to have edges come out of the top and bottom,
-    // then we need to push up/down the direct neighbors of the gateway. Right now gateway
-    // edges go horizontally and then spread out vertically, so there is no collision risk.
-    //        for gateway_node in
-    //    graph.pools[pool.0].lanes[lane.0].nodes
-    //            .iter()
-    //        .map(|n| &graph.nodes[n.0])
-    //            .filter(|n| n.is_gateway())
-    //        {
-    //            let incoming_or_outgoing = match (gateway_node.incoming.len(), gateway_node.outgoing.len()) {
-    //            // Should go out just horizontally, so no special casing.
-    //              (1,1) => continue,
-    //            (1,_) => gateway_node.outgoing.iter().map(|e| &graph.nodes[graph.edges[e.0].to.0]). WELLP at this place we would need to check whether something crosses the lane?
-    //            (_,1) => gateway_node.incoming.iter(),
-    //(_,_) => todo!("A gateway has multiple incoming and multiple outgoing edges. Is that possible? Comment edge or something like that?")
-    //            };
-    //            incoming_or_outgoing.clone().map(|e| &graph.edges[e.0])
-    //            let highest = gateway_node.incoming
-    //            let lowest = prev_layer.last().unwrap();
-    //            let highest_var = highest.var;
-    //            let lowest_var = lowest.var;
-    //            //let next_layer = all_nodes
-    //            //    .get(&(
-    //            //        gateway_node.pool,
-    //            //        gateway_node.lane,
-    //            //        Some(gateway_node.layer_id.unwrap() + 1),
-    //            //    ))
-    //            //    .unwrap();
-    //            //let next_highest = next_layer.first().unwrap();
-    //            //let next_lowest = next_layer.last().unwrap();
-    //            //let next_highest_var =
-    //            //    get_y_var(&y_vars, &next_highest.id, &next_highest.is_datanode).unwrap();
-    //            //let next_lowest_var =
-    //            //    get_y_var(&y_vars, &next_lowest.id, &next_lowest.is_datanode).unwrap();
-    //            for (j, node) in nodes.iter().enumerate() {
-    //                let node_var = aux(&graph.nodes[node.id]).var;
-    //                if node.is_dummy {
-    //                    continue;
-    //                }
-    //                if j < i {
-    //                    problem = problem
-    //                        .with((highest_var - node_var).geq(graph.config.min_space_in_gateway_layer))
-    //                } else if j > i {
-    //                    problem = problem
-    //                        .with((node_var - lowest_var).geq(graph.config.min_space_in_gateway_layer))
-    //                } else {
-    //                    // problem = problem.with(((highest_var + lowest_var) / 2).eq(node_var));
-    //                    // problem =
-    //                    //     problem.with(((next_highest_var + next_lowest_var) / 2).eq(node_var));
-    //                }
-    //            }
-    //        }
 
     // Helper construct to resolve the minimization of |from.y - to.y|
     for (from_idx, to_idx, diff_var) in diff_vars.iter() {

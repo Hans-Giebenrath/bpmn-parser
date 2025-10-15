@@ -1,0 +1,16 @@
+= Pool
+
+== Lane 1
+# Start Event
+X G1 ->g1
+
+G <-g2
+. Fin C 2
+
+== Lane 2
+
+# Start Event
+X G2 ->g2
+
+G <-g1
+. Fin C 1
