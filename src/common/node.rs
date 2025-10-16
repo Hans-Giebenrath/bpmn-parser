@@ -47,8 +47,41 @@ pub enum NodeType {
     // segments for edges that leave at the top or bottom side of a node.
     BendDummy {
         originating_node: NodeId,
+        kind: BendDummyKind,
     },
 }
+
+/// This is primarily used to make some Y-ILP stuff easier.
+/// Check whether it makes sense to inline this, i.e. make more BendDummy variants on NodeType.
+#[derive(Debug)]
+pub(crate) enum BendDummyKind {
+    /// The target node is in another lane but the bend dummy stayed *in the same* lane as the
+    /// gateway node due to a blocker.
+    FromGatewayBlockedLaneCrossing {
+        gateway_node: NodeId,
+        target_node: NodeId,
+    },
+    /// The target node is in another lane and the bend dummy could move out of the lane of the
+    /// originating gateway node, but *not necessarily* resides in the target lane. If semantics
+    /// requires, this might be split up to better differentiate.
+    FromGatewayFreeLaneCrossing {
+        gateway_node: NodeId,
+        target_node: NodeId,
+    },
+    /// The target node is in the same lane as the gateway node, so no lane crossing is required at
+    /// all.
+    FromGatewaySameLane {
+        gateway_node: NodeId,
+        target_node: NodeId,
+    },
+    /// For boundary events we don't have such finicky details at all.
+    FromBoundaryEvent,
+}
+
+//struct BendDummyCrossLaneTarget {
+//    cross_lane_edge: EdgeId,
+//    gateway_edge:
+//}
 
 #[derive(Debug)]
 pub enum NodePhaseAuxData {

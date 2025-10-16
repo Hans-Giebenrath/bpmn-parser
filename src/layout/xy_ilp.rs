@@ -5,6 +5,7 @@ use crate::common::graph::Graph;
 use crate::common::graph::LaneId;
 use crate::common::graph::PoolId;
 use crate::common::iter_ext::IteratorExt;
+use crate::common::node::BendDummyKind;
 use crate::common::node::Node;
 use crate::common::node::NodePhaseAuxData;
 use crate::common::node::NodeType;
@@ -143,27 +144,21 @@ fn assign_y(graph: &mut Graph, pool: PoolId, lane: LaneId, min_y_value: usize) -
         objective += diff_var * edge_weight;
     }
 
-    // Somehow force the bend dummies to the of the lanes. Currently this is problematic as it is
+    // Somehow force the bend dummies to the borders of the lanes. Currently this is problematic as it is
     // too unconstrained, so if there are no other nodes blocking it, ILP will put it to infinity.
-    todo!("fix this");
     for node_id in node_ids_iter.clone() {
         let node = &n!(node_id);
-        if !matches!(node.node_type, NodeType::BendDummy { .. }) {
+        let NodeType::BendDummy {
+            kind: BendDummyKind::FromGatewayBlockedLaneCrossing { target_node, .. },
+            ..
+        } = node.node_type
+        else {
             continue;
-        }
-        for edge_id in &node.outgoing {
-            match to!(*edge_id).pool_and_lane().cmp(&node.pool_and_lane()) {
-                std::cmp::Ordering::Less => objective += aux(node).var,
-                std::cmp::Ordering::Greater => objective -= aux(node).var,
-                _ => (),
-            }
-        }
-        for edge_id in &node.incoming {
-            match from!(*edge_id).pool_and_lane().cmp(&node.pool_and_lane()) {
-                std::cmp::Ordering::Less => objective += aux(node).var,
-                std::cmp::Ordering::Greater => objective -= aux(node).var,
-                _ => (),
-            }
+        };
+        match n!(target_node).pool_and_lane().cmp(&node.pool_and_lane()) {
+            std::cmp::Ordering::Less => objective += aux(node).var,
+            std::cmp::Ordering::Greater => objective -= aux(node).var,
+            _ => (),
         }
         // if (1) the edge crosses lanes and (2) the current lane is a bend dummy, then
     }
@@ -179,74 +174,40 @@ fn assign_y(graph: &mut Graph, pool: PoolId, lane: LaneId, min_y_value: usize) -
         .map(|node_id| &graph.nodes[node_id])
         .filter(|n| n.is_gateway())
     {
-        {
-            let first = gateway
-                .incoming
-                .iter()
-                .map(|e| &graph.edges[*e])
-                .filter(|e| e.flow_type == FlowType::SequenceFlow)
-                .map(|e| &graph.nodes[e.from])
-                .find(|n| n.pool_and_lane() == gateway.pool_and_lane());
-            let last = gateway
-                .incoming
-                .iter()
-                .map(|e| &graph.edges[*e])
-                .filter(|e| e.flow_type == FlowType::SequenceFlow)
-                .map(|e| &graph.nodes[e.from])
-                .rfind(|n| n.pool_and_lane() == gateway.pool_and_lane());
-            if let (Some(first), Some(last)) = (first, last)
-                && first.id != last.id
+        fn target_node<'a>(node: &Node, graph: &'a Graph) -> Option<&'a Node> {
+            if let NodeType::BendDummy {
+                kind: BendDummyKind::FromGatewaySameLane { target_node, .. },
+                ..
+            } = &node.node_type
             {
-                let var = vars.add(variable().min(0.0));
-                gateway_balancing_constraint_vars.push((
-                    var,
-                    ((aux(gateway).var + (gateway.height / 2) as f64)
-                        - (aux(first).var + (first.height / 2) as f64))
-                        .leq(var),
-                ));
-                gateway_balancing_constraint_vars.push((
-                    var,
-                    ((aux(last).var + (last.height / 2) as f64)
-                        - (aux(gateway).var + (gateway.height / 2) as f64))
-                        .leq(var),
-                ));
-                objective += var;
+                Some(&n!(*target_node))
+            } else {
+                None
             }
         }
 
-        {
-            let first = gateway
-                .outgoing
-                .iter()
-                .map(|e| &graph.edges[*e])
-                .filter(|e| e.flow_type == FlowType::SequenceFlow)
-                .map(|e| &graph.nodes[e.to])
-                .find(|n| n.pool_and_lane() == gateway.pool_and_lane());
-            let last = gateway
-                .outgoing
-                .iter()
-                .map(|e| &graph.edges[*e])
-                .filter(|e| e.flow_type == FlowType::SequenceFlow)
-                .map(|e| &graph.nodes[e.to])
-                .rfind(|n| n.pool_and_lane() == gateway.pool_and_lane());
-            if let (Some(first), Some(last)) = (first, last)
-                && first.id != last.id
-            {
-                let var = vars.add(variable().min(0.0));
-                gateway_balancing_constraint_vars.push((
-                    var,
-                    ((aux(gateway).var + (gateway.height / 2) as f64)
-                        - (aux(first).var + (first.height / 2) as f64))
-                        .leq(var),
-                ));
-                gateway_balancing_constraint_vars.push((
-                    var,
-                    ((aux(last).var + (last.height / 2) as f64)
-                        - (aux(gateway).var + (gateway.height / 2) as f64))
-                        .leq(var),
-                ));
-                objective += var;
-            }
+        let iter = find_first_last(gateway.incoming.iter(), |edge_id| {
+            target_node(&from!(*edge_id), graph)
+        })
+        .chain(find_first_last(gateway.outgoing.iter(), |edge_id| {
+            target_node(&to!(*edge_id), graph)
+        }))
+        .filter(|(first, last)| first.id != last.id);
+        for (first, last) in iter {
+            let var = vars.add(variable().min(0.0));
+            gateway_balancing_constraint_vars.push((
+                var,
+                ((aux(gateway).var + (gateway.height / 2) as f64)
+                    - (aux(first).var + (first.height / 2) as f64))
+                    .leq(var),
+            ));
+            gateway_balancing_constraint_vars.push((
+                var,
+                ((aux(last).var + (last.height / 2) as f64)
+                    - (aux(gateway).var + (gateway.height / 2) as f64))
+                    .leq(var),
+            ));
+            objective += var;
         }
     }
 
@@ -260,6 +221,7 @@ fn assign_y(graph: &mut Graph, pool: PoolId, lane: LaneId, min_y_value: usize) -
             cfg.regular_node_y_padding
         }
     }
+
     // Add padding constraints between neighboring nodes.
     node_ids_iter
         .clone()
@@ -373,4 +335,26 @@ fn is_gateway_branching_flow_within_same_lane(edge: &Edge, graph: &Graph) -> boo
     edge.is_sequence_flow()
         && (graph.nodes[edge.from].pool_and_lane() == graph.nodes[edge.to].pool_and_lane())
         && (from_is_branching() || to_is_joining())
+}
+
+/// Find the first and last elements (from the front and back, respectively)
+/// of a `DoubleEndedIterator` that satisfy `pred`.
+///
+/// Returns `(first, last)`, each as an `Option`.
+///
+/// If exactly one matching element exists, both `first` and `last` will be
+/// that same element (requires `Clone` to duplicate the owned item).
+pub fn find_first_last<I, F, T>(mut iter: I, mut pred: F) -> impl Iterator<Item = (T, T)>
+where
+    I: DoubleEndedIterator + Clone,
+    F: FnMut(I::Item) -> Option<T>,
+{
+    // Walk inward from both ends until we have both matches or we exhaust the iterator.
+
+    // If only one match exists overall, mirror it so both are equal.
+    let mut rev = iter.clone().rev();
+    match (iter.find_map(&mut pred), rev.find_map(&mut pred)) {
+        (Some(first), Some(last)) => Some((first, last)).into_iter(),
+        _ => None.into_iter(),
+    }
 }
