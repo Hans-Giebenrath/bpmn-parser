@@ -12,6 +12,7 @@ use crate::common::graph::StartAt;
 use crate::common::graph::add_node;
 use crate::common::graph::adjust_above_and_below_for_new_inbetween;
 use crate::common::graph::node_size;
+use crate::common::node::BendDummyKind;
 use crate::common::node::LayerId;
 use crate::common::node::Node;
 use crate::common::node::NodeType;
@@ -431,6 +432,7 @@ fn handle_nongateway_node(this_node_id: NodeId, graph: &mut Graph) {
             place,
             this_node_id,
             relative_port_x,
+            BendDummyKind::FromBoundaryEvent,
         );
     }
     n!(this_node_id).incoming_ports = incoming_ports;
@@ -484,7 +486,10 @@ fn handle_gateway_node(this_node_id: NodeId, graph: &mut Graph) {
     // point to the original above/below. Note: If the original above itself was already a bend
     // dummy, it is replaced by its originating node to ensure proper spacing as well.
     n!(this_node_id).node_above_in_same_lane = above.map(|node_id| {
-        if let NodeType::BendDummy { originating_node } = &n!(node_id).node_type {
+        if let NodeType::BendDummy {
+            originating_node, ..
+        } = &n!(node_id).node_type
+        {
             assert_ne!(*originating_node, this_node_id);
             *originating_node
         } else {
@@ -493,7 +498,10 @@ fn handle_gateway_node(this_node_id: NodeId, graph: &mut Graph) {
         }
     });
     n!(this_node_id).node_below_in_same_lane = below.map(|node_id| {
-        if let NodeType::BendDummy { originating_node } = &n!(node_id).node_type {
+        if let NodeType::BendDummy {
+            originating_node, ..
+        } = &n!(node_id).node_type
+        {
             assert_ne!(*originating_node, this_node_id);
             *originating_node
         } else {
@@ -638,6 +646,7 @@ fn handle_gateway_node_one_side(this_node_id: NodeId, graph: &mut Graph, directi
     // The x is relative to the created bend dummies.
     let relative_port_x = node_size(&NodeType::BendDummy {
         originating_node: Default::default(),
+        kind: BendDummyKind::FromBoundaryEvent,
     })
     .0 / 2;
     let mut has_dummy_nodes_in_same_lane = false;
@@ -797,6 +806,22 @@ fn handle_gateway_node_one_side(this_node_id: NodeId, graph: &mut Graph, directi
                 );
             }
         }
+        let kind = if this_pool_and_lane == other_node_pool_lane {
+            BendDummyKind::FromGatewayToSameLane {
+                gateway_node: this_node_id,
+                target_node: other_node.id,
+            }
+        } else if best_position.1 == this_pool_and_lane {
+            BendDummyKind::FromGatewayBlockedLaneCrossing {
+                gateway_node: this_node_id,
+                target_node: other_node.id,
+            }
+        } else {
+            BendDummyKind::FromGatewayFreeLaneCrossing {
+                gateway_node: this_node_id,
+                target_node: other_node.id,
+            }
+        };
         let new_dummy_node = add_bend_dummy_node(
             graph,
             edge_id,
@@ -805,6 +830,7 @@ fn handle_gateway_node_one_side(this_node_id: NodeId, graph: &mut Graph, directi
             best_position.2,
             this_node_id,
             relative_port_x,
+            kind,
         );
         if best_position.1 == this_pool_and_lane {
             has_dummy_nodes_in_same_lane = true;
@@ -852,6 +878,7 @@ fn add_bend_dummy_node(
     place_for_bend_dummy: PlaceForBendDummy,
     reference_node: NodeId,
     relative_port_x: usize,
+    kind: BendDummyKind,
 ) -> NodeId {
     let place = match place_for_bend_dummy {
         PlaceForBendDummy::AtTheTop => match graph.get_top_node(pool_and_lane, layer) {
@@ -870,6 +897,7 @@ fn add_bend_dummy_node(
         &mut graph.pools,
         NodeType::BendDummy {
             originating_node: reference_node,
+            kind,
         },
         pool_and_lane,
         Some(layer),

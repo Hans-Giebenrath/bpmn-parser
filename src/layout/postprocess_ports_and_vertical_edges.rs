@@ -8,10 +8,8 @@ use proc_macros::e;
 use proc_macros::n;
 
 pub fn postprocess_ports_and_vertical_edges(graph: &mut Graph) {
-    dbg!(&graph);
     fixup_gateway_ports(graph);
     postprocess_vertical_edges(graph);
-    dbg!(&graph);
 }
 
 /// Gateway ports were assigned {x: node_width/2, y: node_height/2} since it is unclear at what

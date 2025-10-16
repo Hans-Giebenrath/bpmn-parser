@@ -1,6 +1,7 @@
 use crate::common::config::Config;
 use crate::common::edge::Edge;
 use crate::common::edge::FlowType;
+use crate::common::graph::EdgeId;
 use crate::common::graph::Graph;
 use crate::common::graph::LaneId;
 use crate::common::graph::PoolId;
@@ -9,6 +10,8 @@ use crate::common::node::BendDummyKind;
 use crate::common::node::Node;
 use crate::common::node::NodePhaseAuxData;
 use crate::common::node::NodeType;
+//use good_lp::solvers::microlp::MicroLpProblem;
+use good_lp::solvers::scip::SCIPProblem;
 use good_lp::*;
 use proc_macros::e;
 use proc_macros::from;
@@ -77,9 +80,25 @@ fn aux(node: &Node) -> &XyIlpNodeData {
     }
 }
 
+fn c(problem: &mut SCIPProblem, constraint: Constraint) {
+    //problem.add_constraint(dbg!(constraint));
+    problem.add_constraint(constraint);
+}
+
 fn assign_y(graph: &mut Graph, pool: PoolId, lane: LaneId, min_y_value: usize) -> usize {
     let mut vars = variables!();
     let node_ids_iter = graph.pools[pool.0].lanes[lane.0].nodes.iter().cloned();
+
+    // TODO the allocation could be moved out of this function.
+    let mut diff_vars = Vec::new();
+
+    let mut objective = Expression::from(0.0);
+
+    const PULL_UP_FACTOR: f64 = 0.0001;
+    // Must cancel out the PULL_UP_FACTOR, and then push further, but not so much as to move the
+    // other nodes back down to infinity. I.e. must be smaller than Specifically. g0011.bpmd upper
+    // gateway the edge should leave downward instead of to the side.
+    const PUSH_GATEWAY_BENDPOINT_DOWN_FACTOR: f64 = PULL_UP_FACTOR + 0.1 * PULL_UP_FACTOR;
 
     // Note: One could argue that this ordering should be part of the graph. But it turns out that
     // this is not necessary in any other phase, just here, so we can compute it just locally.
@@ -96,28 +115,26 @@ fn assign_y(graph: &mut Graph, pool: PoolId, lane: LaneId, min_y_value: usize) -
             "{pool:?}, {lane:?} -> {}",
             graph.nodes[node_id]
         );
-        graph.nodes[node_id].aux = NodePhaseAuxData::XyIlpNodeData(XyIlpNodeData {
-            var: vars.add(variable().integer().min(min_y_value as f64)),
-        });
+        let var = vars.add(variable().integer().min(min_y_value as f64));
+        // Make sure that nodes are all pushed together overall. Important if some sequence flow
+        // from another lane comes in, then we need to ensure that one is put towards 0 and the
+        // other towards INT_MAX.
+        objective += PULL_UP_FACTOR * var;
+        n!(node_id).aux = NodePhaseAuxData::XyIlpNodeData(XyIlpNodeData { var });
     }
-
-    // TODO the allocation could be moved out of this function.
-    let mut diff_vars = Vec::new();
-
-    let mut objective = Expression::from(0.0);
 
     // Minimize the vertical length of edges. I.e. ideally as a result they go
     // directly to the right (have a vertical length of 0) and hence have no
     // bend points.
-    for edge in node_ids_iter
+    for (edge_id, edge) in node_ids_iter
         .clone()
         .flat_map(|node_id| graph.nodes[node_id].outgoing.iter().cloned())
-        .map(|e| &graph.edges[e])
-        .filter(|e| e.stays_within_lane)
+        .map(|edge| (edge, &graph.edges[edge]))
+        .filter(|(_, edge)| edge.stays_within_lane)
     {
         assert!(!edge.is_replaced_by_dummies());
 
-        if is_gateway_branching_flow_within_same_lane(edge, graph) {
+        if is_gateway_edge_that_is_balanced_separately(edge_id, edge, graph) {
             // The weight for gateway-connected edges is assigned through the
             // "gateway_balancing_constraint_vars", so don't assign anything additional here.
             // Otherwise, this interferes in weird ways.
@@ -155,12 +172,11 @@ fn assign_y(graph: &mut Graph, pool: PoolId, lane: LaneId, min_y_value: usize) -
         else {
             continue;
         };
-        match n!(target_node).pool_and_lane().cmp(&node.pool_and_lane()) {
-            std::cmp::Ordering::Less => objective += aux(node).var,
-            std::cmp::Ordering::Greater => objective -= aux(node).var,
-            _ => (),
+        // We just want them to move as far downwards as they can, but don't want other nodes to
+        // become placed awkwardly as a result. So a tiny factor it is.
+        if n!(target_node).pool_and_lane() > node.pool_and_lane() {
+            objective -= PUSH_GATEWAY_BENDPOINT_DOWN_FACTOR * aux(node).var
         }
-        // if (1) the edge crosses lanes and (2) the current lane is a bend dummy, then
     }
 
     // We want to balance gateway nodes between their outgoing/incoming branching nodes of the same
@@ -176,7 +192,7 @@ fn assign_y(graph: &mut Graph, pool: PoolId, lane: LaneId, min_y_value: usize) -
     {
         fn target_node<'a>(node: &Node, graph: &'a Graph) -> Option<&'a Node> {
             if let NodeType::BendDummy {
-                kind: BendDummyKind::FromGatewaySameLane { target_node, .. },
+                kind: BendDummyKind::FromGatewayToSameLane { target_node, .. },
                 ..
             } = &node.node_type
             {
@@ -243,7 +259,8 @@ fn assign_y(graph: &mut Graph, pool: PoolId, lane: LaneId, min_y_value: usize) -
         })
         .for_each(|(above, below)| {
             let padding = y_padding(above, &graph.config).max(y_padding(below, &graph.config));
-            problem.add_constraint(
+            c(
+                &mut problem,
                 (aux(below).var - aux(above).var).geq((above.height + padding) as f64),
             );
         });
@@ -256,20 +273,27 @@ fn assign_y(graph: &mut Graph, pool: PoolId, lane: LaneId, min_y_value: usize) -
         let to_var = aux(to_node).var;
         let from_y = from_var + (from_node.height / 2) as f64;
         let to_y = to_var + (to_node.height / 2) as f64;
-        problem.add_constraint((from_y.clone() - to_y.clone()).leq(diff_var));
-        problem.add_constraint((to_y - from_y).leq(diff_var));
+        c(&mut problem, (from_y.clone() - to_y.clone()).leq(diff_var));
+        c(&mut problem, (to_y - from_y).leq(diff_var));
     }
 
     for (_, constraint) in gateway_balancing_constraint_vars {
-        problem.add_constraint(constraint);
+        c(&mut problem, constraint);
     }
 
     let solution = problem.solve().unwrap();
 
     let mut min_y_encountered = usize::MAX;
     let mut max_y_plus_height_encountered = usize::MIN;
+    //for node_id in node_ids_iter.clone() {
+    //    dbg!(
+    //        node_id,
+    //        aux(&n!(node_id)).var,
+    //        solution.value(aux(&n!(node_id)).var) as usize
+    //    );
+    //}
     for node_id in node_ids_iter.clone() {
-        let node = &mut graph.nodes[node_id.0];
+        let node = &mut n!(node_id);
         node.y = solution.value(aux(node).var) as usize;
         min_y_encountered = min_y_encountered.min(node.y);
         max_y_plus_height_encountered = max_y_plus_height_encountered.max(node.y + node.height);
@@ -309,32 +333,46 @@ fn assign_x(graph: &mut Graph) {
     }
 }
 
-fn is_gateway_branching_flow_within_same_lane(edge: &Edge, graph: &Graph) -> bool {
-    let from_is_branching = || {
+fn is_gateway_edge_that_is_balanced_separately(
+    edge_id: EdgeId,
+    edge: &Edge,
+    graph: &Graph,
+) -> bool {
+    fn is_diverging(node: &Node) -> bool {
+        matches!(
+            node.node_type,
+            NodeType::BendDummy {
+                kind: BendDummyKind::FromGatewayBlockedLaneCrossing { .. }
+                    | BendDummyKind::FromGatewayFreeLaneCrossing { .. },
+                ..
+            }
+        )
+    }
+
+    let from_is_non_branching = || {
         let n = &graph.nodes[edge.from];
-        n.is_gateway()
-            && n.outgoing
-                .iter()
-                .map(|e| &graph.edges[*e])
-                .filter(|e| e.flow_type == FlowType::SequenceFlow)
-                .map(|e| &graph.nodes[e.to])
-                .filter(|other| other.pool_and_lane() == n.pool_and_lane())
-                .has_at_least(2)
+        let mut it = n
+            .outgoing
+            .iter()
+            .cloned()
+            .filter(|e| !is_diverging(&to!(*e)));
+        // There is just one non-diverging and this is our current edge.
+        !n.is_gateway() || (it.next() == Some(edge_id) && it.next().is_none())
     };
-    let to_is_joining = || {
+    let to_is_non_joining = || {
         let n = &graph.nodes[edge.to];
-        n.is_gateway()
-            && n.incoming
-                .iter()
-                .map(|e| &graph.edges[*e])
-                .filter(|e| e.flow_type == FlowType::SequenceFlow)
-                .map(|e| &graph.nodes[e.from])
-                .filter(|other| other.pool_and_lane() == n.pool_and_lane())
-                .has_at_least(2)
+        let mut it = n
+            .incoming
+            .iter()
+            .cloned()
+            .filter(|e| !is_diverging(&from!(*e)));
+        // There is just one non-diverging and this is our current edge.
+        !n.is_gateway() || (it.next() == Some(edge_id) && it.next().is_none())
     };
-    edge.is_sequence_flow()
-        && (graph.nodes[edge.from].pool_and_lane() == graph.nodes[edge.to].pool_and_lane())
-        && (from_is_branching() || to_is_joining())
+    // Note: We can't be connected to a branching gateway and non-branching gateway. The branching
+    // gateway would have additional bend dummies, and so we would just see the bend dummy and only
+    // one of the two gateways.
+    !(edge.is_sequence_flow() && from_is_non_branching() && to_is_non_joining())
 }
 
 /// Find the first and last elements (from the front and back, respectively)

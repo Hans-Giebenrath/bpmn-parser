@@ -38,23 +38,39 @@ for f in "${all[@]}"; do
         tmp_adoc_file="$TMPDIR/$basename.tmp.adoc"
         csv_file="$dir/${basename}.csv"
         correct_csv_file="$dir/${basename}.csv.correct"
+        failed=false
 
         if grep -q '// GENERATE VISIBILITY TABLE' "$f"; then
-            run -i "$f" -o "${f%.bpmd}.xml" -v "$csv_file" &&
+            if run -i "$f" -o "${f%.bpmd}.xml" -v "$csv_file"; then
                 echo "finished generating ${f%.bpmd}.xml, now generating the png" &&
-                doc/node_modules/.bin/bpmn-to-image "${f%.bpmd}.xml":"${f%.bpmd}.png" &&
-                : #rm "${f%.bpmd}.xml"
+                    doc/node_modules/.bin/bpmn-to-image "${f%.bpmd}.xml":"${f%.bpmd}.png" &&
+                    rm "${f%.bpmd}.xml"
+            else
+                failed=true
+            fi
         else
-            run -i "$f" -o "${f%.bpmd}.xml" &&
+            if run -i "$f" -o "${f%.bpmd}.xml"; then
                 echo "finished generating ${f%.bpmd}.xml, now generating the png" &&
-                doc/node_modules/.bin/bpmn-to-image "${f%.bpmd}.xml":"${f%.bpmd}.png" &&
-                : #rm "${f%.bpmd}.xml"
+                    doc/node_modules/.bin/bpmn-to-image "${f%.bpmd}.xml":"${f%.bpmd}.png" &&
+                    rm "${f%.bpmd}.xml"
+            else
+                failed=true
+            fi
         fi
 
         cat <<EOF >>"$tmp_adoc_file"
 == $(basename "$f")
 image::$(basename "$f" .bpmd).png[width=60%]
 EOF
+
+        if $failed; then
+            cat <<EOF >>"$tmp_adoc_file"
+
+WARNING: Build Failure.
+
+EOF
+
+        fi
 
         if grep -q '// GENERATE VISIBILITY TABLE' "$f"; then
             if [[ -f "$correct_csv_file" ]]; then
@@ -92,7 +108,7 @@ Make sure that:
 - You're intentionally updating the reference.
 
 If so, run:
-  
+
   cp "$(basename "$csv_file")" "$(basename "$correct_csv_file")"
 
 ====

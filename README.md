@@ -52,7 +52,9 @@ This tool tries to fall into the same niche as PlantUML and similar tools. The t
 
 ## Missing Pieces
 
-* Bug fixes
+Layout (probably not a good first issue):
+
+* Bug fixes (see separate TODO file)
 * Boundary Events
 * Message Flow Orthogonal Routing
 * Marking a pool as black box
@@ -60,9 +62,15 @@ This tool tries to fall into the same niche as PlantUML and similar tools. The t
 * Nested states
 * Separate Interrupt States
 * Layout-Instructions
+
+Non-Layout (good for contributors):
+
 * SVG Export (in addition to XML export)
 * SVG-Based Image Export (in addition to XML export)
 * Interactive SVG Export
+* LSP/treesitter/...
+* `import` statement (this is a bit tricky)
+* A collaborative online editor (ideally with WASM compiled BPMD tool).
 
 ## Goals
 

@@ -1,25 +1,10 @@
-Gateway/BoundaryEvt/Port/Edge refactoring:
-* [x] Check Y-ILP works with gateway stuff and bend dummies (edges in same layer)
-* [ ] `fixup_gateway_ports` Y-ILP should then fixup the edge port coordinates which are just half assedly set in the port assignment phase. Actually, it should also set the bendpoints for vertical lines, then edge routing can be fully ignored.
-* [not necessary? ] straight_edge_routing.rs sequence_edge_routing implement
-* [not necessary? ] edge routing: bend dummies should not be skipped, but an additional bendpoint added somewhere within their area (x not unnecessarily centered, but y should be centered)
-
+* xyilp: nodes should be more treated with a kind of bounding box, at least wrt the top border. Otherwise the middle of event nodes and gateway nodes are not on the same line
+* xyilp: edge vertical distance against the node port, seems not so atm if there is a dataedge present then there are bends.
+* ports: if on the left or right side there is only one sequence flow, then that one should be put into the middle. Otherwise consecutive nodes will have wonky stairs since outgoing SFs are not centered on their side.
+* g0013.bpmd is a IXI example.
 * Add more checks for the correctness of the BPMN semantics:
   * Check that the gateway branching and joining nodes match (use a dedicated graph analysis phase, not in the parser)
-  * (TODO what else? likely a lot)
-* Syntax for cross-pool message sending
-* Syntax for all kinds of events and boundary events
-* Crossing minimization
-* ILP based edge routing (with modifications for north and south ports)
-* Plugin integration (PLEAK!)
-* Better documentation of the math in each step
-* ...
-* Maybe implement a custom BPMN renderer?
 
-* LSP language server protocol
-* treesitter syntax highlighting
-* asciidoctor integration
-* `import` statement
 
 * In the same lane, if a node goes into another lane (`F ->another-lane`), and then a coming back (`F <-back-again`), then these two nodes of the same lane should have a `leftof` relationship. Otherwise they might be layouted in a stacked way.
 

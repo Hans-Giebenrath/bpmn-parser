@@ -70,7 +70,7 @@ pub(crate) enum BendDummyKind {
     },
     /// The target node is in the same lane as the gateway node, so no lane crossing is required at
     /// all.
-    FromGatewaySameLane {
+    FromGatewayToSameLane {
         gateway_node: NodeId,
         target_node: NodeId,
     },
@@ -259,6 +259,18 @@ impl Node {
             self.node_type,
             NodeType::DummyNode | NodeType::BendDummy { .. }
         )
+    }
+
+    pub fn is_from_gateway_to_same_lane(&self) -> Option<NodeId> {
+        if let NodeType::BendDummy {
+            kind: BendDummyKind::FromGatewayToSameLane { target_node, .. },
+            ..
+        } = &self.node_type
+        {
+            Some(*target_node)
+        } else {
+            None
+        }
     }
 
     pub fn is_gateway(&self) -> bool {
