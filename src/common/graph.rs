@@ -429,7 +429,7 @@ impl Debug for Graph {
         for n in &self.nodes {
             writeln!(
                 f,
-                "  node: {} (p: {}, l: {}, lyr: {:?}) - {:?} - in: {:?}, out: {:?}, in_ports: {:?}, out_ports: {:?}",
+                "  node: {} (p: {}, l: {}, lyr: {:?}) - {:?} - in: {:?}, out: {:?}, in_ports: {:?}, out_ports: {:?}, {:?}",
                 n.id.0,
                 n.pool.0,
                 n.lane.0,
@@ -439,6 +439,7 @@ impl Debug for Graph {
                 n.outgoing,
                 n.incoming_ports,
                 n.outgoing_ports,
+                n.node_type,
             )?;
         }
         for (idx, e) in self.edges.iter().enumerate() {
@@ -450,7 +451,16 @@ impl Debug for Graph {
         }
         for (pool_idx, pool) in self.pools.iter().enumerate() {
             for (lane_idx, lane) in pool.lanes.iter().enumerate() {
-                writeln!(f, "  p/l {}/{}: {:?}", pool_idx, lane_idx, lane.nodes)?;
+                let nodes_and_layer = lane
+                    .nodes
+                    .iter()
+                    .map(|node_id| format!("{}/{}", node_id.0, self.nodes[*node_id].layer_id.0))
+                    .collect::<Vec<_>>();
+                writeln!(
+                    f,
+                    "  pool {}/lane {} (node/layer): {:?}",
+                    pool_idx, lane_idx, nodes_and_layer
+                )?;
             }
         }
         Ok(())
@@ -552,7 +562,8 @@ pub(crate) fn adjust_above_and_below_for_new_inbetween(
     let layer = node.layer_id;
     let (above, below) = match place {
         Place::AsOnlyNode => {
-            assert!(graph.get_top_node(pool_lane, layer).is_none());
+            assert!(graph.get_top_node(pool_lane, layer) == Some(inbetween));
+            assert!(graph.get_bottom_node(pool_lane, layer) == Some(inbetween));
             (None, None)
         }
         Place::Above(reference) => (n!(reference).node_above_in_same_lane, Some(reference)),
@@ -577,7 +588,7 @@ pub(crate) fn adjust_above_and_below_for_new_inbetween(
     n!(inbetween).node_below_in_same_lane = below;
 }
 
-/// Helper function to not call graph.add_node(..) directly, as this cancels borrows of graph.edges
+/// Helper function to not call `graph.add_node(..)` directly, as this cancels borrows of graph.edges
 /// as well.
 pub(crate) fn add_node(
     nodes: &mut Vec<Node>,

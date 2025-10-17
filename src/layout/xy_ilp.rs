@@ -5,15 +5,11 @@ use crate::common::graph::EdgeId;
 use crate::common::graph::Graph;
 use crate::common::graph::LaneId;
 use crate::common::graph::PoolId;
-use crate::common::iter_ext::IteratorExt;
 use crate::common::node::BendDummyKind;
 use crate::common::node::Node;
 use crate::common::node::NodePhaseAuxData;
 use crate::common::node::NodeType;
-//use good_lp::solvers::microlp::MicroLpProblem;
-use good_lp::solvers::scip::SCIPProblem;
 use good_lp::*;
-use proc_macros::e;
 use proc_macros::from;
 use proc_macros::n;
 use proc_macros::to;
@@ -25,6 +21,7 @@ pub struct XyIlpNodeData {
 
 // TODO should solve the ILP for every lane independently.
 pub fn assign_xy_ilp(graph: &mut Graph) {
+    dbg!(&graph);
     let mut min_y_value = 0;
     let mut min_x_value = 0;
     for pool_idx in 0..graph.pools.len() {
@@ -80,9 +77,9 @@ fn aux(node: &Node) -> &XyIlpNodeData {
     }
 }
 
-fn c(problem: &mut SCIPProblem, constraint: Constraint) {
-    //problem.add_constraint(dbg!(constraint));
-    problem.add_constraint(constraint);
+fn c<T: SolverModel>(problem: &mut T, constraint: Constraint) {
+    problem.add_constraint(dbg!(constraint));
+    //problem.add_constraint(constraint);
 }
 
 fn assign_y(graph: &mut Graph, pool: PoolId, lane: LaneId, min_y_value: usize) -> usize {
@@ -227,6 +224,7 @@ fn assign_y(graph: &mut Graph, pool: PoolId, lane: LaneId, min_y_value: usize) -
         }
     }
 
+    dbg!(&objective);
     let mut problem = vars.minimise(objective).using(default_solver);
     //problem.set_parameter("loglevel", "0");
 

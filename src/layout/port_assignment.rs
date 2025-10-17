@@ -12,6 +12,7 @@ use crate::common::graph::StartAt;
 use crate::common::graph::add_node;
 use crate::common::graph::adjust_above_and_below_for_new_inbetween;
 use crate::common::graph::node_size;
+use crate::common::macros::dbg_compact;
 use crate::common::node::BendDummyKind;
 use crate::common::node::LayerId;
 use crate::common::node::Node;
@@ -442,8 +443,8 @@ fn handle_nongateway_node(this_node_id: NodeId, graph: &mut Graph) {
 fn handle_gateway_node(this_node_id: NodeId, graph: &mut Graph) {
     // See comment at the end of the function.
     let (above, below) = (
-        n!(this_node_id).node_above_in_same_lane.clone(),
-        n!(this_node_id).node_below_in_same_lane.clone(),
+        n!(this_node_id).node_above_in_same_lane,
+        n!(this_node_id).node_below_in_same_lane,
     );
     for direction in [Direction::Outgoing, Direction::Incoming] {
         let this_node = &mut graph.nodes[this_node_id];
@@ -528,6 +529,7 @@ fn is_vertical_edge(
     graph: &Graph,
     current_node: NodeId,
 ) -> Option<VerticalEdgeDocks> {
+    // TODO rewrite this via additional helper function in graph.rs
     let edge = &graph.edges[edge_id];
     let from = &graph.nodes[edge.from];
     let to = &graph.nodes[edge.to];
@@ -686,6 +688,7 @@ fn handle_gateway_node_one_side(this_node_id: NodeId, graph: &mut Graph, directi
     let mut is_above_gateway = false;
     let mut previous_other_node_id = None;
     for edge_id in edges.iter().cloned() {
+        dbg_compact!(edge_id);
         let other_node = match direction {
             Direction::Outgoing => &to!(edge_id),
             Direction::Incoming => &from!(edge_id),
@@ -725,19 +728,20 @@ fn handle_gateway_node_one_side(this_node_id: NodeId, graph: &mut Graph, directi
             });
             (best_position, iteration_start)
         };
-        // Set true to capture the situation where we could successfully cross *all* nodes in our
-        // layer. In that case we want to manually go further downwards.
-        let mut last_iteration_was_not_a_blocker = true;
-        for crossable_node in graph
+
+        for crossable_node_or_bottom_barrier in graph
             .iter_downwards_same_pool(
                 iteration_start,
                 Some(std::cmp::max(this_pool_and_lane, bottom_most_pool_lane)),
             )
             .take_while(|&crossable_node| Some(crossable_node.id) != bottom_barrier)
+            .map(Some)
+            .chain(std::iter::once(bottom_barrier.map(|node_id| &n!(node_id))))
         {
-            last_iteration_was_not_a_blocker = false;
-            if best_position.1 < other_node_pool_lane
-                && crossable_node.pool_and_lane() >= other_node_pool_lane
+            if best_position.1 <= other_node_pool_lane
+                && crossable_node_or_bottom_barrier
+                    .map(|node| node.pool_and_lane() > other_node_pool_lane)
+                    .unwrap_or(true)
             {
                 // It might be that the `to` node is actually at a place where this lane has no
                 // nodes. Then we would jump over the `to` node's pool_lane, and so we need to manually
@@ -745,23 +749,30 @@ fn handle_gateway_node_one_side(this_node_id: NodeId, graph: &mut Graph, directi
                 best_position = (
                     best_position.0,
                     other_node_pool_lane,
-                    PlaceForBendDummy::AtTheTop,
+                    PlaceForBendDummy::AtTheBottom,
                 );
-                // But also continue, since we still need to check what we got now.
+                break;
             }
-            if best_position.1 == other_node_pool_lane
-                && crossable_node.pool_and_lane() > other_node_pool_lane
+
+            if best_position.1 < other_node_pool_lane
+                && crossable_node_or_bottom_barrier
+                    .map(|node| node.pool_and_lane() >= other_node_pool_lane)
+                    .unwrap_or(true)
             {
-                // And the same for the other direction.
+                // Move the best position into the current lane.
                 best_position = (
                     best_position.0,
                     other_node_pool_lane,
-                    PlaceForBendDummy::AtTheBottom,
+                    PlaceForBendDummy::AtTheTop,
                 );
-                // Now it does not make sense to continue, we don't want to make a funny down
-                // and up wiggle waggle.
-                break;
+                // But also continue, since we still need to check whether we need to cross more
+                // nodes.
             }
+            let crossable_node = match crossable_node_or_bottom_barrier {
+                // Continue only if this is not the bottom barrier.
+                Some(node) if Some(node.id) != bottom_barrier => node,
+                _ => break,
+            };
             if crossable_node.id == this_node_id {
                 local_is_above_gateway = false;
                 continue;
@@ -770,6 +781,9 @@ fn handle_gateway_node_one_side(this_node_id: NodeId, graph: &mut Graph, directi
                 Direction::Outgoing => &to!(crossable_node.outgoing[0]),
                 Direction::Incoming => &from!(crossable_node.outgoing[0]),
             };
+
+            // At this point we should actually have a counting system and iterate as far as we can.
+            // Right now it is rather asymmetric.
             if local_is_above_gateway
                 && above_nodes_in_other_layer.contains(&crossable_other_node.id)
             {
@@ -778,7 +792,6 @@ fn handle_gateway_node_one_side(this_node_id: NodeId, graph: &mut Graph, directi
                     crossable_node.pool_and_lane(),
                     PlaceForBendDummy::Below(crossable_node.id),
                 );
-                last_iteration_was_not_a_blocker = true;
             }
             if !local_is_above_gateway {
                 if above_nodes_in_other_layer.contains(&crossable_other_node.id) {
@@ -787,23 +800,9 @@ fn handle_gateway_node_one_side(this_node_id: NodeId, graph: &mut Graph, directi
                         crossable_node.pool_and_lane(),
                         PlaceForBendDummy::Below(crossable_node.id),
                     );
-                    last_iteration_was_not_a_blocker = true;
                 } else {
                     break;
                 }
-            }
-        }
-        if last_iteration_was_not_a_blocker {
-            // This means that right now best_position points right below the bottom-most node in our layer
-            // (whenever `last_iteration_was_not_a_blocker` is set to true, `Place::Below` was used).
-            // But again, it could be there are more lanes below, so we manually set the best
-            // position to the target lane.
-            if best_position.1 < other_node_pool_lane {
-                best_position = (
-                    best_position.0,
-                    other_node_pool_lane,
-                    PlaceForBendDummy::AtTheTop,
-                );
             }
         }
         let kind = if this_pool_and_lane == other_node_pool_lane {
@@ -842,11 +841,6 @@ fn handle_gateway_node_one_side(this_node_id: NodeId, graph: &mut Graph, directi
         continue;
     }
 
-    // borrow-checker workaround undo
-    //    match direction {
-    //        Direction::Outgoing => n!(this_node_id).outgoing = edges,
-    //        Direction::Incoming => n!(this_node_id).incoming = edges,
-    //    };
     if has_dummy_nodes_in_same_lane {
         // Take the gateway node out, so the Y-ILP does not force the gateway node exactly
         // between its above and below nodes. The idea is that it should actually be rather
@@ -870,6 +864,7 @@ fn handle_gateway_node_one_side(this_node_id: NodeId, graph: &mut Graph, directi
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 fn add_bend_dummy_node(
     graph: &mut Graph,
     edge_id: EdgeId,
