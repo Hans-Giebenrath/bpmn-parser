@@ -391,11 +391,54 @@ impl Graph {
             }
         })
     }
+
+    pub(crate) fn iter_downwards_all_pools(
+        &self,
+        start: StartAt,
+        final_pool_lane_to_consider: Option<PoolAndLane>,
+    ) -> impl Iterator<Item = &Node> {
+        let (first_pool, layer) = match &start {
+            StartAt::Node(start_node_id) => {
+                let current_node = &self.nodes[*start_node_id];
+                (current_node.pool, current_node.layer_id)
+            }
+            StartAt::PoolLane(Coord3 {
+                pool_and_lane,
+                layer,
+                ..
+            }) => (pool_and_lane.pool, *layer),
+        };
+        self.iter_downwards_same_pool(start, final_pool_lane_to_consider)
+            .chain(
+                self.pools
+                    .iter()
+                    .enumerate()
+                    .take(
+                        final_pool_lane_to_consider
+                            .map(|poolane| poolane.pool.0.saturating_add(1))
+                            .unwrap_or(usize::MAX),
+                    )
+                    .skip(first_pool.0.saturating_add(1))
+                    .flat_map(move |(pool_idx, _)| {
+                        self.iter_downwards_same_pool(
+                            StartAt::PoolLane(Coord3 {
+                                pool_and_lane: PoolAndLane {
+                                    pool: PoolId(pool_idx),
+                                    lane: LaneId(0),
+                                },
+                                layer,
+                                half_layer: false,
+                            }),
+                            final_pool_lane_to_consider,
+                        )
+                    }),
+            )
+    }
 }
 
 pub fn node_size(node_type: &NodeType) -> (usize, usize) {
     let event = match &node_type {
-        NodeType::DummyNode | NodeType::BendDummy { .. } => {
+        NodeType::LongEdgeDummy | NodeType::BendDummy { .. } => {
             // Height of 0 so there is just padding between the lines.
             // Otherwise, there would be too much whitespace between lines.
             return (DUMMY_NODE_WIDTH, 0);
@@ -442,7 +485,7 @@ impl Debug for Graph {
             )?;
             match &n.node_type {
                 NodeType::RealNode { .. } => write!(f, "real node")?,
-                NodeType::DummyNode => write!(f, "dummy node")?,
+                NodeType::LongEdgeDummy => write!(f, "dummy node")?,
                 NodeType::BendDummy {
                     originating_node,
                     kind,

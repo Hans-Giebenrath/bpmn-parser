@@ -821,13 +821,13 @@ fn temporarily_add_dummy_nodes_for_edges_within_same_layer(graph: &mut Graph) ->
 
         undo.original_edges.push((edge_id, edge.clone()));
         let right_node_id = graph.add_node(
-            NodeType::DummyNode,
+            NodeType::LongEdgeDummy,
             pool_and_lane,
             Some(LayerId(layer_id.0 + 1)),
         );
         let left_node_id = if layer_id.0 > 0 {
             Some(graph.add_node(
-                NodeType::DummyNode,
+                NodeType::LongEdgeDummy,
                 pool_and_lane,
                 Some(LayerId(layer_id.0 - 1)),
             ))
@@ -996,7 +996,7 @@ fn debug_print_graph(v: &Vars, ig: &IlpGraph, g: &Graph) {
         let layer = n.layer_id.0;
         let what = match &n.node_type {
             NodeType::RealNode { display_text, .. } => display_text.as_str(),
-            NodeType::DummyNode => "(dummy node)",
+            NodeType::LongEdgeDummy => "(dummy node)",
             NodeType::BendDummy { .. } => "(bend dummy - IMPOSSIBLE HERE?)",
         };
         format!("nid({}) {what} ilpn({aux}) - Lyr({layer})", n.id)

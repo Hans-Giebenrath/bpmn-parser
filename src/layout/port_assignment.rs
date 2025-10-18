@@ -12,6 +12,7 @@ use crate::common::graph::StartAt;
 use crate::common::graph::add_node;
 use crate::common::graph::adjust_above_and_below_for_new_inbetween;
 use crate::common::graph::node_size;
+use crate::common::macros::dbg_compact;
 use crate::common::node::BendDummyKind;
 use crate::common::node::LayerId;
 use crate::common::node::Node;
@@ -21,11 +22,18 @@ use proc_macros::{e, from, n, to};
 use std::collections::HashSet;
 
 pub fn port_assignment(graph: &mut Graph) {
+    dbg_compact!(graph);
+    // First handle non-gateway nodes and then gateway nodes in two separate loops. This way,
+    // `is_vertical_edge` is easier as it does not need to account for bend dummies which make
+    // everything harder.
     for node_id in (0..graph.nodes.len()).map(NodeId) {
-        if graph.nodes[node_id].is_gateway() {
-            handle_gateway_node(node_id, graph);
-        } else {
+        if !n!(node_id).is_gateway() {
             handle_nongateway_node(node_id, graph);
+        }
+    }
+    for node_id in (0..graph.nodes.len()).map(NodeId) {
+        if n!(node_id).is_gateway() {
+            handle_gateway_node(node_id, graph);
         }
     }
 }
@@ -518,87 +526,51 @@ fn is_vertical_edge(
     graph: &Graph,
     current_node: NodeId,
 ) -> Option<VerticalEdgeDocks> {
-    // TODO rewrite this via additional helper function in graph.rs
-    let edge = &graph.edges[edge_id];
-    let from = &graph.nodes[edge.from];
-    let to = &graph.nodes[edge.to];
-    assert_ne!(edge.from, edge.to);
+    let from = &from!(edge_id);
+    let to = &to!(edge_id);
+    assert_ne!(from.id, to.id);
 
     if from.layer_id != to.layer_id {
         return None;
     }
 
-    // We look from the upper node to the lower node
-    let (start_above, end_below) = match from.pool_and_lane().cmp(&to.pool_and_lane()) {
-        std::cmp::Ordering::Less => (from, to),
-        std::cmp::Ordering::Greater => (to, from),
-        std::cmp::Ordering::Equal => {
-            // We actually don't know which is above here, so we just need to search both ways.
-            let mut node = from; // for the borrow checker, lol
-            let mut obstacle_in_the_way = false;
-            while let Some(below) = node.node_below_in_same_lane {
-                if below == edge.to {
-                    if obstacle_in_the_way {
-                        return None;
-                    } else if current_node == below {
-                        return Some(VerticalEdgeDocks::Above);
-                    } else {
-                        return Some(VerticalEdgeDocks::Below);
-                    }
-                }
-                node = &graph.nodes[below];
-                if !node.is_dummy() {
-                    obstacle_in_the_way = true;
-                }
-            }
-            // We didn't find `to` when going downwards from `from`, so apparently `to` is above
-            // `from`. Let's not repeat that search here, but do it in the general case.
-            (to, from)
+    // We don't know which is above here, so we just need to search both ways.
+    for (start_above, end_below) in [(from, to), (to, from)] {
+        if start_above.pool_and_lane() > end_below.pool_and_lane() {
+            continue;
         }
-    };
-
-    let mut node = Some(start_above);
-    for pool in graph.pools.iter().skip(node.map_or(0, |n| n.pool.0)) {
-        'lane: for lane in pool.lanes.iter().skip(node.map_or(0, |n| n.lane.0)) {
-            // make sure that the outer `node` is None afterwards.
-            let mut node = if let Some(node) = std::mem::take(&mut node) {
-                node
-            } else {
-                let mut it = lane.nodes.iter().cloned();
-                loop {
-                    if let Some(node_id) = it.next()
-                        && let node = &graph.nodes[node_id]
-                        && node.layer_id <= start_above.layer_id
-                    {
-                        if node.layer_id == start_above.layer_id
-                            && node.node_above_in_same_lane.is_none()
-                        {
-                            break node;
-                        }
-                    } else {
-                        // The layer within the current lane does not have any nodes. That also
-                        // means that there are no obstacles, and we just continue to check in the
-                        // next lane.
-                        continue 'lane;
-                    }
-                }
-            };
-            while let Some(below) = node.node_below_in_same_lane {
-                if below == end_below.id {
-                    if current_node == below {
+        let mut obstacle_in_the_way = false;
+        for node in graph.iter_downwards_all_pools(
+            StartAt::Node(start_above.id),
+            Some(end_below.pool_and_lane()),
+        ) {
+            // Bend dummies should only be added later.
+            assert!(!node.is_bend_dummy());
+            if node.id == end_below.id {
+                if obstacle_in_the_way {
+                    return None;
+                } else if current_node == end_below.id {
+                    if current_node == from.id {
                         return Some(VerticalEdgeDocks::Above);
                     } else {
                         return Some(VerticalEdgeDocks::Below);
                     }
-                }
-                node = &graph.nodes[below];
-                if !node.is_dummy() {
-                    return None;
+                } else {
+                    assert!(current_node == start_above.id);
+                    if current_node == from.id {
+                        return Some(VerticalEdgeDocks::Below);
+                    } else {
+                        return Some(VerticalEdgeDocks::Above);
+                    }
                 }
             }
-            // We left the lane. So let's find out what is the next lane.
+            if !node.is_long_edge_dummy() {
+                obstacle_in_the_way = true;
+            }
         }
     }
+
+    dbg!(&graph);
     unreachable!(
         "We did not find the other end of the edge in the same layer. Very, verrryyyy strange. Smells like ... a ... BUG?!"
     );
@@ -1046,7 +1018,7 @@ fn add_bend_dummy_node(
 }
 
 fn is_skippable_dummy_node(node: &Node, graph: &Graph) -> bool {
-    if !node.is_dummy() {
+    if !node.is_any_dummy() {
         // A real node is a barrier through which we cannot send our edges further.
         return false;
     }

@@ -67,7 +67,7 @@ pub fn generate_dummy_nodes(graph: &mut Graph) {
         let to_node_id = to.id;
         for lane_id in node_lane_ids {
             let dummy_node_id = graph.add_node(
-                NodeType::DummyNode,
+                NodeType::LongEdgeDummy,
                 PoolAndLane {
                     pool,
                     lane: lane_id,

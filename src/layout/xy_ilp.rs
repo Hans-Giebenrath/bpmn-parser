@@ -229,7 +229,7 @@ fn assign_y(graph: &mut Graph, pool: PoolId, lane: LaneId, min_y_value: usize) -
     //problem.set_parameter("loglevel", "0");
 
     fn y_padding(n: &Node, cfg: &Config) -> usize {
-        if n.is_dummy() {
+        if n.is_any_dummy() {
             cfg.dummy_node_y_padding
         } else {
             cfg.regular_node_y_padding

@@ -42,7 +42,7 @@ pub enum NodeType {
     //     These are reversed/undone in the same crossing optimization phase.
     //  3. During port assignment, to handle those edges which leave above or below a node and then
     //     bend to the right. The bendpoint is represented by a new dummy node.
-    DummyNode,
+    LongEdgeDummy,
     // Bend dummies are inserted during the port assignment phase. They help to create vertical edge
     // segments for edges that leave at the top or bottom side of a node.
     BendDummy {
@@ -250,11 +250,19 @@ impl Node {
         !matches!(self.data_with_only_one_edge(), LoneDataElement::Nope)
     }
 
-    pub fn is_dummy(&self) -> bool {
+    pub fn is_any_dummy(&self) -> bool {
         matches!(
             self.node_type,
-            NodeType::DummyNode | NodeType::BendDummy { .. }
+            NodeType::LongEdgeDummy | NodeType::BendDummy { .. }
         )
+    }
+
+    pub fn is_long_edge_dummy(&self) -> bool {
+        matches!(self.node_type, NodeType::LongEdgeDummy)
+    }
+
+    pub fn is_bend_dummy(&self) -> bool {
+        matches!(self.node_type, NodeType::BendDummy { .. })
     }
 
     pub fn is_from_gateway_to_same_lane(&self) -> Option<NodeId> {
@@ -280,7 +288,7 @@ impl Node {
     }
 
     pub fn is_some_sequence_flow_box(&self) -> bool {
-        !self.is_data() && !self.is_dummy()
+        !self.is_data() && !self.is_any_dummy()
     }
 
     pub fn size(&self) -> (usize, usize) {

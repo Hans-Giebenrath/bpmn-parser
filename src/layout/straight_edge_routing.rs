@@ -16,7 +16,7 @@ pub fn find_straight_edges(graph: &mut Graph) {
     let mut matrix: HashMap<usize, (usize, usize, usize, usize)> = HashMap::new();
 
     for node in &graph.nodes {
-        if node.is_dummy() {
+        if node.is_any_dummy() {
             continue;
         }
         add_to_matrix(

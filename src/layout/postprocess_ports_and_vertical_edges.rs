@@ -94,7 +94,7 @@ fn postprocess_vertical_edges(graph: &mut Graph) {
             continue;
         }
 
-        match (from.is_dummy(), to.is_dummy()) {
+        match (from.is_any_dummy(), to.is_any_dummy()) {
             (true, false) => *bend_points = VerticalBendDummy((from_port.x, from_port.y)),
             (false, true) => *bend_points = VerticalBendDummy((to_port.x, to_port.y)),
             _ => panic!(""),

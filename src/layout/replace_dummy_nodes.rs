@@ -136,7 +136,7 @@ pub fn replace_dummy_nodes(graph: &mut Graph) {
     // Remove all the unneeded dummy nodes in the end. Otherwise, it becomes too noisy to filter
     // them away in the output phase. This basically reshapes the graph into the same thing which we
     // got after parsing.
-    while graph.nodes.pop_if(|node| node.is_dummy()).is_some() {}
+    while graph.nodes.pop_if(|node| node.is_any_dummy()).is_some() {}
     // Then fix the dummy edge references in incoming and outgoing.
     for node in &mut graph.nodes {
         let incoming = std::mem::take(&mut node.incoming);
@@ -175,7 +175,7 @@ pub fn replace_dummy_nodes(graph: &mut Graph) {
         }
     }
 
-    assert!(!graph.nodes.iter().any(|n| n.is_dummy()));
+    assert!(!graph.nodes.iter().any(|n| n.is_any_dummy()));
     assert!(graph.edges.iter().all(|e| e.is_regular()));
     // println!("Graph: {graph:?}");
 }
