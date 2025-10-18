@@ -473,36 +473,30 @@ fn handle_gateway_node(this_node_id: NodeId, graph: &mut Graph) {
     // case the gateway node should point to the original above and below nodes to ensure that they
     // point to the original above/below. Note: If the original above itself was already a bend
     // dummy, it is replaced by its originating node to ensure proper spacing as well.
-    n!(this_node_id).node_above_in_same_lane = above.and_then(|node_id| {
+    n!(this_node_id).node_above_in_same_lane = above.map(|node_id| {
         if let NodeType::BendDummy {
             originating_node, ..
         } = &n!(node_id).node_type
+            && n!(*originating_node).pool_and_lane() == n!(this_node_id).pool_and_lane()
         {
             assert_ne!(*originating_node, this_node_id);
-            if n!(*originating_node).pool_and_lane() == n!(this_node_id).pool_and_lane() {
-                Some(*originating_node)
-            } else {
-                None // Or just Some(node_id)?
-            }
+            *originating_node
         } else {
             assert_ne!(node_id, this_node_id);
-            Some(node_id)
+            node_id
         }
     });
-    n!(this_node_id).node_below_in_same_lane = below.and_then(|node_id| {
+    n!(this_node_id).node_below_in_same_lane = below.map(|node_id| {
         if let NodeType::BendDummy {
             originating_node, ..
         } = &n!(node_id).node_type
+            && n!(*originating_node).pool_and_lane() == n!(this_node_id).pool_and_lane()
         {
             assert_ne!(*originating_node, this_node_id);
-            if n!(*originating_node).pool_and_lane() == n!(this_node_id).pool_and_lane() {
-                Some(*originating_node)
-            } else {
-                None // Or just Some(node_id)?
-            }
+            *originating_node
         } else {
             assert_ne!(node_id, this_node_id);
-            Some(node_id)
+            node_id
         }
     });
 }
