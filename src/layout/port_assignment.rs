@@ -170,7 +170,10 @@ fn handle_nongateway_node(this_node_id: NodeId, graph: &mut Graph) {
                     has_vertical_edge_above = true;
                 }
                 Some(VerticalEdgeDocks::Below) => {
-                    unreachable!("Can't be")
+                    unreachable!(
+                        "Can't be. first: {:?}, this_node_id: {:?}",
+                        *first, this_node_id
+                    )
                 }
             }
             match is_vertical_edge(*last, graph, this_node_id) {
@@ -549,17 +552,21 @@ fn is_vertical_edge(
             if node.id == end_below.id {
                 if obstacle_in_the_way {
                     return None;
-                } else if current_node == end_below.id {
+                } else if from.id == start_above.id {
                     if current_node == from.id {
-                        return Some(VerticalEdgeDocks::Above);
-                    } else {
+                        dbg_compact!(current_node, from, to, start_above, end_below);
                         return Some(VerticalEdgeDocks::Below);
+                    } else {
+                        dbg_compact!(current_node, from, to, start_above, end_below);
+                        return Some(VerticalEdgeDocks::Above);
                     }
                 } else {
-                    assert!(current_node == start_above.id);
+                    assert!(to.id == start_above.id);
                     if current_node == from.id {
+                        dbg_compact!(current_node, from, to, start_above, end_below);
                         return Some(VerticalEdgeDocks::Below);
                     } else {
+                        dbg_compact!(current_node, from, to, start_above, end_below);
                         return Some(VerticalEdgeDocks::Above);
                     }
                 }

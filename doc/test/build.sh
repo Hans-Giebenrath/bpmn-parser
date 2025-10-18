@@ -129,10 +129,10 @@ EOF
 include::$(basename "$f")[]
 ----
 EOF
-    } &
+    }
 done
 
-wait
+#wait
 
 cat <<EOF >"$adoc_file"
 = BPMD - Business Process Modeling DSL

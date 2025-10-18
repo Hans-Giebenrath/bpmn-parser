@@ -6,6 +6,7 @@ use crate::common::graph::Place;
 use crate::common::graph::PoolId;
 use crate::common::graph::adjust_above_and_below_for_new_inbetween;
 use crate::common::graph::{Graph, NodeId};
+use crate::common::macros::dbg_compact;
 use crate::common::node::LayerId;
 use crate::common::node::LoneDataElement;
 use crate::common::node::Node;
@@ -305,7 +306,7 @@ pub fn reduce_all_crossings(graph: &mut Graph) {
 
     for layer in &g.layers {
         layer.iter_ijkl(&g.all_nodes).for_each(|ijkl| {
-            // Crossing constraints taken from https://ieeevis.b-cdn.net/vis_2024/pdfs/v-full-1874.pdf
+            // Crossing constraints taken from: https://ieeevis.b-cdn.net/vis_2024/pdfs/v-full-1874.pdf
             // c(i,k),( j,l) +x j,i +xk,l ≥ 1
             // c(i,k),( j,l) +xi, j +xl,k ≥ 1
             // Indexes fixed to the older paper version:
@@ -664,6 +665,7 @@ fn sort_incoming_and_outgoing(graph: &mut Graph) {
         if node.incoming.len() > 1 {
             let mut incoming_cpy = std::mem::take(&mut node.incoming);
             incoming_cpy.sort_by_cached_key(|edge_id| {
+                // TODO this needs same correction as the output one, clear distinction of the 7 cases.
                 let to_node = &graph.nodes[graph.edges[*edge_id].to];
                 let from_node = &graph.nodes[graph.edges[*edge_id].from];
                 let from_rank_within_lane = rank_within_lane(from_node, graph);
@@ -717,6 +719,7 @@ fn sort_incoming_and_outgoing(graph: &mut Graph) {
 
         let node = &mut graph.nodes[node_id];
         if node.outgoing.len() > 1 {
+            dbg_compact!(node.outgoing);
             let mut outgoing_cpy = std::mem::take(&mut node.outgoing);
             outgoing_cpy.sort_by_cached_key(|edge_id| {
                 let from_node = &graph.nodes[graph.edges[*edge_id].from];
@@ -728,11 +731,61 @@ fn sort_incoming_and_outgoing(graph: &mut Graph) {
                     && from_node.layer_id == to_node.layer_id
                     && to_rank_within_lane < from_rank_within_lane
                 {
-                    // Looping upwards in the same pool
-                    let group_order = 0;
+                    // SF/DF Looping upwards in the same pool
+                    let group_order = 1;
                     (
                         group_order,
-                        LayerId(0),
+                        0isize, // layerid is equal so ignore
+                        0isize, // pool is equal so ignore
+                        -(to_node.lane.0 as isize),
+                        -(to_rank_within_lane as isize),
+                    )
+                } else if to_node.pool < from_node.pool && to_node.layer_id <= from_node.layer_id {
+                    // MF to upper left/upper pools
+                    let group_order = 2;
+                    (
+                        group_order,
+                        (to_node.layer_id.0 as isize),
+                        -(to_node.pool.0 as isize),
+                        -(to_node.lane.0 as isize),
+                        -(to_rank_within_lane as isize),
+                    )
+                } else if to_node.pool < from_node.pool && to_node.layer_id > from_node.layer_id {
+                    // MF to upper right pools
+                    let group_order = 3;
+                    (
+                        group_order,
+                        (to_node.layer_id.0 as isize),
+                        (to_node.pool.0 as isize),
+                        (to_node.lane.0 as isize),
+                        (to_rank_within_lane as isize),
+                    )
+                } else if to_node.pool == from_node.pool && to_node.layer_id > from_node.layer_id {
+                    // SF/DF to the right same pool
+                    let group_order = 4;
+                    (
+                        group_order,
+                        (to_node.layer_id.0 as isize),
+                        (to_node.pool.0 as isize),
+                        (to_node.lane.0 as isize),
+                        (to_rank_within_lane as isize),
+                    )
+                } else if to_node.pool > from_node.pool && to_node.layer_id > from_node.layer_id {
+                    // MF to lower right pools
+                    let group_order = 5;
+                    (
+                        group_order,
+                        (to_node.layer_id.0 as isize),
+                        (to_node.pool.0 as isize),
+                        (to_node.lane.0 as isize),
+                        (to_rank_within_lane as isize),
+                    )
+                } else if to_node.pool > from_node.pool && to_node.layer_id <= from_node.layer_id {
+                    // MF to lower left/upper pools
+                    let group_order = 6;
+                    (
+                        group_order,
+                        -(to_node.layer_id.0 as isize),
                         -(to_node.pool.0 as isize),
                         -(to_node.lane.0 as isize),
                         -(to_rank_within_lane as isize),
@@ -741,32 +794,34 @@ fn sort_incoming_and_outgoing(graph: &mut Graph) {
                     && from_node.layer_id == to_node.layer_id
                     && to_rank_within_lane > from_rank_within_lane
                 {
-                    // Looping upwards in the same pool
-                    let group_order = 2;
+                    // SF/DF Looping downwards in the same pool
+                    let group_order = 7;
                     (
                         group_order,
-                        LayerId(0),
-                        -(to_node.pool.0 as isize),
+                        0isize, // layerid is equal so ignore
+                        0isize, // pool is equal so ignore
                         -(to_node.lane.0 as isize),
                         -(to_rank_within_lane as isize),
                     )
                 } else {
-                    assert!(
-                        from_node.pool != to_node.pool
-                            || from_node.layer_id.0 + 1 == to_node.layer_id.0,
-                        "{from_node:?}, {to_node:?}"
-                    );
-                    // Some upper pool, lower pool, or going right in the same pool.
-                    let group_order = 1;
-                    (
-                        group_order,
-                        to_node.layer_id,
-                        (to_node.pool.0 as isize),
-                        (to_node.lane.0 as isize),
-                        (to_rank_within_lane as isize),
-                    )
+                    unreachable!();
+                    //    assert!(
+                    //        from_node.pool != to_node.pool
+                    //            || from_node.layer_id.0 + 1 == to_node.layer_id.0,
+                    //        "{from_node:?}, {to_node:?}"
+                    //    );
+                    //    // Some upper pool, lower pool, or going right in the same pool.
+                    //    let group_order = 2;
+                    //    (
+                    //        group_order,
+                    //        to_node.layer_id,
+                    //        (to_node.pool.0 as isize),
+                    //        (to_node.lane.0 as isize),
+                    //        (to_rank_within_lane as isize),
+                    //    )
                 }
             });
+            dbg_compact!(outgoing_cpy);
             graph.nodes[node_id].outgoing = outgoing_cpy;
         }
     }
