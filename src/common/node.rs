@@ -143,10 +143,6 @@ pub struct XY {
 pub struct RelativePort {
     pub x: usize,
     pub y: usize,
-    /// If this is true, then the edge segment first leaves in a vertical way, until it hits its
-    /// direct target or a "bend point" dummy node.
-    /// TODO delete?
-    pub on_top_or_bottom: bool,
 }
 
 #[derive(Debug)]

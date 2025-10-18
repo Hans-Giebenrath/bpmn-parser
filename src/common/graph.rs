@@ -427,20 +427,38 @@ impl Debug for Graph {
             self.edges.len()
         )?;
         for n in &self.nodes {
-            writeln!(
+            write!(
                 f,
-                "  node: {} (p: {}, l: {}, lyr: {:?}) - {:?} - in: {:?}, out: {:?}, in_ports: {:?}, out_ports: {:?}, {:?}",
+                "  node: {} (p/l/lyr: {}/{}/{}) - {:?} - in: {:?}, out: {:?}, ",
                 n.id.0,
                 n.pool.0,
                 n.lane.0,
-                n.layer_id,
-                n.display_text(),
-                n.incoming,
-                n.outgoing,
-                n.incoming_ports,
-                n.outgoing_ports,
-                n.node_type,
+                n.layer_id.0,
+                n.display_text().unwrap_or_default(),
+                n.incoming.iter().map(|e| e.0).collect::<Vec<_>>(),
+                n.outgoing.iter().map(|e| e.0).collect::<Vec<_>>(),
+                //n.incoming_ports,
+                //n.outgoing_ports,
             )?;
+            match &n.node_type {
+                NodeType::RealNode { .. } => write!(f, "real node")?,
+                NodeType::DummyNode => write!(f, "dummy node")?,
+                NodeType::BendDummy {
+                    originating_node,
+                    kind,
+                } => write!(f, "bend dummy from {}: {:?}", originating_node.0, kind)?,
+            }
+            write!(f, ", ")?;
+            match n.node_above_in_same_lane {
+                Some(NodeId(idx)) => write!(f, "above {idx}")?,
+                None => write!(f, "above -")?,
+            }
+            write!(f, ", ")?;
+            match n.node_below_in_same_lane {
+                Some(NodeId(idx)) => write!(f, "below {idx}")?,
+                None => write!(f, "below -")?,
+            }
+            writeln!(f)?;
         }
         for (idx, e) in self.edges.iter().enumerate() {
             writeln!(

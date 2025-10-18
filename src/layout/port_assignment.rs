@@ -12,7 +12,6 @@ use crate::common::graph::StartAt;
 use crate::common::graph::add_node;
 use crate::common::graph::adjust_above_and_below_for_new_inbetween;
 use crate::common::graph::node_size;
-use crate::common::macros::dbg_compact;
 use crate::common::node::BendDummyKind;
 use crate::common::node::LayerId;
 use crate::common::node::Node;
@@ -275,16 +274,11 @@ fn handle_nongateway_node(this_node_id: NodeId, graph: &mut Graph) {
     // At this point we know exactly how many ports are at what side, so we can do simple math
     // stuff to place the ports using `points_on_side`.
     let mut above_coordinates =
-        points_on_side(this_node.width, above_inc + above_out).map(|x| RelativePort {
-            x,
-            y: 0,
-            on_top_or_bottom: true,
-        });
+        points_on_side(this_node.width, above_inc + above_out).map(|x| RelativePort { x, y: 0 });
     let mut below_coordinates =
         points_on_side(this_node.width, below_inc + below_out).map(|x| RelativePort {
             x,
             y: this_node.height,
-            on_top_or_bottom: true,
         });
     if above_inc > 0 {
         assert_eq!(above_inc, 1);
@@ -295,11 +289,7 @@ fn handle_nongateway_node(this_node_id: NodeId, graph: &mut Graph) {
             this_node.height,
             this_node.incoming.len() - above_inc - below_inc,
         )
-        .map(|y| RelativePort {
-            x: 0,
-            y,
-            on_top_or_bottom: false,
-        }),
+        .map(|y| RelativePort { x: 0, y }),
     );
     if below_inc > 0 {
         assert_eq!(below_inc, 1);
@@ -315,7 +305,6 @@ fn handle_nongateway_node(this_node_id: NodeId, graph: &mut Graph) {
         .map(|y| RelativePort {
             x: this_node.width,
             y,
-            on_top_or_bottom: false,
         }),
     );
     outgoing_ports.extend(below_coordinates);
@@ -466,7 +455,6 @@ fn handle_gateway_node(this_node_id: NodeId, graph: &mut Graph) {
                 ports.push(RelativePort {
                     x,
                     y: this_node.height / 2,
-                    on_top_or_bottom: true,
                 });
             }
             many => {
@@ -475,7 +463,6 @@ fn handle_gateway_node(this_node_id: NodeId, graph: &mut Graph) {
                 ports.extend((0..many.len()).map(|_| RelativePort {
                     x: this_node.width / 2,
                     y: this_node.height / 2,
-                    on_top_or_bottom: true,
                 }));
 
                 handle_gateway_node_one_side(this_node_id, graph, direction);
@@ -486,28 +473,36 @@ fn handle_gateway_node(this_node_id: NodeId, graph: &mut Graph) {
     // case the gateway node should point to the original above and below nodes to ensure that they
     // point to the original above/below. Note: If the original above itself was already a bend
     // dummy, it is replaced by its originating node to ensure proper spacing as well.
-    n!(this_node_id).node_above_in_same_lane = above.map(|node_id| {
+    n!(this_node_id).node_above_in_same_lane = above.and_then(|node_id| {
         if let NodeType::BendDummy {
             originating_node, ..
         } = &n!(node_id).node_type
         {
             assert_ne!(*originating_node, this_node_id);
-            *originating_node
+            if n!(*originating_node).pool_and_lane() == n!(this_node_id).pool_and_lane() {
+                Some(*originating_node)
+            } else {
+                None // Or just Some(node_id)?
+            }
         } else {
             assert_ne!(node_id, this_node_id);
-            node_id
+            Some(node_id)
         }
     });
-    n!(this_node_id).node_below_in_same_lane = below.map(|node_id| {
+    n!(this_node_id).node_below_in_same_lane = below.and_then(|node_id| {
         if let NodeType::BendDummy {
             originating_node, ..
         } = &n!(node_id).node_type
         {
             assert_ne!(*originating_node, this_node_id);
-            *originating_node
+            if n!(*originating_node).pool_and_lane() == n!(this_node_id).pool_and_lane() {
+                Some(*originating_node)
+            } else {
+                None // Or just Some(node_id)?
+            }
         } else {
             assert_ne!(node_id, this_node_id);
-            node_id
+            Some(node_id)
         }
     });
 }
@@ -710,7 +705,6 @@ fn handle_gateway_node_one_side(this_node_id: NodeId, graph: &mut Graph, directi
     let mut is_above_gateway = false;
     let mut previous_other_node_id = None;
     for edge_id in edges.iter().cloned() {
-        dbg_compact!(edge_id);
         let other_node = match direction {
             Direction::Outgoing => &to!(edge_id),
             Direction::Incoming => &from!(edge_id),
@@ -771,26 +765,14 @@ fn handle_gateway_node_one_side(this_node_id: NodeId, graph: &mut Graph, directi
                     crossable_node_or_bottom_barrier
                 }
                 _ => {
+                    // other_node_pool_lane < crossable_node_or_bottom_barrier_or_none.pool_lane()
                     // no more nodes, or the crossing node is in some lower lane.
-                    if best_position.1 == other_node_pool_lane {
-                        // It might be that the `to` node is actually at a place where this lane has no
-                        // nodes. Then we would jump over the `to` node's pool_lane, and so we need to manually
-                        // do a check here and register *that* as the best position.
-                        maybe_update_best_position(
-                            &mut best_position,
-                            (
-                                local_is_above_gateway,
-                                other_node_pool_lane,
-                                PlaceForBendDummy::AtTheBottom,
-                                crossing_number,
-                            ),
-                            is_above_gateway,
-                        );
-                    } else {
+                    if best_position.1 < other_node_pool_lane {
+                        // Must be moved to the new lane
                         best_position = (
                             local_is_above_gateway,
                             other_node_pool_lane,
-                            PlaceForBendDummy::AtTheBottom,
+                            PlaceForBendDummy::AtTheTop,
                             crossing_number,
                         );
                     }
@@ -799,7 +781,8 @@ fn handle_gateway_node_one_side(this_node_id: NodeId, graph: &mut Graph, directi
             };
 
             if best_position.1 < crossable_node_or_bottom_barrier.pool_and_lane() {
-                // Move the best position into the current lane.
+                // Move the best position into the current lane (which is also closer to
+                // `other_node_pool_lane`).
                 best_position = (
                     local_is_above_gateway,
                     crossable_node_or_bottom_barrier.pool_and_lane(),
@@ -1058,12 +1041,10 @@ fn add_bend_dummy_node(
     n!(dummy_node_id).outgoing_ports.push(RelativePort {
         x: relative_port_x,
         y: 0,
-        on_top_or_bottom: false,
     });
     n!(dummy_node_id).incoming_ports.push(RelativePort {
         x: relative_port_x,
         y: 0,
-        on_top_or_bottom: false,
     });
 
     adjust_above_and_below_for_new_inbetween(dummy_node_id, place, graph);
