@@ -631,6 +631,28 @@ enum Direction {
     Outgoing,
 }
 
+fn maybe_update_best_position(
+    current_best_position: &mut (bool, PoolAndLane, PlaceForBendDummy, i32),
+    new_best_position_candidate: (bool, PoolAndLane, PlaceForBendDummy, i32),
+    is_above_gateway: bool,
+) {
+    // Lower is better.
+    let current_crossing_number = new_best_position_candidate.3;
+    if is_above_gateway {
+        // If the new position is at least as good as the previous best we update. This brings us
+        // closer to the gateway node.
+        if current_crossing_number <= current_best_position.3 {
+            *current_best_position = new_best_position_candidate;
+        }
+    } else {
+        // If we are below the gateway we only go farther from the gateway if the situation is
+        // strictly better.
+        if current_crossing_number < current_best_position.3 {
+            *current_best_position = new_best_position_candidate;
+        }
+    }
+}
+
 // Try to push the dummy bend points as far outside as
 // possible, i.e. until the crossing count increases. The goal is to "eat" as meany dummy nodes as
 // possible (without moving into the "wrong" lane)
@@ -707,11 +729,14 @@ fn handle_gateway_node_one_side(this_node_id: NodeId, graph: &mut Graph, directi
         previous_other_node_id = Some(other_node.id);
 
         let mut local_is_above_gateway = is_above_gateway;
+        // Lower is better.
+        let mut crossing_number = 0i32;
         let (mut best_position, iteration_start) = if let Some(top_barrier) = current_top_barrier {
             let best_position = (
                 local_is_above_gateway,
                 n!(top_barrier).pool_and_lane(),
                 PlaceForBendDummy::Below(top_barrier),
+                crossing_number,
             );
             let iteration_start = StartAt::Node(top_barrier);
             (best_position, iteration_start)
@@ -720,6 +745,7 @@ fn handle_gateway_node_one_side(this_node_id: NodeId, graph: &mut Graph, directi
                 local_is_above_gateway,
                 top_most_pool_lane,
                 PlaceForBendDummy::AtTheTop,
+                crossing_number,
             );
             let iteration_start = StartAt::PoolLane(Coord3 {
                 pool_and_lane: top_most_pool_lane,
@@ -729,7 +755,7 @@ fn handle_gateway_node_one_side(this_node_id: NodeId, graph: &mut Graph, directi
             (best_position, iteration_start)
         };
 
-        for crossable_node_or_bottom_barrier in graph
+        for crossable_node_or_bottom_barrier_or_none in graph
             .iter_downwards_same_pool(
                 iteration_start,
                 Some(std::cmp::max(this_pool_and_lane, bottom_most_pool_lane)),
@@ -738,72 +764,90 @@ fn handle_gateway_node_one_side(this_node_id: NodeId, graph: &mut Graph, directi
             .map(Some)
             .chain(std::iter::once(bottom_barrier.map(|node_id| &n!(node_id))))
         {
-            if best_position.1 <= other_node_pool_lane
-                && crossable_node_or_bottom_barrier
-                    .map(|node| node.pool_and_lane() > other_node_pool_lane)
-                    .unwrap_or(true)
-            {
-                // It might be that the `to` node is actually at a place where this lane has no
-                // nodes. Then we would jump over the `to` node's pool_lane, and so we need to manually
-                // do a check here and register *that* as the best position.
-                best_position = (
-                    best_position.0,
-                    other_node_pool_lane,
-                    PlaceForBendDummy::AtTheBottom,
-                );
-                break;
-            }
+            let crossable_node_or_bottom_barrier = match crossable_node_or_bottom_barrier_or_none {
+                Some(crossable_node_or_bottom_barrier)
+                    if crossable_node_or_bottom_barrier.pool_and_lane() <= other_node_pool_lane =>
+                {
+                    crossable_node_or_bottom_barrier
+                }
+                _ => {
+                    // no more nodes, or the crossing node is in some lower lane.
+                    if best_position.1 == other_node_pool_lane {
+                        // It might be that the `to` node is actually at a place where this lane has no
+                        // nodes. Then we would jump over the `to` node's pool_lane, and so we need to manually
+                        // do a check here and register *that* as the best position.
+                        maybe_update_best_position(
+                            &mut best_position,
+                            (
+                                local_is_above_gateway,
+                                other_node_pool_lane,
+                                PlaceForBendDummy::AtTheBottom,
+                                crossing_number,
+                            ),
+                            is_above_gateway,
+                        );
+                    } else {
+                        best_position = (
+                            local_is_above_gateway,
+                            other_node_pool_lane,
+                            PlaceForBendDummy::AtTheBottom,
+                            crossing_number,
+                        );
+                    }
+                    break;
+                }
+            };
 
-            if best_position.1 < other_node_pool_lane
-                && crossable_node_or_bottom_barrier
-                    .map(|node| node.pool_and_lane() >= other_node_pool_lane)
-                    .unwrap_or(true)
-            {
+            if best_position.1 < crossable_node_or_bottom_barrier.pool_and_lane() {
                 // Move the best position into the current lane.
                 best_position = (
-                    best_position.0,
-                    other_node_pool_lane,
+                    local_is_above_gateway,
+                    crossable_node_or_bottom_barrier.pool_and_lane(),
                     PlaceForBendDummy::AtTheTop,
+                    crossing_number,
                 );
                 // But also continue, since we still need to check whether we need to cross more
                 // nodes.
             }
-            let crossable_node = match crossable_node_or_bottom_barrier {
-                // Continue only if this is not the bottom barrier.
-                Some(node) if Some(node.id) != bottom_barrier => node,
-                _ => break,
+
+            let crossable_node = if Some(crossable_node_or_bottom_barrier.id) != bottom_barrier {
+                // Continue only if this is not the bottom barrier. And rename for clarity.
+                crossable_node_or_bottom_barrier
+            } else {
+                break;
             };
             if crossable_node.id == this_node_id {
+                // Don't inspect the outgoing edges of the gateway.
                 local_is_above_gateway = false;
                 continue;
             }
+
+            // TODO If we have proper handling of loops, could it be that there are more outgoing
+            // edges?
             let crossable_other_node = match direction {
                 Direction::Outgoing => &to!(crossable_node.outgoing[0]),
-                Direction::Incoming => &from!(crossable_node.outgoing[0]),
+                Direction::Incoming => &from!(crossable_node.incoming[0]),
             };
 
             // At this point we should actually have a counting system and iterate as far as we can.
             // Right now it is rather asymmetric.
-            if local_is_above_gateway
-                && above_nodes_in_other_layer.contains(&crossable_other_node.id)
-            {
-                best_position = (
+            if above_nodes_in_other_layer.contains(&crossable_other_node.id) {
+                crossing_number -= 1;
+            } else if crossable_other_node.id != other_node.id {
+                // So it is below other_node.
+                crossing_number += 1;
+            }
+
+            maybe_update_best_position(
+                &mut best_position,
+                (
                     local_is_above_gateway,
                     crossable_node.pool_and_lane(),
                     PlaceForBendDummy::Below(crossable_node.id),
-                );
-            }
-            if !local_is_above_gateway {
-                if above_nodes_in_other_layer.contains(&crossable_other_node.id) {
-                    best_position = (
-                        local_is_above_gateway,
-                        crossable_node.pool_and_lane(),
-                        PlaceForBendDummy::Below(crossable_node.id),
-                    );
-                } else {
-                    break;
-                }
-            }
+                    crossing_number,
+                ),
+                is_above_gateway,
+            );
         }
         let kind = if this_pool_and_lane == other_node_pool_lane {
             BendDummyKind::FromGatewayToSameLane {
