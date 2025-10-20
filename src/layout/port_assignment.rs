@@ -552,26 +552,20 @@ fn is_vertical_edge(
             if node.id == end_below.id {
                 if obstacle_in_the_way {
                     return None;
-                } else if from.id == start_above.id {
-                    if current_node == from.id {
-                        dbg_compact!(current_node, from, to, start_above, end_below);
-                        return Some(VerticalEdgeDocks::Below);
-                    } else {
-                        dbg_compact!(current_node, from, to, start_above, end_below);
-                        return Some(VerticalEdgeDocks::Above);
-                    }
+                } else if current_node == start_above.id {
+                    dbg_compact!(current_node, from, to, start_above, end_below);
+                    return Some(VerticalEdgeDocks::Below);
                 } else {
-                    assert!(to.id == start_above.id);
-                    if current_node == from.id {
-                        dbg_compact!(current_node, from, to, start_above, end_below);
-                        return Some(VerticalEdgeDocks::Below);
-                    } else {
-                        dbg_compact!(current_node, from, to, start_above, end_below);
-                        return Some(VerticalEdgeDocks::Above);
-                    }
+                    dbg_compact!(current_node, from, to, start_above, end_below);
+                    return Some(VerticalEdgeDocks::Above);
                 }
             }
-            if !node.is_long_edge_dummy() {
+            if !node.is_any_dummy() {
+                // This function should run before gateway bend dummies are added. If this is not
+                // possible then this logic needs to be adapted, will be a bit annoying...
+                assert!(
+                    !matches!(node.node_type, NodeType::BendDummy { originating_node , .. } if n!(originating_node).is_gateway())
+                );
                 obstacle_in_the_way = true;
             }
         }
