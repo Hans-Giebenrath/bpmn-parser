@@ -586,7 +586,7 @@ fn check_if_valid_message_flow_end(node: &Node, errors: &mut ValidationErrors) {
             BpmnNode::Activity(_) => (),
             _ => {
                 errors.push((
-                "This node type cannot send messages. Only message events (M#) or tasks (e.g. .-) can be used as message flow starts. Note that shorthand events (#) are automatically transformed into message events when they are used in a message flow.".to_string(),
+                "This node type cannot catch messages. Only message events (M#) or tasks (e.g. .-) can be used as message flow ends. Note that shorthand events (#) are automatically transformed into message events when they are used in a message flow.".to_string(),
                     *tc,
                     Level::Error
                 ));
