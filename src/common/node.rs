@@ -22,7 +22,7 @@ pub const LAYER_WIDTH: f64 = 80.0;
 const AVAILABLE_SPACE: f64 = LAYER_WIDTH - 20.0;
 
 #[derive(Debug)]
-pub enum NodeType {
+pub(crate) enum NodeType {
     RealNode {
         /// Is data node -> DataStoreReference or DataObjectReference
         event: BpmnNode,
