@@ -1,11 +1,8 @@
-* xyilp: nodes should be more treated with a kind of bounding box, at least wrt the top border. Otherwise the middle of event nodes and gateway nodes are not on the same line
-* xyilp: edge vertical distance against the node port, seems not so atm if there is a dataedge present then there are bends.
-* ports: if on the left or right side there is only one sequence flow, then that one should be put into the middle. Otherwise consecutive nodes will have wonky stairs since outgoing SFs are not centered on their side.
 * g0013.bpmd is a IXI example.
 * Add more checks for the correctness of the BPMN semantics:
   * Check that the gateway branching and joining nodes match (use a dedicated graph analysis phase, not in the parser)
+* fix the doc/test/build.sh to use Make (or Rust threadpools) so we can have bounded parallelism.
+* g0001 or better t0027: Maybe need to add more spacing so that the gateway node arrow heads are not so weirdly tightly bent?
 
-
-* In the same lane, if a node goes into another lane (`F ->another-lane`), and then a coming back (`F <-back-again`), then these two nodes of the same lane should have a `leftof` relationship. Otherwise they might be layouted in a stacked way.
 
 * Saw some youtuber who talks about generating BPMNs via ChatGPT. I guess I should write him when the tool is in a more usable state, then he can evaluate that: https://www.youtube.com/watch?v=StqnUeWv6Lc

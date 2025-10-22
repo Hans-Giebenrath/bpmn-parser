@@ -57,11 +57,17 @@ Layout (probably not a good first issue):
 * Bug fixes (see separate TODO file)
 * Boundary Events
 * Message Flow Orthogonal Routing
+* Gateway *happy path* marking (though this might fall into the layout-instructions section): right
+  now the gateway nodes are balanced between outgoing edges. But sometimes one outgoing edge is the
+  *happy path* and this should go straight out. Non-happy path edges lead to tasks to handle
+  exceptional situations, so they should branch out off sight (harshly spoken).
 * Marking a pool as black box
 * Cycles
 * Nested states
 * Separate Interrupt States
-* Layout-Instructions
+* Layout-Instructions (`@a above @b` etc)
+* Labels could be positioned a tidbit more intelligently to not cross outgoing/incoming edges
+  (probably an easy issue)
 
 Non-Layout (good for contributors):
 
@@ -69,8 +75,8 @@ Non-Layout (good for contributors):
 * SVG-Based Image Export (in addition to XML export)
 * Interactive SVG Export
 * LSP/treesitter/...
-* `import` statement (this is a bit tricky)
-* A collaborative online editor (ideally with WASM compiled BPMD tool).
+* `import` statement (this is a bit tricky actually)
+* A collaborative online editor (ideally with WASM compiled BPMD tool, using `microlp`).
 
 ## Goals
 
