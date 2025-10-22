@@ -4,6 +4,7 @@ use crate::common::edge::FlowType;
 use crate::common::graph::EdgeId;
 use crate::common::graph::Graph;
 use crate::common::graph::LaneId;
+use crate::common::graph::MAX_NODE_HEIGHT;
 use crate::common::graph::PoolId;
 use crate::common::node::BendDummyKind;
 use crate::common::node::Node;
@@ -102,22 +103,23 @@ fn assign_y(graph: &mut Graph, pool: PoolId, lane: LaneId, min_y_value: usize) -
     // Keeps the common graph types less cluttered.
     //let mut all_nodes: HashMap</*layer*/ LayerId, NodeId> = HashMap::new();
     for node_id in node_ids_iter.clone() {
-        assert!(
-            graph.nodes[node_id].pool == pool,
-            "{pool:?}, {lane:?} -> {}",
-            graph.nodes[node_id]
-        );
-        assert!(
-            graph.nodes[node_id].lane == lane,
-            "{pool:?}, {lane:?} -> {}",
-            graph.nodes[node_id]
-        );
+        let node = &mut n!(node_id);
+        assert!(node.pool == pool, "{pool:?}, {lane:?} -> {}", node);
+        assert!(node.lane == lane, "{pool:?}, {lane:?} -> {}", node);
+        assert!(node.height <= MAX_NODE_HEIGHT);
+
+        // Make sure nodes are nicely aligned at the top.
+        let min_y_value = min_y_value + (MAX_NODE_HEIGHT - node.height) / 2;
         let var = vars.add(variable().integer().min(min_y_value as f64));
-        // Make sure that nodes are all pushed together overall. Important if some sequence flow
-        // from another lane comes in, then we need to ensure that one is put towards 0 and the
-        // other towards INT_MAX.
-        objective += PULL_UP_FACTOR * var;
-        n!(node_id).aux = NodePhaseAuxData::XyIlpNodeData(XyIlpNodeData { var });
+        // TODO: This should ideally be applied rather scarcely: Ideally only a single node per
+        // strongly connected component inside a lane.
+        if !node.is_gateway() {
+            // Make sure that nodes are all pushed together overall. Important if some sequence flow
+            // from another lane comes in, then we need to ensure that one is put towards 0 and the
+            // other towards INT_MAX.
+            objective += PULL_UP_FACTOR * var;
+        }
+        node.aux = NodePhaseAuxData::XyIlpNodeData(XyIlpNodeData { var });
     }
 
     // Minimize the vertical length of edges. I.e. ideally as a result they go
@@ -297,7 +299,8 @@ fn assign_y(graph: &mut Graph, pool: PoolId, lane: LaneId, min_y_value: usize) -
         max_y_plus_height_encountered = max_y_plus_height_encountered.max(node.y + node.height);
     }
 
-    // Check if the ILP actually assigned the lowest possible y value. If not,
+    // Check if the ILP actually assigned the lowest possible y value. This happens if the highest
+    // nodes have a smaller height than MAX_NODE_HEIGHT. If not,
     // we need to manually shift all the nodes upwards a bit to fit correctly
     // into the available space ("pixel perfect").
     if min_y_encountered > min_y_value {
@@ -306,7 +309,6 @@ fn assign_y(graph: &mut Graph, pool: PoolId, lane: LaneId, min_y_value: usize) -
             .nodes
             .iter()
             .for_each(|n| graph.nodes[n.0].y -= diff);
-        max_y_plus_height_encountered -= diff;
     }
     max_y_plus_height_encountered - min_y_encountered
 }

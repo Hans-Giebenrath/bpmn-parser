@@ -4,6 +4,7 @@ use crate::common::edge::RegularEdgeBendPoints;
 use crate::common::graph::EdgeId;
 use crate::common::graph::Graph;
 use crate::common::node::AbsolutePort;
+use proc_macros::n;
 
 // Assigns bend points to the Regular edges. Afterwards, no more dummy nodes or edges are present.
 pub fn replace_dummy_nodes(graph: &mut Graph) {
@@ -15,17 +16,17 @@ pub fn replace_dummy_nodes(graph: &mut Graph) {
                 // ReplacedByDummies match arm.
             }
             EdgeType::Regular { bend_points, .. } => {
-                let AbsolutePort {
-                    x: from_x,
-                    y: from_y,
-                } = graph.nodes[edge.from.0].port_of_outgoing(edge_id).unwrap();
-                let AbsolutePort { x: to_x, y: to_y } =
-                    graph.nodes[edge.to.0].port_of_incoming(edge_id).unwrap();
-                let from_xy = (from_x, from_y);
-                let to_xy = (to_x, to_y);
+                // A lambda because in the FullyRouted case the port indexing doesn't work,
+                // so compute it lazily.
+                let from_and_to_xy = || {
+                    let from_xy = n!(edge.from).port_of_outgoing(edge_id).unwrap().as_pair();
+                    let to_xy = n!(edge.to).port_of_incoming(edge_id).unwrap().as_pair();
+                    (from_xy, to_xy)
+                };
                 match bend_points {
                     RegularEdgeBendPoints::FullyRouted(_) => continue,
                     RegularEdgeBendPoints::ToBeDeterminedOrStraight => {
+                        let (from_xy, to_xy) = from_and_to_xy();
                         let mut points = vec![from_xy, to_xy];
                         if edge.is_reversed {
                             points.reverse();
@@ -33,6 +34,7 @@ pub fn replace_dummy_nodes(graph: &mut Graph) {
                         *bend_points = RegularEdgeBendPoints::FullyRouted(points);
                     }
                     RegularEdgeBendPoints::SegmentEndpoints(segment_from, segment_to) => {
+                        let (from_xy, to_xy) = from_and_to_xy();
                         let mut points = vec![from_xy, *segment_from, *segment_to, to_xy];
                         if edge.is_reversed {
                             points.reverse();

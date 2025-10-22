@@ -19,6 +19,8 @@ use super::edge::FlowType;
 
 // Must be (one of) the widest block(s).
 pub const DUMMY_NODE_WIDTH: usize = 100;
+// TODO add a test that this is the exact maximum.
+pub const MAX_NODE_HEIGHT: usize = 80;
 
 /// Represents a graph consisting of nodes and edges.
 #[derive(Default)]
@@ -480,8 +482,6 @@ impl Debug for Graph {
                 n.display_text().unwrap_or_default(),
                 n.incoming.iter().map(|e| e.0).collect::<Vec<_>>(),
                 n.outgoing.iter().map(|e| e.0).collect::<Vec<_>>(),
-                //n.incoming_ports,
-                //n.outgoing_ports,
             )?;
             match &n.node_type {
                 NodeType::RealNode { .. } => write!(f, "real node")?,

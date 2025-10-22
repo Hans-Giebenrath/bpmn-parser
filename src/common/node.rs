@@ -152,6 +152,12 @@ pub struct AbsolutePort {
     pub y: usize,
 }
 
+impl AbsolutePort {
+    pub(crate) fn as_pair(&self) -> (usize, usize) {
+        (self.x, self.y)
+    }
+}
+
 impl Add<XY> for &RelativePort {
     type Output = AbsolutePort;
 

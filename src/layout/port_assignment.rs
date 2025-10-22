@@ -296,9 +296,14 @@ fn handle_nongateway_node(this_node_id: NodeId, graph: &mut Graph) {
         incoming_ports.push(above_coordinates.next().unwrap());
     }
     incoming_ports.extend(
-        points_on_side(
+        partitioned_points_on_side(
             this_node.height,
             this_node.incoming.len() - above_inc - below_inc,
+            this_node
+                .incoming
+                .iter()
+                .skip(above_inc)
+                .position(|edge_id| e!(*edge_id).is_sequence_flow()),
         )
         .map(|y| RelativePort { x: 0, y }),
     );
@@ -309,9 +314,14 @@ fn handle_nongateway_node(this_node_id: NodeId, graph: &mut Graph) {
 
     outgoing_ports.extend(above_coordinates);
     outgoing_ports.extend(
-        points_on_side(
+        partitioned_points_on_side(
             this_node.height,
             this_node.outgoing.len() - above_out - below_out,
+            this_node
+                .outgoing
+                .iter()
+                .skip(above_out)
+                .position(|edge_id| e!(*edge_id).is_sequence_flow()),
         )
         .map(|y| RelativePort {
             x: this_node.width,
@@ -377,8 +387,6 @@ fn handle_nongateway_node(this_node_id: NodeId, graph: &mut Graph) {
         ..
     } = this_node.coord3();
 
-    // TODO The relative_port_x must be relative to the created bend dummies, so there is something
-    // still wrong.
     for (edge_id, relative_port_x, is_where) in united_edges_which_require_bendpoint {
         let to_pool_and_lane = to!(edge_id).pool_and_lane();
         let is_same_lane = from_pool_and_lane == to_pool_and_lane;
@@ -586,6 +594,33 @@ fn is_vertical_edge(
 pub fn points_on_side(side_len: usize, k: usize) -> impl Iterator<Item = usize> + Clone {
     let step = side_len as f64 / (k as f64 + 1.0);
     (1..=k).map(move |i| ((i as f64) * step) as usize)
+}
+
+#[track_caller]
+pub fn partitioned_points_on_side(
+    side_len: usize,
+    k: usize,
+    mid_point: Option<usize>,
+) -> impl Iterator<Item = usize> + Clone {
+    assert!(
+        mid_point.is_none() || mid_point.unwrap() < k,
+        "midpoint {:?} k {k}",
+        mid_point
+    );
+    let points_before_midpoint = mid_point.unwrap_or(0);
+    let points_after_midpoint = mid_point.map_or_else(
+        move || k,
+        move |mid_point| k.strict_sub(1).strict_sub(mid_point),
+    );
+    points_on_side(side_len / 2, points_before_midpoint)
+        .chain(mid_point.into_iter().map(move |_| side_len / 2))
+        .chain(
+            points_on_side(
+                mid_point.map_or_else(|| 0, move |_| side_len / 2),
+                points_after_midpoint,
+            )
+            .map(move |point| point + side_len / 2),
+        )
 }
 
 enum Direction {
@@ -840,10 +875,6 @@ fn handle_gateway_node_one_side(this_node_id: NodeId, graph: &mut Graph, directi
         // between its above and below nodes. The idea is that it should actually be rather
         // floaty, and if less edge crossings can be achieved by moving it over above/below
         // nodes, then it should move to the more optimal position.
-        // TODO the nodes above and below still need to leave enough room to fit the gateway node
-        // inside. This would be easier if we don't use `.take()` on the following lines, so
-        // `this_node` remembers what are its original neighbors and can assign according gap
-        // constraints.
         let this_node = &mut n!(this_node_id);
         let above = this_node.node_above_in_same_lane.take();
         let below = this_node.node_below_in_same_lane.take();
