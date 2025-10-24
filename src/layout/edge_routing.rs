@@ -38,6 +38,10 @@ struct VerticalSegment {
 #[derive(Debug)]
 struct SegmentLayer {
     idx: usize,
+    /// For ixi situations. `idx` is left, `idx2` is right.
+    /// Not using an enum here (`enum { Vertical(usize), Diagonal(usize, usize) }`) since this makes
+    /// usage rather tiresome.
+    idx2: Option<usize>,
 }
 
 #[derive(Default, Debug)]
@@ -159,11 +163,15 @@ fn determine_segment_layers_ixi(
         return 0;
     }
     max_y_per_layer_buffer.clear();
-    todo!();
 
-    // TODO the longer edges should be inside, so that the if crosses overlap they will have
+    // The longer edges are the innermost, so that the if crosses overlap they will have
     // severely different edge angles. If smaller are inside and larger outside, the nodes could in
     // theory even overlap which is bad.
+    routing_edges
+        .sort_unstable_by_key(|(e, _)| ((e.segment.start_y).abs_diff(e.segment.end_y), e.min_y()));
+
+    // The crosses are constructed around a
+    const MID_IDX: usize = usize::MAX / 2;
 
     let total_count_of_segmen_layers = max_y_per_layer_buffer.len();
 
@@ -238,6 +246,8 @@ fn determine_segment_layers_up_or_down_edges(
 
     total_count_of_segmen_layers
 }
+
+struct PerLayer(Vec<SegmentsWithYOverlap>);
 
 fn get_layered_edges(graph: &mut Graph) -> Vec<Vec<SegmentsWithYOverlap>> {
     let mut edge_layers = Vec::<Vec<RegularEdge>>::new();
