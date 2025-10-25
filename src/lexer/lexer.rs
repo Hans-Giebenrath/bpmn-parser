@@ -20,10 +20,6 @@ pub enum Statement {
     Activity(ActivityMeta), // `-` for task activity
     // X ->somewhere
     GatewayBranchStart(GatewayNodeMeta),
-    // G <-somewhere -- does not correspond to a visually visible node.
-    GatewayBranchEnd(GatewayInnerMeta),
-    // G ->end -- does not correspond to a visually visible node.
-    GatewayJoinStart(GatewayInnerMeta),
     // X <-end
     GatewayJoinEnd(GatewayNodeMeta),
     SequenceFlowJump(SequenceFlowMeta), // `F ->`
@@ -62,11 +58,6 @@ pub(crate) struct GatewayNodeMeta {
     pub(crate) gateway_type: GatewayType,
     pub(crate) node_meta: NodeMeta,
     pub(crate) sequence_flow_jump_metas: Vec<EdgeMeta>,
-}
-
-#[derive(Debug, Clone, PartialEq)]
-pub(crate) struct GatewayInnerMeta {
-    pub(crate) sequence_flow_jump_meta: EdgeMeta,
 }
 
 #[derive(Debug, Clone, Eq, PartialEq)]
@@ -230,7 +221,7 @@ struct AssembledAttributes {
     left_and_right_arrows: Option<Vec<(Direction, EdgeMeta)>>,
     task_type: TaskType,
     event_visual: EventVisual,
-    // Parses the virtual token, as this is rather ubiquitous, so parse it centrally..
+    // Parses the virtual token, as this is rather ubiquitous, so parse it centrally.
     used_shorthand_syntax: bool,
 }
 
@@ -369,29 +360,6 @@ fn to_gateway_outer(mut atts: Tokens) -> AResult {
     Ok(match sequence_flows.0 {
         Direction::Outgoing => Statement::GatewayBranchStart(meta),
         Direction::Incoming => Statement::GatewayJoinEnd(meta),
-    })
-}
-
-fn to_gateway_inner(atts: Tokens) -> AResult {
-    let atts = assemble_attributes(
-        "Inner Gateway Label",
-        atts,
-        AssemblyRequest {
-            display_text: ARAttribute::Forbidden,
-            ids: ARAttribute::Forbidden,
-            flows: ARFlowAttribute::RequiredExactlyOneArrow,
-            task_type: AROptionalAttribute::Forbidden,
-            event_visual: AROptionalAttribute::Forbidden,
-        },
-    )?;
-    let sequence_flows = atts.arrows_with_same_direction.unwrap();
-    let sequence_flow_jump_meta = sequence_flows.1.into_iter().next().unwrap();
-    let meta = GatewayInnerMeta {
-        sequence_flow_jump_meta,
-    };
-    Ok(match sequence_flows.0 {
-        Direction::Incoming => Statement::GatewayBranchEnd(meta),
-        Direction::Outgoing => Statement::GatewayJoinStart(meta),
     })
 }
 
@@ -929,7 +897,7 @@ impl StatementAssemblyState {
 
     fn end_line(&mut self) -> Result<(), Box<dyn std::error::Error>> {
         self.finish_freetext()?;
-        // If we have parsed any fragments, then we are open to parsing a new statement in the new
+        // If we have parsed any fragments, then we are open to parsing a new statement in the next
         // line.
         self.allow_new_statement =
             self.assemble_statement_callback.is_none() || !self.fragments.is_empty();
@@ -981,7 +949,7 @@ impl StatementAssemblyState {
                 "{}\n\n{}",
                 self.annotate_snippet(
                     statement_tc,
-                    "Error occured while parsing this statement".to_string(),
+                    "Error occurred while parsing this statement".to_string(),
                     Level::Info
                 ),
                 self.annotate_snippet(e.0, e.1, Level::Error)
@@ -1235,12 +1203,6 @@ impl<'a> Lexer<'a> {
                         Token::DataKind(previous_data_type, true),
                     );
                 }
-                Some('G') if self.sas.allow_new_statement => {
-                    let tc = self.current_coord();
-                    self.advance();
-                    self.sas
-                        .next_statement(tc, self.position, to_gateway_inner)?;
-                }
                 Some('F') if self.sas.allow_new_statement => {
                     let tc = self.current_coord();
                     self.advance();
@@ -1450,23 +1412,6 @@ mod tests {
         assert!(matches!(
             result.next().unwrap().1,
             Statement::GatewayJoinEnd(_)
-        ));
-
-        Ok(())
-    }
-
-    #[test]
-    fn basic_inner_gateway() -> Result<(), Box<dyn std::error::Error>> {
-        let mut result = lex("G ->lbl".to_string())?;
-        assert!(matches!(
-            result.next().unwrap().1,
-            Statement::GatewayJoinStart(_)
-        ));
-
-        let mut result = lex("G <-label \"text\"".to_string())?;
-        assert!(matches!(
-            result.next().unwrap().1,
-            Statement::GatewayBranchEnd(_)
         ));
 
         Ok(())

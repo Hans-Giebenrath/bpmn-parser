@@ -13,7 +13,6 @@ use crate::lexer::DataMeta;
 use crate::lexer::Direction;
 use crate::lexer::EdgeMeta;
 use crate::lexer::EventType;
-use crate::lexer::GatewayInnerMeta;
 use crate::lexer::GatewayNodeMeta;
 use crate::lexer::SequenceFlowMeta;
 use crate::lexer::lex;
@@ -191,8 +190,6 @@ impl Parser {
                 Statement::EventEnd(meta) => self.parse_event(meta, true)?,
                 Statement::Activity(meta) => self.parse_activity(meta)?,
                 Statement::GatewayBranchStart(meta) => self.parse_gateway_branch_start(meta)?,
-                Statement::GatewayBranchEnd(meta) => self.parse_gateway_branch_end(meta)?,
-                Statement::GatewayJoinStart(meta) => self.parse_gateway_join_start(meta)?,
                 Statement::GatewayJoinEnd(meta) => self.parse_gateway_join_end(meta)?,
                 Statement::SequenceFlowJump(meta) => self.parse_sequence_flow_jump(meta)?,
                 Statement::SequenceFlowLand(meta) => self.parse_sequence_flow_land(meta)?,
@@ -482,73 +479,6 @@ impl Parser {
         Ok(())
     }
 
-    fn parse_gateway_branch_end(&mut self, meta: GatewayInnerMeta) -> Result<(), ParseError> {
-        match self.context.lifeline_state {
-LifelineState::ActiveLifeline { token_coordinate, .. } | LifelineState::StartedFromSequenceFlowLanding { token_coordinate, .. } =>
-            return Err(vec![
-(
-                "Any sequence flow above this statement should be finished, but this is not the case.".to_string(),
-                self.context.current_token_coordinate,Level::Error
-            ),
-            (
-                "This statement does not finish the sequence flow. Try using `. End Event`, `F ->somewhere` or `X ->lbl1 ->lbl2` to finish the sequence flow.".to_string(),
-                    token_coordinate, Level::Note
-            )
-            ]),
-_ => (),
-        }
-        if !meta.sequence_flow_jump_meta.text_label.is_empty() {
-            dbg!(
-                "The label text should be stored within the edge or so, and warn if the other end already provided a text for this edge."
-            );
-        }
-        self.context.lifeline_state = LifelineState::StartedFromSequenceFlowLanding {
-            name: meta.sequence_flow_jump_meta.target,
-            token_coordinate: self.context.current_token_coordinate,
-        };
-        Ok(())
-    }
-
-    fn parse_gateway_join_start(&mut self, meta: GatewayInnerMeta) -> Result<(), ParseError> {
-        let pool_and_lane = self.manage_pool_and_lane_ids_for_new_node();
-        let old_state = std::mem::replace(
-            &mut self.context.lifeline_state,
-            LifelineState::NoLifelineActive {
-                previous_lifeline_termination_statement: Some(
-                    self.context.current_token_coordinate,
-                ),
-            },
-        );
-        let known_node_id = match old_state {
-            LifelineState::ActiveLifeline { last_node_id, .. } => last_node_id,
-            a => {
-                return Err(err_from_no_lifeline_active(
-                    a,
-                    self.context.current_token_coordinate,
-                ));
-            }
-        };
-        if let NodeType::RealNode { ref mut tc, .. } = self.graph.nodes[known_node_id.0].node_type {
-            tc.end = self.context.current_token_coordinate.end;
-        } else {
-            panic!("in the beginning there are no dummy nodes.");
-        };
-        // The only place where there are multiple uses of the same label allowed.
-        self.context
-            .dangling_sequence_flows
-            .entry(pool_and_lane.pool)
-            .or_default()
-            .dangling_end_map
-            .entry(meta.sequence_flow_jump_meta.target)
-            .or_default()
-            .push(DanglingEdgeInfo {
-                known_node_id,
-                edge_text: meta.sequence_flow_jump_meta.text_label,
-                tc: self.context.current_token_coordinate,
-            });
-        Ok(())
-    }
-
     /// Connects the current node with the previous node, handling incoming joining/jumping
     /// lifelines as well.
     fn connect_nodes(
@@ -775,7 +705,26 @@ _ => (),
         // Make sure that this is not in some weird position.
         let _pool_and_lane = self.manage_pool_and_lane_ids_for_new_node();
 
-        // Check that a valid node type follows
+        match self.context.lifeline_state {
+LifelineState::ActiveLifeline { token_coordinate, .. } | LifelineState::StartedFromSequenceFlowLanding { token_coordinate, .. } =>
+            return Err(vec![
+(
+                "Any sequence flow above this statement should be finished, but this is not the case.".to_string(),
+                self.context.current_token_coordinate,Level::Error
+            ),
+            (
+                "This statement does not finish the sequence flow. Try using `. End Event`, `F ->somewhere` or `X ->lbl1 ->lbl2` to finish the sequence flow.".to_string(),
+                    token_coordinate, Level::Note
+            )
+            ]),
+_ => (),
+        }
+        if !meta.sequence_flow_jump_meta.text_label.is_empty() {
+            dbg!(
+                "The label text should be stored within the edge or so, and warn if the other end already provided a text for this edge."
+            );
+        }
+
         self.context.lifeline_state = LifelineState::StartedFromSequenceFlowLanding {
             name: meta.sequence_flow_jump_meta.target,
             token_coordinate: self.context.current_token_coordinate,

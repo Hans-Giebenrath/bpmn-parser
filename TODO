@@ -3,6 +3,7 @@
   * Check that the gateway branching and joining nodes match (use a dedicated graph analysis phase, not in the parser)
 * fix the doc/test/build.sh to use Make (or Rust threadpools) so we can have bounded parallelism.
 * g0001 or better t0027: Maybe need to add more spacing so that the gateway node arrow heads are not so weirdly tightly bent?
-
+* When a gateway has only two outgoing edges to one side in the same lane, then give them a minimum distance such that the bendpoints have a greater distance from the gateway top/bottom.
+* Also handle JXI routing: swap up-down order to down-up order (or vice versa), or if it is unavoidable then move JXIs the the IXI handling. (JXI is an edge cross where only one side (top or bottom) has the same y coordinate)
 
 * Saw some youtuber who talks about generating BPMNs via ChatGPT. I guess I should write him when the tool is in a more usable state, then he can evaluate that: https://www.youtube.com/watch?v=StqnUeWv6Lc
