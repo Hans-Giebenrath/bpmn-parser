@@ -159,29 +159,82 @@ fn determine_segment_layers_ixi(
     max_y_per_layer_buffer: &mut Vec</* max_y */ usize>,
     base_segment_layer: usize,
 ) -> usize {
-    if routing_edges.is_empty() {
-        return 0;
+    match &mut routing_edges[..] {
+        [] => return 0,
+        [(left, right)] => {
+            left.layer.idx = base_segment_layer;
+            left.layer.idx2 = Some(base_segment_layer + 1);
+            right.layer.idx = base_segment_layer + 1;
+            right.layer.idx2 = Some(base_segment_layer);
+            return 2;
+        }
+        _ => (),
     }
     max_y_per_layer_buffer.clear();
 
-    // The longer edges are the innermost, so that the if crosses overlap they will have
-    // severely different edge angles. If smaller are inside and larger outside, the nodes could in
-    // theory even overlap which is bad.
-    routing_edges
-        .sort_unstable_by_key(|(e, _)| ((e.segment.start_y).abs_diff(e.segment.end_y), e.min_y()));
+    for (e, _) in routing_edges.iter_mut() {
+        let min_y = e.min_y();
+        let best_fit_layer_idx = max_y_per_layer_buffer
+            .iter()
+            .position(|previous_edge_max_y| *previous_edge_max_y < min_y);
+        let max_y = e.max_y();
+        let layer_idx = match best_fit_layer_idx {
+            None => {
+                // No good layer found, need to add a new one to the right.
+                max_y_per_layer_buffer.push(max_y);
+                max_y_per_layer_buffer.len() - 1
+            }
+            Some(layer_idx) => {
+                max_y_per_layer_buffer[layer_idx] = max_y;
+                layer_idx
+            }
+        };
+        e.layer.idx = layer_idx;
+    }
 
-    // The crosses are constructed around a
-    const MID_IDX: usize = usize::MAX / 2;
+    // Now do some funny stuff: We store in the buffer how many vertical space is covered for each
+    // layer. Then we sort them and use the lower byte to encode the original idx value assigned to
+    // the nodes. After sorting, each index is then mapped to an index which alternates around a
+    // middle point (like a mountain-shaped histogram) such that the ixies are layouted around a
+    // middle. (Reusing bytes so we don't need to create an additional allocation.)
+    // TODO heavy testing please
 
-    let total_count_of_segmen_layers = max_y_per_layer_buffer.len();
+    // Count for each layer how many pixels of vertical edge segments there are.
+    max_y_per_layer_buffer.iter_mut().for_each(|x| *x = 0);
+    for (e, _) in routing_edges.iter() {
+        max_y_per_layer_buffer[e.layer.idx] += e.max_y() - e.min_y();
+    }
 
-    // Shift them all to the correct value.
-    routing_edges.iter_mut().for_each(|(e1, e2)| {
-        e1.layer.idx += base_segment_layer;
-        e2.layer.idx += base_segment_layer;
-    });
+    const BITS: usize = 8;
+    for (idx, max_y) in max_y_per_layer_buffer.iter_mut().enumerate() {
+        assert!(idx < (1 << BITS)); // I am rather confident that this will never be surpassed. This
+        // means that we need at least 1000 nodes which should be blocked in the beginning already.
+        *max_y = (*max_y << BITS) | idx;
+    }
 
-    total_count_of_segmen_layers
+    // Can be unstable since there are no duplicates anyway: the lower byte is unique.
+    max_y_per_layer_buffer.sort_unstable();
+
+    let mid = (max_y_per_layer_buffer.len() - 1) / 2;
+    for (new_target_idx, &mut max_y) in std::iter::once(0isize)
+        .chain((0..).flat_map(|i| [i as isize, -i as isize]))
+        .map(|offset| mid.strict_add_signed(offset))
+        .zip(&mut *max_y_per_layer_buffer)
+    {
+        let from_idx = max_y & ((1 << BITS) - 1);
+        let new_idx = 2 * new_target_idx + base_segment_layer;
+        let new_idx2 = new_idx + 1;
+        for (left, right) in routing_edges.iter_mut() {
+            if left.layer.idx == from_idx {
+                left.layer.idx = new_idx;
+                left.layer.idx2 = Some(new_idx2);
+                right.layer.idx = new_idx2;
+                right.layer.idx2 = Some(new_idx);
+            }
+        }
+    }
+
+    max_y_per_layer_buffer.len() * 2
 }
 
 fn determine_segment_layers_up_or_down_edges(
@@ -303,7 +356,7 @@ fn get_layered_edges(graph: &mut Graph) -> Vec<Vec<SegmentsWithYOverlap>> {
         result.push(vec![]);
     }
     for (edge_layer_idx, mut edge_layer) in edge_layers.into_iter().enumerate() {
-        // sort by min_y: To identity groups
+        // sort by min_y: To identify groups
         // sort by max_y: To later be able to easily spot ixi crossings from the up_edges and
         // down_edges vectors.
         edge_layer.sort_unstable_by_key(|e| (e.min_y(), e.max_y()));
