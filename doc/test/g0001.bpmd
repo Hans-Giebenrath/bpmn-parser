@@ -1,8 +1,8 @@
 # Start Event
 X Gateway ->above"Go Here" ->below"No, here!"
 
-G <-above
+F <-above
 . Above Finish
 
-G <-below
+F <-below
 . Below Finish

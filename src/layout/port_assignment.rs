@@ -22,7 +22,6 @@ use proc_macros::{e, from, n, to};
 use std::collections::HashSet;
 
 pub fn port_assignment(graph: &mut Graph) {
-    dbg_compact!(graph);
     // First handle non-gateway nodes and then gateway nodes in two separate loops. This way,
     // `is_vertical_edge` is easier as it does not need to account for bend dummies which make
     // everything harder.
@@ -561,10 +560,8 @@ fn is_vertical_edge(
                 if obstacle_in_the_way {
                     return None;
                 } else if current_node == start_above.id {
-                    dbg_compact!(current_node, from, to, start_above, end_below);
                     return Some(VerticalEdgeDocks::Below);
                 } else {
-                    dbg_compact!(current_node, from, to, start_above, end_below);
                     return Some(VerticalEdgeDocks::Above);
                 }
             }
@@ -579,7 +576,6 @@ fn is_vertical_edge(
         }
     }
 
-    dbg!(&graph);
     unreachable!(
         "We did not find the other end of the edge in the same layer. Very, verrryyyy strange. Smells like ... a ... BUG?!"
     );

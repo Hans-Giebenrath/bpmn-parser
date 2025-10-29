@@ -17,19 +17,54 @@ use std::mem;
 
 use super::edge::FlowType;
 
-// Must be (one of) the widest block(s).
-pub const DUMMY_NODE_WIDTH: usize = 100;
-// TODO add a test that this is the exact maximum.
-pub const MAX_NODE_HEIGHT: usize = 80;
+const fn max_array(values: &[usize]) -> usize {
+    let mut max = values[0];
+    let mut i = 1;
+    while i < values.len() {
+        if values[i] > max {
+            max = values[i];
+        }
+        i += 1;
+    }
+    max
+}
+
+pub const EVENT_NODE_WIDTH: usize = 36;
+pub const EVENT_NODE_HEIGHT: usize = 36;
+pub const GATEWAY_NODE_WIDTH: usize = 50;
+pub const GATEWAY_NODE_HEIGHT: usize = 50;
+pub const ACTIVITY_NODE_WIDTH: usize = 100;
+pub const ACTIVITY_NODE_HEIGHT: usize = 80;
+pub const DATASTORE_NODE_WIDTH: usize = 50;
+pub const DATASTORE_NODE_HEIGHT: usize = 50;
+pub const DATAOBJECT_NODE_WIDTH: usize = 36;
+pub const DATAOBJECT_NODE_HEIGHT: usize = 50;
+pub const MAX_NODE_WIDTH: usize = max_array(&[
+    EVENT_NODE_WIDTH,
+    GATEWAY_NODE_WIDTH,
+    ACTIVITY_NODE_WIDTH,
+    DATASTORE_NODE_WIDTH,
+    DATAOBJECT_NODE_WIDTH,
+]);
+pub const MAX_NODE_HEIGHT: usize = max_array(&[
+    EVENT_NODE_HEIGHT,
+    GATEWAY_NODE_HEIGHT,
+    ACTIVITY_NODE_HEIGHT,
+    DATASTORE_NODE_HEIGHT,
+    DATAOBJECT_NODE_HEIGHT,
+]);
+// Must be (one of) the widest block(s) due to bend dummy port x coordinate (which is usize).
+pub const DUMMY_NODE_WIDTH: usize = MAX_NODE_WIDTH;
+pub const DUMMY_NODE_HEIGHT: usize = 0;
 
 /// Represents a graph consisting of nodes and edges.
 #[derive(Default)]
 pub struct Graph {
     /// Nodes shall only be added to this Vec, but the order shall not be modified.
-    /// Otherwise NodeIds will point to the wrong nodes.
+    /// Otherwise, NodeIds will point to the wrong nodes.
     pub nodes: Vec<Node>,
     /// Edges shall only be added to this Vec, but the order shall not be modified.
-    /// Otherwise EdgeIds will point to the wrong edges.
+    /// Otherwise, EdgeIds will point to the wrong edges.
     pub edges: Vec<Edge>,
     pub pools: Vec<Pool>,
 
@@ -443,23 +478,23 @@ pub fn node_size(node_type: &NodeType) -> (usize, usize) {
         NodeType::LongEdgeDummy | NodeType::BendDummy { .. } => {
             // Height of 0 so there is just padding between the lines.
             // Otherwise, there would be too much whitespace between lines.
-            return (DUMMY_NODE_WIDTH, 0);
+            return (DUMMY_NODE_WIDTH, DUMMY_NODE_HEIGHT);
         }
         NodeType::RealNode { event, .. } => event,
     };
 
     match event {
         // Start Events
-        BpmnNode::Event(_, _) => (36, 36),
+        BpmnNode::Event(_, _) => (EVENT_NODE_WIDTH, EVENT_NODE_HEIGHT),
 
         // Gateways
-        BpmnNode::Gateway(_) => (50, 50),
+        BpmnNode::Gateway(_) => (GATEWAY_NODE_WIDTH, GATEWAY_NODE_HEIGHT),
 
         // Activities
-        BpmnNode::Activity(_) => (100, 80),
+        BpmnNode::Activity(_) => (ACTIVITY_NODE_WIDTH, ACTIVITY_NODE_HEIGHT),
 
-        BpmnNode::Data(DataType::Store, _) => (50, 50),
-        BpmnNode::Data(DataType::Object, _) => (36, 50),
+        BpmnNode::Data(DataType::Store, _) => (DATASTORE_NODE_WIDTH, DATASTORE_NODE_HEIGHT),
+        BpmnNode::Data(DataType::Object, _) => (DATAOBJECT_NODE_WIDTH, DATAOBJECT_NODE_HEIGHT),
     }
 }
 

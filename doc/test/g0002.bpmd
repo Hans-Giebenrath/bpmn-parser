@@ -1,8 +1,8 @@
 # Above Start
-G ->endjoin
+F ->endjoin
 
 # Below Start
-G ->endjoin
+F ->endjoin
 
 X Gateway <-endjoin
 . Finish.

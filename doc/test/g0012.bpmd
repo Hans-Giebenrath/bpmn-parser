@@ -2,10 +2,10 @@
 
 == Lane 1
 # Start A 1
-G ->j1
+F ->j1
 
 # Start C 2
-G ->j2
+F ->j2
 
 X <-j1
 . Finish.
@@ -14,10 +14,10 @@ X <-j1
 == Lane 2
 
 # Start A 2
-G ->j2
+F ->j2
 
 # Start C 1
-G ->j1
+F ->j1
 
 
 X <-j2

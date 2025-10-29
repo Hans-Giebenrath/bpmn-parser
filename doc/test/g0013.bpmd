@@ -4,7 +4,7 @@
 # Start Event
 X G1 ->g1
 
-G <-g2
+F <-g2
 . Fin C 2
 
 == Lane 2
@@ -12,5 +12,5 @@ G <-g2
 # Start Event
 X G2 ->g2
 
-G <-g1
+F <-g1
 . Fin C 1

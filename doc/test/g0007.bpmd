@@ -4,13 +4,13 @@
 # Start Event
 X ->g1
 
-G <-g1
+F <-g1
 - A-1
-G ->j1
+F ->j1
 
-G <-g2
+F <-g2
 - C-2
-G ->j2
+F ->j2
 
 X <-j1
 . Finish.
@@ -21,13 +21,13 @@ X <-j1
 # Start Event
 X ->g2
 
-G <-g2
+F <-g2
 - A-2
-G ->j2
+F ->j2
 
-G <-g1
+F <-g1
 - C-1
-G ->j1
+F ->j1
 
 
 X <-j2

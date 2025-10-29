@@ -1,17 +1,17 @@
 # Start Event
 X ->g1
 
-G <-g1
+F <-g1
 - A1
-G ->endjoin
+F ->endjoin
 
-G <-g1
+F <-g1
 - B2
-G ->endjoin
+F ->endjoin
 
-G <-g1
+F <-g1
 - C3
-G ->endjoin
+F ->endjoin
 
 X <-endjoin
 . Finish.

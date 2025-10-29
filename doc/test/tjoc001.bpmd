@@ -17,10 +17,10 @@
 - P3.5.1 Validate Input Data Quality
 X Validated? ->no"no" ->yes"yes"
 
-G <-no
+F <-no
 . Notify Input Party
 
-G <-yes
+F <-yes
 - P3.5.2 Store Protected Input Data
 - P4.1 Execute Computation
 - P4.2 Delete Input and Interim Data
@@ -30,10 +30,10 @@ X Computation successful? ->success"yes" ->go_to_delete"no"
 // - P4.3 Delete Protected Output Data
 // . CT terminated
 
-G <-success
+F <-success
 # Wait for incoming download request
 - P5.2 Send Protected Output Data Store
-G ->go_to_delete
+F ->go_to_delete
 
 X <-go_to_delete
 - P5.3 Delete Protected Output Data

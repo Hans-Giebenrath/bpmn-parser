@@ -759,7 +759,6 @@ fn sort_incoming_and_outgoing(graph: &mut Graph) {
 
         let node = &mut graph.nodes[node_id];
         if node.outgoing.len() > 1 {
-            dbg_compact!(node.outgoing);
             let mut outgoing_cpy = std::mem::take(&mut node.outgoing);
             outgoing_cpy.sort_by_cached_key(|edge_id| {
                 let from_node = &from!(*edge_id);
@@ -848,7 +847,6 @@ fn sort_incoming_and_outgoing(graph: &mut Graph) {
                     unreachable!();
                 }
             });
-            dbg_compact!(outgoing_cpy);
             graph.nodes[node_id].outgoing = outgoing_cpy;
         }
     }

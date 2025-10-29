@@ -89,6 +89,6 @@ pub fn try_move_nodes_into_half_layer(graph: &mut Graph) {
         }
 
         // No conflict, so shift it right.
-        node.x += graph.config.layer_width / 2;
+        node.x += graph.config.layer_width() / 2;
     }
 }

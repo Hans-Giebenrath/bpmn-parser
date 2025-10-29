@@ -22,7 +22,6 @@ pub struct XyIlpNodeData {
 
 // TODO should solve the ILP for every lane independently.
 pub fn assign_xy_ilp(graph: &mut Graph) {
-    dbg!(&graph);
     let mut min_y_value = 0;
     let mut min_x_value = 0;
     for pool_idx in 0..graph.pools.len() {
@@ -79,8 +78,8 @@ fn aux(node: &Node) -> &XyIlpNodeData {
 }
 
 fn c<T: SolverModel>(problem: &mut T, constraint: Constraint) {
-    problem.add_constraint(dbg!(constraint));
-    //problem.add_constraint(constraint);
+    //problem.add_constraint(dbg!(constraint));
+    problem.add_constraint(constraint);
 }
 
 fn assign_y(graph: &mut Graph, pool: PoolId, lane: LaneId, min_y_value: usize) -> usize {
@@ -226,7 +225,6 @@ fn assign_y(graph: &mut Graph, pool: PoolId, lane: LaneId, min_y_value: usize) -
         }
     }
 
-    dbg!(&objective);
     let mut problem = vars.minimise(objective).using(default_solver);
     //problem.set_parameter("loglevel", "0");
 
@@ -318,12 +316,13 @@ fn assign_x(graph: &mut Graph) {
     // this was already taken care for in the layer assignment phase.
     let min_x_value = graph.config.pool_header_width + graph.config.lane_x_padding;
     for node in graph.nodes.iter_mut() {
-        node.x =
-            node.layer_id.0 * graph.config.layer_width + min_x_value + graph.config.layer_width / 2
-                - node.width / 2;
+        node.x = node.layer_id.0 * graph.config.layer_width()
+            + min_x_value
+            + graph.config.layer_width() / 2
+            - node.width / 2;
     }
     for pool in &mut graph.pools {
-        pool.width = graph.num_layers * graph.config.layer_width
+        pool.width = graph.num_layers * graph.config.layer_width()
             + graph.config.pool_header_width
             + graph.config.lane_x_padding;
         for lane in &mut pool.lanes {

@@ -3,9 +3,9 @@
 // heavier, i.e. are optimized to be straight if possible.
 X gateway ->end ->intermediate
 
-G <-intermediate
+F <-intermediate
 - Task
-G ->end
+F ->end
 
 X <-end
 . end

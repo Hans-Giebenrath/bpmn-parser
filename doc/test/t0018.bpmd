@@ -1,13 +1,13 @@
 # Start
 X ->up ->down
 
-G <-up
+F <-up
 - a
-G ->join
+F ->join
 
-G <-down
+F <-down
 - b
-G ->join
+F ->join
 
 X <-join
 . Done

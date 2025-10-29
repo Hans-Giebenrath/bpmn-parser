@@ -1,13 +1,13 @@
 # start
 X gateway ->intermediate2 ->intermediate
 
-G <-intermediate
+F <-intermediate
 - Task
-G ->end
+F ->end
 
-G <-intermediate2
+F <-intermediate2
 - event
-G ->end
+F ->end
 
 X <-end
 . end

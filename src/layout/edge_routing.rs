@@ -164,8 +164,8 @@ fn determine_segment_layers_ixi(
         [(left, right)] => {
             left.layer.idx = base_segment_layer;
             left.layer.idx2 = Some(base_segment_layer + 1);
-            right.layer.idx = base_segment_layer + 1;
-            right.layer.idx2 = Some(base_segment_layer);
+            right.layer.idx = base_segment_layer;
+            right.layer.idx2 = Some(base_segment_layer + 1);
             return 2;
         }
         _ => (),
@@ -226,12 +226,16 @@ fn determine_segment_layers_ixi(
         let new_idx2 = new_idx + 1;
         for (left, right) in routing_edges.iter_mut() {
             if left.layer.idx == from_idx {
-                left.layer.idx = new_idx;
-                left.layer.idx2 = Some(new_idx2);
-                right.layer.idx = new_idx2;
-                right.layer.idx2 = Some(new_idx);
+                // Can only set the `right` one here since `left` is still used as a needle.
+                right.layer.idx = new_idx;
+                right.layer.idx2 = Some(new_idx2);
             }
         }
+    }
+
+    for (left, right) in routing_edges.iter_mut() {
+        left.layer.idx = right.layer.idx;
+        left.layer.idx2 = right.layer.idx2;
     }
 
     max_y_per_layer_buffer.len() * 2
@@ -347,7 +351,7 @@ fn get_layered_edges(graph: &mut Graph) -> Vec<Vec<SegmentsWithYOverlap>> {
                 start_y,
                 end_y,
             },
-            layer: SegmentLayer { idx: 0 },
+            layer: SegmentLayer { idx: 0, idx2: None },
         });
     }
 
@@ -422,7 +426,7 @@ fn add_bend_points(graph: &mut Graph, groups: &[Vec<SegmentsWithYOverlap>]) {
             add_bend_points_one_layer(
                 graph,
                 one_layer_full_of_segments,
-                x_of_first_nodes_layer + graph.config.layer_width * (nodes_layer_idx + 1),
+                x_of_first_nodes_layer + graph.config.layer_width() * (nodes_layer_idx + 1),
             )
         });
 }
@@ -441,7 +445,7 @@ fn add_bend_points_one_layer(
             0
         } else {
             (graph.config.space_between_layers_for_segments() / (segment_num_layers - 1))
-                .clamp(2, graph.config.segment_layer_max_width)
+                .clamp(2, graph.config.max_space_between_vertical_edge_segments)
         };
         let min_x = (x_of_center_segment_layer) // + (graph.config.space_between_layers_for_segments() / 2))
             .saturating_sub(segment_layer_width * (segment_num_layers / 2));
@@ -457,39 +461,40 @@ fn add_bend_points_one_segment_group(
     min_x: usize,
 ) {
     segment.left_loops.iter().for_each(|e| {
-        add_bend_points_one_segment(graph, &e.segment, e.layer.idx, segment_layer_width, min_x)
+        add_bend_points_one_segment(graph, &e.segment, &e.layer, segment_layer_width, min_x)
     });
     segment.up_edges.iter().for_each(|e| {
-        add_bend_points_one_segment(graph, &e.segment, e.layer.idx, segment_layer_width, min_x)
+        add_bend_points_one_segment(graph, &e.segment, &e.layer, segment_layer_width, min_x)
     });
     segment.ixi_crossing.iter().for_each(|(e1, e2)| {
-        add_bend_points_one_segment(graph, &e1.segment, e1.layer.idx, segment_layer_width, min_x);
-        add_bend_points_one_segment(graph, &e2.segment, e2.layer.idx, segment_layer_width, min_x);
+        add_bend_points_one_segment(graph, &e1.segment, &e1.layer, segment_layer_width, min_x);
+        add_bend_points_one_segment(graph, &e2.segment, &e2.layer, segment_layer_width, min_x);
     });
     segment.down_edges.iter().for_each(|e| {
-        add_bend_points_one_segment(graph, &e.segment, e.layer.idx, segment_layer_width, min_x)
+        add_bend_points_one_segment(graph, &e.segment, &e.layer, segment_layer_width, min_x)
     });
     segment.right_loops.iter().for_each(|e| {
-        add_bend_points_one_segment(graph, &e.segment, e.layer.idx, segment_layer_width, min_x)
+        add_bend_points_one_segment(graph, &e.segment, &e.layer, segment_layer_width, min_x)
     });
 }
 
 fn add_bend_points_one_segment(
     graph: &mut Graph,
     segment: &VerticalSegment,
-    idx: usize,
+    SegmentLayer { idx, idx2 }: &SegmentLayer,
     segment_layer_width: usize,
     min_x: usize,
 ) {
     let x = min_x + idx * segment_layer_width;
+    let x2 = min_x + idx2.unwrap_or(*idx) * segment_layer_width;
     match &mut graph.edges[segment.id.0].edge_type {
         EdgeType::Regular { bend_points, .. } => {
             *bend_points =
-                RegularEdgeBendPoints::SegmentEndpoints((x, segment.start_y), (x, segment.end_y))
+                RegularEdgeBendPoints::SegmentEndpoints((x, segment.start_y), (x2, segment.end_y))
         }
         EdgeType::DummyEdge { bend_points, .. } => {
             *bend_points =
-                DummyEdgeBendPoints::SegmentEndpoints((x, segment.start_y), (x, segment.end_y))
+                DummyEdgeBendPoints::SegmentEndpoints((x, segment.start_y), (x2, segment.end_y))
         }
         EdgeType::ReplacedByDummies { .. } => {
             unreachable!("This edge kind was excluded at the beginning.")

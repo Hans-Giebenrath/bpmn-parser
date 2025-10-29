@@ -3,6 +3,8 @@
 // well can be done easy with this macro.
 use std::str::FromStr;
 
+use crate::common::graph::MAX_NODE_WIDTH;
+
 macro_rules! define_config {
     (
         $(
@@ -55,8 +57,10 @@ define_config!(
     pool_header_width: usize = 30,
     pool_y_margin: usize = 40,
     pool_x_margin: usize = 40,
-    layer_width: usize = 160,
-    segment_layer_max_width: usize = 6,
+    /// `min` because nodes have varying width. So this is for two wide blocks next to each other.
+    min_horizontal_space_between_nodes: usize = 60,
+    max_space_between_vertical_edge_segments: usize = 6,
+
     /// For empty lanes so that they don't collapse to a vertical line.
     height_of_empty_lane: usize = 40,
     height_of_empty_pool: usize = 40,
@@ -76,20 +80,17 @@ define_config!(
 
     /// TODO The heuristic moves data nodes just at a good place according to the average distance of
     /// the recipients. Edge case: This could result in a large amount of data objects in the same
-    /// (half)layer. In the future a postprocessing step should evenly distribute them to neighboring
+    /// (half)layer. In the future a post-processing step should evenly distribute them to neighboring
     /// layers. Since this is in practice rather uncommon, it is not implemented, yet.
     max_nodes_per_layer: usize = 3,
 );
 
 impl Config {
-    pub fn max_node_width(&self) -> usize {
-        // TODO calculate from other values.
-        // Should be possible to tweak
-        100
+    pub fn space_between_layers_for_segments(&self) -> usize {
+        self.min_horizontal_space_between_nodes - 2 * self.max_space_between_vertical_edge_segments
     }
 
-    pub fn space_between_layers_for_segments(&self) -> usize {
-        assert!(self.layer_width > self.max_node_width());
-        self.layer_width - self.max_node_width()
+    pub fn layer_width(&self) -> usize {
+        self.min_horizontal_space_between_nodes + MAX_NODE_WIDTH
     }
 }

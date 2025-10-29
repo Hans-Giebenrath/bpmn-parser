@@ -3,8 +3,8 @@
 # Start Event
 X Gateway ->g1
 
-G <-g1
+F <-g1
 . Above Finish
 
-G <-g1
+F <-g1
 . Below Finish

@@ -1,24 +1,24 @@
 # start
 X ->a ->b
 
-G <-a
+F <-a
 - task a
 X ->m ->n
 
-G <-m
+F <-m
 - task m
-G ->M
+F ->M
 
-G <-n
+F <-n
 - task n
-G ->M
+F ->M
 
 X <-M
-G ->A
+F ->A
 
-G <-b
+F <-b
 - Task b
-G ->A
+F ->A
 
 X <-A
 . end

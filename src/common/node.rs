@@ -17,10 +17,6 @@ use crate::lexer::PeBpmnProtection;
 use crate::lexer::TokenCoordinate;
 use std::ops::Add;
 
-// TODO this needs to move into a global configuration struct.
-pub const LAYER_WIDTH: f64 = 80.0;
-const AVAILABLE_SPACE: f64 = LAYER_WIDTH - 20.0;
-
 #[derive(Debug)]
 pub(crate) enum NodeType {
     RealNode {

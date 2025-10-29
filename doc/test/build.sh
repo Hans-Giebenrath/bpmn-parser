@@ -18,9 +18,18 @@ cleanup() {
 trap cleanup EXIT
 
 pushd "../.."
-cargo build
+release=true
+if $release; then
+    cargo build --release
+else
+    cargo build
+fi
 run() {
-    time "${CARGO_TARGET_DIR:-./target}"/debug/bpmn-parser "$@"
+    if $release; then
+        time "${CARGO_TARGET_DIR:-./target}"/release/bpmn-parser "$@"
+    else
+        time "${CARGO_TARGET_DIR:-./target}"/debug/bpmn-parser "$@"
+    fi
 }
 file_stem=compiled
 adoc_file="doc/test/$file_stem.adoc"
