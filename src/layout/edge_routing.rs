@@ -19,13 +19,17 @@
 //! For now, data edges and regular edges are treated equally, but this may change when
 //! problems are encountered.
 
+// TODO message flows need to be cut into pieces, do I do that?
+
+use std::collections::HashMap;
+
 use crate::common::edge::DummyEdgeBendPoints;
 use crate::common::edge::{EdgeType, RegularEdgeBendPoints};
 use crate::common::graph::{EdgeId, Graph};
 use crate::common::node::AbsolutePort;
 use itertools::Itertools;
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 struct VerticalSegment {
     id: EdgeId,
     start_y: usize,
@@ -35,13 +39,77 @@ struct VerticalSegment {
 /// TODO Maybe the code becomes easier if `idx` is inlined into `VerticalSegment`.
 /// This denormalizes the type as hyperedges contain the value rather duplicated,
 /// but maubbe it makes code a bit more maintainable actually.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 struct SegmentLayer {
     idx: usize,
     /// For ixi situations. `idx` is left, `idx2` is right.
     /// Not using an enum here (`enum { Vertical(usize), Diagonal(usize, usize) }`) since this makes
     /// usage rather tiresome.
     idx2: Option<usize>,
+}
+
+#[derive(Default)]
+struct SegmentGraph<'a> {
+    // TODO this could move into RegularEdge as a RefCell, that should be more efficient than hash
+    // lookups?
+    graph: HashMap<EdgeId, Vec<&'a RegularEdge>>,
+    roots: Vec<&'a RegularEdge>,
+}
+
+impl<'a> SegmentGraph<'a> {
+    fn add_edge(
+        &mut self,
+        new_edge: &'a RegularEdge,
+        left: Option<EdgeId>,
+        right: Option<&'a RegularEdge>,
+    ) {
+        fn remove<'a>(needle: &'a RegularEdge, haystack: &mut Vec<&'a RegularEdge>) {
+            haystack.retain(|connection| !std::ptr::eq(*connection, needle));
+        }
+        let right_connections = self.graph.entry(new_edge.segment.id).or_default();
+        if let Some(right) = right {
+            right_connections.push(right);
+            if let Some(left) = left
+                && let Some(left_connections) = self.graph.get_mut(&left)
+            {
+                // Cut the connection between `left` and `right`, since `new_edge` has entered the
+                // room between them.
+                remove(right, left_connections);
+            }
+        }
+        if left.is_none() {
+            if let Some(right) = right {
+                // `right` cannot be a root, since `new_edge` is left from it.
+                remove(right, &mut self.roots);
+            }
+            self.roots.push(new_edge);
+        }
+    }
+
+    fn all_paths_longest_first(self) -> Vec<Vec<&'a RegularEdge>> {
+        let mut all_paths = Vec::new();
+        for root in &self.roots {
+            self.recursion(root, Vec::new(), &mut all_paths);
+        }
+        all_paths.sort_unstable_by_key(|path: &Vec<&'a RegularEdge>| -(path.len() as isize));
+        all_paths
+    }
+
+    fn recursion(
+        &self,
+        current: &'a RegularEdge,
+        mut parent_path: Vec<&'a RegularEdge>,
+        all_paths: &mut Vec<Vec<&'a RegularEdge>>,
+    ) {
+        parent_path.push(current);
+        if let Some(children) = self.graph.get(&current.segment.id) {
+            for child in children {
+                self.recursion(child, parent_path.clone(), all_paths);
+            }
+        } else {
+            all_paths.push(parent_path);
+        }
+    }
 }
 
 #[derive(Default, Debug)]
@@ -55,10 +123,22 @@ struct SegmentsWithYOverlap {
     total_count_of_segmen_layers: usize,
 }
 
-#[derive(Debug)]
+// TODO left and right loops are not handled at all right now.
+#[derive(Debug, Clone, PartialEq)]
+enum Alignment {
+    Left,
+    Center,
+    Right,
+}
+
+#[derive(Debug, Clone)]
 struct RegularEdge {
     segment: VerticalSegment,
     layer: SegmentLayer,
+    alignment: Alignment,
+    // Oioioi sorry for the spaghetti. I just don't want to handle all those usize indexes.
+    // But I create paths from left to right and store `&RegularEdge`s, and I still want to mark
+    x_coordinate: std::cell::Cell<Option<usize>>,
 }
 
 impl RegularEdge {
@@ -80,18 +160,20 @@ pub fn edge_routing(graph: &mut Graph) {
     layered_edges
         .iter_mut()
         .flatten()
-        .for_each(|es| determine_segment_layers(es, &mut buffer));
+        .for_each(|es| determine_segment_layers(graph, es, &mut buffer));
 
     add_bend_points(graph, &layered_edges);
 }
 
 fn determine_segment_layers(
+    graph: &mut Graph,
     routing_edges: &mut SegmentsWithYOverlap,
     max_y_per_layer_buffer: &mut Vec</* max_y */ usize>,
 ) {
     // At this point the edges in each Vec are sorted by (min_y, max_y).
-    // Now we need to take this information and make it into a layer assignment,
-    // i.e. set values into the SegmentLayer variables.
+    // Now we need to take this information and make it into a rough layer assignment,
+    // i.e. set idx values into the SegmentLayer variables. This is required to understand what
+    // is the left-to-right order of all edge segments.
     routing_edges.total_count_of_segmen_layers = 0;
     routing_edges.total_count_of_segmen_layers += determine_segment_layers_left_or_right_loops(
         &mut routing_edges.left_loops,
@@ -122,6 +204,50 @@ fn determine_segment_layers(
         routing_edges.total_count_of_segmen_layers,
         true,
     );
+
+    let mut segment_graph = SegmentGraph::default();
+    let mut currently_active = Vec::<&RegularEdge>::new();
+    let (ixi_above, ixi_below): (Vec<_>, Vec<_>) =
+        routing_edges.ixi_crossing.iter().cloned().unzip();
+
+    itertools::kmerge_by(
+        [
+            routing_edges.left_loops.iter(),
+            routing_edges.up_edges.iter(),
+            ixi_above.iter(),
+            ixi_below.iter(),
+            routing_edges.down_edges.iter(),
+            routing_edges.right_loops.iter(),
+        ]
+        .iter_mut(),
+        |left: &&RegularEdge, right: &&RegularEdge| left.segment.start_y < right.segment.start_y,
+    )
+    .for_each(|new_edge| {
+        currently_active.retain(|old_edge| old_edge.segment.end_y > new_edge.segment.start_y);
+        currently_active.push(new_edge);
+        currently_active.sort_unstable_by_key(|edge| edge.layer.idx);
+        let idx = currently_active
+            .iter()
+            .position(|edge| edge.segment.id == new_edge.segment.id)
+            .unwrap();
+        segment_graph.add_edge(
+            new_edge,
+            idx.checked_sub(1)
+                .and_then(|idx| currently_active.get(idx))
+                .map(|edge| edge.segment.id),
+            currently_active.get(idx + 1).copied(),
+        );
+    });
+    let all_paths = segment_graph.all_paths_longest_first();
+    let total_space = graph.config.min_horizontal_space_between_nodes;
+    for path in all_paths.iter() {
+        if
+        let (left, center, right) = {
+            let i = path.partition_point(|t| t.alignment == Alignment::Left);
+            let k = path[i..].partition_point(|t| t.alignment == Alignment::Center);
+            (&path[..i], &path[i..i + k], &path[i + k..])
+        };
+    }
 }
 
 fn determine_segment_layers_left_or_right_loops(
@@ -352,6 +478,8 @@ fn get_layered_edges(graph: &mut Graph) -> Vec<Vec<SegmentsWithYOverlap>> {
                 end_y,
             },
             layer: SegmentLayer { idx: 0, idx2: None },
+            alignment: Alignment::Center,
+            x_coordinate: Default::default(),
         });
     }
 
@@ -485,8 +613,13 @@ fn add_bend_points_one_segment(
     segment_layer_width: usize,
     min_x: usize,
 ) {
+    // The path traversal might mix them up, but the order should always be the same.
+    let (idx, idx2) = (
+        (*idx).min(idx2.unwrap_or(*idx)),
+        (*idx).max(idx2.unwrap_or(*idx)),
+    );
     let x = min_x + idx * segment_layer_width;
-    let x2 = min_x + idx2.unwrap_or(*idx) * segment_layer_width;
+    let x2 = min_x + idx2 * segment_layer_width;
     match &mut graph.edges[segment.id.0].edge_type {
         EdgeType::Regular { bend_points, .. } => {
             *bend_points =
