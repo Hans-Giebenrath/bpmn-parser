@@ -314,17 +314,11 @@ fn assign_y(graph: &mut Graph, pool: PoolId, lane: LaneId, min_y_value: usize) -
 fn assign_x(graph: &mut Graph) {
     // Note: Does not need to account for pools on the same horizontal line, since
     // this was already taken care for in the layer assignment phase.
-    let min_x_value = graph.config.pool_header_width + graph.config.lane_x_padding;
     for node in graph.nodes.iter_mut() {
-        node.x = node.layer_id.0 * graph.config.layer_width()
-            + min_x_value
-            + graph.config.layer_width() / 2
-            - node.width / 2;
+        node.x = graph.config.layer_center(node.layer_id) - node.width / 2;
     }
     for pool in &mut graph.pools {
-        pool.width = graph.num_layers * graph.config.layer_width()
-            + graph.config.pool_header_width
-            + graph.config.lane_x_padding;
+        pool.width = graph.config.pool_width(graph.num_layers);
         for lane in &mut pool.lanes {
             lane.x = graph.config.pool_header_width;
             lane.width = pool.width - graph.config.pool_header_width;

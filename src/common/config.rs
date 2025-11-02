@@ -3,7 +3,7 @@
 // well can be done easy with this macro.
 use std::str::FromStr;
 
-use crate::common::graph::MAX_NODE_WIDTH;
+use crate::common::{graph::MAX_NODE_WIDTH, node::LayerId};
 
 macro_rules! define_config {
     (
@@ -53,13 +53,17 @@ macro_rules! define_config {
 define_config!(
     /// Space between the lane border and nodes/edges inside of the lane.
     lane_y_padding: usize = 40,
-    lane_x_padding: usize = 30,
+    lane_header_width: usize = 15,
+    lane_x_padding: usize = 15,
     pool_header_width: usize = 30,
     pool_y_margin: usize = 40,
+    // Space between two pools which are on the same horizontal line.
     pool_x_margin: usize = 40,
+
     /// `min` because nodes have varying width. So this is for two wide blocks next to each other.
     min_horizontal_space_between_nodes: usize = 60,
     max_space_between_vertical_edge_segments: usize = 6,
+    min_space_between_nodes_and_vertical_edge_segments: usize = 6,
 
     /// For empty lanes so that they don't collapse to a vertical line.
     height_of_empty_lane: usize = 40,
@@ -85,12 +89,99 @@ define_config!(
     max_nodes_per_layer: usize = 3,
 );
 
+pub(crate) struct EdgeSegmentSpace {
+    pub(crate) start_x: usize,
+    pub(crate) end_x: usize,
+    pub(crate) center_x: usize,
+}
+
+pub(crate) enum EdgeSegmentSpaceLocation {
+    // There should only be right-loops.
+    LeftBorder,
+    // Regular room between two node layers.
+    After(LayerId),
+    // There should only be left-loops.
+    AfterLast(LayerId),
+}
+
 impl Config {
-    pub fn space_between_layers_for_segments(&self) -> usize {
+    pub(crate) fn space_between_layers_for_segments(&self) -> usize {
         self.min_horizontal_space_between_nodes - 2 * self.max_space_between_vertical_edge_segments
     }
 
-    pub fn layer_width(&self) -> usize {
+    pub(crate) fn layer_width(&self) -> usize {
         self.min_horizontal_space_between_nodes + MAX_NODE_WIDTH
+    }
+
+    pub(crate) fn layer_center(&self, LayerId(layer_idx): LayerId) -> usize {
+        self.pool_header_width
+            + self.lane_header_width
+            + self.lane_x_padding
+            + MAX_NODE_WIDTH / 2
+            + layer_idx * self.layer_width()
+    }
+
+    pub(crate) fn pool_width(&self, num_layers: usize) -> usize {
+        // The start:
+        self.pool_header_width
+            + self.lane_header_width
+            + self.lane_x_padding
+            // For central layers:
+            + self.layer_width() * num_layers.saturating_sub(1)
+            // For the last layer:
+            + MAX_NODE_WIDTH + self.lane_x_padding
+    }
+
+    pub(crate) fn edge_segment_space(
+        &self,
+        location: EdgeSegmentSpaceLocation,
+    ) -> EdgeSegmentSpace {
+        match location {
+            EdgeSegmentSpaceLocation::LeftBorder => {
+                let start_x = self.pool_header_width
+                    + self.lane_header_width
+                    + self.min_space_between_nodes_and_vertical_edge_segments;
+                let len = self
+                    .lane_x_padding
+                    .strict_sub(2 * self.min_space_between_nodes_and_vertical_edge_segments);
+                EdgeSegmentSpace {
+                    start_x,
+                    end_x: start_x + len,
+                    center_x: start_x + len / 2,
+                }
+            }
+            EdgeSegmentSpaceLocation::After(LayerId(layer_idx)) => {
+                let start_x = self.pool_header_width
+                    + self.lane_header_width
+                    + self.lane_x_padding
+                    + MAX_NODE_WIDTH
+                    + self.layer_width() * layer_idx
+                    + self.min_space_between_nodes_and_vertical_edge_segments;
+                let len = self
+                    .min_horizontal_space_between_nodes
+                    .strict_sub(2 * self.min_space_between_nodes_and_vertical_edge_segments);
+                EdgeSegmentSpace {
+                    start_x,
+                    end_x: start_x + len,
+                    center_x: start_x + len / 2,
+                }
+            }
+            EdgeSegmentSpaceLocation::AfterLast(LayerId(layer_idx)) => {
+                let start_x = self.pool_header_width
+                    + self.lane_header_width
+                    + self.lane_x_padding
+                    + MAX_NODE_WIDTH
+                    + self.layer_width() * layer_idx
+                    + self.min_space_between_nodes_and_vertical_edge_segments;
+                let len = self
+                    .lane_x_padding
+                    .strict_sub(2 * self.min_space_between_nodes_and_vertical_edge_segments);
+                EdgeSegmentSpace {
+                    start_x,
+                    end_x: start_x + len,
+                    center_x: start_x + len / 2,
+                }
+            }
+        }
     }
 }

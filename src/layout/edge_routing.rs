@@ -21,6 +21,8 @@
 
 // TODO message flows need to be cut into pieces, do I do that?
 
+use crate::common::config::{EdgeSegmentSpace, EdgeSegmentSpaceLocation};
+use crate::common::node::LayerId;
 use std::collections::HashMap;
 
 use crate::common::edge::DummyEdgeBendPoints;
@@ -48,7 +50,7 @@ struct SegmentLayer {
     idx2: Option<usize>,
 }
 
-#[derive(Default)]
+#[derive(Default, Debug)]
 struct SegmentGraph<'a> {
     // TODO this could move into RegularEdge as a RefCell, that should be more efficient than hash
     // lookups?
@@ -102,7 +104,9 @@ impl<'a> SegmentGraph<'a> {
         all_paths: &mut Vec<Vec<&'a RegularEdge>>,
     ) {
         parent_path.push(current);
-        if let Some(children) = self.graph.get(&current.segment.id) {
+        if let Some(children) = self.graph.get(&current.segment.id)
+            && !children.is_empty()
+        {
             for child in children {
                 self.recursion(child, parent_path.clone(), all_paths);
             }
@@ -156,19 +160,29 @@ pub fn edge_routing(graph: &mut Graph) {
     // Inner Vec: All the vertical edge segments within that layer.
     let mut layered_edges = get_layered_edges(graph);
 
+    // TODO when loops are added, then handle loops in the front and at the end by taking the first
+    // and last element of the vector away (slicing), and use the
+    // EdgeSegmentSpaceLocation::LeftBorder/AfterLast variants.
     let mut buffer = Vec::new();
     layered_edges
         .iter_mut()
-        .flatten()
-        .for_each(|es| determine_segment_layers(graph, es, &mut buffer));
-
-    add_bend_points(graph, &layered_edges);
+        .enumerate()
+        .flat_map(|(layer_idx, vec)| vec.iter_mut().map(move |segs| (LayerId(layer_idx), segs)))
+        .for_each(|(layer_id, segs)| {
+            determine_segment_layers(
+                graph,
+                segs,
+                &mut buffer,
+                EdgeSegmentSpaceLocation::After(layer_id),
+            )
+        });
 }
 
 fn determine_segment_layers(
     graph: &mut Graph,
     routing_edges: &mut SegmentsWithYOverlap,
     max_y_per_layer_buffer: &mut Vec</* max_y */ usize>,
+    location: EdgeSegmentSpaceLocation,
 ) {
     // At this point the edges in each Vec are sorted by (min_y, max_y).
     // Now we need to take this information and make it into a rough layer assignment,
@@ -239,14 +253,102 @@ fn determine_segment_layers(
         );
     });
     let all_paths = segment_graph.all_paths_longest_first();
-    let total_space = graph.config.min_horizontal_space_between_nodes;
+    let EdgeSegmentSpace {
+        start_x,
+        end_x,
+        center_x,
+    } = graph.config.edge_segment_space(location);
+
+    enum State {
+        Init,
+        RunOfLayoutedSegments { latest_start: usize },
+        RunOfFreshSegments { start: usize, start_idx: usize },
+    }
     for path in all_paths.iter() {
-        if
-        let (left, center, right) = {
-            let i = path.partition_point(|t| t.alignment == Alignment::Left);
-            let k = path[i..].partition_point(|t| t.alignment == Alignment::Center);
-            (&path[..i], &path[i..i + k], &path[i + k..])
-        };
+        let mut state = State::Init;
+        for (idx, segment) in path.iter().enumerate() {
+            state = match (state, segment.x_coordinate.get()) {
+                (State::Init, Some(x)) => State::RunOfLayoutedSegments { latest_start: x },
+                (State::Init, None) => State::RunOfFreshSegments {
+                    start: start_x,
+                    start_idx: 0,
+                },
+                (State::RunOfLayoutedSegments { .. }, Some(x)) => {
+                    State::RunOfLayoutedSegments { latest_start: x }
+                }
+                (State::RunOfLayoutedSegments { latest_start }, None) => {
+                    State::RunOfFreshSegments {
+                        start: latest_start,
+                        start_idx: idx,
+                    }
+                }
+                (State::RunOfFreshSegments { start, start_idx }, Some(x)) => {
+                    assign_the_real_x_values(
+                        graph,
+                        &path[start_idx..idx],
+                        EdgeSegmentSpace {
+                            start_x: start,
+                            end_x: x,
+                            center_x,
+                        },
+                    );
+                    State::RunOfLayoutedSegments { latest_start: x }
+                }
+                (state @ State::RunOfFreshSegments { .. }, None) => state,
+            }
+        }
+        if let State::RunOfFreshSegments { start, start_idx } = state {
+            //
+            assign_the_real_x_values(
+                graph,
+                &path[start_idx..],
+                EdgeSegmentSpace {
+                    start_x: start,
+                    end_x,
+                    center_x,
+                },
+            );
+        }
+    }
+}
+
+fn assign_the_real_x_values(graph: &mut Graph, path: &[&RegularEdge], space: EdgeSegmentSpace) {
+    let segspace = graph.config.max_space_between_vertical_edge_segments;
+    let horizontal_space = space.end_x.strict_sub(space.start_x);
+    let count_of_comfortably_fitting_edge_segments = horizontal_space / segspace;
+    if path.len() > count_of_comfortably_fitting_edge_segments {
+        // Must squeeze them into the space.
+        let segment_width = (horizontal_space as f64) / ((path.len() + 1) as f64);
+        for (idx, edge) in path.iter().enumerate() {
+            add_bend_points_one_segment(graph, edge, idx, segment_width, space.start_x);
+        }
+        return;
+    }
+    let (left, center, right) = {
+        let i = path.partition_point(|t| t.alignment == Alignment::Left);
+        let k = path[i..].partition_point(|t| t.alignment == Alignment::Center);
+        (&path[..i], &path[i..i + k], &path[i + k..])
+    };
+    for (idx, edge) in left.iter().enumerate() {
+        add_bend_points_one_segment(graph, edge, idx, segspace as f64, space.start_x);
+    }
+    let right_start = space.end_x.strict_sub((right.len() + 1) * segspace);
+    for (idx, edge) in right.iter().enumerate() {
+        add_bend_points_one_segment(graph, edge, idx, segspace as f64, right_start);
+    }
+    let leftmost_start_x = space.start_x + (left.len() * segspace);
+    let rightmost_end_x = space.end_x.strict_sub(right.len() * segspace);
+    let required_width = (center.len() + 1) * segspace;
+    let leftmost_center_x = leftmost_start_x + required_width / 2;
+    let rightmost_center_x = rightmost_end_x.strict_sub(required_width / 2);
+    assert!(leftmost_center_x < rightmost_center_x);
+    let start_x = match () {
+        _ if space.center_x < leftmost_center_x => leftmost_start_x,
+        _ if space.center_x > rightmost_center_x => rightmost_center_x,
+        _ => leftmost_start_x + space.center_x.strict_sub(leftmost_center_x),
+    };
+    for (idx, edge) in center.iter().enumerate() {
+        add_bend_points_one_segment(graph, edge, idx, segspace as f64, start_x);
     }
 }
 
@@ -430,8 +532,6 @@ fn determine_segment_layers_up_or_down_edges(
     total_count_of_segmen_layers
 }
 
-struct PerLayer(Vec<SegmentsWithYOverlap>);
-
 fn get_layered_edges(graph: &mut Graph) -> Vec<Vec<SegmentsWithYOverlap>> {
     let mut edge_layers = Vec::<Vec<RegularEdge>>::new();
     edge_layers.resize_with(graph.num_layers, Default::default);
@@ -545,89 +645,34 @@ fn get_layered_edges(graph: &mut Graph) -> Vec<Vec<SegmentsWithYOverlap>> {
     result
 }
 
-fn add_bend_points(graph: &mut Graph, groups: &[Vec<SegmentsWithYOverlap>]) {
-    let x_of_first_nodes_layer = graph.config.pool_header_width + graph.config.lane_x_padding;
-    groups
-        .iter()
-        .enumerate()
-        .for_each(|(nodes_layer_idx, one_layer_full_of_segments)| {
-            add_bend_points_one_layer(
-                graph,
-                one_layer_full_of_segments,
-                x_of_first_nodes_layer + graph.config.layer_width() * (nodes_layer_idx + 1),
-            )
-        });
-}
-
-fn add_bend_points_one_layer(
-    graph: &mut Graph,
-    groups: &[SegmentsWithYOverlap],
-    x_of_center_segment_layer: usize,
-) {
-    for group in groups {
-        let segment_num_layers = group.total_count_of_segmen_layers;
-        if segment_num_layers == 0 {
-            continue;
-        }
-        let segment_layer_width = if segment_num_layers == 1 {
-            0
-        } else {
-            (graph.config.space_between_layers_for_segments() / (segment_num_layers - 1))
-                .clamp(2, graph.config.max_space_between_vertical_edge_segments)
-        };
-        let min_x = (x_of_center_segment_layer) // + (graph.config.space_between_layers_for_segments() / 2))
-            .saturating_sub(segment_layer_width * (segment_num_layers / 2));
-
-        add_bend_points_one_segment_group(graph, group, segment_layer_width, min_x);
-    }
-}
-
-fn add_bend_points_one_segment_group(
-    graph: &mut Graph,
-    segment: &SegmentsWithYOverlap,
-    segment_layer_width: usize,
-    min_x: usize,
-) {
-    segment.left_loops.iter().for_each(|e| {
-        add_bend_points_one_segment(graph, &e.segment, &e.layer, segment_layer_width, min_x)
-    });
-    segment.up_edges.iter().for_each(|e| {
-        add_bend_points_one_segment(graph, &e.segment, &e.layer, segment_layer_width, min_x)
-    });
-    segment.ixi_crossing.iter().for_each(|(e1, e2)| {
-        add_bend_points_one_segment(graph, &e1.segment, &e1.layer, segment_layer_width, min_x);
-        add_bend_points_one_segment(graph, &e2.segment, &e2.layer, segment_layer_width, min_x);
-    });
-    segment.down_edges.iter().for_each(|e| {
-        add_bend_points_one_segment(graph, &e.segment, &e.layer, segment_layer_width, min_x)
-    });
-    segment.right_loops.iter().for_each(|e| {
-        add_bend_points_one_segment(graph, &e.segment, &e.layer, segment_layer_width, min_x)
-    });
-}
-
 fn add_bend_points_one_segment(
     graph: &mut Graph,
-    segment: &VerticalSegment,
-    SegmentLayer { idx, idx2 }: &SegmentLayer,
-    segment_layer_width: usize,
+    edge: &RegularEdge,
+    idx: usize,
+    segment_layer_width: f64,
     min_x: usize,
 ) {
-    // The path traversal might mix them up, but the order should always be the same.
-    let (idx, idx2) = (
-        (*idx).min(idx2.unwrap_or(*idx)),
-        (*idx).max(idx2.unwrap_or(*idx)),
-    );
-    let x = min_x + idx * segment_layer_width;
-    let x2 = min_x + idx2 * segment_layer_width;
-    match &mut graph.edges[segment.id.0].edge_type {
+    let ixi_diagonalizer = if edge.layer.idx2.is_some() { 1 } else { 0 };
+    // idx in the caller starts at 0, but `min_x` is actually expecting one additional padding.
+    // Sorry for the spaghetti.
+    let x = min_x + ((idx + 1) as f64 * segment_layer_width) as usize;
+    let x2 = min_x + ((idx + 1 + ixi_diagonalizer) as f64 * segment_layer_width) as usize;
+    match (edge.layer.idx, edge.layer.idx2) {
+        (a, Some(b)) if a > b => edge.x_coordinate.set(Some(x2)),
+        _ => edge.x_coordinate.set(Some(x)),
+    }
+    match &mut graph.edges[edge.segment.id.0].edge_type {
         EdgeType::Regular { bend_points, .. } => {
-            *bend_points =
-                RegularEdgeBendPoints::SegmentEndpoints((x, segment.start_y), (x2, segment.end_y))
+            *bend_points = RegularEdgeBendPoints::SegmentEndpoints(
+                (x, edge.segment.start_y),
+                (x2, edge.segment.end_y),
+            )
         }
         EdgeType::DummyEdge { bend_points, .. } => {
-            *bend_points =
-                DummyEdgeBendPoints::SegmentEndpoints((x, segment.start_y), (x2, segment.end_y))
+            *bend_points = DummyEdgeBendPoints::SegmentEndpoints(
+                (x, edge.segment.start_y),
+                (x2, edge.segment.end_y),
+            )
         }
         EdgeType::ReplacedByDummies { .. } => {
             unreachable!("This edge kind was excluded at the beginning.")
