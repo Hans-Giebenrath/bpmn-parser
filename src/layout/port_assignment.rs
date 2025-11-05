@@ -12,7 +12,6 @@ use crate::common::graph::StartAt;
 use crate::common::graph::add_node;
 use crate::common::graph::adjust_above_and_below_for_new_inbetween;
 use crate::common::graph::node_size;
-use crate::common::macros::dbg_compact;
 use crate::common::node::BendDummyKind;
 use crate::common::node::LayerId;
 use crate::common::node::Node;
@@ -155,10 +154,12 @@ fn handle_nongateway_node(this_node_id: NodeId, graph: &mut Graph) {
             Some(VerticalEdgeDocks::Above) => {
                 above_inc = 1;
                 has_vertical_edge_above = true;
+                e!(*single).is_vertical = true;
             }
             Some(VerticalEdgeDocks::Below) => {
                 below_inc = 1;
                 has_vertical_edge_below = true;
+                e!(*single).is_vertical = true;
             }
         },
         [first, .., last] => {
@@ -167,6 +168,7 @@ fn handle_nongateway_node(this_node_id: NodeId, graph: &mut Graph) {
                 Some(VerticalEdgeDocks::Above) => {
                     above_inc = 1;
                     has_vertical_edge_above = true;
+                    e!(*first).is_vertical = true;
                 }
                 Some(VerticalEdgeDocks::Below) => {
                     unreachable!(
@@ -183,6 +185,7 @@ fn handle_nongateway_node(this_node_id: NodeId, graph: &mut Graph) {
                 Some(VerticalEdgeDocks::Below) => {
                     below_inc = 1;
                     has_vertical_edge_below = true;
+                    e!(*last).is_vertical = true;
                 }
             }
         }
@@ -202,11 +205,13 @@ fn handle_nongateway_node(this_node_id: NodeId, graph: &mut Graph) {
                 above_out = 1;
                 assert!(!has_vertical_edge_above);
                 has_vertical_edge_above = true;
+                e!(*single).is_vertical = true;
             }
             Some(VerticalEdgeDocks::Below) => {
                 below_out = 1;
                 assert!(!has_vertical_edge_below);
                 has_vertical_edge_below = true;
+                e!(*single).is_vertical = true;
             }
         },
         many @ [first, .., last] => {
@@ -217,6 +222,7 @@ fn handle_nongateway_node(this_node_id: NodeId, graph: &mut Graph) {
                     above_out += 1;
                     assert!(!has_vertical_edge_above);
                     has_vertical_edge_above = true;
+                    e!(*first).is_vertical = true;
                 }
                 Some(VerticalEdgeDocks::Below) => {
                     unreachable!("Can't be")
@@ -231,6 +237,7 @@ fn handle_nongateway_node(this_node_id: NodeId, graph: &mut Graph) {
                     below_out += 1;
                     assert!(!has_vertical_edge_below);
                     has_vertical_edge_below = true;
+                    e!(*last).is_vertical = true;
                 }
             }
 
@@ -255,7 +262,7 @@ fn handle_nongateway_node(this_node_id: NodeId, graph: &mut Graph) {
                 // If the last one was actually a vertical sequence flow, then we *still* want
                 // to continue putting BEs on `below`. So just skip the vertical edge.
                 .skip(below_out);
-            while let Some((rev_idx, (_, edge_id))) = it.next() {
+            for (rev_idx, (_, edge_id)) in it.by_ref() {
                 if graph.boundary_events.contains_key(&(this_node.id, edge_id)) {
                     // rev_idx starts at 0, but if the 0th element is on `below` we want to
                     // have `below_out == 1`.
@@ -264,7 +271,7 @@ fn handle_nongateway_node(this_node_id: NodeId, graph: &mut Graph) {
                     break;
                 }
             }
-            while let Some((_, (idx, edge_id))) = it.next() {
+            for (_, (idx, edge_id)) in it {
                 if graph.boundary_events.contains_key(&(this_node.id, edge_id)) {
                     // idx starts at 0, but if the 0th element is on `above` we want to
                     // have `above_out == 1`.
@@ -527,10 +534,6 @@ enum VerticalEdgeDocks {
 /// Returns true if the start and end of the given edge are two real nodes (i.e. not dummy nodes)
 /// which are in the same layer, and have no real nodes in between (only dummy nodes, if any).
 /// This goes across lanes and pools for message flows.
-/// Note: In the initial version this does *not* allow message flows to go up if they reach the
-/// designated inter-pool space for horizontal travel. Message flows which are not strictly
-/// vertical right now still need to move through the sides. But maybe this changes at some point
-/// and I forget to update this comment.
 fn is_vertical_edge(
     edge_id: EdgeId,
     graph: &Graph,

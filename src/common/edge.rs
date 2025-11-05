@@ -80,7 +80,9 @@ pub struct Edge {
     pub flow_type: FlowType,
     pub stays_within_lane: bool,
 
-    // For edge segments which leave a node at the top or bottom and then go to a bend dummy.
+    // For vertical edges or edge segments. E.g. the part which leaves a real node and then goes
+    // into a bend dummy. Or for message flows or sequence flows which go straight up or down
+    // without having any obstacle (non-dummy) in the way.
     // (Explicitly not meant for loop edges! They first go to the side, then up/down, and then back
     // into the same layer. They are handled as regular sequence flows.)
     // This information is used in the edge routing phase of direct edges. It could be derived from

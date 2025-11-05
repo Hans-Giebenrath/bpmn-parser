@@ -297,22 +297,24 @@ impl Node {
         return (self.width, self.height);
     }
 
-    pub fn port_of_incoming(&self, edge_id: EdgeId) -> Option<AbsolutePort> {
+    pub fn port_of_incoming(&self, edge_id: EdgeId) -> AbsolutePort {
         self.incoming
             .iter()
             .cloned()
             .zip(self.incoming_ports.iter())
             .find(|(inner_edge_id, _)| *inner_edge_id == edge_id)
             .map(|(_, port)| port + self.xy())
+            .unwrap()
     }
 
-    pub fn port_of_outgoing(&self, edge_id: EdgeId) -> Option<AbsolutePort> {
+    pub fn port_of_outgoing(&self, edge_id: EdgeId) -> AbsolutePort {
         self.outgoing
             .iter()
             .cloned()
             .zip(self.outgoing_ports.iter())
             .find(|(inner_edge_id, _)| *inner_edge_id == edge_id)
             .map(|(_, port)| port + self.xy())
+            .unwrap()
     }
 
     pub fn display_text(&self) -> Option<&str> {

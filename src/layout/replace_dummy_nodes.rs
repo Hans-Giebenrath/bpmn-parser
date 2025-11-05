@@ -15,12 +15,14 @@ pub fn replace_dummy_nodes(graph: &mut Graph) {
                 // skipped - these are evaluated in the context of long edges / the
                 // ReplacedByDummies match arm.
             }
+            // TODO all the logic in here should be moved to `edge_routing` as this is not part of
+            // dummy node replacement.
             EdgeType::Regular { bend_points, .. } => {
                 // A lambda because in the FullyRouted case the port indexing doesn't work,
                 // so compute it lazily.
                 let from_and_to_xy = || {
-                    let from_xy = n!(edge.from).port_of_outgoing(edge_id).unwrap().as_pair();
-                    let to_xy = n!(edge.to).port_of_incoming(edge_id).unwrap().as_pair();
+                    let from_xy = n!(edge.from).port_of_outgoing(edge_id).as_pair();
+                    let to_xy = n!(edge.to).port_of_incoming(edge_id).as_pair();
                     (from_xy, to_xy)
                 };
                 match bend_points {
@@ -52,9 +54,7 @@ pub fn replace_dummy_nodes(graph: &mut Graph) {
                 let AbsolutePort {
                     x: from_x,
                     y: from_y,
-                } = graph.nodes[edge.from]
-                    .port_of_outgoing(first_dummy_edge_id)
-                    .unwrap();
+                } = graph.nodes[edge.from].port_of_outgoing(first_dummy_edge_id);
                 let to = edge.to;
                 let mut bend_points = vec![(from_x, from_y)];
                 let mut cur_dummy_edge_id = first_dummy_edge_id;
@@ -114,9 +114,8 @@ pub fn replace_dummy_nodes(graph: &mut Graph) {
                         }
                     }
                 }
-                let AbsolutePort { x: to_x, y: to_y } = graph.nodes[to]
-                    .port_of_incoming(last_dummy_edge_id)
-                    .unwrap();
+                let AbsolutePort { x: to_x, y: to_y } =
+                    graph.nodes[to].port_of_incoming(last_dummy_edge_id);
                 bend_points.push((to_x, to_y));
                 // Vertical lines ([Edge.is_vertical]) have their endpoints as their recorded
                 // `bend_points`. This means that they will duplicate info in `from` and `to`.

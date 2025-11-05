@@ -22,7 +22,11 @@
 // TODO message flows need to be cut into pieces, do I do that?
 
 use crate::common::config::{EdgeSegmentSpace, EdgeSegmentSpaceLocation};
+use crate::common::graph::PoolId;
 use crate::common::node::LayerId;
+use proc_macros::e;
+use proc_macros::from;
+use proc_macros::to;
 use std::collections::HashMap;
 
 use crate::common::edge::DummyEdgeBendPoints;
@@ -31,44 +35,27 @@ use crate::common::graph::{EdgeId, Graph};
 use crate::common::node::AbsolutePort;
 use itertools::Itertools;
 
-#[derive(Debug, Clone)]
-struct VerticalSegment {
-    id: EdgeId,
-    start_y: usize,
-    end_y: usize,
-}
-
-/// TODO Maybe the code becomes easier if `idx` is inlined into `VerticalSegment`.
-/// This denormalizes the type as hyperedges contain the value rather duplicated,
-/// but maubbe it makes code a bit more maintainable actually.
-#[derive(Debug, Clone)]
-struct SegmentLayer {
-    idx: usize,
-    /// For ixi situations. `idx` is left, `idx2` is right.
-    /// Not using an enum here (`enum { Vertical(usize), Diagonal(usize, usize) }`) since this makes
-    /// usage rather tiresome.
-    idx2: Option<usize>,
-}
-
+/// Created for one `SegmentsWithYOverlap`. Is meant to calculate left-to-right paths of overlapping
+/// segment intervals.
 #[derive(Default, Debug)]
 struct SegmentGraph<'a> {
-    // TODO this could move into RegularEdge as a RefCell, that should be more efficient than hash
+    // Note: this could move into VerticalSegment as a RefCell, that should be more efficient than hash
     // lookups?
-    graph: HashMap<EdgeId, Vec<&'a RegularEdge>>,
-    roots: Vec<&'a RegularEdge>,
+    graph: HashMap<EdgeId, Vec<&'a VerticalSegment>>,
+    roots: Vec<&'a VerticalSegment>,
 }
 
 impl<'a> SegmentGraph<'a> {
     fn add_edge(
         &mut self,
-        new_edge: &'a RegularEdge,
+        new_edge: &'a VerticalSegment,
         left: Option<EdgeId>,
-        right: Option<&'a RegularEdge>,
+        right: Option<&'a VerticalSegment>,
     ) {
-        fn remove<'a>(needle: &'a RegularEdge, haystack: &mut Vec<&'a RegularEdge>) {
+        fn remove<'a>(needle: &'a VerticalSegment, haystack: &mut Vec<&'a VerticalSegment>) {
             haystack.retain(|connection| !std::ptr::eq(*connection, needle));
         }
-        let right_connections = self.graph.entry(new_edge.segment.id).or_default();
+        let right_connections = self.graph.entry(new_edge.id).or_default();
         if let Some(right) = right {
             right_connections.push(right);
             if let Some(left) = left
@@ -88,23 +75,23 @@ impl<'a> SegmentGraph<'a> {
         }
     }
 
-    fn all_paths_longest_first(self) -> Vec<Vec<&'a RegularEdge>> {
+    fn all_paths_longest_first(self) -> Vec<Vec<&'a VerticalSegment>> {
         let mut all_paths = Vec::new();
         for root in &self.roots {
             self.recursion(root, Vec::new(), &mut all_paths);
         }
-        all_paths.sort_unstable_by_key(|path: &Vec<&'a RegularEdge>| -(path.len() as isize));
+        all_paths.sort_unstable_by_key(|path: &Vec<&'a VerticalSegment>| -(path.len() as isize));
         all_paths
     }
 
     fn recursion(
         &self,
-        current: &'a RegularEdge,
-        mut parent_path: Vec<&'a RegularEdge>,
-        all_paths: &mut Vec<Vec<&'a RegularEdge>>,
+        current: &'a VerticalSegment,
+        mut parent_path: Vec<&'a VerticalSegment>,
+        all_paths: &mut Vec<Vec<&'a VerticalSegment>>,
     ) {
         parent_path.push(current);
-        if let Some(children) = self.graph.get(&current.segment.id)
+        if let Some(children) = self.graph.get(&current.id)
             && !children.is_empty()
         {
             for child in children {
@@ -116,15 +103,128 @@ impl<'a> SegmentGraph<'a> {
     }
 }
 
+struct MessageFlowBendPoints {
+    bend_points: Vec<(usize, usize)>,
+    bends_after_pool: PoolId,
+    interpool_bendpoint1_x: Option<usize>,
+    interpool_bendpoint2_x: Option<usize>,
+}
+
+#[derive(Default)]
+struct MessageFlowBendPointStore {
+    store: HashMap<EdgeId, MessageFlowBendPoints>,
+}
+
+impl MessageFlowBendPointStore {
+    fn register_edge(&mut self, edge_id: EdgeId, bends_after_pool: PoolId) {
+        self.store.insert(
+            edge_id,
+            MessageFlowBendPoints {
+                bend_points: Vec::new(),
+                bends_after_pool,
+                interpool_bendpoint1_x: None,
+                interpool_bendpoint2_x: None,
+            },
+        );
+    }
+
+    fn finish_layer(
+        &mut self,
+        edge_id: EdgeId,
+        // If the edge goes straight up here, then no bend point is added.
+        bend_point: Option<(usize, usize)>,
+        interpool_bendpoint_x: usize,
+    ) {
+        let state = self.store.get_mut(&edge_id).unwrap();
+        if let Some(bend_point) = bend_point {
+            state.bend_points.push(bend_point);
+        }
+        assert_eq!(state.interpool_bendpoint2_x, None);
+        if state.interpool_bendpoint1_x.is_none() {
+            state.interpool_bendpoint1_x = Some(interpool_bendpoint_x);
+        } else {
+            state.interpool_bendpoint2_x = Some(interpool_bendpoint_x);
+        }
+    }
+
+    fn iter_edges_for_break_after_pool(
+        &self,
+        after_pool: PoolId,
+    ) -> impl Iterator<Item = (EdgeId, usize, usize)> {
+        self.store
+            .iter()
+            .filter(move |(_, mfbp)| mfbp.bends_after_pool == after_pool)
+            .map(|(edge_id, mfbp)| {
+                (
+                    *edge_id,
+                    mfbp.interpool_bendpoint1_x.unwrap(),
+                    mfbp.interpool_bendpoint2_x.unwrap(),
+                )
+            })
+    }
+
+    fn completely_route_the_path(
+        &mut self,
+        graph: &mut Graph,
+        edge_id: EdgeId,
+        interpool_bendpoints: [(usize, usize); 2],
+    ) {
+        let (start, end, rev) = {
+            let from_port = from!(edge_id).port_of_outgoing(edge_id);
+            let to_port = to!(edge_id).port_of_incoming(edge_id);
+            if from_port.y < to_port.y {
+                (from_port, to_port, false)
+            } else {
+                (to_port, from_port, true)
+            }
+        };
+        let mut bend_points = self.store.remove(&edge_id).unwrap().bend_points;
+        bend_points.insert(0, start.as_pair());
+        bend_points.extend_from_slice(&interpool_bendpoints);
+        bend_points.push(end.as_pair());
+        bend_points.sort_unstable();
+        for i in 0..bend_points.len() - 2 {
+            let (correct_reference, next, next_next) =
+                (bend_points[i], bend_points[i + 1], bend_points[i + 2]);
+            if correct_reference.1 == next.1 {
+                continue;
+            }
+            if correct_reference.1 == next_next.1 {
+                bend_points.swap(i + 1, i + 2);
+                continue;
+            }
+            if correct_reference.0 == next.0 {
+                continue;
+            }
+            if correct_reference.0 == next_next.0 {
+                bend_points.swap(i + 1, i + 2);
+                continue;
+            }
+            unreachable!();
+        }
+        if rev {
+            bend_points.reverse();
+        }
+        let EdgeType::Regular {
+            bend_points: out_bend_points,
+            ..
+        } = &mut e!(edge_id).edge_type
+        else {
+            unimplemented!("Message flows are always regular edges.");
+        };
+        *out_bend_points = RegularEdgeBendPoints::FullyRouted(bend_points);
+    }
+}
+
 #[derive(Default, Debug)]
 struct SegmentsWithYOverlap {
-    left_loops: Vec<RegularEdge>,
-    up_edges: Vec<RegularEdge>,
-    ixi_crossing: Vec<(RegularEdge, RegularEdge)>,
-    down_edges: Vec<RegularEdge>,
-    right_loops: Vec<RegularEdge>,
-
-    total_count_of_segmen_layers: usize,
+    left_loops: Vec<VerticalSegment>,
+    up_message_flows: Vec<VerticalSegment>,
+    up_edges: Vec<VerticalSegment>,
+    ixi_crossing: Vec<(VerticalSegment, VerticalSegment)>,
+    down_edges: Vec<VerticalSegment>,
+    down_message_flows: Vec<VerticalSegment>,
+    right_loops: Vec<VerticalSegment>,
 }
 
 // TODO left and right loops are not handled at all right now.
@@ -136,22 +236,29 @@ enum Alignment {
 }
 
 #[derive(Debug, Clone)]
-struct RegularEdge {
-    segment: VerticalSegment,
-    layer: SegmentLayer,
+struct VerticalSegment {
+    id: EdgeId,
+    start_y: usize,
+    end_y: usize,
+    idx: usize,
+    /// For ixi situations. `idx` is left, `idx2` is right.
+    /// Not using an enum here (`enum { Vertical(usize), Diagonal(usize, usize) }`) since this makes
+    /// usage rather tiresome.
+    idx2: Option<usize>,
+
     alignment: Alignment,
     // Oioioi sorry for the spaghetti. I just don't want to handle all those usize indexes.
-    // But I create paths from left to right and store `&RegularEdge`s, and I still want to mark
+    // But I create paths from left to right and store `&VerticalSegment`s, and I still want to mark
     x_coordinate: std::cell::Cell<Option<usize>>,
 }
 
-impl RegularEdge {
+impl VerticalSegment {
     fn min_y(&self) -> usize {
-        self.segment.start_y.min(self.segment.end_y)
+        self.start_y.min(self.end_y)
     }
 
     fn max_y(&self) -> usize {
-        self.segment.start_y.max(self.segment.end_y)
+        self.start_y.max(self.end_y)
     }
 }
 
@@ -168,10 +275,10 @@ pub fn edge_routing(graph: &mut Graph) {
         .iter_mut()
         .enumerate()
         .flat_map(|(layer_idx, vec)| vec.iter_mut().map(move |segs| (LayerId(layer_idx), segs)))
-        .for_each(|(layer_id, segs)| {
+        .for_each(|(layer_id, segments)| {
             determine_segment_layers(
                 graph,
-                segs,
+                segments,
                 &mut buffer,
                 EdgeSegmentSpaceLocation::After(layer_id),
             )
@@ -188,39 +295,42 @@ fn determine_segment_layers(
     // Now we need to take this information and make it into a rough layer assignment,
     // i.e. set idx values into the SegmentLayer variables. This is required to understand what
     // is the left-to-right order of all edge segments.
-    routing_edges.total_count_of_segmen_layers = 0;
-    routing_edges.total_count_of_segmen_layers += determine_segment_layers_left_or_right_loops(
+    let mut total_count_of_segment_layers = 0;
+    total_count_of_segment_layers += determine_segment_layers_left_or_right_loops(
         &mut routing_edges.left_loops,
         max_y_per_layer_buffer,
-        routing_edges.total_count_of_segmen_layers,
+        total_count_of_segment_layers,
         false,
     );
-    routing_edges.total_count_of_segmen_layers += determine_segment_layers_up_or_down_edges(
+    total_count_of_segment_layers += determine_segment_layers_up_or_down_edges(
         &mut routing_edges.up_edges,
         max_y_per_layer_buffer,
-        routing_edges.total_count_of_segmen_layers,
+        total_count_of_segment_layers,
         false,
     );
-    routing_edges.total_count_of_segmen_layers += determine_segment_layers_ixi(
+    total_count_of_segment_layers += determine_segment_layers_ixi(
         &mut routing_edges.ixi_crossing,
         max_y_per_layer_buffer,
-        routing_edges.total_count_of_segmen_layers,
+        total_count_of_segment_layers,
     );
-    routing_edges.total_count_of_segmen_layers += determine_segment_layers_up_or_down_edges(
+    total_count_of_segment_layers += determine_segment_layers_up_or_down_edges(
         &mut routing_edges.down_edges,
         max_y_per_layer_buffer,
-        routing_edges.total_count_of_segmen_layers,
+        total_count_of_segment_layers,
         true,
     );
-    routing_edges.total_count_of_segmen_layers += determine_segment_layers_left_or_right_loops(
+    total_count_of_segment_layers += determine_segment_layers_left_or_right_loops(
         &mut routing_edges.right_loops,
         max_y_per_layer_buffer,
-        routing_edges.total_count_of_segmen_layers,
+        total_count_of_segment_layers,
         true,
     );
 
+    // Silence clippy.
+    let _ = total_count_of_segment_layers;
+
     let mut segment_graph = SegmentGraph::default();
-    let mut currently_active = Vec::<&RegularEdge>::new();
+    let mut currently_active = Vec::<&VerticalSegment>::new();
     let (ixi_above, ixi_below): (Vec<_>, Vec<_>) =
         routing_edges.ixi_crossing.iter().cloned().unzip();
 
@@ -234,21 +344,21 @@ fn determine_segment_layers(
             routing_edges.right_loops.iter(),
         ]
         .iter_mut(),
-        |left: &&RegularEdge, right: &&RegularEdge| left.segment.start_y < right.segment.start_y,
+        |left: &&VerticalSegment, right: &&VerticalSegment| left.start_y < right.start_y,
     )
     .for_each(|new_edge| {
-        currently_active.retain(|old_edge| old_edge.segment.end_y > new_edge.segment.start_y);
+        currently_active.retain(|old_edge| old_edge.end_y > new_edge.start_y);
         currently_active.push(new_edge);
-        currently_active.sort_unstable_by_key(|edge| edge.layer.idx);
+        currently_active.sort_unstable_by_key(|edge| edge.idx);
         let idx = currently_active
             .iter()
-            .position(|edge| edge.segment.id == new_edge.segment.id)
+            .position(|edge| edge.id == new_edge.id)
             .unwrap();
         segment_graph.add_edge(
             new_edge,
             idx.checked_sub(1)
                 .and_then(|idx| currently_active.get(idx))
-                .map(|edge| edge.segment.id),
+                .map(|edge| edge.id),
             currently_active.get(idx + 1).copied(),
         );
     });
@@ -312,7 +422,7 @@ fn determine_segment_layers(
     }
 }
 
-fn assign_the_real_x_values(graph: &mut Graph, path: &[&RegularEdge], space: EdgeSegmentSpace) {
+fn assign_the_real_x_values(graph: &mut Graph, path: &[&VerticalSegment], space: EdgeSegmentSpace) {
     let segspace = graph.config.max_space_between_vertical_edge_segments;
     let horizontal_space = space.end_x.strict_sub(space.start_x);
     let count_of_comfortably_fitting_edge_segments = horizontal_space / segspace;
@@ -353,7 +463,7 @@ fn assign_the_real_x_values(graph: &mut Graph, path: &[&RegularEdge], space: Edg
 }
 
 fn determine_segment_layers_left_or_right_loops(
-    routing_edges: &mut [RegularEdge],
+    routing_edges: &mut [VerticalSegment],
     max_y_per_layer_buffer: &mut Vec</* max_y */ usize>,
     base_segment_layer: usize,
     reverse: bool,
@@ -371,29 +481,29 @@ fn determine_segment_layers_left_or_right_loops(
         // 2 or 2 -> 0 of 2
         routing_edges
             .iter_mut()
-            .for_each(|e| e.layer.idx = total_count_of_segmen_layers - e.layer.idx);
+            .for_each(|e| e.idx = total_count_of_segmen_layers - e.idx);
     }
 
     // Shift them all to the correct value.
     routing_edges
         .iter_mut()
-        .for_each(|e| e.layer.idx += base_segment_layer);
+        .for_each(|e| e.idx += base_segment_layer);
 
     total_count_of_segmen_layers
 }
 
 fn determine_segment_layers_ixi(
-    routing_edges: &mut [(RegularEdge, RegularEdge)],
+    routing_edges: &mut [(VerticalSegment, VerticalSegment)],
     max_y_per_layer_buffer: &mut Vec</* max_y */ usize>,
     base_segment_layer: usize,
 ) -> usize {
     match &mut routing_edges[..] {
         [] => return 0,
         [(left, right)] => {
-            left.layer.idx = base_segment_layer;
-            left.layer.idx2 = Some(base_segment_layer + 1);
-            right.layer.idx = base_segment_layer;
-            right.layer.idx2 = Some(base_segment_layer + 1);
+            left.idx = base_segment_layer;
+            left.idx2 = Some(base_segment_layer + 1);
+            right.idx = base_segment_layer;
+            right.idx2 = Some(base_segment_layer + 1);
             return 2;
         }
         _ => (),
@@ -417,7 +527,7 @@ fn determine_segment_layers_ixi(
                 layer_idx
             }
         };
-        e.layer.idx = layer_idx;
+        e.idx = layer_idx;
     }
 
     // Now do some funny stuff: We store in the buffer how many vertical space is covered for each
@@ -430,7 +540,7 @@ fn determine_segment_layers_ixi(
     // Count for each layer how many pixels of vertical edge segments there are.
     max_y_per_layer_buffer.iter_mut().for_each(|x| *x = 0);
     for (e, _) in routing_edges.iter() {
-        max_y_per_layer_buffer[e.layer.idx] += e.max_y() - e.min_y();
+        max_y_per_layer_buffer[e.idx] += e.max_y() - e.min_y();
     }
 
     const BITS: usize = 8;
@@ -453,24 +563,24 @@ fn determine_segment_layers_ixi(
         let new_idx = 2 * new_target_idx + base_segment_layer;
         let new_idx2 = new_idx + 1;
         for (left, right) in routing_edges.iter_mut() {
-            if left.layer.idx == from_idx {
+            if left.idx == from_idx {
                 // Can only set the `right` one here since `left` is still used as a needle.
-                right.layer.idx = new_idx;
-                right.layer.idx2 = Some(new_idx2);
+                right.idx = new_idx;
+                right.idx2 = Some(new_idx2);
             }
         }
     }
 
     for (left, right) in routing_edges.iter_mut() {
-        left.layer.idx = right.layer.idx;
-        left.layer.idx2 = right.layer.idx2;
+        left.idx = right.idx;
+        left.idx2 = right.idx2;
     }
 
     max_y_per_layer_buffer.len() * 2
 }
 
 fn determine_segment_layers_up_or_down_edges(
-    routing_edges: &mut [RegularEdge],
+    routing_edges: &mut [VerticalSegment],
     max_y_per_layer_buffer: &mut Vec</* max_y */ usize>,
     base_segment_layer: usize,
     reverse: bool,
@@ -511,7 +621,7 @@ fn determine_segment_layers_up_or_down_edges(
                 layer_idx
             }
         };
-        e.layer.idx = layer_idx;
+        e.idx = layer_idx;
     }
     let total_count_of_segmen_layers = max_y_per_layer_buffer.len();
     // TODO do the fancy stuff as mentioned above. For now this will be a lot more primitive.
@@ -521,23 +631,24 @@ fn determine_segment_layers_up_or_down_edges(
         // 2 or 2 -> 0 of 2
         routing_edges
             .iter_mut()
-            .for_each(|e| e.layer.idx = total_count_of_segmen_layers - e.layer.idx);
+            .for_each(|e| e.idx = total_count_of_segmen_layers - e.idx);
     }
 
     // Shift them all to the correct value.
     routing_edges
         .iter_mut()
-        .for_each(|e| e.layer.idx += base_segment_layer);
+        .for_each(|e| e.idx += base_segment_layer);
 
     total_count_of_segmen_layers
 }
 
 fn get_layered_edges(graph: &mut Graph) -> Vec<Vec<SegmentsWithYOverlap>> {
-    let mut edge_layers = Vec::<Vec<RegularEdge>>::new();
+    let mut edge_layers = Vec::<Vec<VerticalSegment>>::new();
     edge_layers.resize_with(graph.num_layers, Default::default);
 
     for (edge_idx, edge) in graph.edges.iter().enumerate() {
         if edge.is_vertical {
+            // Should already be caught in the straight_edge_routing phase.
             continue;
         }
         let edge_id = EdgeId(edge_idx);
@@ -559,25 +670,18 @@ fn get_layered_edges(graph: &mut Graph) -> Vec<Vec<SegmentsWithYOverlap>> {
             outgoing_len == 1 || incoming_len == 1,
             "Combining branches directly with joins has not been implemented, yet.\nEdge: {edge:?}\nFrom: {from_node:?}\nTo: {to_node:?}"
         );*/
-        let Some(AbsolutePort { y: start_y, .. }) = from_node.port_of_outgoing(edge_id) else {
-            eprintln!("WARNING an edge pointed to a node but the node did not know it");
-            continue;
-        };
-        let Some(AbsolutePort { y: end_y, .. }) = to_node.port_of_incoming(edge_id) else {
-            eprintln!("WARNING an edge pointed to a node but the node did not know it");
-            continue;
-        };
+        let AbsolutePort { y: start_y, .. } = from_node.port_of_outgoing(edge_id);
+        let AbsolutePort { y: end_y, .. } = to_node.port_of_incoming(edge_id);
         if start_y == end_y {
             continue;
         }
         let segment_vec = &mut edge_layers[from_node.layer_id.0];
-        segment_vec.push(RegularEdge {
-            segment: VerticalSegment {
-                id: edge_id,
-                start_y,
-                end_y,
-            },
-            layer: SegmentLayer { idx: 0, idx2: None },
+        segment_vec.push(VerticalSegment {
+            id: edge_id,
+            start_y,
+            end_y,
+            idx: 0,
+            idx2: None,
             alignment: Alignment::Center,
             x_coordinate: Default::default(),
         });
@@ -607,7 +711,7 @@ fn get_layered_edges(graph: &mut Graph) -> Vec<Vec<SegmentsWithYOverlap>> {
                 // TODO for self loops, check if edges[_id].from or .to is a special loop helper node,
                 // in which case this should become a right_loops or left_loops member,
                 // respectively.
-                match edge.segment.start_y.cmp(&edge.segment.end_y) {
+                match edge.start_y.cmp(&edge.end_y) {
                     std::cmp::Ordering::Less => segments.down_edges.push(edge),
                     std::cmp::Ordering::Greater => segments.up_edges.push(edge),
                     std::cmp::Ordering::Equal => {
@@ -618,14 +722,8 @@ fn get_layered_edges(graph: &mut Graph) -> Vec<Vec<SegmentsWithYOverlap>> {
             let mut i = 0;
             let mut j = 0;
             while i < segments.up_edges.len() && j < segments.down_edges.len() {
-                let up = (
-                    segments.up_edges[i].segment.start_y,
-                    segments.up_edges[i].segment.end_y,
-                );
-                let down = (
-                    segments.down_edges[j].segment.end_y,
-                    segments.down_edges[j].segment.start_y,
-                );
+                let up = (segments.up_edges[i].start_y, segments.up_edges[i].end_y);
+                let down = (segments.down_edges[j].end_y, segments.down_edges[j].start_y);
                 if up == down {
                     segments
                         .ixi_crossing
@@ -647,32 +745,30 @@ fn get_layered_edges(graph: &mut Graph) -> Vec<Vec<SegmentsWithYOverlap>> {
 
 fn add_bend_points_one_segment(
     graph: &mut Graph,
-    edge: &RegularEdge,
+    edge: &VerticalSegment,
     idx: usize,
     segment_layer_width: f64,
     min_x: usize,
 ) {
-    let ixi_diagonalizer = if edge.layer.idx2.is_some() { 1 } else { 0 };
+    let ixi_diagonalizer = if edge.idx2.is_some() { 1 } else { 0 };
     // idx in the caller starts at 0, but `min_x` is actually expecting one additional padding.
     // Sorry for the spaghetti.
     let x = min_x + ((idx + 1) as f64 * segment_layer_width) as usize;
     let x2 = min_x + ((idx + 1 + ixi_diagonalizer) as f64 * segment_layer_width) as usize;
-    match (edge.layer.idx, edge.layer.idx2) {
+    match (edge.idx, edge.idx2) {
         (a, Some(b)) if a > b => edge.x_coordinate.set(Some(x2)),
         _ => edge.x_coordinate.set(Some(x)),
     }
-    match &mut graph.edges[edge.segment.id.0].edge_type {
+    match &mut e!(edge.id).edge_type {
         EdgeType::Regular { bend_points, .. } => {
-            *bend_points = RegularEdgeBendPoints::SegmentEndpoints(
-                (x, edge.segment.start_y),
-                (x2, edge.segment.end_y),
-            )
+            // TODO add an `if`: `MF` should do SegmentEndpoints so we can extract them, but
+            // otherwise this should be directly FullyRouted.
+            *bend_points =
+                RegularEdgeBendPoints::SegmentEndpoints((x, edge.start_y), (x2, edge.end_y))
         }
         EdgeType::DummyEdge { bend_points, .. } => {
-            *bend_points = DummyEdgeBendPoints::SegmentEndpoints(
-                (x, edge.segment.start_y),
-                (x2, edge.segment.end_y),
-            )
+            *bend_points =
+                DummyEdgeBendPoints::SegmentEndpoints((x, edge.start_y), (x2, edge.end_y))
         }
         EdgeType::ReplacedByDummies { .. } => {
             unreachable!("This edge kind was excluded at the beginning.")

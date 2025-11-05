@@ -1,9 +1,11 @@
 use crate::common::edge::Edge;
 use crate::common::edge::EdgeType;
 use crate::common::edge::RegularEdgeBendPoints;
+use crate::common::graph::EdgeId;
 use crate::common::graph::Graph;
 use crate::common::graph::NodeId;
 use crate::common::node::Node;
+use proc_macros::n;
 use std::collections::HashMap;
 
 const NODE_MARGIN: usize = 5;
@@ -128,53 +130,41 @@ fn data_edge_routing(matrix: &HashMap<usize, (usize, usize, usize, usize)>, grap
     }
 }
 
+// MFs which go straight up or down will be routed directly.
 fn message_edge_routing(_matrix: &HashMap<usize, (usize, usize, usize, usize)>, graph: &mut Graph) {
-    let mut start_point_buffer = vec![];
-    let mut end_point_buffer = vec![];
-    for data_edge_idx in 0..graph.edges.len() {
-        let data_edge = &mut graph.edges[data_edge_idx];
-        if !Edge::is_message_flow(&data_edge) {
+    for (edge_idx, edge) in graph.edges.iter_mut().enumerate() {
+        let edge_id = EdgeId(edge_idx);
+        if !edge.is_message_flow() || !edge.is_vertical {
             continue;
         }
 
-        let text = match &data_edge.edge_type {
-            EdgeType::Regular { text, .. } => text,
-            EdgeType::ReplacedByDummies { text, .. } => text,
-            EdgeType::DummyEdge { .. } => continue,
+        let EdgeType::Regular {
+            bend_points: out_bend_points,
+            ..
+        } = &mut edge.edge_type
+        else {
+            continue;
         };
 
-        start_point_buffer.clear();
-        end_point_buffer.clear();
-        find_start_and_end_points(
-            &graph.nodes[data_edge.from],
-            &graph.nodes[data_edge.to],
-            &mut start_point_buffer,
-            &mut end_point_buffer,
-        );
-
-        let mut bend_points = Vec::new();
-        for start_points in start_point_buffer.iter() {
-            for end_points in end_point_buffer.iter() {
-                bend_points.push((start_points.clone(), end_points.clone()));
-            }
+        // TODO this is present as `from_and_to_xy` in `replace_dummy_nodes`, should be moved to
+        // `graph` and return an array instead of vector.
+        let mut bend_points = vec![
+            n!(edge.from).port_of_outgoing(edge_id).as_pair(),
+            n!(edge.to).port_of_incoming(edge_id).as_pair(),
+        ];
+        // NB this is a bit brain-exploding probably. Thing is, there could be many ports, and then
+        // the one port could be shifted more to the side than the other port. But we want the ports
+        // to be x-aligned, to have a perfectly vertical line (not slightly diagonal). My hypothesis
+        // is that there is never a collision if we take the `min` value. But this is just a bad
+        // hypothesis / gamble and probably needs to be revisited in the future.
+        let min_x = bend_points[0].0.min(bend_points[1].0);
+        bend_points[0].0 = min_x;
+        bend_points[1].0 = min_x;
+        if edge.is_reversed {
+            bend_points.reverse();
         }
-        if bend_points.len() > 0 {
-            let edge = find_shortest_path(&bend_points);
-            let mut bend_points = vec![edge.0, edge.1];
-            if data_edge.is_reversed {
-                bend_points.reverse();
-            }
 
-            // It no longer is replaced by dummies.
-            graph.edges[data_edge_idx].edge_type = EdgeType::Regular {
-                text: text.clone(),
-                bend_points: RegularEdgeBendPoints::FullyRouted(bend_points),
-            };
-
-            // The dummy edges are not explicitly iterated in the upcoming edge routing phase,
-            // so we can just leave them in the state which they are. Also no need to
-            // touch the outgoing/incoming fields as they are no longer looked at.
-        }
+        *out_bend_points = RegularEdgeBendPoints::FullyRouted(bend_points);
     }
 }
 
