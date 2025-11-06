@@ -26,6 +26,7 @@ use crate::common::graph::PoolId;
 use crate::common::node::LayerId;
 use proc_macros::e;
 use proc_macros::from;
+use proc_macros::n;
 use proc_macros::to;
 use std::collections::HashMap;
 
@@ -265,7 +266,7 @@ impl VerticalSegment {
 pub fn edge_routing(graph: &mut Graph) {
     // Outer Vec: Per Layer across all lanes and pool,
     // Inner Vec: All the vertical edge segments within that layer.
-    let mut layered_edges = get_layered_edges(graph);
+    let (mut layered_edges, mut mf_store) = get_layered_edges(graph);
 
     // TODO when loops are added, then handle loops in the front and at the end by taking the first
     // and last element of the vector away (slicing), and use the
@@ -278,6 +279,7 @@ pub fn edge_routing(graph: &mut Graph) {
         .for_each(|(layer_id, segments)| {
             determine_segment_layers(
                 graph,
+                &mut mf_store,
                 segments,
                 &mut buffer,
                 EdgeSegmentSpaceLocation::After(layer_id),
@@ -287,6 +289,7 @@ pub fn edge_routing(graph: &mut Graph) {
 
 fn determine_segment_layers(
     graph: &mut Graph,
+    mf_store: &mut MessageFlowBendPointStore,
     routing_edges: &mut SegmentsWithYOverlap,
     max_y_per_layer_buffer: &mut Vec</* max_y */ usize>,
     location: EdgeSegmentSpaceLocation,
@@ -395,6 +398,7 @@ fn determine_segment_layers(
                 (State::RunOfFreshSegments { start, start_idx }, Some(x)) => {
                     assign_the_real_x_values(
                         graph,
+                        mf_store,
                         &path[start_idx..idx],
                         EdgeSegmentSpace {
                             start_x: start,
@@ -407,10 +411,11 @@ fn determine_segment_layers(
                 (state @ State::RunOfFreshSegments { .. }, None) => state,
             }
         }
+        // The last run must also be processed.
         if let State::RunOfFreshSegments { start, start_idx } = state {
-            //
             assign_the_real_x_values(
                 graph,
+                mf_store,
                 &path[start_idx..],
                 EdgeSegmentSpace {
                     start_x: start,
@@ -422,7 +427,12 @@ fn determine_segment_layers(
     }
 }
 
-fn assign_the_real_x_values(graph: &mut Graph, path: &[&VerticalSegment], space: EdgeSegmentSpace) {
+fn assign_the_real_x_values(
+    graph: &mut Graph,
+    mf_store: &mut MessageFlowBendPointStore,
+    path: &[&VerticalSegment],
+    space: EdgeSegmentSpace,
+) {
     let segspace = graph.config.max_space_between_vertical_edge_segments;
     let horizontal_space = space.end_x.strict_sub(space.start_x);
     let count_of_comfortably_fitting_edge_segments = horizontal_space / segspace;
@@ -430,7 +440,7 @@ fn assign_the_real_x_values(graph: &mut Graph, path: &[&VerticalSegment], space:
         // Must squeeze them into the space.
         let segment_width = (horizontal_space as f64) / ((path.len() + 1) as f64);
         for (idx, edge) in path.iter().enumerate() {
-            add_bend_points_one_segment(graph, edge, idx, segment_width, space.start_x);
+            add_bend_points_one_segment(graph, mf_store, edge, idx, segment_width, space.start_x);
         }
         return;
     }
@@ -440,11 +450,11 @@ fn assign_the_real_x_values(graph: &mut Graph, path: &[&VerticalSegment], space:
         (&path[..i], &path[i..i + k], &path[i + k..])
     };
     for (idx, edge) in left.iter().enumerate() {
-        add_bend_points_one_segment(graph, edge, idx, segspace as f64, space.start_x);
+        add_bend_points_one_segment(graph, mf_store, edge, idx, segspace as f64, space.start_x);
     }
     let right_start = space.end_x.strict_sub((right.len() + 1) * segspace);
     for (idx, edge) in right.iter().enumerate() {
-        add_bend_points_one_segment(graph, edge, idx, segspace as f64, right_start);
+        add_bend_points_one_segment(graph, mf_store, edge, idx, segspace as f64, right_start);
     }
     let leftmost_start_x = space.start_x + (left.len() * segspace);
     let rightmost_end_x = space.end_x.strict_sub(right.len() * segspace);
@@ -458,7 +468,7 @@ fn assign_the_real_x_values(graph: &mut Graph, path: &[&VerticalSegment], space:
         _ => leftmost_start_x + space.center_x.strict_sub(leftmost_center_x),
     };
     for (idx, edge) in center.iter().enumerate() {
-        add_bend_points_one_segment(graph, edge, idx, segspace as f64, start_x);
+        add_bend_points_one_segment(graph, mf_store, edge, idx, segspace as f64, start_x);
     }
 }
 
@@ -642,7 +652,10 @@ fn determine_segment_layers_up_or_down_edges(
     total_count_of_segmen_layers
 }
 
-fn get_layered_edges(graph: &mut Graph) -> Vec<Vec<SegmentsWithYOverlap>> {
+fn get_layered_edges(
+    graph: &mut Graph,
+) -> (Vec<Vec<SegmentsWithYOverlap>>, MessageFlowBendPointStore) {
+    let mut mf_store = MessageFlowBendPointStore::default();
     let mut edge_layers = Vec::<Vec<VerticalSegment>>::new();
     edge_layers.resize_with(graph.num_layers, Default::default);
 
@@ -740,35 +753,50 @@ fn get_layered_edges(graph: &mut Graph) -> Vec<Vec<SegmentsWithYOverlap>> {
             result.push(segments);
         }
     }
-    result
+    (result, mf_store)
 }
 
 fn add_bend_points_one_segment(
     graph: &mut Graph,
-    edge: &VerticalSegment,
+    mf_store: &mut MessageFlowBendPointStore,
+    segment: &VerticalSegment,
     idx: usize,
     segment_layer_width: f64,
     min_x: usize,
 ) {
-    let ixi_diagonalizer = if edge.idx2.is_some() { 1 } else { 0 };
+    let ixi_diagonalizer = if segment.idx2.is_some() { 1 } else { 0 };
     // idx in the caller starts at 0, but `min_x` is actually expecting one additional padding.
     // Sorry for the spaghetti.
     let x = min_x + ((idx + 1) as f64 * segment_layer_width) as usize;
     let x2 = min_x + ((idx + 1 + ixi_diagonalizer) as f64 * segment_layer_width) as usize;
-    match (edge.idx, edge.idx2) {
-        (a, Some(b)) if a > b => edge.x_coordinate.set(Some(x2)),
-        _ => edge.x_coordinate.set(Some(x)),
+    match (segment.idx, segment.idx2) {
+        (a, Some(b)) if a > b => segment.x_coordinate.set(Some(x2)),
+        _ => segment.x_coordinate.set(Some(x)),
     }
-    match &mut e!(edge.id).edge_type {
-        EdgeType::Regular { bend_points, .. } => {
-            // TODO add an `if`: `MF` should do SegmentEndpoints so we can extract them, but
-            // otherwise this should be directly FullyRouted.
-            *bend_points =
-                RegularEdgeBendPoints::SegmentEndpoints((x, edge.start_y), (x2, edge.end_y))
+    let edge = &mut e!(segment.id);
+    let is_message_flow = edge.is_message_flow();
+    let (p1, p2) = ((x, segment.start_y), (x2, segment.end_y));
+    match &mut edge.edge_type {
+        EdgeType::Regular { bend_points, .. } if is_message_flow => {
+            //TODO this must check which of the points p1 / p2 is the actual bendpoint, as the other one is the floaitng inter-pool point whose x coordinate is the `interpool_bendpoint_x`.
+            mf_store.finish_layer(segment.id, (p1, p2));
+        }
+        EdgeType::Regular {
+            bend_points: out_bend_points,
+            ..
+        } => {
+            // BACKLOG: inlining graph.start_and_end_ports due to borrow checker.
+            let from_xy = n!(edge.from).port_of_outgoing(segment.id).as_pair();
+            let to_xy = n!(edge.to).port_of_incoming(segment.id).as_pair();
+            let bend_points = if edge.is_reversed {
+                vec![to_xy, p2, p1, from_xy]
+            } else {
+                vec![from_xy, p1, p2, to_xy]
+            };
+            *out_bend_points = RegularEdgeBendPoints::FullyRouted(bend_points)
         }
         EdgeType::DummyEdge { bend_points, .. } => {
-            *bend_points =
-                DummyEdgeBendPoints::SegmentEndpoints((x, edge.start_y), (x2, edge.end_y))
+            *bend_points = DummyEdgeBendPoints::SegmentEndpoints(p1, p2)
         }
         EdgeType::ReplacedByDummies { .. } => {
             unreachable!("This edge kind was excluded at the beginning.")

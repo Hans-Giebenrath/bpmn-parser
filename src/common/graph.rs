@@ -9,6 +9,7 @@ use crate::common::pool::Pool;
 use crate::lexer::{DataType, EventType};
 use crate::parser::ParseError;
 use annotate_snippets::Level;
+use core::from;
 use proc_macros::{e, from, n, to};
 use std::collections::{HashMap, HashSet};
 use std::fmt::{self, Debug};
@@ -224,6 +225,13 @@ impl Graph {
 
         mem::swap(&mut edge.from, &mut edge.to);
         edge.is_reversed = true;
+    }
+
+    pub(crate) fn start_and_end_ports(&self, edge_id: EdgeId) -> [(usize, usize); 2] {
+        let graph = self;
+        let from_xy = from!(edge_id).port_of_outgoing(edge_id).as_pair();
+        let to_xy = to!(edge_id).port_of_incoming(edge_id).as_pair();
+        [from_xy, to_xy]
     }
 
     pub(crate) fn get_bottom_node(&self, pool_lane: PoolAndLane, layer: LayerId) -> Option<NodeId> {

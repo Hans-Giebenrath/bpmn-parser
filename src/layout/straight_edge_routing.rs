@@ -5,6 +5,7 @@ use crate::common::graph::EdgeId;
 use crate::common::graph::Graph;
 use crate::common::graph::NodeId;
 use crate::common::node::Node;
+use proc_macros::e;
 use proc_macros::n;
 use std::collections::HashMap;
 
@@ -70,7 +71,33 @@ fn is_in_obstacle_ignore_self(
     false
 }
 
-fn sequence_edge_routing(_graph: &mut Graph) {}
+fn sequence_edge_routing(graph: &mut Graph) {
+    for edge_idx in 0..graph.edges.len() {
+        let edge_id = EdgeId(edge_idx);
+        let edge = &e!(edge_id);
+        if !edge.is_sequence_flow() || !edge.is_regular() {
+            continue;
+        }
+        let edge_id = EdgeId(edge_idx);
+        let [start @ (_, start_y), end @ (_, end_y)] = graph.start_and_end_ports(edge_id);
+        if start_y != end_y {
+            continue;
+        }
+        let bend_points = if edge.is_reversed {
+            vec![end, start]
+        } else {
+            vec![start, end]
+        };
+        let EdgeType::Regular {
+            bend_points: out_bend_points,
+            ..
+        } = &mut e!(edge_id).edge_type
+        else {
+            unreachable!("Verified `edge.is_regular()` above.");
+        };
+        *out_bend_points = RegularEdgeBendPoints::FullyRouted(bend_points);
+    }
+}
 
 fn data_edge_routing(matrix: &HashMap<usize, (usize, usize, usize, usize)>, graph: &mut Graph) {
     let mut start_point_buffer = vec![];

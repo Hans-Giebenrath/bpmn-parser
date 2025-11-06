@@ -54,7 +54,7 @@ pub enum EdgeType {
 /// TODO split this in two: RegularEdgeBendPoints, and a DummyEdgeBendPoints without FullyRouted.
 #[derive(Debug, Clone)]
 pub enum RegularEdgeBendPoints {
-    ToBeDeterminedOrStraight,
+    ToBeDetermined,
     SegmentEndpoints((usize, usize), (usize, usize)),
     FullyRouted(Vec<(usize, usize)>),
 }

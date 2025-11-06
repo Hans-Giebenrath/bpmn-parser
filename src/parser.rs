@@ -244,8 +244,7 @@ impl Parser {
                                     end.known_node_id,
                                     EdgeType::Regular {
                                         text: Some(start.edge_text.clone()),
-                                        bend_points:
-                                            RegularEdgeBendPoints::ToBeDeterminedOrStraight,
+                                        bend_points: RegularEdgeBendPoints::ToBeDetermined,
                                     },
                                     FlowType::SequenceFlow,
                                 );
@@ -522,7 +521,7 @@ impl Parser {
                     current_node_id,
                     EdgeType::Regular {
                         text: None,
-                        bend_points: RegularEdgeBendPoints::ToBeDeterminedOrStraight,
+                        bend_points: RegularEdgeBendPoints::ToBeDetermined,
                     },
                     FlowType::SequenceFlow,
                 );
@@ -769,7 +768,7 @@ _ => (),
             receiver_node,
             EdgeType::Regular {
                 text: Some(meta.display_text),
-                bend_points: RegularEdgeBendPoints::ToBeDeterminedOrStraight,
+                bend_points: RegularEdgeBendPoints::ToBeDetermined,
             },
             FlowType::MessageFlow(MessageFlowAux {
                 transported_data: vec![],
@@ -875,7 +874,7 @@ _ => (),
                 to,
                 EdgeType::Regular {
                     text: Some(text_label),
-                    bend_points: RegularEdgeBendPoints::ToBeDeterminedOrStraight,
+                    bend_points: RegularEdgeBendPoints::ToBeDetermined,
                 },
                 FlowType::DataFlow(DataFlowAux {
                     transported_data: vec![sde_id],
