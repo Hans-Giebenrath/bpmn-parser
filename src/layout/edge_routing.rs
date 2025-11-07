@@ -106,7 +106,7 @@ impl<'a> SegmentGraph<'a> {
 
 struct MessageFlowBendPoints {
     bend_points: Vec<(usize, usize)>,
-    bends_after_pool: PoolId,
+    bends_after_pool: Option<PoolId>,
     interpool_bendpoint1_x: Option<usize>,
     interpool_bendpoint2_x: Option<usize>,
 }
@@ -117,7 +117,7 @@ struct MessageFlowBendPointStore {
 }
 
 impl MessageFlowBendPointStore {
-    fn register_edge(&mut self, edge_id: EdgeId, bends_after_pool: PoolId) {
+    fn register_edge(&mut self, edge_id: EdgeId, bends_after_pool: Option<PoolId>) {
         self.store.insert(
             edge_id,
             MessageFlowBendPoints {
@@ -132,19 +132,29 @@ impl MessageFlowBendPointStore {
     fn finish_layer(
         &mut self,
         edge_id: EdgeId,
+        bend_point: (usize, usize),
         // If the edge goes straight up here, then no bend point is added.
-        bend_point: Option<(usize, usize)>,
-        interpool_bendpoint_x: usize,
+        interpool_bendpoint_x: Option<usize>,
     ) {
         let state = self.store.get_mut(&edge_id).unwrap();
-        if let Some(bend_point) = bend_point {
-            state.bend_points.push(bend_point);
-        }
+        state.bend_points.push(bend_point);
+        // assert: We should only call this function twice.
         assert_eq!(state.interpool_bendpoint2_x, None);
-        if state.interpool_bendpoint1_x.is_none() {
-            state.interpool_bendpoint1_x = Some(interpool_bendpoint_x);
+        if let Some(interpool_bendpoint_x) = interpool_bendpoint_x {
+            if state.interpool_bendpoint1_x.is_none() {
+                // For the same edge_id, this function should always be called in the same manner.
+                // If this triggers then this is the second invocation and the first time None was
+                // used.
+                assert_eq!(state.bend_points.len(), 1);
+                state.interpool_bendpoint1_x = Some(interpool_bendpoint_x);
+            } else {
+                state.interpool_bendpoint2_x = Some(interpool_bendpoint_x);
+            }
         } else {
-            state.interpool_bendpoint2_x = Some(interpool_bendpoint_x);
+            // For the same edge_id, this function should always be called in the same manner.
+            // If this triggers then this is the second invocation and the first time Some was
+            // used.
+            assert_eq!(state.interpool_bendpoint1_x, None);
         }
     }
 
@@ -154,7 +164,7 @@ impl MessageFlowBendPointStore {
     ) -> impl Iterator<Item = (EdgeId, usize, usize)> {
         self.store
             .iter()
-            .filter(move |(_, mfbp)| mfbp.bends_after_pool == after_pool)
+            .filter(move |(_, mfbp)| mfbp.bends_after_pool == Some(after_pool))
             .map(|(edge_id, mfbp)| {
                 (
                     *edge_id,
@@ -168,7 +178,9 @@ impl MessageFlowBendPointStore {
         &mut self,
         graph: &mut Graph,
         edge_id: EdgeId,
-        interpool_bendpoints: [(usize, usize); 2],
+        // For MFs which just go from one layer to the next, i.e. don't move along the inter-pool
+        // space, this is None.
+        interpool_bendpoints: Option<[(usize, usize); 2]>,
     ) {
         let (start, end, rev) = {
             let from_port = from!(edge_id).port_of_outgoing(edge_id);
@@ -181,7 +193,9 @@ impl MessageFlowBendPointStore {
         };
         let mut bend_points = self.store.remove(&edge_id).unwrap().bend_points;
         bend_points.insert(0, start.as_pair());
-        bend_points.extend_from_slice(&interpool_bendpoints);
+        if let Some(interpool_bendpoints) = interpool_bendpoints {
+            bend_points.extend_from_slice(&interpool_bendpoints);
+        }
         bend_points.push(end.as_pair());
         bend_points.sort_unstable();
         for i in 0..bend_points.len() - 2 {
@@ -218,7 +232,7 @@ impl MessageFlowBendPointStore {
 }
 
 #[derive(Default, Debug)]
-struct SegmentsWithYOverlap {
+struct SegmentsOfSameLayer {
     left_loops: Vec<VerticalSegment>,
     up_message_flows: Vec<VerticalSegment>,
     up_edges: Vec<VerticalSegment>,
@@ -247,6 +261,7 @@ struct VerticalSegment {
     /// usage rather tiresome.
     idx2: Option<usize>,
 
+    is_message_flow: bool,
     alignment: Alignment,
     // Oioioi sorry for the spaghetti. I just don't want to handle all those usize indexes.
     // But I create paths from left to right and store `&VerticalSegment`s, and I still want to mark
@@ -271,18 +286,19 @@ pub fn edge_routing(graph: &mut Graph) {
     // TODO when loops are added, then handle loops in the front and at the end by taking the first
     // and last element of the vector away (slicing), and use the
     // EdgeSegmentSpaceLocation::LeftBorder/AfterLast variants.
+    // Actually this is already required due to message flows which are not strictly loops in that
+    // sense but can leave/enter at the borders.
     let mut buffer = Vec::new();
     layered_edges
         .iter_mut()
         .enumerate()
-        .flat_map(|(layer_idx, vec)| vec.iter_mut().map(move |segs| (LayerId(layer_idx), segs)))
-        .for_each(|(layer_id, segments)| {
+        .for_each(|(layer_idx, segments)| {
             determine_segment_layers(
                 graph,
                 &mut mf_store,
                 segments,
                 &mut buffer,
-                EdgeSegmentSpaceLocation::After(layer_id),
+                EdgeSegmentSpaceLocation::After(LayerId(layer_idx)),
             )
         });
 }
@@ -290,7 +306,7 @@ pub fn edge_routing(graph: &mut Graph) {
 fn determine_segment_layers(
     graph: &mut Graph,
     mf_store: &mut MessageFlowBendPointStore,
-    routing_edges: &mut SegmentsWithYOverlap,
+    routing_edges: &mut SegmentsOfSameLayer,
     max_y_per_layer_buffer: &mut Vec</* max_y */ usize>,
     location: EdgeSegmentSpaceLocation,
 ) {
@@ -301,6 +317,12 @@ fn determine_segment_layers(
     let mut total_count_of_segment_layers = 0;
     total_count_of_segment_layers += determine_segment_layers_left_or_right_loops(
         &mut routing_edges.left_loops,
+        max_y_per_layer_buffer,
+        total_count_of_segment_layers,
+        false,
+    );
+    total_count_of_segment_layers += determine_segment_layers_up_or_down_edges(
+        &mut routing_edges.up_message_flows,
         max_y_per_layer_buffer,
         total_count_of_segment_layers,
         false,
@@ -318,6 +340,12 @@ fn determine_segment_layers(
     );
     total_count_of_segment_layers += determine_segment_layers_up_or_down_edges(
         &mut routing_edges.down_edges,
+        max_y_per_layer_buffer,
+        total_count_of_segment_layers,
+        true,
+    );
+    total_count_of_segment_layers += determine_segment_layers_up_or_down_edges(
+        &mut routing_edges.down_message_flows,
         max_y_per_layer_buffer,
         total_count_of_segment_layers,
         true,
@@ -652,9 +680,20 @@ fn determine_segment_layers_up_or_down_edges(
     total_count_of_segmen_layers
 }
 
-fn get_layered_edges(
-    graph: &mut Graph,
-) -> (Vec<Vec<SegmentsWithYOverlap>>, MessageFlowBendPointStore) {
+fn interpool_y(graph: &Graph, from_pool: PoolId, to_pool: PoolId) -> (PoolId, usize) {
+    // MFs bend away immediately when they leave their `from` pool. Port ordering is set up as per
+    // this convention.
+    let pool_id = if from_pool < to_pool {
+        from_pool
+    } else {
+        assert!(from_pool > to_pool, "{from_pool:?}");
+        PoolId(from_pool.0 - 1)
+    };
+    let reference_pool = &graph.pools[pool_id];
+    (pool_id, reference_pool.y.strict_add(reference_pool.height))
+}
+
+fn get_layered_edges(graph: &mut Graph) -> (Vec<SegmentsOfSameLayer>, MessageFlowBendPointStore) {
     let mut mf_store = MessageFlowBendPointStore::default();
     let mut edge_layers = Vec::<Vec<VerticalSegment>>::new();
     edge_layers.resize_with(graph.num_layers, Default::default);
@@ -677,81 +716,119 @@ fn get_layered_edges(
         let to_idx = edge.to.0;
         let from_node = &graph.nodes[from_idx];
         let to_node = &graph.nodes[to_idx];
-        // TODO in some variant this assert needs to come back, but it should only consider
-        // SequenceFlows. Maybe this is actually a graph invariant and does not belong here?
-        /*assert!(
-            outgoing_len == 1 || incoming_len == 1,
-            "Combining branches directly with joins has not been implemented, yet.\nEdge: {edge:?}\nFrom: {from_node:?}\nTo: {to_node:?}"
-        );*/
         let AbsolutePort { y: start_y, .. } = from_node.port_of_outgoing(edge_id);
         let AbsolutePort { y: end_y, .. } = to_node.port_of_incoming(edge_id);
-        if start_y == end_y {
-            continue;
+        if !edge.is_message_flow() {
+            if start_y == end_y {
+                continue;
+            }
+            let segment_vec = &mut edge_layers[from_node.layer_id.0];
+            segment_vec.push(VerticalSegment {
+                id: edge_id,
+                start_y,
+                end_y,
+                idx: 0,
+                idx2: None,
+                alignment: Alignment::Center,
+                is_message_flow: false,
+                x_coordinate: Default::default(),
+            });
+        } else if from_node.layer_id.0 + 1 == to_node.layer_id.0 {
+            assert!(edge.is_message_flow());
+            // The edge goes to the next layer, so there is just one vertical segment. No
+            // inter-pool horizontal segment required.
+            let segment_vec = &mut edge_layers[from_node.layer_id.0];
+            segment_vec.push(VerticalSegment {
+                id: edge_id,
+                start_y,
+                end_y,
+                idx: 0,
+                idx2: None,
+                alignment: Alignment::Center,
+                is_message_flow: true,
+                x_coordinate: Default::default(),
+            });
+            mf_store.register_edge(edge_id, None);
+        } else {
+            assert!(edge.is_message_flow());
+            let (bend_pool_id, interpool_y) = interpool_y(graph, from_node.pool, to_node.pool);
+            // The edge goes to the next layer, so there is just one vertical segment. No
+            // inter-pool horizontal segment required.
+            let segment_vec = &mut edge_layers[from_node.layer_id.0];
+            segment_vec.push(VerticalSegment {
+                id: edge_id,
+                start_y,
+                end_y: interpool_y,
+                idx: 0,
+                idx2: None,
+                alignment: Alignment::Center,
+                is_message_flow: true,
+                x_coordinate: Default::default(),
+            });
+            // TODO this will fail one day. We need to shift layers + 1, as we can't express "left of
+            // layer 0" atm.
+            let segment_vec = &mut edge_layers[to_node.layer_id.0];
+            segment_vec.push(VerticalSegment {
+                id: edge_id,
+                start_y: interpool_y,
+                end_y,
+                idx: 0,
+                idx2: None,
+                alignment: Alignment::Center,
+                is_message_flow: true,
+                x_coordinate: Default::default(),
+            });
+            mf_store.register_edge(edge_id, Some(bend_pool_id));
         }
-        let segment_vec = &mut edge_layers[from_node.layer_id.0];
-        segment_vec.push(VerticalSegment {
-            id: edge_id,
-            start_y,
-            end_y,
-            idx: 0,
-            idx2: None,
-            alignment: Alignment::Center,
-            x_coordinate: Default::default(),
-        });
     }
 
-    let mut result = vec![];
-    for _ in 0..edge_layers.len() {
-        result.push(vec![]);
-    }
-    for (edge_layer_idx, mut edge_layer) in edge_layers.into_iter().enumerate() {
+    let mut result: Vec<SegmentsOfSameLayer> = vec![];
+    for mut edge_layer in edge_layers.into_iter() {
         // sort by min_y: To identify groups
         // sort by max_y: To later be able to easily spot ixi crossings from the up_edges and
         // down_edges vectors.
         edge_layer.sort_unstable_by_key(|e| (e.min_y(), e.max_y()));
-        let Some(mut max_y) = edge_layer.first().map(|re| re.max_y()) else {
-            continue;
-        };
         // Chunk as long as edges are overlapping.
-        let result = &mut result[edge_layer_idx];
-        for (_key, chunk) in &edge_layer.into_iter().chunk_by(move |re| {
-            let m = max_y;
-            std::mem::replace(&mut max_y, re.max_y().max(m)) >= re.min_y()
-        }) {
-            //let a = chunk.collect::<Vec<_>>();
-            let mut segments = SegmentsWithYOverlap::default();
-            chunk.into_iter().for_each(|edge| {
-                // TODO for self loops, check if edges[_id].from or .to is a special loop helper node,
-                // in which case this should become a right_loops or left_loops member,
-                // respectively.
-                match edge.start_y.cmp(&edge.end_y) {
-                    std::cmp::Ordering::Less => segments.down_edges.push(edge),
-                    std::cmp::Ordering::Greater => segments.up_edges.push(edge),
-                    std::cmp::Ordering::Equal => {
-                        unreachable!("start_y == end_y has been checked earlier.")
-                    }
+        let mut segments = SegmentsOfSameLayer::default();
+        edge_layer.into_iter().for_each(|mut edge| {
+            // TODO for self loops, check if edges[_id].from or .to is a special loop helper node,
+            // in which case this should become a right_loops or left_loops member,
+            // respectively.
+            match edge.start_y.cmp(&edge.end_y) {
+                std::cmp::Ordering::Less if edge.is_message_flow => {
+                    edge.alignment = Alignment::Right;
+                    segments.down_message_flows.push(edge);
                 }
-            });
-            let mut i = 0;
-            let mut j = 0;
-            while i < segments.up_edges.len() && j < segments.down_edges.len() {
-                let up = (segments.up_edges[i].start_y, segments.up_edges[i].end_y);
-                let down = (segments.down_edges[j].end_y, segments.down_edges[j].start_y);
-                if up == down {
-                    segments
-                        .ixi_crossing
-                        .push((segments.up_edges.remove(i), segments.down_edges.remove(j)));
-                    // No need to alter i or j, as we removed the elements at that location, and
-                    // need to check the new elements in the next iteration.
-                } else if up < down {
-                    i += 1;
-                } else {
-                    j += 1;
+                std::cmp::Ordering::Greater if edge.is_message_flow => {
+                    edge.alignment = Alignment::Left;
+                    segments.up_message_flows.push(edge);
+                }
+                std::cmp::Ordering::Less => segments.down_edges.push(edge),
+                std::cmp::Ordering::Greater => segments.up_edges.push(edge),
+                std::cmp::Ordering::Equal => {
+                    unreachable!("start_y == end_y has been checked earlier.")
                 }
             }
-            segments.down_edges.reverse();
-            result.push(segments);
+        });
+        let mut i = 0;
+        let mut j = 0;
+        while i < segments.up_edges.len() && j < segments.down_edges.len() {
+            let up = (segments.up_edges[i].start_y, segments.up_edges[i].end_y);
+            let down = (segments.down_edges[j].end_y, segments.down_edges[j].start_y);
+            if up == down {
+                segments
+                    .ixi_crossing
+                    .push((segments.up_edges.remove(i), segments.down_edges.remove(j)));
+                // No need to alter `i` or `j`, as we removed the elements at that location, and
+                // need to check the new elements in the next iteration.
+            } else if up < down {
+                i += 1;
+            } else {
+                j += 1;
+            }
         }
+        segments.down_edges.reverse();
+        result.push(segments);
     }
     (result, mf_store)
 }
@@ -765,7 +842,7 @@ fn add_bend_points_one_segment(
     min_x: usize,
 ) {
     let ixi_diagonalizer = if segment.idx2.is_some() { 1 } else { 0 };
-    // idx in the caller starts at 0, but `min_x` is actually expecting one additional padding.
+    // `idx` in the caller starts at 0, but `min_x` is actually expecting one additional padding.
     // Sorry for the spaghetti.
     let x = min_x + ((idx + 1) as f64 * segment_layer_width) as usize;
     let x2 = min_x + ((idx + 1 + ixi_diagonalizer) as f64 * segment_layer_width) as usize;
@@ -774,18 +851,39 @@ fn add_bend_points_one_segment(
         _ => segment.x_coordinate.set(Some(x)),
     }
     let edge = &mut e!(segment.id);
-    let is_message_flow = edge.is_message_flow();
     let (p1, p2) = ((x, segment.start_y), (x2, segment.end_y));
     match &mut edge.edge_type {
-        EdgeType::Regular { bend_points, .. } if is_message_flow => {
-            //TODO this must check which of the points p1 / p2 is the actual bendpoint, as the other one is the floaitng inter-pool point whose x coordinate is the `interpool_bendpoint_x`.
-            mf_store.finish_layer(segment.id, (p1, p2));
+        _ if segment.is_message_flow => {
+            // Check which of the points p1 / p2 is the actual bendpoint, as the other one is the
+            // floating inter-pool point whose x coordinate is the `interpool_bendpoint_x`.
+            let from = &n!(edge.from);
+            let to = &n!(edge.to);
+
+            // BACKLOG: inlining graph.start_and_end_ports due to borrow checker.
+            let from_xy = from.port_of_outgoing(segment.id).as_pair();
+            let to_xy = to.port_of_incoming(segment.id).as_pair();
+            if from.layer_id.0 + 1 == to.layer_id.0 {
+                // This MF just goes straight up. Since this won't be part of interpool edge
+                // routing, we can finish it off here already.
+                mf_store.finish_layer(segment.id, p1, None);
+                mf_store.finish_layer(segment.id, p2, None);
+                mf_store.completely_route_the_path(graph, segment.id, None);
+            } else if from_xy.1 == p1.1 || to_xy.1 == p1.1 {
+                mf_store.finish_layer(segment.id, p2, Some(p1.0));
+            } else {
+                assert!(
+                    from_xy.1 == p2.1 || to_xy.1 == p2.1,
+                    "p1: {p1:?}, p2: {p2:?}, from_xy: {from_xy:?}, to_xy: {to_xy:?}"
+                );
+                mf_store.finish_layer(segment.id, p1, Some(p1.0));
+            }
         }
         EdgeType::Regular {
             bend_points: out_bend_points,
             ..
         } => {
             // BACKLOG: inlining graph.start_and_end_ports due to borrow checker.
+            // TODO make this simply a standalone function taking `&mut graph.nodes`.
             let from_xy = n!(edge.from).port_of_outgoing(segment.id).as_pair();
             let to_xy = n!(edge.to).port_of_incoming(segment.id).as_pair();
             let bend_points = if edge.is_reversed {
