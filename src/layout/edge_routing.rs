@@ -215,7 +215,7 @@ fn transpose(
 //    interpool_bendpoint2_x: Option<usize>,
 //}
 
-#[derive(Default)]
+#[derive(Default, Debug)]
 struct MessageFlowBendPointStore {
     store: HashMap<EdgeId, MessageFlowBendState>,
 }
@@ -296,6 +296,7 @@ impl MessageFlowBendPointStore {
                 ..
             } => {
                 *bend_point_2 = Some(p2);
+                return;
             }
             HorVerHorVerHor {
                 bend_point_1: bend_point_1 @ None,
@@ -303,6 +304,7 @@ impl MessageFlowBendPointStore {
                 ..
             } => {
                 *bend_point_1 = Some(p1);
+                return;
             }
             HorVerHorVerHor {
                 bend_point_1: bend_point_1 @ None,
@@ -317,6 +319,7 @@ impl MessageFlowBendPointStore {
                     // calculated first.
                     *bend_point_2 = Some(p2);
                 }
+                return;
             }
         }
         // Ensure that if we finished and would access this value again, it will crash.
@@ -482,10 +485,12 @@ fn determine_segment_layers(
     itertools::kmerge_by(
         [
             routing_edges.left_loops.iter(),
+            routing_edges.up_message_flows.iter(),
             routing_edges.up_edges.iter(),
             ixi_above.iter(),
             ixi_below.iter(),
             routing_edges.down_edges.iter(),
+            routing_edges.down_message_flows.iter(),
             routing_edges.right_loops.iter(),
         ]
         .iter_mut(),
