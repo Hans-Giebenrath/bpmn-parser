@@ -294,7 +294,7 @@ impl Node {
     }
 
     pub fn size(&self) -> (usize, usize) {
-        return (self.width, self.height);
+        (self.width, self.height)
     }
 
     pub fn port_of_incoming(&self, edge_id: EdgeId) -> AbsolutePort {
@@ -317,11 +317,15 @@ impl Node {
             .unwrap()
     }
 
+    pub fn port_is_left_or_right(&self, port_y: usize) -> bool {
+        (self.y..=(self.y + self.height)).contains(&port_y)
+    }
+
     pub fn display_text(&self) -> Option<&str> {
         if let NodeType::RealNode { display_text, .. } = &self.node_type {
             Some(display_text.as_str())
         } else {
-            return None;
+            None
         }
     }
 

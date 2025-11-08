@@ -85,8 +85,8 @@ fn postprocess_vertical_edges(graph: &mut Graph) {
 
         let from = &n!(edge.from);
         let to = &n!(edge.to);
-        let from_port = from.port_of_outgoing(edge_id).unwrap();
-        let to_port = to.port_of_incoming(edge_id).unwrap();
+        let from_port = from.port_of_outgoing(edge_id);
+        let to_port = to.port_of_incoming(edge_id);
         if (from.y..=from.y + from.height).contains(&to_port.y)
             || (to.y..=to.y + to.height).contains(&from_port.y)
         {
