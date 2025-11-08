@@ -23,6 +23,7 @@
 //! TODO Right now the following are not handled:
 //! - JXI crossings where it is not a perfect swap
 //! - Staircase crossing where only the ends are exactly overlapping
+//!
 //! Both can be handled in the same sphere as the IXI crossings, and it should be easy to do so,
 //! just there are more relevant topics I believe. But they have the interesting property that if
 //! there are just JXI/Staircase crossings of the same kind (read the sentence to the end and think
@@ -31,6 +32,16 @@
 //!
 //! For now, data edges and regular edges are treated equally, but this may change when
 //! problems are encountered.
+//!
+//! BUGS:
+//! * routing is f'd up. in a weird way - the first (outgoing) bendpoint is actually correct, but the
+//!   last (incoming) is wrong although that one should also be correct, nothing to do with
+//!   transposing. It is probably calculating the wrong layer! yes that's it for sure.
+//! * Leftloop and rightloo message flows should go into the respective loop layers
+//! * If a message flow goes through a layer with a data-object in a half layer, then that should
+//!   not be in the half layer.
+//! * For some reason the message flow ports are never placed above or below ...  But this is indeed
+//!   true. Especially if they are looping then they should leave/enter above/below.
 
 use crate::common::config::{EdgeSegmentSpace, EdgeSegmentSpaceLocation};
 use crate::common::graph::PoolId;
@@ -975,6 +986,7 @@ fn get_layered_edges(graph: &mut Graph) -> (Vec<SegmentsOfSameLayer>, MessageFlo
                 },
             );
         }
+        //dbg!(&graph, &edge_layers, &mf_store);
     }
 
     let mut result: Vec<SegmentsOfSameLayer> = vec![];
@@ -1120,6 +1132,7 @@ fn add_bend_points_one_segment(
     let (p1, p2) = ((x, segment.start_y), (x2, segment.end_y));
     match &mut edge.edge_type {
         _ if segment.is_message_flow => {
+            //dbg!(&segment);
             mf_store.finish_layer(graph, segment.id, p1, p2);
         }
         EdgeType::Regular {
