@@ -1,0 +1,21 @@
+= Pool
+
+== L1
+
+F <-l1-end
+. l1 end
+
+== L2
+
+F <-l2-end
+. l2 end
+
+== L3
+
+# l3 Start
+F ->l1-end
+
+== L4
+
+# l4 Start
+F ->l2-end
