@@ -63,7 +63,7 @@ pub fn assign_xy_ilp(graph: &mut Graph) {
         } else {
             min_y_value - pool_y
         };
-        min_y_value += graph.config.pool_y_margin;
+        min_y_value += graph.config.vertical_space_between_pools;
     }
 
     assign_x(graph);

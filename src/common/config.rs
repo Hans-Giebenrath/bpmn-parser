@@ -56,7 +56,7 @@ define_config!(
     lane_header_width: usize = 15,
     lane_x_padding: usize = 15,
     pool_header_width: usize = 30,
-    pool_y_margin: usize = 40,
+    vertical_space_between_pools: usize = 40,
     // Space between two pools which are on the same horizontal line.
     pool_x_margin: usize = 40,
 

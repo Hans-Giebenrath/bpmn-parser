@@ -403,16 +403,35 @@ pub fn edge_routing(graph: &mut Graph) {
     // Actually this is already required due to message flows which are not strictly loops in that
     // sense but can leave/enter at the borders.
     let mut buffer = Vec::new();
-    layered_edges
-        .iter_mut()
+    let mut layered_edges_it = layered_edges.into_iter();
+    if let Some(mut segments) = layered_edges_it.next() {
+        determine_segment_layers(
+            graph,
+            &mut mf_store,
+            &mut segments,
+            &mut buffer,
+            graph
+                .config
+                .edge_segment_space(EdgeSegmentSpaceLocation::LeftBorder),
+        )
+    }
+    layered_edges_it
         .enumerate()
-        .for_each(|(layer_idx, segments)| {
+        .for_each(|(layer_idx, mut segments)| {
             determine_segment_layers(
                 graph,
                 &mut mf_store,
-                segments,
+                &mut segments,
                 &mut buffer,
-                EdgeSegmentSpaceLocation::After(LayerId(layer_idx)),
+                if layer_idx + 1 < graph.num_layers {
+                    graph
+                        .config
+                        .edge_segment_space(EdgeSegmentSpaceLocation::After(LayerId(layer_idx)))
+                } else {
+                    graph
+                        .config
+                        .edge_segment_space(EdgeSegmentSpaceLocation::AfterLast(LayerId(layer_idx)))
+                },
             )
         });
 
@@ -421,12 +440,22 @@ pub fn edge_routing(graph: &mut Graph) {
         .iter_mut()
         .enumerate()
         .for_each(|(layer_idx, segments)| {
+            let reference_pool = &graph.pools[PoolId(layer_idx)];
+            let start_x = reference_pool.y.strict_add(reference_pool.height);
+            let len = graph.config.vertical_space_between_pools;
+            let end_x = start_x.strict_add(len);
+            let center_x = start_x + len / 2;
+            dbg!(layer_idx, start_x, end_x);
             determine_segment_layers(
                 graph,
                 &mut mf_store,
                 segments,
                 &mut buffer,
-                EdgeSegmentSpaceLocation::After(LayerId(layer_idx)),
+                EdgeSegmentSpace {
+                    start_x,
+                    end_x,
+                    center_x,
+                },
             )
         });
 }
@@ -436,7 +465,7 @@ fn determine_segment_layers(
     mf_store: &mut MessageFlowBendPointStore,
     routing_edges: &mut SegmentsOfSameLayer,
     max_y_per_layer_buffer: &mut Vec</* max_y */ usize>,
-    location: EdgeSegmentSpaceLocation,
+    total_space: EdgeSegmentSpace,
 ) {
     // At this point the edges in each Vec are sorted by (min_y, max_y).
     // Now we need to take this information and make it into a rough layer assignment,
@@ -528,7 +557,7 @@ fn determine_segment_layers(
         start_x,
         end_x,
         center_x,
-    } = graph.config.edge_segment_space(location);
+    } = total_space;
 
     enum State {
         Init,
@@ -826,7 +855,7 @@ fn interpool_y(graph: &Graph, from_pool: PoolId, to_pool: PoolId) -> (PoolId, us
 fn get_layered_edges(graph: &mut Graph) -> (Vec<SegmentsOfSameLayer>, MessageFlowBendPointStore) {
     let mut mf_store = MessageFlowBendPointStore::default();
     let mut edge_layers = Vec::<Vec<VerticalSegment>>::new();
-    edge_layers.resize_with(graph.num_layers, Default::default);
+    edge_layers.resize_with(graph.num_layers + 1, Default::default);
 
     for (edge_idx, edge) in graph.edges.iter().enumerate() {
         if edge.is_vertical {
@@ -855,7 +884,7 @@ fn get_layered_edges(graph: &mut Graph) -> (Vec<SegmentsOfSameLayer>, MessageFlo
             if start_y == end_y {
                 continue;
             }
-            let segment_vec = &mut edge_layers[from_node.layer_id.0];
+            let segment_vec = &mut edge_layers[from_node.layer_id.0 + 1];
             segment_vec.push(VerticalSegment {
                 id: edge_id,
                 start_y,
@@ -877,7 +906,7 @@ fn get_layered_edges(graph: &mut Graph) -> (Vec<SegmentsOfSameLayer>, MessageFlo
             if from_node.layer_id.0 + 1 == to_node.layer_id.0 {
                 // The edge goes to the next layer, so there is just one vertical segment. No
                 // inter-pool horizontal segment required.
-                let segment_vec = &mut edge_layers[from_node.layer_id.0];
+                let segment_vec = &mut edge_layers[to_node.layer_id.0];
                 segment_vec.push(VerticalSegment {
                     id: edge_id,
                     start_y,
@@ -890,7 +919,7 @@ fn get_layered_edges(graph: &mut Graph) -> (Vec<SegmentsOfSameLayer>, MessageFlo
                 });
                 mf_store.register_edge(edge_id, MessageFlowBendState::HorVerHor);
             } else {
-                let segment_vec = &mut edge_layers[from_node.layer_id.0];
+                let segment_vec = &mut edge_layers[from_node.layer_id.0 + 1];
                 segment_vec.push(VerticalSegment {
                     id: edge_id,
                     start_y,
@@ -923,7 +952,7 @@ fn get_layered_edges(graph: &mut Graph) -> (Vec<SegmentsOfSameLayer>, MessageFlo
             }
         } else if from_hor {
             assert!(!to_hor);
-            let segment_vec = &mut edge_layers[from_node.layer_id.0];
+            let segment_vec = &mut edge_layers[from_node.layer_id.0 + 1];
             segment_vec.push(VerticalSegment {
                 id: edge_id,
                 start_y,
@@ -944,7 +973,7 @@ fn get_layered_edges(graph: &mut Graph) -> (Vec<SegmentsOfSameLayer>, MessageFlo
             );
         } else if to_hor {
             assert!(!to_hor);
-            let segment_vec = &mut edge_layers[from_node.layer_id.0];
+            let segment_vec = &mut edge_layers[to_node.layer_id.0];
             segment_vec.push(VerticalSegment {
                 id: edge_id,
                 start_y: interpool_y,
@@ -966,17 +995,17 @@ fn get_layered_edges(graph: &mut Graph) -> (Vec<SegmentsOfSameLayer>, MessageFlo
         } else {
             assert!(!to_hor);
             assert!(!from_hor);
-            let segment_vec = &mut edge_layers[from_node.layer_id.0];
-            segment_vec.push(VerticalSegment {
-                id: edge_id,
-                start_y: interpool_y,
-                end_y,
-                idx: 0,
-                idx2: None,
-                alignment: Alignment::Center,
-                is_message_flow: true,
-                x_coordinate: Default::default(),
-            });
+            //let segment_vec = &mut edge_layers[from_node.layer_id.0 + 1];
+            //segment_vec.push(VerticalSegment {
+            //    id: edge_id,
+            //    start_y: interpool_y,
+            //    end_y,
+            //    idx: 0,
+            //    idx2: None,
+            //    alignment: Alignment::Center,
+            //    is_message_flow: true,
+            //    x_coordinate: Default::default(),
+            //});
             mf_store.register_edge(
                 edge_id,
                 MessageFlowBendState::VerHorVer {
