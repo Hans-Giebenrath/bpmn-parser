@@ -34,12 +34,8 @@
 //! problems are encountered.
 //!
 //! BUGS:
-//! * Leftloop and rightloo message flows should go into the respective loop layers
 //! * If a message flow goes through a layer with a data-object in a half layer, then that should
 //!   not be in the half layer.
-//! * For some reason the message flow ports are never placed above or below ...  But this is indeed
-//!   true. Especially if they are looping then they should leave/enter above/below.
-//! * IXI assignment of x and x2 is broken.
 
 use crate::common::config::{EdgeSegmentSpace, EdgeSegmentSpaceLocation};
 use crate::common::graph::PoolId;
@@ -353,6 +349,10 @@ impl MessageFlowBendPointStore {
 #[derive(Default, Debug)]
 struct SegmentsOfSameLayer {
     left_loops: Vec<VerticalSegment>,
+    // Keep `xx_message_flows` and `xx_edges` separate (although in principle one would be tempted
+    // to merge them) because in the future message flows or edges could be swapped up/down ->
+    // down/up to avoid JXI crossings (they can be avoided sometimes if there are no two
+    // conflicting.)
     up_message_flows: Vec<VerticalSegment>,
     up_edges: Vec<VerticalSegment>,
     ixi_crossing: Vec<(VerticalSegment, VerticalSegment)>,
@@ -374,11 +374,13 @@ struct VerticalSegment {
     id: EdgeId,
     start_y: usize,
     end_y: usize,
+    /// Rough index
     idx: usize,
-    /// For ixi situations. `idx` is left, `idx2` is right.
+    /// For ixi situations. `Some(0)` for the first one (with `idx`) and `Some(1)` for the second
+    /// one (with `idx + 1`).
     /// Not using an enum here (`enum { Vertical(usize), Diagonal(usize, usize) }`) since this makes
     /// usage rather tiresome.
-    idx2: Option<usize>,
+    ixi_diagonalizer: Option<usize>,
 
     is_message_flow: bool,
     alignment: Alignment,
@@ -709,9 +711,10 @@ fn determine_segment_layers_ixi(
         [] => return 0,
         [(left, right)] => {
             left.idx = base_segment_layer;
-            left.idx2 = Some(base_segment_layer + 1);
-            right.idx = base_segment_layer;
-            right.idx2 = Some(base_segment_layer + 1);
+            left.ixi_diagonalizer = Some(0);
+            right.idx = base_segment_layer + 1;
+            right.ixi_diagonalizer = Some(1);
+            dbg!();
             return 2;
         }
         _ => (),
@@ -774,14 +777,14 @@ fn determine_segment_layers_ixi(
             if left.idx == from_idx {
                 // Can only set the `right` one here since `left` is still used as a needle.
                 right.idx = new_idx;
-                right.idx2 = Some(new_idx2);
+                right.ixi_diagonalizer = Some(1);
             }
         }
     }
 
     for (left, right) in routing_edges.iter_mut() {
         left.idx = right.idx;
-        left.idx2 = right.idx2;
+        left.ixi_diagonalizer = Some(0);
     }
 
     max_y_per_layer_buffer.len() * 2
@@ -864,7 +867,7 @@ fn get_layered_edges(graph: &mut Graph) -> (Vec<SegmentsOfSameLayer>, MessageFlo
                 start_y,
                 end_y,
                 idx: 0,
-                idx2: None,
+                ixi_diagonalizer: None,
                 alignment: Alignment::Center,
                 is_message_flow: false,
                 x_coordinate: Default::default(),
@@ -886,7 +889,7 @@ fn get_layered_edges(graph: &mut Graph) -> (Vec<SegmentsOfSameLayer>, MessageFlo
                     start_y,
                     end_y,
                     idx: 0,
-                    idx2: None,
+                    ixi_diagonalizer: None,
                     alignment: Alignment::Center,
                     is_message_flow: true,
                     x_coordinate: Default::default(),
@@ -899,7 +902,7 @@ fn get_layered_edges(graph: &mut Graph) -> (Vec<SegmentsOfSameLayer>, MessageFlo
                     start_y,
                     end_y: interpool_y,
                     idx: 0,
-                    idx2: None,
+                    ixi_diagonalizer: None,
                     alignment: Alignment::Center,
                     is_message_flow: true,
                     x_coordinate: Default::default(),
@@ -910,7 +913,7 @@ fn get_layered_edges(graph: &mut Graph) -> (Vec<SegmentsOfSameLayer>, MessageFlo
                     start_y: interpool_y,
                     end_y,
                     idx: 0,
-                    idx2: None,
+                    ixi_diagonalizer: None,
                     alignment: Alignment::Center,
                     is_message_flow: true,
                     x_coordinate: Default::default(),
@@ -932,7 +935,7 @@ fn get_layered_edges(graph: &mut Graph) -> (Vec<SegmentsOfSameLayer>, MessageFlo
                 start_y,
                 end_y: interpool_y,
                 idx: 0,
-                idx2: None,
+                ixi_diagonalizer: None,
                 alignment: Alignment::Center,
                 is_message_flow: true,
                 x_coordinate: Default::default(),
@@ -953,7 +956,7 @@ fn get_layered_edges(graph: &mut Graph) -> (Vec<SegmentsOfSameLayer>, MessageFlo
                 start_y: interpool_y,
                 end_y,
                 idx: 0,
-                idx2: None,
+                ixi_diagonalizer: None,
                 alignment: Alignment::Center,
                 is_message_flow: true,
                 x_coordinate: Default::default(),
@@ -1077,7 +1080,7 @@ fn get_layered_mfs(
             start_y,
             end_y,
             idx: 0,
-            idx2: None,
+            ixi_diagonalizer: None,
             alignment: Alignment::Center,
             is_message_flow: true,
             x_coordinate: Default::default(),
@@ -1135,13 +1138,17 @@ fn add_bend_points_one_segment(
     segment_layer_width: f64,
     min_x: usize,
 ) {
-    let ixi_diagonalizer = if segment.idx2.is_some() { 1 } else { 0 };
     // `idx` in the caller starts at 0, but `min_x` is actually expecting one additional padding.
     // Sorry for the spaghetti.
-    let x = min_x + ((idx + 1) as f64 * segment_layer_width) as usize;
-    let x2 = min_x + ((idx + 1 + ixi_diagonalizer) as f64 * segment_layer_width) as usize;
-    match (segment.idx, segment.idx2) {
-        (a, Some(b)) if a > b => segment.x_coordinate.set(Some(x2)),
+    let x = min_x
+        + ((idx + 1 - segment.ixi_diagonalizer.unwrap_or(0)) as f64 * segment_layer_width) as usize;
+    let x2 = min_x
+        + ((idx + 1 + (1 - segment.ixi_diagonalizer.unwrap_or(1))) as f64 * segment_layer_width)
+            as usize;
+    match segment.ixi_diagonalizer {
+        Some(0) => segment.x_coordinate.set(Some(x)),
+        Some(1) => segment.x_coordinate.set(Some(x2)),
+        Some(_) => unreachable!(),
         _ => segment.x_coordinate.set(Some(x)),
     }
     let edge = &mut e!(segment.id);

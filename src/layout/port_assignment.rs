@@ -1,3 +1,7 @@
+//! BUGS:
+//! * Message flow ports are never placed above or below ... They probably should if they are
+//!   looping. Then they should leave/enter above/below.
+
 use crate::common::edge::DummyEdgeBendPoints;
 use crate::common::edge::Edge;
 use crate::common::edge::EdgeType;
