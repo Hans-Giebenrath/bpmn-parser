@@ -34,14 +34,12 @@
 //! problems are encountered.
 //!
 //! BUGS:
-//! * routing is f'd up. in a weird way - the first (outgoing) bendpoint is actually correct, but the
-//!   last (incoming) is wrong although that one should also be correct, nothing to do with
-//!   transposing. It is probably calculating the wrong layer! yes that's it for sure.
 //! * Leftloop and rightloo message flows should go into the respective loop layers
 //! * If a message flow goes through a layer with a data-object in a half layer, then that should
 //!   not be in the half layer.
 //! * For some reason the message flow ports are never placed above or below ...  But this is indeed
 //!   true. Especially if they are looping then they should leave/enter above/below.
+//! * IXI assignment of x and x2 is broken.
 
 use crate::common::config::{EdgeSegmentSpace, EdgeSegmentSpaceLocation};
 use crate::common::graph::PoolId;
@@ -91,11 +89,18 @@ impl<'a> SegmentGraph<'a> {
                 remove(right, left_connections);
             }
         }
-        if left.is_none() {
+        if let Some(left) = left {
+            self.graph
+                .get_mut(&left)
+                .expect("must be present")
+                .push(new_edge);
+        } else {
             if let Some(right) = right {
                 // `right` cannot be a root, since `new_edge` is left from it.
                 remove(right, &mut self.roots);
             }
+            // Nothing is left, so this must be a new root (at least at the moment, maybe undone in
+            // if some more-left edge is added later).
             self.roots.push(new_edge);
         }
     }
@@ -395,13 +400,8 @@ impl VerticalSegment {
 pub fn edge_routing(graph: &mut Graph) {
     // Outer Vec: Per Layer across all lanes and pool,
     // Inner Vec: All the vertical edge segments within that layer.
-    let (mut layered_edges, mut mf_store) = get_layered_edges(graph);
+    let (layered_edges, mut mf_store) = get_layered_edges(graph);
 
-    // TODO when loops are added, then handle loops in the front and at the end by taking the first
-    // and last element of the vector away (slicing), and use the
-    // EdgeSegmentSpaceLocation::LeftBorder/AfterLast variants.
-    // Actually this is already required due to message flows which are not strictly loops in that
-    // sense but can leave/enter at the borders.
     let mut buffer = Vec::new();
     let mut layered_edges_it = layered_edges.into_iter();
     if let Some(mut segments) = layered_edges_it.next() {
@@ -445,7 +445,6 @@ pub fn edge_routing(graph: &mut Graph) {
             let len = graph.config.vertical_space_between_pools;
             let end_x = start_x.strict_add(len);
             let center_x = start_x + len / 2;
-            dbg!(layer_idx, start_x, end_x);
             determine_segment_layers(
                 graph,
                 &mut mf_store,
@@ -464,52 +463,56 @@ fn determine_segment_layers(
     graph: &mut Graph,
     mf_store: &mut MessageFlowBendPointStore,
     routing_edges: &mut SegmentsOfSameLayer,
-    max_y_per_layer_buffer: &mut Vec</* max_y */ usize>,
+    buffer: &mut Vec</* max_y */ usize>,
     total_space: EdgeSegmentSpace,
 ) {
     // At this point the edges in each Vec are sorted by (min_y, max_y).
     // Now we need to take this information and make it into a rough layer assignment,
     // i.e. set idx values into the SegmentLayer variables. This is required to understand what
-    // is the left-to-right order of all edge segments.
+    // is the left-to-right order of all edge segments. The neat part is that this can be super
+    // rough. For example, for upwards edges it basically is sufficient to set their idx value to
+    // the order as they appear from `min_y=0..inf`. Later there is a scanline graph which checks
+    // which segments are present at the same `y` value, and this just needs to know in general what
+    // is left and what is right. Comments are within the functions.
     let mut total_count_of_segment_layers = 0;
     total_count_of_segment_layers += determine_segment_layers_left_or_right_loops(
         &mut routing_edges.left_loops,
-        max_y_per_layer_buffer,
+        buffer,
         total_count_of_segment_layers,
         false,
     );
     total_count_of_segment_layers += determine_segment_layers_up_or_down_edges(
         &mut routing_edges.up_message_flows,
-        max_y_per_layer_buffer,
+        buffer,
         total_count_of_segment_layers,
         false,
     );
     total_count_of_segment_layers += determine_segment_layers_up_or_down_edges(
         &mut routing_edges.up_edges,
-        max_y_per_layer_buffer,
+        buffer,
         total_count_of_segment_layers,
         false,
     );
     total_count_of_segment_layers += determine_segment_layers_ixi(
         &mut routing_edges.ixi_crossing,
-        max_y_per_layer_buffer,
+        buffer,
         total_count_of_segment_layers,
     );
     total_count_of_segment_layers += determine_segment_layers_up_or_down_edges(
         &mut routing_edges.down_edges,
-        max_y_per_layer_buffer,
+        buffer,
         total_count_of_segment_layers,
         true,
     );
     total_count_of_segment_layers += determine_segment_layers_up_or_down_edges(
         &mut routing_edges.down_message_flows,
-        max_y_per_layer_buffer,
+        buffer,
         total_count_of_segment_layers,
         true,
     );
     total_count_of_segment_layers += determine_segment_layers_left_or_right_loops(
         &mut routing_edges.right_loops,
-        max_y_per_layer_buffer,
+        buffer,
         total_count_of_segment_layers,
         true,
     );
@@ -517,8 +520,13 @@ fn determine_segment_layers(
     // Silence clippy.
     let _ = total_count_of_segment_layers;
 
+    // Now that the rough left-of relationship is clear for the segments, we can calculate the
+    // real x coordinates (or y coordinates in the transpose case for message flows).
+    // This is done by iterating paths of overlapping segments (from left to right) across all the
+    // categories (see the `kmerge_by` argument). Note that we are always iterating full paths from
+    // longest to shortest.
     let mut segment_graph = SegmentGraph::default();
-    let mut currently_active = Vec::<&VerticalSegment>::new();
+    let mut sliding_window_of_segments = Vec::<&VerticalSegment>::new();
     let (ixi_above, ixi_below): (Vec<_>, Vec<_>) =
         routing_edges.ixi_crossing.iter().cloned().unzip();
 
@@ -534,22 +542,22 @@ fn determine_segment_layers(
             routing_edges.right_loops.iter(),
         ]
         .iter_mut(),
-        |left: &&VerticalSegment, right: &&VerticalSegment| left.start_y < right.start_y,
+        |left: &&VerticalSegment, right: &&VerticalSegment| left.min_y() < right.min_y(),
     )
     .for_each(|new_edge| {
-        currently_active.retain(|old_edge| old_edge.end_y > new_edge.start_y);
-        currently_active.push(new_edge);
-        currently_active.sort_unstable_by_key(|edge| edge.idx);
-        let idx = currently_active
+        sliding_window_of_segments.retain(|old_edge| old_edge.max_y() > new_edge.min_y());
+        sliding_window_of_segments.push(new_edge);
+        sliding_window_of_segments.sort_unstable_by_key(|edge| edge.idx);
+        let idx = sliding_window_of_segments
             .iter()
             .position(|edge| edge.id == new_edge.id)
             .unwrap();
         segment_graph.add_edge(
             new_edge,
             idx.checked_sub(1)
-                .and_then(|idx| currently_active.get(idx))
+                .and_then(|idx| sliding_window_of_segments.get(idx))
                 .map(|edge| edge.id),
-            currently_active.get(idx + 1).copied(),
+            sliding_window_of_segments.get(idx + 1).copied(),
         );
     });
     let all_paths = segment_graph.all_paths_longest_first();
@@ -559,6 +567,7 @@ fn determine_segment_layers(
         center_x,
     } = total_space;
 
+    #[derive(Debug)]
     enum State {
         Init,
         RunOfLayoutedSegments { latest_start: usize },
@@ -661,32 +670,34 @@ fn assign_the_real_x_values(
 
 fn determine_segment_layers_left_or_right_loops(
     routing_edges: &mut [VerticalSegment],
-    max_y_per_layer_buffer: &mut Vec</* max_y */ usize>,
+    sort_buffer: &mut Vec</* max_y */ usize>,
     base_segment_layer: usize,
     reverse: bool,
 ) -> usize {
-    if routing_edges.is_empty() {
-        return 0;
-    }
-    max_y_per_layer_buffer.clear();
-    todo!();
-    let total_count_of_segmen_layers = max_y_per_layer_buffer.len();
-    // TODO do the fancy stuff as mentioned above. For now this will be a lot more primitive.
-    if reverse {
-        // 0 or 2 -> 2 of 2
-        // 1 or 2 -> 1 of 2
-        // 2 or 2 -> 0 of 2
-        routing_edges
-            .iter_mut()
-            .for_each(|e| e.idx = total_count_of_segmen_layers - e.idx);
-    }
+    sort_buffer.clear();
+    sort_buffer.extend(0..routing_edges.len());
+    sort_buffer.sort_unstable_by_key(|edge_idx| {
+        let segment = &routing_edges[*edge_idx];
+        // * First come sequence flows, then message flows. Usually message flows are longer than
+        //   sequence flows and hence are usually second, but in a high pool this could be different.
+        //   To ensure the ordering is consistent, be explicit about this ordering constraint.
+        // * First come short loops, then long loops. Short loops have the chance of being
+        //   "contained" in a long loop, thus avoiding edge crossings.
+        // * First come upper segments, then lower ones. This is just general sort order.
+        (
+            segment.is_message_flow,
+            segment.start_y.abs_diff(segment.end_y),
+            segment.min_y(),
+        )
+    });
 
-    // Shift them all to the correct value.
-    routing_edges
-        .iter_mut()
-        .for_each(|e| e.idx += base_segment_layer);
+    let logical_idx = LogicalIdx::new(routing_edges.len(), reverse);
 
-    total_count_of_segmen_layers
+    sort_buffer.iter().enumerate().for_each(|(counter, idx)| {
+        routing_edges[*idx].idx = logical_idx.compute(counter) + base_segment_layer;
+    });
+
+    routing_edges.len()
 }
 
 fn determine_segment_layers_ixi(
@@ -778,65 +789,28 @@ fn determine_segment_layers_ixi(
 
 fn determine_segment_layers_up_or_down_edges(
     routing_edges: &mut [VerticalSegment],
-    max_y_per_layer_buffer: &mut Vec</* max_y */ usize>,
+    sort_buffer: &mut Vec</* max_y */ usize>,
     base_segment_layer: usize,
     reverse: bool,
 ) -> usize {
-    // At this point the edges in each Vec are sorted by (min_y, max_y).
-    // Now we need to take this information and make it into a layer assignment,
-    // i.e. set values into the SegmentLayer variables.
+    sort_buffer.clear();
+    sort_buffer.extend(0..routing_edges.len());
+    sort_buffer.sort_unstable_by_key(|edge_idx| {
+        let segment = &routing_edges[*edge_idx];
+        // * First come sequence flows, then message flows. Usually message flows are longer than
+        //   sequence flows and hence are usually second, but in a high pool this could be different.
+        //   To ensure the ordering is consistent, be explicit about this ordering constraint.
+        // * First come upper segments, then lower ones. This is just general sort order.
+        (segment.is_message_flow, segment.min_y())
+    });
 
-    max_y_per_layer_buffer.clear();
-    for e in routing_edges.iter_mut() {
-        let mut best_fit_layer_idx = None;
-        let min_y = e.min_y();
-        let max_y = e.max_y();
-        for target_layer in (0..max_y_per_layer_buffer.len()).rev() {
-            let previous_edge_max_y = max_y_per_layer_buffer[target_layer];
-            assert!(previous_edge_max_y != min_y);
-            assert!(previous_edge_max_y != max_y);
-            if previous_edge_max_y < min_y {
-                // There is room in the current `target_layer` for this vertical
-                // segment.
-                best_fit_layer_idx = Some(target_layer);
-            } else if previous_edge_max_y < max_y {
-                break;
-            } else {
-                assert!(previous_edge_max_y > max_y);
-                // nothing to do. This layer is blocked, we go further left and
-                // check if there is some more free space.
-            }
-        }
-        let layer_idx = match best_fit_layer_idx.take() {
-            None => {
-                // No good layer found, need to add a new one to the right.
-                max_y_per_layer_buffer.push(max_y);
-                max_y_per_layer_buffer.len() - 1
-            }
-            Some(layer_idx) => {
-                max_y_per_layer_buffer[layer_idx] = max_y;
-                layer_idx
-            }
-        };
-        e.idx = layer_idx;
-    }
-    let total_count_of_segmen_layers = max_y_per_layer_buffer.len();
-    // TODO do the fancy stuff as mentioned above. For now this will be a lot more primitive.
-    if reverse {
-        // 0 or 2 -> 2 of 2
-        // 1 or 2 -> 1 of 2
-        // 2 or 2 -> 0 of 2
-        routing_edges
-            .iter_mut()
-            .for_each(|e| e.idx = total_count_of_segmen_layers - e.idx);
-    }
+    let logical_idx = LogicalIdx::new(routing_edges.len(), reverse);
 
-    // Shift them all to the correct value.
-    routing_edges
-        .iter_mut()
-        .for_each(|e| e.idx += base_segment_layer);
+    sort_buffer.iter().enumerate().for_each(|(counter, idx)| {
+        routing_edges[*idx].idx = logical_idx.compute(counter) + base_segment_layer;
+    });
 
-    total_count_of_segmen_layers
+    routing_edges.len()
 }
 
 fn interpool_y(graph: &Graph, from_pool: PoolId, to_pool: PoolId) -> (PoolId, usize) {
@@ -1015,7 +989,6 @@ fn get_layered_edges(graph: &mut Graph) -> (Vec<SegmentsOfSameLayer>, MessageFlo
                 },
             );
         }
-        //dbg!(&graph, &edge_layers, &mf_store);
     }
 
     let mut result: Vec<SegmentsOfSameLayer> = vec![];
@@ -1030,6 +1003,22 @@ fn get_layered_edges(graph: &mut Graph) -> (Vec<SegmentsOfSameLayer>, MessageFlo
             // TODO for self loops, check if edges[_id].from or .to is a special loop helper node,
             // in which case this should become a right_loops or left_loops member,
             // respectively.
+            if edge.is_message_flow {
+                // If the message flow goes to the left, then it consists of two looping segments.
+                let to = &to!(edge.id);
+                let from = &from!(edge.id);
+                let layer = result.len();
+                if to.layer_id <= from.layer_id {
+                    if from.layer_id.0 + 1 == layer {
+                        edge.alignment = Alignment::Left;
+                        segments.left_loops.push(edge);
+                    } else {
+                        edge.alignment = Alignment::Right;
+                        segments.right_loops.push(edge);
+                    }
+                    return;
+                }
+            }
             match edge.start_y.cmp(&edge.end_y) {
                 std::cmp::Ordering::Less if edge.is_message_flow => {
                     edge.alignment = Alignment::Right;
@@ -1063,7 +1052,6 @@ fn get_layered_edges(graph: &mut Graph) -> (Vec<SegmentsOfSameLayer>, MessageFlo
                 j += 1;
             }
         }
-        segments.down_edges.reverse();
         result.push(segments);
     }
     (result, mf_store)
@@ -1134,7 +1122,6 @@ fn get_layered_mfs(
                 j += 1;
             }
         }
-        segments.down_edges.reverse();
         result.push(segments);
     }
     result
@@ -1161,7 +1148,6 @@ fn add_bend_points_one_segment(
     let (p1, p2) = ((x, segment.start_y), (x2, segment.end_y));
     match &mut edge.edge_type {
         _ if segment.is_message_flow => {
-            //dbg!(&segment);
             mf_store.finish_layer(graph, segment.id, p1, p2);
         }
         EdgeType::Regular {
@@ -1185,5 +1171,23 @@ fn add_bend_points_one_segment(
         EdgeType::ReplacedByDummies { .. } => {
             unreachable!("This edge kind was excluded at the beginning.")
         }
+    }
+}
+
+struct LogicalIdx {
+    rev_multiplier: isize,
+    rev_offset: isize,
+}
+
+impl LogicalIdx {
+    fn new(len: usize, reverse: bool) -> Self {
+        Self {
+            rev_multiplier: if reverse { -1 } else { 1 },
+            rev_offset: if reverse { (len - 1) as isize } else { 0 },
+        }
+    }
+
+    fn compute(&self, idx: usize) -> usize {
+        (self.rev_offset + self.rev_multiplier * idx as isize) as usize
     }
 }
