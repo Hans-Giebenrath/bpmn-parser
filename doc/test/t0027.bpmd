@@ -1,5 +1,5 @@
 # start
-// The ->end SF will be straigt, as long sequence flows are weighted
+// The ->end SF will be straight, as long sequence flows are weighted
 // heavier, i.e. are optimized to be straight if possible.
 X gateway ->end ->intermediate
 

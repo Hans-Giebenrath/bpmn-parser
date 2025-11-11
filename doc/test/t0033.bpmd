@@ -1,0 +1,8 @@
+// This is weird because the first gateway somehow does not create bend dummies,
+// hence this is not centered correctly. Can `dbg!` the `find_first_last` calls of the gateway
+// balancing constraint code.
+# start
+X gateway ->f1 ->f2
+
+X <-f1 <-f2
+. end

@@ -1,6 +1,6 @@
 // Have a macro to avoid duplicating field names in the struct def and custom default def.
 // Also, later we want to parse each of these values from the DSL, so autogenerating that code as
-// well can be done easy with this macro.
+// well can be done easily with this macro.
 use std::str::FromStr;
 
 use crate::common::{graph::MAX_NODE_WIDTH, node::LayerId};
@@ -81,6 +81,7 @@ define_config!(
     /// 30 x short_data_flow_weight
     long_data_edge_weight: f64 = 0.3,
     message_edge_weight: f64 = 0.01,
+    min_vertical_space_between_gateway_bendpoints: usize = 110,
 
     /// TODO The heuristic moves data nodes just at a good place according to the average distance of
     /// the recipients. Edge case: This could result in a large amount of data objects in the same

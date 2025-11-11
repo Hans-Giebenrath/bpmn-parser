@@ -70,9 +70,9 @@ pub fn assign_xy_ilp(graph: &mut Graph) {
 }
 
 #[track_caller]
-fn aux(node: &Node) -> &XyIlpNodeData {
+fn aux(node: &Node) -> Variable {
     match node.aux {
-        NodePhaseAuxData::XyIlpNodeData(ref a) => a,
+        NodePhaseAuxData::XyIlpNodeData(ref a) => a.var,
         _ => panic!(""),
     }
 }
@@ -90,12 +90,16 @@ fn assign_y(graph: &mut Graph, pool: PoolId, lane: LaneId, min_y_value: usize) -
     let mut diff_vars = Vec::new();
 
     let mut objective = Expression::from(0.0);
+    // Keep the diagram height compact. Ensures that the solver does not stretch the diagram across
+    // infinity.
+    const HEIGHT_MINIMIZATION_FACTOR: f64 = 0.0001;
+    let height_minimization_var = vars.add(variable().integer().min(0));
+    objective += HEIGHT_MINIMIZATION_FACTOR * height_minimization_var;
 
-    const PULL_UP_FACTOR: f64 = 0.0001;
     // Must cancel out the PULL_UP_FACTOR, and then push further, but not so much as to move the
     // other nodes back down to infinity. I.e. must be smaller than Specifically. g0011.bpmd upper
     // gateway the edge should leave downward instead of to the side.
-    const PUSH_GATEWAY_BENDPOINT_DOWN_FACTOR: f64 = PULL_UP_FACTOR + 0.1 * PULL_UP_FACTOR;
+    //const PUSH_GATEWAY_BENDPOINT_DOWN_FACTOR: f64 = 0.01 * HEIGHT_MINIMIZATION_FACTOR;
 
     // Note: One could argue that this ordering should be part of the graph. But it turns out that
     // this is not necessary in any other phase, just here, so we can compute it just locally.
@@ -110,14 +114,6 @@ fn assign_y(graph: &mut Graph, pool: PoolId, lane: LaneId, min_y_value: usize) -
         // Make sure nodes are nicely aligned at the top.
         let min_y_value = min_y_value + (MAX_NODE_HEIGHT - node.height) / 2;
         let var = vars.add(variable().integer().min(min_y_value as f64));
-        // TODO: This should ideally be applied rather scarcely: Ideally only a single node per
-        // strongly connected component inside a lane.
-        if !node.is_gateway() {
-            // Make sure that nodes are all pushed together overall. Important if some sequence flow
-            // from another lane comes in, then we need to ensure that one is put towards 0 and the
-            // other towards INT_MAX.
-            objective += PULL_UP_FACTOR * var;
-        }
         node.aux = NodePhaseAuxData::XyIlpNodeData(XyIlpNodeData { var });
     }
 
@@ -159,24 +155,6 @@ fn assign_y(graph: &mut Graph, pool: PoolId, lane: LaneId, min_y_value: usize) -
         objective += diff_var * edge_weight;
     }
 
-    // Somehow force the bend dummies to the borders of the lanes. Currently this is problematic as it is
-    // too unconstrained, so if there are no other nodes blocking it, ILP will put it to infinity.
-    for node_id in node_ids_iter.clone() {
-        let node = &n!(node_id);
-        let NodeType::BendDummy {
-            kind: BendDummyKind::FromGatewayBlockedLaneCrossing { target_node, .. },
-            ..
-        } = node.node_type
-        else {
-            continue;
-        };
-        // We just want them to move as far downwards as they can, but don't want other nodes to
-        // become placed awkwardly as a result. So a tiny factor it is.
-        if n!(target_node).pool_and_lane() > node.pool_and_lane() {
-            objective -= PUSH_GATEWAY_BENDPOINT_DOWN_FACTOR * aux(node).var
-        }
-    }
-
     // We want to balance gateway nodes between their outgoing/incoming branching nodes of the same
     // lane. For X gateways actually a better strategy would be to align it with the first `->` in
     // the BPMD, as this is likely the success case and should just go straight. But we will come
@@ -209,19 +187,24 @@ fn assign_y(graph: &mut Graph, pool: PoolId, lane: LaneId, min_y_value: usize) -
         .filter(|(first, last)| first.id != last.id);
         for (first, last) in iter {
             let var = vars.add(variable().min(0.0));
-            gateway_balancing_constraint_vars.push((
-                var,
-                ((aux(gateway).var + (gateway.height / 2) as f64)
-                    - (aux(first).var + (first.height / 2) as f64))
+            gateway_balancing_constraint_vars.push(
+                ((aux(gateway) + (gateway.height / 2) as f64)
+                    - (aux(first) + (first.height / 2) as f64))
                     .leq(var),
-            ));
-            gateway_balancing_constraint_vars.push((
-                var,
-                ((aux(last).var + (last.height / 2) as f64)
-                    - (aux(gateway).var + (gateway.height / 2) as f64))
+            );
+            gateway_balancing_constraint_vars.push(
+                ((aux(last) + (last.height / 2) as f64)
+                    - (aux(gateway) + (gateway.height / 2) as f64))
                     .leq(var),
-            ));
+            );
             objective += var;
+
+            // An additional constraint to ensure that the branches are not too close to the gateway
+            // node, otherwise it looks awkward.
+            gateway_balancing_constraint_vars.push(
+                (aux(first) + graph.config.min_vertical_space_between_gateway_bendpoints as f64)
+                    .leq(aux(last)),
+            );
         }
     }
 
@@ -239,7 +222,7 @@ fn assign_y(graph: &mut Graph, pool: PoolId, lane: LaneId, min_y_value: usize) -
     // Add padding constraints between neighboring nodes.
     node_ids_iter
         .clone()
-        .map(|node_id| &graph.nodes[node_id.0])
+        .map(|node_id| &n!(node_id))
         .flat_map(|n| {
             n.node_below_in_same_lane
                 .map(|next| (n, &graph.nodes[next.0]))
@@ -259,23 +242,32 @@ fn assign_y(graph: &mut Graph, pool: PoolId, lane: LaneId, min_y_value: usize) -
             let padding = y_padding(above, &graph.config).max(y_padding(below, &graph.config));
             c(
                 &mut problem,
-                (aux(below).var - aux(above).var).geq((above.height + padding) as f64),
+                (aux(below) - aux(above)).geq((above.height + padding) as f64),
             );
         });
+
+    node_ids_iter.clone().for_each(|node_id| {
+        c(
+            &mut problem,
+            (aux(&n!(node_id)) + (&n!(node_id).height / 2) as f64)
+                .into_expression()
+                .leq(height_minimization_var),
+        )
+    });
 
     // Helper construct to resolve the minimization of |from.y - to.y|
     for (from_idx, to_idx, diff_var) in diff_vars.iter() {
         let from_node = &graph.nodes[*from_idx];
         let to_node = &graph.nodes[*to_idx];
-        let from_var = aux(from_node).var;
-        let to_var = aux(to_node).var;
+        let from_var = aux(from_node);
+        let to_var = aux(to_node);
         let from_y = from_var + (from_node.height / 2) as f64;
         let to_y = to_var + (to_node.height / 2) as f64;
         c(&mut problem, (from_y.clone() - to_y.clone()).leq(diff_var));
         c(&mut problem, (to_y - from_y).leq(diff_var));
     }
 
-    for (_, constraint) in gateway_balancing_constraint_vars {
+    for constraint in gateway_balancing_constraint_vars {
         c(&mut problem, constraint);
     }
 
@@ -286,13 +278,13 @@ fn assign_y(graph: &mut Graph, pool: PoolId, lane: LaneId, min_y_value: usize) -
     //for node_id in node_ids_iter.clone() {
     //    dbg!(
     //        node_id,
-    //        aux(&n!(node_id)).var,
-    //        solution.value(aux(&n!(node_id)).var) as usize
+    //        aux(&n!(node_id)),
+    //        solution.value(aux(&n!(node_id))) as usize
     //    );
     //}
     for node_id in node_ids_iter.clone() {
         let node = &mut n!(node_id);
-        node.y = solution.value(aux(node).var) as usize;
+        node.y = solution.value(aux(node)) as usize;
         min_y_encountered = min_y_encountered.min(node.y);
         max_y_plus_height_encountered = max_y_plus_height_encountered.max(node.y + node.height);
     }
@@ -384,8 +376,11 @@ where
 
     // If only one match exists overall, mirror it so both are equal.
     let mut rev = iter.clone().rev();
-    match (iter.find_map(&mut pred), rev.find_map(&mut pred)) {
-        (Some(first), Some(last)) => Some((first, last)).into_iter(),
-        _ => None.into_iter(),
+    if let Some(first) = iter.find_map(&mut pred)
+        && let Some(last) = rev.find_map(&mut pred)
+    {
+        Some((first, last)).into_iter()
+    } else {
+        None.into_iter()
     }
 }

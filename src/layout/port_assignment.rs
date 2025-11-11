@@ -942,6 +942,8 @@ fn add_bend_dummy_node(
             // First remove the reference to the now-replaced edge, so there is certainly room
             // for the new edge references, i.e. no need to allocate accidentally.
             let edge1 = {
+                // XXX Don't use `add_edge` here as we want to preserve the `outgoing`/`incoming`
+                // ordering.
                 let edge1 = EdgeId(graph.edges.len());
                 graph.edges.push(Edge {
                     from: from_id,
@@ -967,6 +969,8 @@ fn add_bend_dummy_node(
                 edge1
             };
             let edge2 = {
+                // XXX Don't use `add_edge` here as we want to preserve the `outgoing`/`incoming`
+                // ordering.
                 let edge2 = EdgeId(graph.edges.len());
                 graph.edges.push(Edge {
                     from: dummy_node_id,
@@ -1002,18 +1006,32 @@ fn add_bend_dummy_node(
         EdgeType::DummyEdge { original_edge, .. } => {
             let original_edge = *original_edge;
 
-            graph.nodes[from_id]
-                .outgoing
-                .retain(|outgoing_edge_idx| *outgoing_edge_idx != edge_id);
-            let new_dummy_edge_id = graph.add_edge(
-                from_id,
-                dummy_node_id,
-                EdgeType::DummyEdge {
-                    original_edge,
-                    bend_points: DummyEdgeBendPoints::ToBeDeterminedOrStraight,
-                },
-                flow_type.clone(),
-            );
+            let new_dummy_edge_id = {
+                // XXX Don't use `add_edge` here as we want to preserve the `outgoing`/`incoming`
+                // ordering.
+                let new_dummy_edge_id = EdgeId(graph.edges.len());
+                graph.edges.push(Edge {
+                    from: from_id,
+                    to: dummy_node_id,
+                    edge_type: EdgeType::DummyEdge {
+                        original_edge,
+                        bend_points: DummyEdgeBendPoints::ToBeDeterminedOrStraight,
+                    },
+                    flow_type: flow_type.clone(),
+                    is_vertical: false,
+                    is_reversed: false,
+                    stroke_color: None,
+                    stays_within_lane: n!(from_id).pool_and_lane() == pool_and_lane,
+                });
+                for outgoing_edge_idx in &mut n!(from_id).outgoing {
+                    if *outgoing_edge_idx == edge_id {
+                        *outgoing_edge_idx = new_dummy_edge_id;
+                        break;
+                    }
+                }
+                n!(dummy_node_id).incoming.push(new_dummy_edge_id);
+                new_dummy_edge_id
+            };
             // Bend around
             e!(edge_id).from = dummy_node_id;
             n!(dummy_node_id).outgoing.push(edge_id);
