@@ -17,14 +17,14 @@ XG Node Text @identifier ->a-label "Edge Text 1" ->another-label "Edge Text 2"
 
    The headings have one more symbol so they stick out better visually.
    P==: Pool (can have the `~multiple` type to become a Multiple-Instance Participant)
-   ====: Synonym for `P=`. 
+   ====: Synonym for `P=`.
    L==: Lane
    S==: Inner content of a subprocess
    C==: Inner content of a call activity
    !==: Event Subprocess Interrupting (they are put into the lane where they are defined)
    +==: Event Subprocess Non-Interrupting (they are put into the lane where they are defined)
    (In this case one can add additional `=` to allow for better visual highlighting of groups)
-  
+
    .-: A regular Task (task types, only applicable for regular tasks, are explained in the next section. They are modeled with an additional attribute)
     -: Shorthand for `.-`.
    S-: Subprocess (Must match the name (or ID?) of a `S=`
@@ -45,7 +45,7 @@ XG Node Text @identifier ->a-label "Edge Text 1" ->another-label "Edge Text 2"
    Using `~` (**T**ilde for **T**ype) instead of new first-letter mnemonics, as (1) letters are clashing (service and subprocess) and might clash more if there will be more elements in a future version of BPMN
    These task types also seem to be usually added when refining the process, so it is not necessarily a fundamental property of the thing to be a manual task type, so it does not need to be on the left hand side.
    Also, it might be required later to add some information to e.g. script thing, but I am not sure about that.
-   
+
    Data
    OD: Data Object
    SD: Data Store
@@ -95,11 +95,9 @@ XG Node Text @identifier ->a-label "Edge Text 1" ->another-label "Edge Text 2"
    #.: Multiple
 
    Boundary Event Interrupting (recommended to indent with two spaces) (`!` used since it terminates the task it is attached to):
-     .!: None event.
      M!: Message event.
      T!: Timer
      C!: Conditional
-     >!: Link
      S!: Signal
      E!: Error
      ^!: Escalation
@@ -109,11 +107,9 @@ XG Node Text @identifier ->a-label "Edge Text 1" ->another-label "Edge Text 2"
      +!: Multiple Parallel
 
    Boundary Event Non-Interrupting (recommended to indent with two spaces) (`+` used since it starts a parallel sequence flow):
-     .+: None event.
      M+: Message event.
      T+: Timer
      C+: Conditional
-     >+: Link
      S+: Signal
      ^+: Escalation
      #+: Multiple
@@ -261,7 +257,7 @@ There should be syntax to have the same data object appear at multiple places, e
 ----
 OD Some Object <-t1 ->t2
  & Processed ->p2-t9 // <1>
- & {} [Evaluated] <-p1-t8 ->p1-t18 // <2> 
+ & {} [Evaluated] <-p1-t8 ->p1-t18 // <2>
 // `!` might be a good symbol because it is already used at other places for "termination". But other symbols are probably cool as well?
 
 [display data-format "{main} [{sub}]"] // <3>

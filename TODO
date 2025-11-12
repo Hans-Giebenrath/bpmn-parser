@@ -1,8 +1,8 @@
-* The xy-ilp minimization-of-pool-height constraint should take into account the center of the node, i.e. account for nodes of different size.
-* In the crossing minimization, make a tiny factor to favor gateway branch orderings as they were specified in the file, ie. on `NodeId`.
-* fix the doc/test/build.sh to use Make/parallel (or Rust threadpools) so we can have bounded parallelism.
-* Extend the parser to parse boundary events. I think this will be a surprising capability before releasing it.
+* to_xml: actually export boundary events. Right now arrows are nicely attached, but the boundary event bubble/circle is not drawn.
 * Documentation.
+* In the crossing minimization, make a tiny factor to favor gateway branch orderings as they were specified in the file, ie. on `NodeId`.
+* The port ordering sort by key function is wrong, I messed up the conceptual port ordering then things loop up/left to another pool. It should be the same as the right part of that pool, no distinction between left and right.
+* fix the doc/test/build.sh to use Make/parallel (or Rust threadpools) so we can have bounded parallelism.
 * Also handle JXI routing: swap up-down order to down-up order (or vice versa), or if it is unavoidable then move JXIs the the IXI handling. (JXI is an edge cross where only one side (top or bottom) has the same y coordinate)
 * Add more checks for the correctness of the BPMN semantics:
   * Check that the gateway branching and joining nodes match (use a dedicated graph analysis phase, not in the parser)

@@ -1,4 +1,5 @@
 use crate::common::bpmn_node;
+use crate::common::bpmn_node::ActivityType;
 use crate::common::bpmn_node::BpmnNode;
 use crate::common::bpmn_node::EventVisual;
 use crate::common::bpmn_node::InterruptKind;
@@ -9,6 +10,7 @@ use crate::common::graph::{Graph, SdeId};
 use crate::common::graph::{LaneId, NodeId, PoolId};
 use crate::common::node::NodeType;
 use crate::lexer::ActivityMeta;
+use crate::lexer::BoundaryEventMeta;
 use crate::lexer::DataMeta;
 use crate::lexer::Direction;
 use crate::lexer::EdgeMeta;
@@ -20,6 +22,7 @@ use crate::lexer::{self, MessageFlowMeta};
 use crate::lexer::{DataAux, DataFlowMeta};
 use crate::lexer::{Statement, StatementStream, TokenCoordinate};
 use crate::node_id_matcher::NodeIdMatcher;
+use crate::parser::bpmn_node::BoundaryEvent;
 use crate::pool_id_matcher::PoolIdMatcher;
 use std::collections::HashMap;
 use std::collections::HashSet;
@@ -80,7 +83,7 @@ enum GroupingState {
         lane_id: LaneId,
         first_encountered_node: TokenCoordinate,
     },
-    /// Just parsed a pool, all good an regular.
+    /// Just parsed a pool, all is good and regular.
     WithinPool {
         pool_id: PoolId,
         ptc: TokenCoordinate,
@@ -96,7 +99,7 @@ enum GroupingState {
         lane_id: LaneId,
         first_encountered_node: TokenCoordinate,
     },
-    /// We are in a lane, all good and regular.
+    /// We are in a lane, all is good and regular.
     WithinLane {
         // TODO make use of PoolAndLane
         pool_id: PoolId,
@@ -112,9 +115,12 @@ struct DanglingEdgeInfo {
     // Might be empty
     edge_text: String,
     tc: TokenCoordinate,
+    // Boundary event info is cramped in here as an Option to not have two different types for
+    // dangling starts and ends.
+    boundary_event: Option<BoundaryEvent>,
 }
 
-/// I'd somehow like to impose some restrictions here, but even for an n:m relationship there is a
+/// I'd somehow like to impose some restrictions here, but even for an `n:m` relationship there is a
 /// good reason (some gateway criss-crossing). So better analyse the resulting graph and complain
 /// if invalid connection were created and then let the user fix up their mess.
 #[derive(Default)]
@@ -189,6 +195,7 @@ impl Parser {
                 Statement::Event(meta) => self.parse_event(meta, false)?,
                 Statement::EventEnd(meta) => self.parse_event(meta, true)?,
                 Statement::Activity(meta) => self.parse_activity(meta)?,
+                Statement::BoundaryEvent(meta) => self.parse_boundary_event(meta)?,
                 Statement::GatewayBranchStart(meta) => self.parse_gateway_branch_start(meta)?,
                 Statement::GatewayJoinEnd(meta) => self.parse_gateway_join_end(meta)?,
                 Statement::SequenceFlowJump(meta) => self.parse_sequence_flow_jump(meta)?,
@@ -239,7 +246,7 @@ impl Parser {
                                         ),
                                     ]);
                                 }
-                                self.graph.add_edge(
+                                let new_edge_id = self.graph.add_edge(
                                     start.known_node_id,
                                     end.known_node_id,
                                     EdgeType::Regular {
@@ -248,6 +255,15 @@ impl Parser {
                                     },
                                     FlowType::SequenceFlow,
                                 );
+                                // And end can not be a boundary event. SFs always originate from
+                                // boundary events.
+                                assert!(end.boundary_event.is_none());
+                                if let Some(boundary_event) = &start.boundary_event {
+                                    self.graph.boundary_events.insert(
+                                        (start.known_node_id, new_edge_id),
+                                        boundary_event.clone(),
+                                    );
+                                }
                             }
                         }
                     }
@@ -327,9 +343,7 @@ impl Parser {
         match self.context.grouping_state {
             GroupingState::Init => {
                 return Err(vec![(
-                    format!(
-                        "Lanes must always be part of a pool, please add a pool (e.g. `= My Pool`) above this line."
-                    ),
+                    "Lanes must always be part of a pool, please add a pool (e.g. `= My Pool`) above this line.".to_string(),
                     self.context.current_token_coordinate,
                     Level::Error,
                 )]);
@@ -350,16 +364,12 @@ impl Parser {
             } => {
                 return Err(vec![
                     (
-                        format!(
-                            "This lane is part of a diagram without pools and lanes, since the diagram does not start with a pool. Hence this lane statement is illegal."
-                        ),
+                        "This lane is part of a diagram without pools and lanes, since the diagram does not start with a pool. Hence this lane statement is illegal.".to_string(),
                         self.context.current_token_coordinate,
                         Level::Error,
                     ),
                     (
-                        format!(
-                            "If you want to use pools and lanes, please add a pool (e.g. `= My Pool`) and a lane (e.g. `== My Lane`) *before your first node*."
-                        ),
+                        "If you want to use pools and lanes, please add a pool (e.g. `= My Pool`) and a lane (e.g. `== My Lane`) *before your first node*.".to_string(),
                         first_encountered_node,
                         Level::Note,
                     ),
@@ -372,20 +382,16 @@ impl Parser {
             } => {
                 return Err(vec![
                     (
-                        format!(
-                            "This lane is part of a pool without explicit lanes, since the pool does not start with a lane. Hence this lane statement is illegal."
-                        ),
+                        "This lane is part of a pool without explicit lanes, since the pool does not start with a lane. Hence this lane statement is illegal.".to_string(),
                         self.context.current_token_coordinate,
                         Level::Error,
                     ),
                     (
-                        format!(
-                            "If you want to use multiple lanes within this pool, please add a lane (e.g. `== My Lane`) as the first statement inside of you pool *before any other nodes*."
-                        ),
+                        "If you want to use multiple lanes within this pool, please add a lane (e.g. `== My Lane`) as the first statement inside of you pool *before any other nodes*.".to_string(),
                         first_encountered_node,
                         Level::Note,
                     ),
-                    (format!("The pool started here."), ptc, Level::Note),
+                    ("The pool started here.".to_string(), ptc, Level::Note),
                 ]);
             }
         }
@@ -432,6 +438,7 @@ impl Parser {
                     known_node_id: node_id,
                     edge_text: text_label,
                     tc: self.context.current_token_coordinate,
+                    boundary_event: None,
                 });
         }
         Ok(())
@@ -473,6 +480,7 @@ impl Parser {
                     known_node_id: node_id,
                     edge_text: text_label,
                     tc: self.context.current_token_coordinate,
+                    boundary_event: None,
                 });
         }
         Ok(())
@@ -503,6 +511,7 @@ impl Parser {
                         known_node_id: current_node_id,
                         edge_text: "".to_string(),
                         tc: token_coordinate,
+                        boundary_event: None,
                     });
                 // Extend the token coordinate of the node onto the previous sequence flow landing
                 // node, so that error reporting with bad branching connections is more helpful.
@@ -658,6 +667,68 @@ impl Parser {
         )
     }
 
+    fn parse_boundary_event(&mut self, meta: BoundaryEventMeta) -> Result<(), ParseError> {
+        let pool_and_lane = self.manage_pool_and_lane_ids_for_new_node();
+        let known_node_id = match &mut self.context.lifeline_state {
+            LifelineState::ActiveLifeline { last_node_id, .. } => *last_node_id,
+            a => {
+                return Err(err_from_no_lifeline_active(
+                    std::mem::replace(
+                        a,
+                        // Just put some garbage here, we simply want the value and then return.
+                        LifelineState::NoLifelineActive {
+                            previous_lifeline_termination_statement: None,
+                        },
+                    ),
+                    self.context.current_token_coordinate,
+                ));
+            }
+        };
+
+        let NodeType::RealNode { tc, event, .. } = &self.graph.nodes[known_node_id.0].node_type
+        else {
+            panic!("in the beginning there are no dummy nodes.");
+        };
+
+        use ActivityType::*;
+        use BpmnNode::*;
+        if !matches!(
+            event,
+            // TODO are boundary
+            Activity(Task(_))
+                | Activity(Subprocess)
+                | Activity(CallActivity)
+                | Activity(Transaction)
+        ) {
+            return Err(vec![
+(
+                "A boundary event can only follow a task (- Some Task), a subprocess, a call activity or a transaction.".to_string(),
+                self.context.current_token_coordinate,Level::Error
+            ),
+            (
+                "This node is of wrong type.".to_string(),
+                    *tc, Level::Note
+            )
+            ]);
+        }
+
+        self.context
+            .dangling_sequence_flows
+            .entry(pool_and_lane.pool)
+            .or_default()
+            .dangling_end_map
+            .entry(meta.sequence_flow_jump_meta.target)
+            .or_default()
+            .push(DanglingEdgeInfo {
+                known_node_id,
+                edge_text: meta.sequence_flow_jump_meta.text_label,
+                tc: self.context.current_token_coordinate,
+                boundary_event: Some(meta.boundary_event),
+            });
+
+        Ok(())
+    }
+
     fn parse_sequence_flow_jump(&mut self, meta: SequenceFlowMeta) -> Result<(), ParseError> {
         let pool_and_lane = self.manage_pool_and_lane_ids_for_new_node();
         let old_state = std::mem::replace(
@@ -678,7 +749,7 @@ impl Parser {
             }
         };
 
-        if let NodeType::RealNode { ref mut tc, .. } = self.graph.nodes[known_node_id.0].node_type {
+        if let NodeType::RealNode { tc, .. } = &mut self.graph.nodes[known_node_id.0].node_type {
             tc.end = self.context.current_token_coordinate.end;
         } else {
             panic!("in the beginning there are no dummy nodes.");
@@ -695,6 +766,7 @@ impl Parser {
                 known_node_id,
                 edge_text: meta.sequence_flow_jump_meta.text_label,
                 tc: self.context.current_token_coordinate,
+                boundary_event: None,
             });
 
         Ok(())
@@ -809,35 +881,33 @@ _ => (),
                 )]);
             };
             let recipient_node = &self.graph.nodes[node_id];
-            if let Some(prev_pool_id) = pool_id {
-                if prev_pool_id != recipient_node.pool {
-                    return Err(vec![(
-                        format!(
-                            "Data node recipient {target:?} is in another pool than the previous recipients. However, they must appear within the same pool (but may appear in different lanes)."
-                        ),
-                        self.context.current_token_coordinate,
-                        Level::Error,
-                    )]);
-                }
+            if let Some(prev_pool_id) = pool_id
+                && prev_pool_id != recipient_node.pool
+            {
+                return Err(vec![(
+                    format!(
+                        "Data node recipient {target:?} is in another pool than the previous recipients. However, they must appear within the same pool (but may appear in different lanes)."
+                    ),
+                    self.context.current_token_coordinate,
+                    Level::Error,
+                )]);
             }
             pool_id = Some(recipient_node.pool);
             lane_ids.push(recipient_node.lane.0);
             edges.push((direction, node_id, text_label));
         }
 
-        let sde_id;
-        if meta.is_continuation {
-            sde_id = SdeId(self.graph.data_elements.len() - 1);
+        let sde_id = if meta.is_continuation {
+            SdeId(self.graph.data_elements.len() - 1)
         } else {
-            sde_id = self
-                .graph
-                .add_sde(meta.node_meta.display_text.clone(), vec![]);
-        }
+            self.graph
+                .add_sde(meta.node_meta.display_text.clone(), vec![])
+        };
 
         let event = BpmnNode::Data(
             meta.data_type,
             DataAux {
-                sde_id: sde_id.clone(),
+                sde_id,
                 pebpmn_protection: vec![],
             },
         );

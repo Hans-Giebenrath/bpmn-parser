@@ -1,8 +1,17 @@
+//! The lexer is not speed optimized at all. Likely not optimized for anything. Just here to get
+//! the job done. The most important thing is that we can get useful error location reporting out
+//! of it. I assume that its speed is not the bottleneck of the end-to-end runtime, however in the
+//! case of using it for real-time error diagnostics (as an LSP basically which does not do
+//! layouting) then maybe(?) it needs to be optimized to get sub-millisecond speed out of it.
+
 use annotate_snippets::Level;
 use annotate_snippets::Snippet;
 use annotate_snippets::renderer::Renderer;
 
 use crate::common::bpmn_node::ActivityType;
+use crate::common::bpmn_node::BoundaryEvent;
+use crate::common::bpmn_node::BoundaryEventType;
+use crate::common::bpmn_node::InterruptKind;
 use crate::common::bpmn_node::TaskType;
 use crate::common::graph::SdeId;
 use crate::lexer::*;
@@ -28,6 +37,7 @@ pub enum Statement {
     Data(DataMeta), // 'SD' for datastore 'OD' for dataobject '&' for continuation
     Layout(LayoutStatement),
     PeBpmn(PeBpmn),
+    BoundaryEvent(BoundaryEventMeta),
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -44,6 +54,12 @@ pub type StatementStream = std::vec::IntoIter<(TokenCoordinate, Statement)>;
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) struct SequenceFlowMeta {
     pub(crate) sequence_flow_jump_meta: EdgeMeta,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub(crate) struct BoundaryEventMeta {
+    pub(crate) sequence_flow_jump_meta: EdgeMeta,
+    pub(crate) boundary_event: BoundaryEvent,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -200,6 +216,7 @@ enum ARFlowAttribute {
     Forbidden,
     //OptionalLeftAndRightArrows,
     RequiredExactlyOneArrow,
+    RequiredExactlyOneRightArrow,
     RequiredLeftAndRightArrows,
     RequiredArrowsOfSameDirection,
     RequiredExactlyOneLeftAndOneRightArrow,
@@ -412,6 +429,46 @@ fn to_data(mut tokens: Tokens) -> AResult {
     }))
 }
 
+fn to_boundary_event(mut tokens: Tokens) -> AResult {
+    let (_, Token::BoundaryEvent(event_type, interrupt_kind)) = tokens.next().ok_or_else(|| {
+        (
+            TokenCoordinate::default(),
+            "Programming error: a boundary event statement should always have a BoundaryEvent token as the first attribute.".to_string(),
+        )
+    })? else {
+        return Err((
+            TokenCoordinate::default(),
+            "Programming error: a boundary event statement should always have its boundary event token and interrupt kind as the first attribute.".to_string(),
+        ));
+    };
+
+    let atts = assemble_attributes(
+        "Data statements",
+        tokens,
+        AssemblyRequest {
+            display_text: ARAttribute::Forbidden,
+            // TODO Allow. Could be used to color this one, or maybe fine tune its position or some such.
+            ids: ARAttribute::Forbidden,
+            flows: ARFlowAttribute::RequiredExactlyOneRightArrow,
+            task_type: AROptionalAttribute::Forbidden,
+            event_visual: AROptionalAttribute::Forbidden,
+        },
+    )?;
+
+    let Some((Direction::Outgoing, mut edge_metas)) = atts.arrows_with_same_direction else {
+        unreachable!();
+    };
+    assert_eq!(edge_metas.len(), 1);
+
+    Ok(Statement::BoundaryEvent(BoundaryEventMeta {
+        sequence_flow_jump_meta: edge_metas.remove(0),
+        boundary_event: BoundaryEvent {
+            event_type,
+            interrupt_kind,
+        },
+    }))
+}
+
 fn to_message_flow(atts: Tokens) -> AResult {
     let atts = assemble_attributes(
         "Message Flows",
@@ -587,11 +644,34 @@ fn assemble_attributes(
                             return Err((
                                 it.0,
                                 format!(
-                                    "{what_plural} must have exactly 1 flow (e.g. <-label or ->label)"
+                                    "{what_plural} must have exactly 1 flow (e.g. <-label or ->label), not more."
                                 ),
                             ));
                         }
                         None => {
+                            out.arrows_with_same_direction = Some((val_direction, vec![val_edge]));
+                        }
+                    }
+                }
+                ARFlowAttribute::RequiredExactlyOneRightArrow => {
+                    match &mut out.arrows_with_same_direction {
+                        Some((_, _)) => {
+                            return Err((
+                                it.0,
+                                format!(
+                                    "{what_plural} must have exactly 1 outgoing flow (->label), not more."
+                                ),
+                            ));
+                        }
+                        None => {
+                            if val_direction == Direction::Incoming {
+                                return Err((
+                                    it.0,
+                                    format!(
+                                        "{what_plural} must have exactly 1 outgoing flow (->label). Incoming flows (<-label) are not allowed."
+                                    ),
+                                ));
+                            }
                             out.arrows_with_same_direction = Some((val_direction, vec![val_edge]));
                         }
                     }
@@ -623,9 +703,6 @@ fn assemble_attributes(
                         }
                     }
                 }
-                _ => {
-                    return Err((it.0, "Unknown flow type.".to_string()));
-                }
             },
             Token::GatewayType(_) => {
                 return Err((
@@ -638,6 +715,13 @@ fn assemble_attributes(
                 return Err((
                     it.0,
                     "Programming error: DataKind should be handled by the calling function."
+                        .to_string(),
+                ));
+            }
+            Token::BoundaryEvent(_, _) => {
+                return Err((
+                    it.0,
+                    "Programming error: BoundaryEvent should be handled by the calling function."
                         .to_string(),
                 ));
             }
@@ -724,6 +808,21 @@ fn assemble_attributes(
         }
     }
 
+    if let ARFlowAttribute::RequiredExactlyOneRightArrow = request.flows {
+        let found_len = out
+            .arrows_with_same_direction
+            .as_ref()
+            .map_or_else(|| 0, |x| x.1.len());
+        if found_len != 1 {
+            return Err((
+                tc,
+                format!(
+                    "{what_plural} must have exactly 1 outgoing flow (->label), but you gave {found_len}."
+                ),
+            ));
+        }
+    }
+
     Ok(out)
 }
 
@@ -745,17 +844,122 @@ pub enum Token {
     // ====================
     // Virtual tokens always come first. They encode some additional information of the statement
     // type. Usually the statement type is represented by the `StatementCallback`, but for
-    // additional meta information these virtual tokens are used (to avoid having too manu
+    // additional meta information these virtual tokens are used (to avoid having too many
     // `StatementCallback` functions around with otherwise duplicated code.
     GatewayType(GatewayType),
-    DataKind(DataType, bool),
+    DataKind(DataType, /* is continuation */ bool),
     UsedShorthandSyntax,
+    BoundaryEvent(BoundaryEventType, InterruptKind),
 
     // ======================
     // == Extension Tokens ==
     // ======================
     ExtensionArgument(String),
     Separator,
+}
+
+macro_rules! charify {
+    (M) => {
+        'M'
+    };
+    (T) => {
+        'T'
+    };
+    (C) => {
+        'C'
+    };
+    (S) => {
+        'S'
+    };
+    (E) => {
+        'E'
+    };
+    (^) => {
+        '^'
+    };
+    (<) => {
+        '<'
+    };
+    (X) => {
+        'X'
+    };
+    (#) => {
+        '#'
+    };
+    (+) => {
+        '+'
+    };
+}
+
+// For the boundary events I use a macro to generate the arms. ChatGPT helped me to do this, so if
+// this is stupid please tell me.
+macro_rules! tt_as_boundary_event_type {
+    (M) => {
+        crate::common::bpmn_node::BoundaryEventType::Message
+    };
+    (T) => {
+        crate::common::bpmn_node::BoundaryEventType::Timer
+    };
+    (C) => {
+        crate::common::bpmn_node::BoundaryEventType::Conditional
+    };
+    (S) => {
+        crate::common::bpmn_node::BoundaryEventType::Signal
+    };
+    (E) => {
+        crate::common::bpmn_node::BoundaryEventType::Error
+    };
+    (^) => {
+        crate::common::bpmn_node::BoundaryEventType::Escalation
+    };
+    (<) => {
+        crate::common::bpmn_node::BoundaryEventType::Compensation
+    };
+    (X) => {
+        crate::common::bpmn_node::BoundaryEventType::Cancel
+    };
+    (#) => {
+        crate::common::bpmn_node::BoundaryEventType::Multiple
+    };
+    (+) => {
+        crate::common::bpmn_node::BoundaryEventType::MultipleParallel
+    };
+}
+
+macro_rules! tt_as_interrupt_kind {
+    (!) => {
+        crate::common::bpmn_node::InterruptKind::Interrupting
+    };
+    (+) => {
+        crate::common::bpmn_node::InterruptKind::NonInterrupting
+    };
+}
+
+macro_rules! maybe_parse_boundary_event {
+    ($a:tt $b:tt, $self:ident) => {{
+        if $self.current_char == Some(charify!($a)) && $self.continues_with(stringify!($b)) {
+            let tc = $self.current_coord();
+            $self.advance(); // $a
+            $self.advance(); // $b
+
+            $self
+                .sas
+                .next_statement(tc, $self.position, to_boundary_event)?;
+            $self.sas.add_implicit_fragment(
+                tc,
+                $self.position,
+                Token::BoundaryEvent(tt_as_boundary_event_type!($a), tt_as_interrupt_kind!($b)),
+            );
+            continue;
+        }
+    }};
+}
+
+macro_rules! boundary_match_arm_error {
+    ($a:tt $b:tt) => {
+        Some(tt_as_char!($a)) if self.sas.allow_new_statement && self.continues_with(stringify!($b)) => {
+}
+    };
 }
 
 #[derive(Debug, Clone, Default, Copy, PartialEq, Eq)]
@@ -1034,6 +1238,31 @@ impl<'a> Lexer<'a> {
         self.skip_whitespace(); // Skip any unnecessary whitespace
 
         loop {
+            if self.sas.allow_new_statement {
+                // Interrupting Boundary Events
+                maybe_parse_boundary_event!(M!, self);
+                maybe_parse_boundary_event!(T!, self);
+                maybe_parse_boundary_event!(C!, self);
+                maybe_parse_boundary_event!(S!, self);
+                maybe_parse_boundary_event!(E!, self);
+                maybe_parse_boundary_event!(^!, self);
+                maybe_parse_boundary_event!(<!, self);
+                maybe_parse_boundary_event!(X!, self);
+                maybe_parse_boundary_event!(#!, self);
+                maybe_parse_boundary_event!(+!, self);
+
+                // Non-Interrupting Boundary Events
+                maybe_parse_boundary_event!(M+, self);
+                maybe_parse_boundary_event!(T+, self);
+                maybe_parse_boundary_event!(C+, self);
+                maybe_parse_boundary_event!(S+, self);
+                //maybe_parse_boundary_event!(E+, self); // TODO diagnostics?
+                maybe_parse_boundary_event!(^+, self);
+                //maybe_parse_boundary_event!(<+, self); // TODO diagnostics?
+                //maybe_parse_boundary_event!(X+, self); // TODO diagnostics?
+                maybe_parse_boundary_event!(#+, self);
+                maybe_parse_boundary_event!(++, self);
+            }
             match self.current_char {
                 Some('/') if self.continues_with("/") => {
                     while self.current_char != Some('\n') {

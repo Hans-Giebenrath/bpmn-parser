@@ -24,9 +24,9 @@ pub enum BpmnNode {
 }
 
 #[derive(Eq, Debug, Clone, PartialEq)]
-pub(crate) struct BoundaryEvent {
-    pub(crate) event_type: BoundaryEventType,
-    pub(crate) interrupt_kind: InterruptKind,
+pub struct BoundaryEvent {
+    pub event_type: BoundaryEventType,
+    pub interrupt_kind: InterruptKind,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -39,10 +39,12 @@ pub enum BoundaryEventType {
     Escalation,
     Conditional,
     Compensation,
+    Multiple,
+    MultipleParallel,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) enum ActivityType {
+pub enum ActivityType {
     Task(TaskType),
     Subprocess,
     CallActivity,
@@ -68,7 +70,7 @@ pub enum TaskType {
 // part of the container, but this should depend on how the logic can be written more easily in the
 // emitting code (xml, svg, ..).
 #[derive(Eq, Debug, Clone, PartialEq)]
-pub(crate) enum EventVisual {
+pub enum EventVisual {
     Start(InterruptKind),
     Catch(InterruptKind),
     Throw,
@@ -144,7 +146,7 @@ impl EventVisual {
 }
 
 #[derive(Eq, Debug, Clone, PartialEq)]
-pub(crate) enum InterruptKind {
+pub enum InterruptKind {
     NonInterrupting,
     Interrupting,
 }

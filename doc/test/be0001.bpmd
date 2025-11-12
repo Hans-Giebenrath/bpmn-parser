@@ -1,0 +1,20 @@
+= Pool
+
+== Lane
+
+# Start
+- Task
+M! ->be1
+<! ->be2
+. Regular End
+
+F<-be1
+- BE1
+F->message-received
+
+F<-be2
+- BE2
+F->message-received
+
+X <- message-received
+. Other End

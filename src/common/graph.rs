@@ -69,6 +69,12 @@ pub struct Graph {
     pub pools: Vec<Pool>,
 
     pub data_elements: Vec<SemanticDataElement>,
+
+    // These just don't fit so well into the `Node` and `Edge` types, as they are in the way when
+    // doing all the different layout stages (at least I get that feeling, suggestions are welcome).
+    // Since the information around boundary events is recalled so infrequently, it is just parked
+    // in this hash map. Then the `Node` and `Edge` types don't get bloated with something that
+    // people don't use so often.
     pub boundary_events: HashMap<(NodeId, EdgeId), BoundaryEvent>,
     pub config: Config,
 
@@ -587,6 +593,7 @@ pub fn validate_invariants(graph: &Graph) -> Result<(), ValidationErrors> {
     // (2) No self-loops: An edge's from is different from to.
     // (3) The gateway connection stuff should make sense
     // (4) Data names should be consistent (when sending and receiving something)
+    // (5) Not all activities can have all boundary events
 
     let mut errors = Vec::new();
 
