@@ -1,0 +1,55 @@
+= Pool
+
+== Lane
+
+# Start
+- Task
+M! ->be0
+T! ->be1
+C! ->be2
+
+-Task
+S! ->be3
+E! ->be4
+^! ->be5
+
+- Task
+<! ->be6
+X! ->be7
+M+ ->be8
+
+- Task
+T+ ->be9
+C+ ->be10
+S+ ->be11
+
+- Task
+^+ ->be12
+. Regular End
+
+F<-be0
+. BE0
+F<-be1
+. BE1
+F<-be2
+. BE2
+F<-be3
+. BE3
+F<-be4
+. BE4
+F<-be5
+. BE5
+F<-be6
+. BE6
+F<-be7
+. BE7
+F<-be8
+. BE8
+F<-be9
+. BE9
+F<-be10
+. BE10
+F<-be11
+. BE11
+F<-be12
+. BE12

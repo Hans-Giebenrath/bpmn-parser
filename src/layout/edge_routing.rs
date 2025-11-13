@@ -772,7 +772,6 @@ fn determine_segment_layers_ixi(
     {
         let from_idx = max_y & ((1 << BITS) - 1);
         let new_idx = 2 * new_target_idx + base_segment_layer;
-        let new_idx2 = new_idx + 1;
         for (left, right) in routing_edges.iter_mut() {
             if left.idx == from_idx {
                 // Can only set the `right` one here since `left` is still used as a needle.

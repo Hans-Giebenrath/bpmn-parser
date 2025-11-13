@@ -6,7 +6,6 @@ use crate::common::graph::Place;
 use crate::common::graph::PoolId;
 use crate::common::graph::adjust_above_and_below_for_new_inbetween;
 use crate::common::graph::{Graph, NodeId};
-use crate::common::macros::dbg_compact;
 use crate::common::node::LayerId;
 use crate::common::node::LoneDataElement;
 use crate::common::node::Node;
@@ -112,7 +111,7 @@ impl IlpNodeSiblingPair {
 
 impl IlpLayer {
     fn iter_ijkl<'a>(&self, n: &'a [IlpNode]) -> impl Iterator<Item = Ijkl> + use<'a> {
-        // i < j, k < l, i < k, j != l
+        // `i < j, k < l, i < k, j != l`
         // This just says: Pairwise all edges which don't share one of the same endpoints.
 
         let all_nodes = self.iterate_node_ids_1();
@@ -309,11 +308,11 @@ pub fn reduce_all_crossings(graph: &mut Graph) {
     for layer in &g.layers {
         layer.iter_ijkl(&g.all_nodes).for_each(|ijkl| {
             // Crossing constraints taken from: https://ieeevis.b-cdn.net/vis_2024/pdfs/v-full-1874.pdf
-            // c(i,k),( j,l) +x j,i +xk,l ≥ 1
-            // c(i,k),( j,l) +xi, j +xl,k ≥ 1
+            // `c(i,k),( j,l) +x j,i +xk,l ≥ 1`
+            // `c(i,k),( j,l) +xi, j +xl,k ≥ 1`
             // Indexes fixed to the older paper version:
-            // c(i,j),( k,l) +x k,i +xj,l ≥ 1
-            // c(i,j),( k,l) +xi, k +xl,j ≥ 1
+            // `c(i,j),( k,l) +x k,i +xj,l ≥ 1`
+            // `c(i,j),( k,l) +xi, k +xl,j ≥ 1`
             problem.add_constraint((v.c(&ijkl) + v.x(ijkl.ki()) + v.x(ijkl.jl())).geq(1));
             problem.add_constraint((v.c(&ijkl) + v.x(ijkl.ik()) + v.x(ijkl.lj())).geq(1));
         });
@@ -589,63 +588,67 @@ fn handle_message_flows(graph: &Graph, v: &mut Vars, objective: &mut Expression)
 
 /// TODO the images are wrong, make a BPMN from this to correct it.
 /// Sort order images only show the upper part, but the lower part is equal, just mirrored.
+///   TODO this is totally flawed. The left hand nodes are also entered from the left, not from the
+///   right.
 ///
 /// Sort order of incoming nodes:
 ///   NB: Horizontal part is closest to the `edge.from` node's pool.
 ///
-///              ┌────┐
-///  ┌┐          │    ┼─┐
-///  │┼──┐       └────┘ │
-///  └┘  │              │      (Pool 1)                  ┌──┐    ┌─┐
-///      │              │                            ┌───┼  │ ┌──┼ │
-///      │              │                            │   └──┘ │  └─┘
-///      │              └─────┐ ┌────────────────────┘        │
-///      └──────────────────┐ │ │ ┌───────────────────────────┘
-///  ┌┐          ┌─────┐    │ │ │ │                       ┌┐
-///  │┼─┐        │     ┼──┐ │ │ │ │   (Pool 2)         ┌──┼│   ┌┐
-///  └┘ │        └─────┘  │ │ │ │ │                    │  └┘ ┌─┼│
-///     │                 │ │ │ │ │ ┌──────────────────┘     │ └┘
-///     │                 │ │ │ │ │ │ ┌──────────────────────┘
-///     │                 │ │ │ │ │ │ │  ┌───────┐
-///     │                 │ │ │ │ │ │ └──►       │
-///     │                 │ │ │ │ │ └────►       │
-///     │                 │ │ │ │ └──────►       │
-///     │    (Pool 3)     │ │ │ └────────►       │
-///     │                 │ │ └──────────►       │
-///     │                 │ └────────────►       │
-///     │                 └──────────────►       │
-///     └────────────────────────────────►       │
-///                                      │       │
-///                                      └───────┘
+/// `             ┌────┐ `
+/// ` ┌┐          │    ┼─┐ `
+/// ` │┼──┐       └────┘ │ `
+/// ` └┘  │              │      (Pool 1)                  ┌──┐    ┌─┐ `
+/// `     │              │                            ┌───┼  │ ┌──┼ │ `
+/// `     │              │                            │   └──┘ │  └─┘ `
+/// `     │              └─────┐ ┌────────────────────┘        │ `
+/// `     └──────────────────┐ │ │ ┌───────────────────────────┘ `
+/// ` ┌┐          ┌─────┐    │ │ │ │                       ┌┐ `
+/// ` │┼─┐        │     ┼──┐ │ │ │ │   (Pool 2)         ┌──┼│   ┌┐ `
+/// ` └┘ │        └─────┘  │ │ │ │ │                    │  └┘ ┌─┼│ `
+/// `    │                 │ │ │ │ │ ┌──────────────────┘     │ └┘ `
+/// `    │                 │ │ │ │ │ │ ┌──────────────────────┘ `
+/// `    │                 │ │ │ │ │ │ │  ┌───────┐ `
+/// `    │                 │ │ │ │ │ │ └──►       │ `
+/// `    │                 │ │ │ │ │ └────►       │ `
+/// `    │                 │ │ │ │ └──────►       │ `
+/// `    │    (Pool 3)     │ │ │ └────────►       │ `
+/// `    │                 │ │ └──────────►       │ `
+/// `    │                 │ └────────────►       │ `
+/// `    │                 └──────────────►       │ `
+/// `    └────────────────────────────────►       │ `
+/// `                                     │       │ `
+/// `                                     └───────┘ `
 ///
 ///
 ///
 /// Sort order of outgoing nodes:
 ///   NB: Horizontal part is closest to the `edge.from` node's pool.
+///   TODO this is totally flawed. The left hand nodes are also entered from the left, not from the
+///   right.
 ///
-/// ┌────┐   ┌────┐   ┌────┐                    ┌────┐      ┌────┐
-/// │    ◄──┐│    ◄─┐ │    ◄─┐   (Pool 1)   ┌───►    │  ┌──►│    │
-/// └────┘  │└────┘ │ └────┘ │              │   └────┘  │   └────┘
-///         │       │        │              │           │
-///         │       │        │              │           │
-///         │       │        │              │           │
-/// ┌────┐  │       │        │              │   ┌────┐  │   ┌────┐
-/// │    ◄─┐        │        │   (Pool 2)   │┌──►    │  │┌──►    │
-/// └────┘ ││       │        └────┐ ┌───────┘│  └────┘  ││  └────┘
-///        ││       └───────────┐ │ │ ┌──────┘          ││
-///        │└──────────────────┐│ │ │ │┌────────────────┘│
-///        └─────────────────┐ ││ │ │ ││ ┌───────────────┘
-///                   ┌────┐ │ ││ │ │ ││ │
-///                   │    │─┘ ││ │ │ ││ │
-///                   │    │───┘│ │ │ ││ │
-///                   │    │────┘ │ │ ││ │
-///                   │    │──────┘ │ ││ │
-///                   │    │────────┼►││ │   (Pool 3)
-///                   │    │────────┴─┘│ │
-///                   │    │───────────┘ │
-///                   │    │─────────────┘
-///                   │    │
-///                   └────┘
+/// `┌────┐   ┌────┐   ┌────┐                    ┌────┐      ┌────┐ `
+/// `│    ◄──┐│    ◄─┐ │    ◄─┐   (Pool 1)   ┌───►    │  ┌──►│    │ `
+/// `└────┘  │└────┘ │ └────┘ │              │   └────┘  │   └────┘ `
+/// `        │       │        │              │           │ `
+/// `        │       │        │              │           │ `
+/// `        │       │        │              │           │ `
+/// `┌────┐  │       │        │              │   ┌────┐  │   ┌────┐ `
+/// `│    ◄─┐        │        │   (Pool 2)   │┌──►    │  │┌──►    │ `
+/// `└────┘ ││       │        └────┐ ┌───────┘│  └────┘  ││  └────┘ `
+/// `       ││       └───────────┐ │ │ ┌──────┘          ││ `
+/// `       │└──────────────────┐│ │ │ │┌────────────────┘│ `
+/// `       └─────────────────┐ ││ │ │ ││ ┌───────────────┘ `
+/// `                  ┌────┐ │ ││ │ │ ││ │ `
+/// `                  │    │─┘ ││ │ │ ││ │ `
+/// `                  │    │───┘│ │ │ ││ │ `
+/// `                  │    │────┘ │ │ ││ │ `
+/// `                  │    │──────┘ │ ││ │ `
+/// `                  │    │────────┼►││ │   (Pool 3) `
+/// `                  │    │────────┴─┘│ │ `
+/// `                  │    │───────────┘ │ `
+/// `                  │    │─────────────┘ `
+/// `                  │    │ `
+/// `                  └────┘ `
 ///
 ///
 fn sort_incoming_and_outgoing(graph: &mut Graph) {
@@ -950,6 +953,7 @@ fn reroute_vertical_edge(
         stays_within_lane,
         stroke_color: None,
         is_vertical: false,
+        attached_to_boundary_event: None,
     });
 
     let to_node = &mut graph.nodes[to_node_id];
@@ -983,6 +987,7 @@ fn reroute_vertical_edge(
             stays_within_lane,
             stroke_color: None,
             is_vertical: false,
+            attached_to_boundary_event: None,
         });
 
         let left_second_edge_id = EdgeId(graph.edges.len());
@@ -998,6 +1003,7 @@ fn reroute_vertical_edge(
             stays_within_lane,
             stroke_color: None,
             is_vertical: false,
+            attached_to_boundary_event: None,
         });
 
         let left_intermediate_node = &mut graph.nodes[left_intermediate_node_id];

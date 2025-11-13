@@ -103,6 +103,7 @@ XG Node Text @identifier ->a-label "Edge Text 1" ->another-label "Edge Text 2"
      ^!: Escalation
      <!: Compensation
      X!: Cancel
+     // not yet supported since I don't know how the XML looks like.
      #!: Multiple
      +!: Multiple Parallel
 
@@ -112,6 +113,7 @@ XG Node Text @identifier ->a-label "Edge Text 1" ->another-label "Edge Text 2"
      C+: Conditional
      S+: Signal
      ^+: Escalation
+     // not yet supported since I don't know how the XML looks like.
      #+: Multiple
      ++: Multiple Parallel
 

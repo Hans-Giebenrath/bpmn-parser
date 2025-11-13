@@ -1,3 +1,4 @@
+use crate::common::bpmn_node::BoundaryEvent;
 use crate::common::graph::{EdgeId, NodeId, SdeId};
 use crate::common::macros::impl_index;
 use crate::lexer::PeBpmnProtection;
@@ -79,6 +80,9 @@ pub struct Edge {
     pub is_reversed: bool,
     pub flow_type: FlowType,
     pub stays_within_lane: bool,
+    /// If `! is_reversed` then attached via `from`, otherwise via `to`.
+    /// TODO did I keep in mind to copy this property to replacement dummy nodes?
+    pub attached_to_boundary_event: Option<BoundaryEvent>,
 
     // For vertical edges or edge segments. E.g. the part which leaves a real node and then goes
     // into a bend dummy. Or for message flows or sequence flows which go straight up or down

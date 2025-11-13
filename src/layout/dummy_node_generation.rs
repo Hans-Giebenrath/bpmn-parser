@@ -65,6 +65,11 @@ pub fn generate_dummy_nodes(graph: &mut Graph) {
         let mut previous_node_id = from.id;
         let mut layer_id = LayerId(from.layer_id.0 + 1);
         let to_node_id = to.id;
+        let (mut first_boundary_event, last_boundary_event) = if edge.is_reversed {
+            (None, edge.attached_to_boundary_event.clone())
+        } else {
+            (edge.attached_to_boundary_event.clone(), None)
+        };
         for lane_id in node_lane_ids {
             let dummy_node_id = graph.add_node(
                 NodeType::LongEdgeDummy,
@@ -84,6 +89,7 @@ pub fn generate_dummy_nodes(graph: &mut Graph) {
                     bend_points: DummyEdgeBendPoints::ToBeDeterminedOrStraight,
                 },
                 flow_type.clone(),
+                first_boundary_event.take(),
             );
             previous_node_id = dummy_node_id;
         }
@@ -95,6 +101,7 @@ pub fn generate_dummy_nodes(graph: &mut Graph) {
                 bend_points: DummyEdgeBendPoints::ToBeDeterminedOrStraight,
             },
             flow_type,
+            last_boundary_event,
         );
         graph.nodes[from_id]
             .outgoing

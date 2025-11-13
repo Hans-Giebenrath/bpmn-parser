@@ -49,26 +49,26 @@ pub(crate) enum PlaceForBendDummy {
 }
 
 /// The boundary of a box is on a first approximation subdivided into eight areas:
-/// The North, East, West and South ports, and then the four corner areas between them.
+/// The North, East, West, and South ports, and then the four corner areas between them.
 /// ("Corner area" in the sense that it is not just the corner point, but also the parts of the
 /// edges connected to the corner up to the next N/E/W/S point.)
-///  ┌─── N ───┐
-///  │┌───────┐│  <top
-///  ││       ││
-///  W│       │E  <W and E are always on the middle of left and right.
-///  ││       ││
-///  │└───────┘│  <bottom
-///  └─── S ───┘
-///   ^       ^
-///   left    right
-///       ^
+/// ` ┌─── N ───┐ `
+/// ` │┌───────┐│  <top `
+/// ` ││       ││ `
+/// ` W│       │E  <W and E are always on the middle of left and right. `
+/// ` ││       ││ `
+/// ` │└───────┘│  <bottom `
+/// ` └─── S ───┘ `
+/// `  ^       ^ `
+/// `  left    right `
+/// `      ^ `
 ///       N and S can be shifted (only to the left I believe) to make room for more elements on the
 ///       sides. ("I believe" because from the `incoming` side everything else must be on "left" so
 ///       there cannot be other elements on the left of N or S. For `outgoing`, the "directly
 ///       up/down" edge is already placed to the very beginning or very end, so again all other
 ///       elements are surely placed right of N or S).
 ///
-/// "Port": The (x,y) coordinate where an edge starts (or ends) on the boundary of the box.
+/// "Port": The `(x, y)` coordinate where an edge starts (or ends) on the boundary of the box.
 /// Invariant which we assume at this point: `incoming` and `outgoing` are sorted correctly by
 /// how their ports are supposed to be ordered around the box.
 /// For non-gateways, the assignment of specific ports to the edges is done as follows:
@@ -95,32 +95,32 @@ pub(crate) enum PlaceForBendDummy {
 /// then must turn right. For these situations we must add additional dummy nodes above or below
 /// the current node which represents the bend point:
 ///
-/// ┌────────┐ current node
-/// │        │
-/// │        │
-/// │        ├──────────
-/// │        │
-/// │        │
-/// └──┬─┬─┬─┘
-///    │ │ │
-///    │ │ │
-///  ┌────────┐
-///  │ │ │ └──│──────────
-///  └────────┘ new dummy node
-///    │ │
-///  ┌────────┐
-///  │ │ └────│──────────
-///  └────────┘ new dummy node
-///    │
-///    │
-///    │
-///    │
-///  ┌───────┐
-///  │       │  Some next neighbor
-///  │       │
-///  │       │
-///  │       │
-///  └───────┘
+/// `┌────────┐ current node `
+/// `│        │ `
+/// `│        │ `
+/// `│        ├────────── `
+/// `│        │ `
+/// `│        │ `
+/// `└──┬─┬─┬─┘ `
+/// `   │ │ │ `
+/// `   │ │ │ `
+/// ` ┌────────┐ `
+/// ` │ │ │ └──│────────── `
+/// ` └────────┘ new dummy node `
+/// `   │ │ `
+/// ` ┌────────┐ `
+/// ` │ │ └────│────────── `
+/// ` └────────┘ new dummy node `
+/// `   │ `
+/// `   │ `
+/// `   │ `
+/// `   │ `
+/// ` ┌───────┐ `
+/// ` │       │  Some next neighbor `
+/// ` │       │ `
+/// ` │       │ `
+/// ` │       │ `
+/// ` └───────┘ `
 ///
 ///
 ///  Gateways are treated slightly differently:
@@ -201,7 +201,7 @@ fn handle_nongateway_node(this_node_id: NodeId, graph: &mut Graph) {
         [single] => match is_vertical_edge(*single, graph, this_node_id) {
             None => {
                 // A single boundary event usually is placed on the bottom side.
-                if graph.boundary_events.contains_key(&(this_node.id, *single)) {
+                if graph.attached_to_boundary_event(this_node.id, *single) {
                     below_out = 1;
                 }
             }
@@ -219,7 +219,7 @@ fn handle_nongateway_node(this_node_id: NodeId, graph: &mut Graph) {
             }
         },
         many @ [first, .., last] => {
-            // First check if the ends are vertical edges.
+            // First check if `first` and `last` are vertical edges.
             match is_vertical_edge(*first, graph, this_node_id) {
                 None => (),
                 Some(VerticalEdgeDocks::Above) => {
@@ -250,10 +250,10 @@ fn handle_nongateway_node(this_node_id: NodeId, graph: &mut Graph) {
             // start from the end to look for boundary events and a sequence flow.
             // The sequence flow flips over from moving stuff on the `below` side to putting
             // stuff on the `above` side. For example:
-            //       (DF, BE1, DF, BE2, DF, MF, SF, DF, BE3, DF, BE4, DF)
+            //       `(DF, BE1, DF, BE2, DF, MF, SF, DF, BE3, DF, BE4, DF)`
             // Then everything up to (including) BE2 is on `above`, and everything
             // starting from BE3 is on `below`. If there would be no SF, then instead
-            // everything starting from BE1 would be on `below`, and the first DF would be on
+            // everything starting from BE1 would be on `below`, and the first data flow would be on
             // `right`.
             let mut it = many
                 .iter()
@@ -267,7 +267,7 @@ fn handle_nongateway_node(this_node_id: NodeId, graph: &mut Graph) {
                 // to continue putting BEs on `below`. So just skip the vertical edge.
                 .skip(below_out);
             for (rev_idx, (_, edge_id)) in it.by_ref() {
-                if graph.boundary_events.contains_key(&(this_node.id, edge_id)) {
+                if graph.attached_to_boundary_event(this_node.id, edge_id) {
                     // rev_idx starts at 0, but if the 0th element is on `below` we want to
                     // have `below_out == 1`.
                     below_out = rev_idx + 1;
@@ -276,7 +276,7 @@ fn handle_nongateway_node(this_node_id: NodeId, graph: &mut Graph) {
                 }
             }
             for (_, (idx, edge_id)) in it {
-                if graph.boundary_events.contains_key(&(this_node.id, edge_id)) {
+                if graph.attached_to_boundary_event(this_node.id, edge_id) {
                     // idx starts at 0, but if the 0th element is on `above` we want to
                     // have `above_out == 1`.
                     above_out = idx + 1;
@@ -877,7 +877,7 @@ fn handle_gateway_node_one_side(this_node_id: NodeId, graph: &mut Graph, directi
         // Take the gateway node out, so the Y-ILP does not force the gateway node exactly
         // between its above and below nodes. The idea is that it should actually be rather
         // floaty, and if less edge crossings can be achieved by moving it over above/below
-        // nodes, then it should move to the more optimal position.
+        // nodes, then it should move to the better position.
         let this_node = &mut n!(this_node_id);
         let above = this_node.node_above_in_same_lane.take();
         let below = this_node.node_below_in_same_lane.take();
@@ -930,13 +930,29 @@ fn add_bend_dummy_node(
     let flow_type = cur_edge.flow_type.clone();
     let from_id = cur_edge.from;
     let to_id = cur_edge.to;
+    let is_reversed = cur_edge.is_reversed;
     match &cur_edge.edge_type {
         EdgeType::Regular { text, .. } => {
             let text = text.clone();
-
             cur_edge.edge_type = EdgeType::ReplacedByDummies {
                 first_dummy_edge: EdgeId(current_num_edges),
                 text,
+            };
+
+            // This value is actually unused, so I might have messed up the logic here.
+            // Still here to have "complete" graph transformations.
+            let attached_to_boundary_event1 = if graph.attached_to_boundary_event(from_id, edge_id)
+            {
+                e!(edge_id).attached_to_boundary_event.clone()
+            } else {
+                None
+            };
+            // This value is actually unused, so I might have messed up the logic here.
+            // Still here to have "complete" graph transformations.
+            let attached_to_boundary_event2 = if graph.attached_to_boundary_event(to_id, edge_id) {
+                e!(edge_id).attached_to_boundary_event.clone()
+            } else {
+                None
             };
 
             // First remove the reference to the now-replaced edge, so there is certainly room
@@ -953,10 +969,11 @@ fn add_bend_dummy_node(
                         bend_points: DummyEdgeBendPoints::ToBeDeterminedOrStraight,
                     },
                     flow_type: flow_type.clone(),
-                    is_vertical: false,
-                    is_reversed: false,
+                    is_vertical: true,
+                    is_reversed,
                     stroke_color: None,
                     stays_within_lane: n!(from_id).pool_and_lane() == pool_and_lane,
+                    attached_to_boundary_event: attached_to_boundary_event1,
                 });
                 for outgoing_edge_idx in &mut n!(from_id).outgoing {
                     if *outgoing_edge_idx == edge_id {
@@ -981,9 +998,10 @@ fn add_bend_dummy_node(
                     },
                     flow_type,
                     is_vertical: false,
-                    is_reversed: false,
+                    is_reversed,
                     stroke_color: None,
                     stays_within_lane: pool_and_lane == n!(to_id).pool_and_lane(),
+                    attached_to_boundary_event: attached_to_boundary_event2,
                 });
 
                 for incoming_edge_idx in &mut n!(to_id).incoming {
@@ -1005,6 +1023,13 @@ fn add_bend_dummy_node(
         }
         EdgeType::DummyEdge { original_edge, .. } => {
             let original_edge = *original_edge;
+            let attached_to_boundary_event = if !is_reversed {
+                // Not `.clone()` but really `.take()`: `cur_edge` will be bent around, so it no
+                // longer will be attached to the boundary event.
+                cur_edge.attached_to_boundary_event.take()
+            } else {
+                None
+            };
 
             let new_dummy_edge_id = {
                 // XXX Don't use `add_edge` here as we want to preserve the `outgoing`/`incoming`
@@ -1018,10 +1043,11 @@ fn add_bend_dummy_node(
                         bend_points: DummyEdgeBendPoints::ToBeDeterminedOrStraight,
                     },
                     flow_type: flow_type.clone(),
-                    is_vertical: false,
-                    is_reversed: false,
+                    is_vertical: true,
+                    is_reversed,
                     stroke_color: None,
                     stays_within_lane: n!(from_id).pool_and_lane() == pool_and_lane,
+                    attached_to_boundary_event,
                 });
                 for outgoing_edge_idx in &mut n!(from_id).outgoing {
                     if *outgoing_edge_idx == edge_id {

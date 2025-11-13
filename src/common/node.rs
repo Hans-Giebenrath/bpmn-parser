@@ -318,7 +318,7 @@ impl Node {
     }
 
     pub fn port_is_left_or_right(&self, port_y: usize) -> bool {
-        (self.y..=(self.y + self.height)).contains(&port_y)
+        ((self.y + 1)..(self.y + self.height)).contains(&port_y)
     }
 
     pub fn display_text(&self) -> Option<&str> {

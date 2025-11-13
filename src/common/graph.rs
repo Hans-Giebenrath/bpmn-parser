@@ -10,7 +10,6 @@ use crate::lexer::{DataType, EventType};
 use crate::parser::ParseError;
 use annotate_snippets::Level;
 use proc_macros::{from, n, to};
-use std::collections::HashMap;
 use std::fmt::{self, Debug};
 use std::iter::from_fn;
 use std::mem;
@@ -70,12 +69,6 @@ pub struct Graph {
 
     pub data_elements: Vec<SemanticDataElement>,
 
-    // These just don't fit so well into the `Node` and `Edge` types, as they are in the way when
-    // doing all the different layout stages (at least I get that feeling, suggestions are welcome).
-    // Since the information around boundary events is recalled so infrequently, it is just parked
-    // in this hash map. Then the `Node` and `Edge` types don't get bloated with something that
-    // people don't use so often.
-    pub boundary_events: HashMap<(NodeId, EdgeId), BoundaryEvent>,
     pub config: Config,
 
     pub num_layers: usize,
@@ -176,6 +169,7 @@ impl Graph {
         to: NodeId,
         edge_type: EdgeType,
         flow_type: FlowType,
+        boundary_event: Option<BoundaryEvent>,
     ) -> EdgeId {
         let edge_id = EdgeId(self.edges.len());
         self.edges.push(Edge {
@@ -187,6 +181,7 @@ impl Graph {
             is_reversed: false,
             stroke_color: None,
             stays_within_lane: self.nodes[from].pool_and_lane() == self.nodes[to].pool_and_lane(),
+            attached_to_boundary_event: boundary_event,
         });
 
         self.nodes[from].outgoing.push(edge_id);
@@ -237,6 +232,14 @@ impl Graph {
         let from_xy = from!(edge_id).port_of_outgoing(edge_id).as_pair();
         let to_xy = to!(edge_id).port_of_incoming(edge_id).as_pair();
         [from_xy, to_xy]
+    }
+
+    pub fn attached_to_boundary_event(&self, node_id: NodeId, edge_id: EdgeId) -> bool {
+        let edge = &self.edges[edge_id];
+        (edge.attached_to_boundary_event.is_some() && edge.is_reversed && edge.to == node_id)
+            || (edge.attached_to_boundary_event.is_some()
+                && !edge.is_reversed
+                && edge.from == node_id)
     }
 
     pub(crate) fn get_bottom_node(&self, pool_lane: PoolAndLane, layer: LayerId) -> Option<NodeId> {
@@ -738,52 +741,3 @@ pub(crate) fn add_node(
 
     node_id
 }
-
-//pub(crate) fn contains_only_dummy_nodes_in_intermediate_lanes(
-//    nodes: &[Node],
-//    pools: &[Pool],
-//    layer: LayerId,
-//    from_lane: PoolAndLane,
-//    to_lane: PoolAndLane,
-//) -> bool {
-//    let (from_lane, to_lane) = if from_lane < to_lane {
-//        (from_lane, to_lane)
-//    } else {
-//        (to_lane, from_lane)
-//    };
-//
-//    let mut cur_lane = from_lane;
-//    cur_lane.lane.0 += 1;
-//    loop {
-//        if cur_lane == to_lane {
-//            // No blocker found on the way, we reached the target lane.
-//            return true;
-//        }
-//        let Some(pool) = pools.get(cur_lane.pool.0) else {
-//            unreachable!(
-//                "We should have reached to_lane? {from_lane:?}, {to_lane:?}, {cur_lane:?}"
-//            );
-//        };
-//        let Some(lane) = pool.lanes.get(cur_lane.lane.0) else {
-//            // Wrap to the next pool.
-//            cur_lane.pool.0 += 1;
-//            cur_lane.lane.0 = 0;
-//            continue;
-//        };
-//
-//        for node_id in &lane.nodes {
-//            let node = &nodes[*node_id];
-//            if node.layer_id < layer {
-//                continue;
-//            }
-//            if node.layer_id > layer {
-//                // We cleared the current layer.
-//                cur_lane.lane.0 += 1;
-//                break;
-//            }
-//            if !node.is_dummy() {
-//                return false;
-//            }
-//        }
-//    }
-//}

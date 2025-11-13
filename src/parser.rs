@@ -246,7 +246,7 @@ impl Parser {
                                         ),
                                     ]);
                                 }
-                                let new_edge_id = self.graph.add_edge(
+                                self.graph.add_edge(
                                     start.known_node_id,
                                     end.known_node_id,
                                     EdgeType::Regular {
@@ -254,16 +254,11 @@ impl Parser {
                                         bend_points: RegularEdgeBendPoints::ToBeDetermined,
                                     },
                                     FlowType::SequenceFlow,
+                                    start.boundary_event.clone(),
                                 );
-                                // And end can not be a boundary event. SFs always originate from
-                                // boundary events.
+                                // And end can not be a boundary event. Boundary events are always
+                                // at the start of a sequence flow.
                                 assert!(end.boundary_event.is_none());
-                                if let Some(boundary_event) = &start.boundary_event {
-                                    self.graph.boundary_events.insert(
-                                        (start.known_node_id, new_edge_id),
-                                        boundary_event.clone(),
-                                    );
-                                }
                             }
                         }
                     }
@@ -533,6 +528,7 @@ impl Parser {
                         bend_points: RegularEdgeBendPoints::ToBeDetermined,
                     },
                     FlowType::SequenceFlow,
+                    None,
                 );
             }
             a => {
@@ -846,6 +842,7 @@ _ => (),
                 transported_data: vec![],
                 pebpmn_protection: vec![],
             }),
+            None,
         );
         Ok(())
     }
@@ -949,6 +946,7 @@ _ => (),
                 FlowType::DataFlow(DataFlowAux {
                     transported_data: vec![sde_id],
                 }),
+                None,
             );
         }
         let ids = meta.node_meta.ids;

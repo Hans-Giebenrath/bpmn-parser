@@ -733,7 +733,7 @@ fn assemble_attributes(
     //let check_required = |req, opt: &mut Option<_>| matches!(req, ARAttribute::Required if opt.is_none());
     //let check_required_exact = |req, opt_vec: &mut Option<Vec<_>>| matches!(req, ARAttribute::RequiredExact(len) if opt_vec.get_or_insert_default().len() != len);
 
-    // TODO ensure data flow errors are triggered even when no attributes are provided with a data statement
+    // TODO ensure data flow errors are triggered even when no attributes are provided with a data-statement
     // Example: "OD" should prompt the user to add data flows.
     let Some(tc) = tc else {
         return Err((TokenCoordinate::default(), "This statement seems to be missing attributes? Consider adding a display text, IDs (@id), flows (<-label\"Text\") etc".to_string()));
@@ -953,13 +953,6 @@ macro_rules! maybe_parse_boundary_event {
             continue;
         }
     }};
-}
-
-macro_rules! boundary_match_arm_error {
-    ($a:tt $b:tt) => {
-        Some(tt_as_char!($a)) if self.sas.allow_new_statement && self.continues_with(stringify!($b)) => {
-}
-    };
 }
 
 #[derive(Debug, Clone, Default, Copy, PartialEq, Eq)]
@@ -1464,16 +1457,17 @@ impl<'a> Lexer<'a> {
                     self.sas
                         .next_statement(tc, self.position, to_layout_leftof)?;
                 }
+                // experimental stuff - this will not stay as is.
                 Some('r') if self.sas.allow_new_statement && self.continues_with("owwidth") => {
                     let tc = self.current_coord();
-                    self.advance(); // r
-                    self.advance(); // o
-                    self.advance(); // w
-                    self.advance(); // w
-                    self.advance(); // i
-                    self.advance(); // d
-                    self.advance(); // t
-                    self.advance(); // h
+                    self.advance(); // `r`
+                    self.advance(); // `o`
+                    self.advance(); // `w`
+                    self.advance(); // `w`
+                    self.advance(); // `i`
+                    self.advance(); // `d`
+                    self.advance(); // `t`
+                    self.advance(); // `h`
                     self.sas
                         .next_statement(tc, self.position, to_layout_rowwidth)?;
                 }
