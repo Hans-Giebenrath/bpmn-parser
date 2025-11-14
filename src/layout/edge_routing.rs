@@ -821,7 +821,10 @@ fn interpool_y(graph: &Graph, from_pool: PoolId, to_pool: PoolId) -> (PoolId, us
     let pool_id = if from_pool < to_pool {
         from_pool
     } else {
-        assert!(from_pool > to_pool, "{from_pool:?}");
+        assert!(
+            from_pool > to_pool,
+            "from_pool: {from_pool:?}, to_pool: {to_pool:?}"
+        );
         PoolId(from_pool.0 - 1)
     };
     let reference_pool = &graph.pools[pool_id];
@@ -948,7 +951,7 @@ fn get_layered_edges(graph: &mut Graph) -> (Vec<SegmentsOfSameLayer>, MessageFlo
                 },
             );
         } else if to_hor {
-            assert!(!to_hor);
+            assert!(!from_hor);
             let segment_vec = &mut edge_layers[to_node.layer_id.0];
             segment_vec.push(VerticalSegment {
                 id: edge_id,

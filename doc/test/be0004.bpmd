@@ -1,0 +1,24 @@
+= Pool 1
+
+== Lane 1-1
+
+# Start 1 1
+. end 1 1
+
+= Pool 3
+
+== Lane 3-1
+
+F<-up1
+.End 3 1 1
+
+
+== Lane 3-2
+
+# Start
+- Send
+T! ->up1
+
+. End
+
+MF <-lane-3-2-send ->lane-1-1-start

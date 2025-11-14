@@ -1,0 +1,109 @@
+= Pool 1
+
+== Lane 1-1
+
+# Start 1 1
+- middle 1 1
+# Receive 1 1
+. end 1 1
+
+== Lane 1-2
+
+# Start 1 2
+- middle 1 2
+# Receive 1 2
+. end 1 2
+
+= Pool 2
+
+== Lane 2-1
+
+# Start 2 1
+- middle 2 1
+# Receive 2 1
+. end 2 1
+
+== Lane 2-2
+
+# Start 2 2
+- middle 2 2
+# Receive 2 2
+. end 2 2
+
+= Pool 3
+
+== Lane 3-1
+
+F<-up1
+.End 3 1 1
+
+F<-up2
+.End 3 1 2
+
+== Lane 3-2
+
+# Start
+- Send
+T! ->up1
+T! ->up2
+T! ->down1
+T! ->down2
+
+. End
+
+== Lane 3-3
+
+F<-down1
+.End 3 3 1
+
+F<-down2
+.End 3 3 2
+
+= Pool 4
+
+== Lane 4-1
+
+# Start 4 1
+- middle 4 1
+# Receive 4 1
+. end 4 1
+
+== Lane 4-2
+
+# Start 4 2
+- middle 4 2
+# Receive 4 2
+. end 4 2
+
+= Pool 5
+
+== Lane 5-1
+
+# Start 5 1
+- middle 5 1
+# Receive 5 1
+. end 5 1
+
+== Lane 5-2
+
+# Start 5 2
+- middle 5 2
+# Receive 5 2
+. end 5 2
+
+MF <-lane-3-2-send ->lane-1-1-start
+MF <-lane-3-2-send ->lane-1-1-receive
+MF <-lane-3-2-send ->lane-1-2-start
+MF <-lane-3-2-send ->lane-1-2-receive
+MF <-lane-3-2-send ->lane-2-1-start
+MF <-lane-3-2-send ->lane-2-1-receive
+MF <-lane-3-2-send ->lane-2-2-start
+MF <-lane-3-2-send ->lane-2-2-receive
+MF <-lane-3-2-send ->lane-4-1-start
+MF <-lane-3-2-send ->lane-4-1-receive
+MF <-lane-3-2-send ->lane-4-2-start
+MF <-lane-3-2-send ->lane-4-2-receive
+MF <-lane-3-2-send ->lane-5-1-start
+MF <-lane-3-2-send ->lane-5-1-receive
+MF <-lane-3-2-send ->lane-5-2-start
+MF <-lane-3-2-send ->lane-5-2-receive

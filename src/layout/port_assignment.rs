@@ -9,6 +9,7 @@ use crate::common::graph::Coord3;
 use crate::common::graph::DUMMY_NODE_WIDTH;
 use crate::common::graph::EdgeId;
 use crate::common::graph::Graph;
+use crate::common::graph::LaneId;
 use crate::common::graph::NodeId;
 use crate::common::graph::Place;
 use crate::common::graph::PoolAndLane;
@@ -166,6 +167,11 @@ fn handle_nongateway_node(this_node_id: NodeId, graph: &mut Graph) {
                 e!(*single).is_vertical = true;
             }
         },
+        // At the moment we assume that there can only be one vertical edge at the top,
+        // and one vertical edge at the bottom. But this is not totally correct: There might
+        // be multiple incoming message flows, and when we have loops, then backward facing edges
+        // are also temporarily reversed. So semantic outgoing edges are actually stored in
+        // `incoming`. So this whole `match &this_node.incoming[..]` needs a revamp.
         [first, .., last] => {
             match is_vertical_edge(*first, graph, this_node_id) {
                 None => (),
@@ -297,7 +303,7 @@ fn handle_nongateway_node(this_node_id: NodeId, graph: &mut Graph) {
     let mut above_coordinates =
         points_on_side(this_node.width, above_inc + above_out).map(|x| RelativePort { x, y: 0 });
     let mut below_coordinates =
-        points_on_side(this_node.width, below_inc + below_out).map(|x| RelativePort {
+        points_on_side_rev(this_node.width, below_inc + below_out).map(|x| RelativePort {
             x,
             y: this_node.height,
         });
@@ -400,6 +406,9 @@ fn handle_nongateway_node(this_node_id: NodeId, graph: &mut Graph) {
     for (edge_id, relative_port_x, is_where) in united_edges_which_require_bendpoint {
         let to_pool_and_lane = to!(edge_id).pool_and_lane();
         let is_same_lane = from_pool_and_lane == to_pool_and_lane;
+        assert!(DUMMY_NODE_WIDTH >= this_node_width);
+        let relative_port_x = (relative_port_x + (DUMMY_NODE_WIDTH / 2)) - (this_node_width / 2);
+
         let (pool_and_lane, place) = match is_where {
             IsWhere::Above if is_same_lane => {
                 (from_pool_and_lane, PlaceForBendDummy::Above(this_node_id))
@@ -423,7 +432,15 @@ fn handle_nongateway_node(this_node_id: NodeId, graph: &mut Graph) {
                         barrier.pool_and_lane(),
                         PlaceForBendDummy::Below(barrier.id),
                     ),
-                    None => (to_pool_and_lane, PlaceForBendDummy::AtTheBottom),
+                    // TODO to_pool_and_lane is possibly outside of the pool.
+                    None if to_pool_and_lane.pool == from_pool_and_lane.pool => {
+                        (to_pool_and_lane, PlaceForBendDummy::AtTheBottom)
+                    }
+                    // `from` and `to` are in different pools, so this is a message flow. And since
+                    // no barrier was found, then we also don't need a bend dummy (we can just
+                    // continue upwards, leave the pool and then bend in the inter-pool space), hence
+                    // can just continue here (to skip the dummy node generation at the end).
+                    None => continue,
                 }
             }
             IsWhere::Below => {
@@ -435,14 +452,18 @@ fn handle_nongateway_node(this_node_id: NodeId, graph: &mut Graph) {
                         barrier.pool_and_lane(),
                         PlaceForBendDummy::Above(barrier.id),
                     ),
-                    None => (to_pool_and_lane, PlaceForBendDummy::AtTheTop),
+                    None if to_pool_and_lane.pool == from_pool_and_lane.pool => {
+                        (to_pool_and_lane, PlaceForBendDummy::AtTheTop)
+                    }
+                    // `from` and `to` are in different pools, so this is a message flow. And since
+                    // no barrier was found, then we also don't need a bend dummy (we can just
+                    // continue downwards, leave the pool and then bend in the inter-pool space), hence
+                    // can just continue here (to skip the dummy node generation at the end).
+                    None => continue,
                 }
             }
         };
 
-        assert!(DUMMY_NODE_WIDTH >= this_node_width);
-        // relative_port_x - (((this_node_width as i64) - (DUMMY_NODE_WIDTH as i64)) / 2);
-        let relative_port_x = (relative_port_x + (DUMMY_NODE_WIDTH / 2)) - (this_node_width / 2);
         add_bend_dummy_node(
             graph,
             edge_id,
@@ -597,6 +618,11 @@ fn is_vertical_edge(
 pub fn points_on_side(side_len: usize, k: usize) -> impl Iterator<Item = usize> + Clone {
     let step = side_len as f64 / (k as f64 + 1.0);
     (1..=k).map(move |i| ((i as f64) * step) as usize)
+}
+
+pub fn points_on_side_rev(side_len: usize, k: usize) -> impl Iterator<Item = usize> + Clone {
+    let step = side_len as f64 / (k as f64 + 1.0);
+    (1..=k).rev().map(move |i| ((i as f64) * step) as usize)
 }
 
 #[track_caller]

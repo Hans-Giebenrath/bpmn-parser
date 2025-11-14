@@ -670,7 +670,6 @@ fn sort_incoming_and_outgoing(graph: &mut Graph) {
         if node.incoming.len() > 1 {
             let mut incoming_cpy = std::mem::take(&mut node.incoming);
             incoming_cpy.sort_by_cached_key(|edge_id| {
-                // TODO this needs same correction as the output one, clear distinction of the 7 cases.
                 let from_node = &from!(*edge_id);
                 let to_node = &to!(*edge_id);
                 let from_rank_within_lane = rank_within_lane(from_node, graph);
@@ -680,7 +679,7 @@ fn sort_incoming_and_outgoing(graph: &mut Graph) {
                     && from_node.layer_id == to_node.layer_id
                     && (from_node.lane, from_rank_within_lane) < (to_node.lane, to_rank_within_lane)
                 {
-                    // SF/DF Looping downwards (toward this node) in the same pool
+                    // SF/`DF` Looping downwards (toward this node) in the same pool
                     let group_order = 1;
                     (
                         group_order,
@@ -710,7 +709,7 @@ fn sort_incoming_and_outgoing(graph: &mut Graph) {
                         (from_rank_within_lane as isize),
                     )
                 } else if from_node.pool == to_node.pool && from_node.layer_id < to_node.layer_id {
-                    // SF/DF coming from the left
+                    // SF/`DF` coming from the left
                     assert_eq!(to_node.layer_id.0, from_node.layer_id.0 + 1);
                     let group_order = 4;
                     (
@@ -744,7 +743,7 @@ fn sort_incoming_and_outgoing(graph: &mut Graph) {
                     && from_node.layer_id == to_node.layer_id
                     && (from_node.lane, from_rank_within_lane) > (to_node.lane, to_rank_within_lane)
                 {
-                    // SF/DF Looping downwards (toward this node) in the same pool
+                    // SF/`DF` Looping downwards (toward this node) in the same pool
                     let group_order = 7;
                     (
                         group_order,
@@ -773,7 +772,7 @@ fn sort_incoming_and_outgoing(graph: &mut Graph) {
                     && from_node.layer_id == to_node.layer_id
                     && (to_node.lane, to_rank_within_lane) < (from_node.lane, from_rank_within_lane)
                 {
-                    // SF/DF Looping upwards in the same pool
+                    // SF/`DF` Looping upwards in the same pool
                     let group_order = 1;
                     (
                         group_order,
@@ -782,18 +781,9 @@ fn sort_incoming_and_outgoing(graph: &mut Graph) {
                         -(to_node.lane.0 as isize),
                         -(to_rank_within_lane as isize),
                     )
-                } else if to_node.pool < from_node.pool && to_node.layer_id <= from_node.layer_id {
-                    // MF to upper left/upper pools
-                    let group_order = 2;
-                    (
-                        group_order,
-                        (to_node.layer_id.0 as isize),
-                        -(to_node.pool.0 as isize),
-                        -(to_node.lane.0 as isize),
-                        -(to_rank_within_lane as isize),
-                    )
-                } else if to_node.pool < from_node.pool && to_node.layer_id > from_node.layer_id {
-                    // MF to upper right pools
+                } else if to_node.pool < from_node.pool {
+                    // MF to upper pools (Note: The documentation also has group 2 there but that is
+                    // a mistake, there is just "above", not split in left or right).
                     let group_order = 3;
                     (
                         group_order,
@@ -803,7 +793,7 @@ fn sort_incoming_and_outgoing(graph: &mut Graph) {
                         (to_rank_within_lane as isize),
                     )
                 } else if to_node.pool == from_node.pool && to_node.layer_id > from_node.layer_id {
-                    // SF/DF to the right same pool
+                    // SF/`DF` to the right same pool
                     assert_eq!(to_node.layer_id.0, from_node.layer_id.0 + 1);
                     let group_order = 4;
                     (
@@ -813,31 +803,22 @@ fn sort_incoming_and_outgoing(graph: &mut Graph) {
                         (to_node.lane.0 as isize),
                         (to_rank_within_lane as isize),
                     )
-                } else if to_node.pool > from_node.pool && to_node.layer_id > from_node.layer_id {
-                    // MF to lower right pools
+                } else if to_node.pool > from_node.pool {
+                    // MF to lower pools (Note: The documentation also has group 6 there but that is
+                    // a mistake, there is just "below", not split in left or right).
                     let group_order = 5;
                     (
                         group_order,
-                        (to_node.layer_id.0 as isize),
+                        -(to_node.layer_id.0 as isize),
                         (to_node.pool.0 as isize),
                         (to_node.lane.0 as isize),
                         (to_rank_within_lane as isize),
-                    )
-                } else if to_node.pool > from_node.pool && to_node.layer_id <= from_node.layer_id {
-                    // MF to lower left/upper pools
-                    let group_order = 6;
-                    (
-                        group_order,
-                        -(to_node.layer_id.0 as isize),
-                        -(to_node.pool.0 as isize),
-                        -(to_node.lane.0 as isize),
-                        -(to_rank_within_lane as isize),
                     )
                 } else if from_node.pool == to_node.pool
                     && from_node.layer_id == to_node.layer_id
                     && (to_node.lane, to_rank_within_lane) > (from_node.lane, from_rank_within_lane)
                 {
-                    // SF/DF Looping downwards in the same pool
+                    // SF/`DF` Looping downwards in the same pool
                     let group_order = 7;
                     (
                         group_order,

@@ -831,6 +831,21 @@ _ => (),
                 )]
             })?;
 
+        {
+            let sender_node = &self.graph.nodes[sender_node];
+            let receiver_node = &self.graph.nodes[receiver_node];
+            if sender_node.pool == receiver_node.pool {
+                return Err(vec![(
+                    format!(
+                        "Sender node and receiver node are not allowed to come from the same pool ({}). Did you IDs match the expected nodes, or do you need to make it more specific?",
+                        sender_node.pool.0
+                    ),
+                    self.context.current_token_coordinate,
+                    Level::Error,
+                )]);
+            }
+        }
+
         self.graph.add_edge(
             sender_node,
             receiver_node,
