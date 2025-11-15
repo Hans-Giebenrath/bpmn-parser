@@ -362,8 +362,15 @@ impl MessageFlowBendPointStore {
                 bend_points: out_bend_points,
                 ..
             } => *out_bend_points = FullyRouted(bend_points),
-            EdgeType::ReplacedByDummies { text, .. } => {
-                edge.edge_type = EdgeType::Regular {
+            EdgeType::DummyEdge { original_edge, .. } => {
+                let original_edge = *original_edge;
+
+                let edge_type = &mut e!(original_edge).edge_type;
+                let EdgeType::ReplacedByDummies { text, .. } = edge_type else {
+                    unreachable!();
+                };
+
+                *edge_type = EdgeType::Regular {
                     text: text.take(),
                     bend_points: FullyRouted(bend_points),
                 }
@@ -669,9 +676,9 @@ fn assign_the_real_x_values(
 ) {
     let segspace = graph.config.max_space_between_vertical_edge_segments;
     let horizontal_space = space.end_x.strict_sub(space.start_x);
-    let count_of_comfortably_fitting_edge_segments = horizontal_space / segspace;
-    if path.len() > count_of_comfortably_fitting_edge_segments {
-        // Must squeeze them into the space.
+    let count_of_comfortably_fitting_edge_segments = (horizontal_space / segspace) - 1;
+    if path.len() >= count_of_comfortably_fitting_edge_segments {
+        // Must squeeze them all into the space. No partitioning.
         let segment_width = (horizontal_space as f64) / ((path.len() + 1) as f64);
         for (idx, edge) in path.iter().enumerate() {
             add_bend_points_one_segment(graph, mf_store, edge, idx, segment_width, space.start_x);
@@ -695,7 +702,7 @@ fn assign_the_real_x_values(
     let required_width = (center.len() + 1) * segspace;
     let leftmost_center_x = leftmost_start_x + required_width / 2;
     let rightmost_center_x = rightmost_end_x.strict_sub(required_width / 2);
-    assert!(leftmost_center_x < rightmost_center_x);
+    assert!(leftmost_center_x <= rightmost_center_x);
     let start_x = match () {
         _ if space.center_x < leftmost_center_x => leftmost_start_x,
         _ if space.center_x > rightmost_center_x => rightmost_center_x,
@@ -750,7 +757,6 @@ fn determine_segment_layers_ixi(
             left.ixi_diagonalizer = Some(0);
             right.idx = base_segment_layer + 1;
             right.ixi_diagonalizer = Some(1);
-            dbg!();
             return 2;
         }
         _ => (),
@@ -895,6 +901,11 @@ fn get_layered_edges(graph: &mut Graph) -> (Vec<SegmentsOfSameLayer>, MessageFlo
             x: start_x,
         } = from_node.port_of_outgoing(edge_id);
         let AbsolutePort { y: end_y, x: end_x } = to_node.port_of_incoming(edge_id);
+
+        /////////////////////////////
+        // Sequence / Data Flow Edges
+        /////////////////////////////
+
         if !edge.is_message_flow() {
             if start_y == end_y {
                 continue;
@@ -912,10 +923,25 @@ fn get_layered_edges(graph: &mut Graph) -> (Vec<SegmentsOfSameLayer>, MessageFlo
             });
             continue;
         }
+
+        /////////////////////
+        // Message Flow Edges
+        /////////////////////
+
         assert!(edge.is_message_flow());
 
-        let from_hor = from_node.port_is_left_or_right(start_y);
-        let to_hor = to_node.port_is_left_or_right(end_y);
+        // A message flow may also be cut into smaller dummies if it exits vertically but is then
+        // sent horizontally in-pool through a bend dummy. In that case we do the stitching-together
+        // already here in this file within the `finish_layer` function. But the important part is
+        // that we only analyze the message flow part which is really going from one pool to
+        // another. The other up to two vertical segment are then manually put together.
+        if from_node.pool == to_node.pool {
+            // Just the segment between a real node and the bend dummy.
+            continue;
+        }
+
+        let from_hor = from_node.is_bend_dummy() || from_node.port_is_left_or_right(start_y);
+        let to_hor = to_node.is_bend_dummy() || to_node.port_is_left_or_right(end_y);
         let (bends_after_pool, interpool_y) = interpool_y(graph, from_node.pool, to_node.pool);
         if from_hor && to_hor {
             if from_node.layer_id.0 + 1 == to_node.layer_id.0 {

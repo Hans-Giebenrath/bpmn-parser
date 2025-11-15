@@ -426,7 +426,7 @@ fn handle_nongateway_node(this_node_id: NodeId, graph: &mut Graph) {
             IsWhere::Above => {
                 let barrier = graph
                     .iter_upwards_same_pool(StartAt::Node(this_node_id), Some(to_pool_and_lane))
-                    .find(|node| !is_skippable_dummy_node(node, this_node_id));
+                    .find(|node| !node.is_long_edge_dummy());
                 match barrier {
                     Some(barrier) => (
                         barrier.pool_and_lane(),
@@ -446,7 +446,7 @@ fn handle_nongateway_node(this_node_id: NodeId, graph: &mut Graph) {
             IsWhere::Below => {
                 let barrier = graph
                     .iter_downwards_same_pool(StartAt::Node(this_node_id), Some(to_pool_and_lane))
-                    .find(|node| !is_skippable_dummy_node(node, this_node_id));
+                    .find(|node| !node.is_long_edge_dummy());
                 match barrier {
                     Some(barrier) => (
                         barrier.pool_and_lane(),
@@ -722,13 +722,13 @@ fn handle_gateway_node_one_side(this_node_id: NodeId, graph: &mut Graph, directi
     // Later these are our own newly inserted dummy nodes.
     let mut current_top_barrier = graph
         .iter_upwards_same_pool(StartAt::Node(this_node_id), Some(top_most_pool_lane))
-        .find(|&node| !is_skippable_dummy_node(node, this_node_id))
+        .find(|&node| !node.is_long_edge_dummy())
         .map(|node| node.id);
 
     // This is always the same. We iterate always until we hit this one.
     let bottom_barrier = graph
         .iter_downwards_same_pool(StartAt::Node(this_node_id), Some(bottom_most_pool_lane))
-        .find(|node| !is_skippable_dummy_node(node, this_node_id))
+        .find(|node| !node.is_long_edge_dummy())
         .map(|node| node.id);
 
     let mut above_nodes_in_other_layer = HashSet::<NodeId>::from_iter(
@@ -1124,18 +1124,4 @@ fn add_bend_dummy_node(
 
     adjust_above_and_below_for_new_inbetween(dummy_node_id, place, graph);
     dummy_node_id
-}
-
-fn is_skippable_dummy_node(node_being_in_the_way: &Node, current_node: NodeId) -> bool {
-    match &node_being_in_the_way.node_type {
-        // A real node is a barrier through which we cannot send our edges further.
-        NodeType::RealNode { .. } => false,
-        // No problem this can be crossed.
-        NodeType::LongEdgeDummy => true,
-        // A bend dummy is skippable if it is *out* bend dummy, i.e. from the current node that is
-        // augmented with bend dummies.
-        NodeType::BendDummy {
-            originating_node, ..
-        } => current_node == *originating_node,
-    }
 }

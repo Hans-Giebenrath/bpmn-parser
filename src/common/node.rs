@@ -318,6 +318,10 @@ impl Node {
     }
 
     pub fn port_is_left_or_right(&self, port_y: usize) -> bool {
+        assert!(
+            !self.is_bend_dummy(),
+            "In this case the heuristic is incorrect and you need to do something else"
+        );
         ((self.y + 1)..(self.y + self.height)).contains(&port_y)
     }
 

@@ -62,6 +62,7 @@ pub enum RegularEdgeBendPoints {
 pub enum DummyEdgeBendPoints {
     ToBeDeterminedOrStraight,
     SegmentEndpoints((usize, usize), (usize, usize)),
+    // Location of the bend dummy node.
     VerticalBendDummy((usize, usize)),
     /// Vertical lines from a gateway which happened to leave directly to the right side instead of
     /// from the top or bottom edge.
