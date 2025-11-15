@@ -1,6 +1,6 @@
-* fix the ordering of ports. Therefor, create a good test diagram, then fix.
 * Documentation.
 * PE-BPMN
+* check t0019 where MFs mimic a junction.
 * In the crossing minimization, make a tiny factor to favor gateway branch orderings as they were specified in the file, ie. on `NodeId`.
 * The port ordering sort by key function is wrong, I messed up the conceptual port ordering then things loop up/left to another pool. It should be the same as the right part of that pool, no distinction between left and right.
 * fix the doc/test/build.sh to use Make/parallel (or Rust threadpools) so we can have bounded parallelism.
