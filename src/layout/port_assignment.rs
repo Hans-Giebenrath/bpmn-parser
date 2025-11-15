@@ -987,7 +987,7 @@ fn add_bend_dummy_node(
 
             // First remove the reference to the now-replaced edge, so there is certainly room
             // for the new edge references, i.e. no need to allocate accidentally.
-            let edge1 = {
+            {
                 // XXX Don't use `add_edge` here as we want to preserve the `outgoing`/`incoming`
                 // ordering.
                 let edge1 = EdgeId(graph.edges.len());
@@ -999,7 +999,7 @@ fn add_bend_dummy_node(
                         bend_points: DummyEdgeBendPoints::ToBeDeterminedOrStraight,
                     },
                     flow_type: flow_type.clone(),
-                    is_vertical: true,
+                    is_vertical: reference_node == from_id,
                     is_reversed,
                     stroke_color: None,
                     stays_within_lane: n!(from_id).pool_and_lane() == pool_and_lane,
@@ -1012,10 +1012,8 @@ fn add_bend_dummy_node(
                     }
                 }
                 n!(dummy_node_id).incoming.push(edge1);
-
-                edge1
-            };
-            let edge2 = {
+            }
+            {
                 // XXX Don't use `add_edge` here as we want to preserve the `outgoing`/`incoming`
                 // ordering.
                 let edge2 = EdgeId(graph.edges.len());
@@ -1027,7 +1025,7 @@ fn add_bend_dummy_node(
                         bend_points: DummyEdgeBendPoints::ToBeDeterminedOrStraight,
                     },
                     flow_type,
-                    is_vertical: false,
+                    is_vertical: reference_node == to_id,
                     is_reversed,
                     stroke_color: None,
                     stays_within_lane: pool_and_lane == n!(to_id).pool_and_lane(),
@@ -1042,13 +1040,6 @@ fn add_bend_dummy_node(
                 }
 
                 n!(dummy_node_id).outgoing.push(edge2);
-
-                edge2
-            };
-            if reference_node == from_id {
-                e!(edge1).is_vertical = true;
-            } else {
-                e!(edge2).is_vertical = true;
             }
         }
         EdgeType::DummyEdge { original_edge, .. } => {

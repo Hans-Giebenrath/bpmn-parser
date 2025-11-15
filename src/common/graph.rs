@@ -557,8 +557,13 @@ impl Debug for Graph {
         for (idx, e) in self.edges.iter().enumerate() {
             writeln!(
                 f,
-                "  edge {idx}: {} -> {}, {:?}, {:?}",
-                e.from.0, e.to.0, e.flow_type, e.edge_type
+                "  edge {idx}: {} -> {}, {:?}, {:?}, is_vert: {}, is_rev: {}",
+                e.from.0,
+                e.to.0,
+                e.flow_type,
+                e.edge_type,
+                if e.is_vertical { 1 } else { 0 },
+                if e.is_reversed { 1 } else { 0 }
             )?;
         }
         for (pool_idx, pool) in self.pools.iter().enumerate() {
