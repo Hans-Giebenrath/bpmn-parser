@@ -5,6 +5,7 @@ use crate::lexer::PeBpmnProtection;
 
 /// TODO better name.
 #[derive(Debug, Clone, PartialEq)]
+#[allow(clippy::enum_variant_names)]
 pub enum FlowType {
     MessageFlow(MessageFlowAux),
     DataFlow(DataFlowAux),
@@ -33,13 +34,10 @@ pub enum EdgeType {
     // If a ReplacedByDummies node is assigned its final bend_points, e.g. when a straight edge can
     // be drawn, then it is automatically converted back into a `Regular` edge.
     ReplacedByDummies {
-        /// The EdgeId is the Id of the first DummyEdge which replaces this edge.
-        /// When an edge is replaced by dummies, then the dummy nodes are added all in a row,
-        /// ordered from `from` to `to` (ignoring `is_reversed`).
-        /// To calculate how many there are one can just check from this original edge the distance
-        /// between the `from` to `to` node layers, or just iterate over the edges from the given
-        /// `EdgeId` until the `original_edge` in the dummy nodes is no longer the current edge's
-        /// EdgeId.
+        /// The EdgeId is the Id of the first DummyEdge which replaces this edge. Note that the
+        /// dummy edges, which make up this original edge, are not consecutive within `graph.nodes`.
+        /// Instead, one must move through the incoming/outgoing edges of the connected nodes, i.e.
+        /// more through the graph.
         first_dummy_edge: EdgeId,
         text: Option<String>,
     },
@@ -142,19 +140,10 @@ impl Edge {
             if let Some((_, protections)) = pebpmn_protection.iter_mut().find(|(id, _)| id == sde) {
                 protections.push(protection);
             } else {
-                pebpmn_protection.push((sde.clone(), vec![protection]));
+                pebpmn_protection.push((*sde, vec![protection]));
             }
         }
     }
-
-    // pub fn with_default_text(from: usize, to: usize) -> Self {
-    //     Edge {
-    //         from,
-    //         to,
-    //         text: None,
-    //         bend_points: vec![], // Alguses tühjad painutuspunktid
-    //     }
-    // }
 
     pub fn text(&self) -> Option<&str> {
         match &self.edge_type {

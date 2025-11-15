@@ -27,8 +27,8 @@ use std::collections::HashSet;
 
 pub fn port_assignment(graph: &mut Graph) {
     // First handle non-gateway nodes and then gateway nodes in two separate loops. This way,
-    // `is_vertical_edge` is easier as it does not need to account for bend dummies which make
-    // everything harder.
+    // `is_vertical_edge` is easier as it does not need to account for gateway bend dummies which
+    // make everything harder (since the gateway node "disappears").
     for node_id in (0..graph.nodes.len()).map(NodeId) {
         if !n!(node_id).is_gateway() {
             handle_nongateway_node(node_id, graph);
@@ -426,7 +426,7 @@ fn handle_nongateway_node(this_node_id: NodeId, graph: &mut Graph) {
             IsWhere::Above => {
                 let barrier = graph
                     .iter_upwards_same_pool(StartAt::Node(this_node_id), Some(to_pool_and_lane))
-                    .find(|node| !is_skippable_dummy_node(node, graph));
+                    .find(|node| !is_skippable_dummy_node(node, this_node_id));
                 match barrier {
                     Some(barrier) => (
                         barrier.pool_and_lane(),
@@ -446,7 +446,7 @@ fn handle_nongateway_node(this_node_id: NodeId, graph: &mut Graph) {
             IsWhere::Below => {
                 let barrier = graph
                     .iter_downwards_same_pool(StartAt::Node(this_node_id), Some(to_pool_and_lane))
-                    .find(|node| !is_skippable_dummy_node(node, graph));
+                    .find(|node| !is_skippable_dummy_node(node, this_node_id));
                 match barrier {
                     Some(barrier) => (
                         barrier.pool_and_lane(),
@@ -523,6 +523,10 @@ fn handle_gateway_node(this_node_id: NodeId, graph: &mut Graph) {
     // case the gateway node should point to the original above and below nodes to ensure that they
     // point to the original above/below. Note: If the original above itself was already a bend
     // dummy, it is replaced by its originating node to ensure proper spacing as well.
+    // TODO maybe it does not need to become detached? This is just done to make xy-ilp easier, but
+    // that one could simply account for the gateway bend dummies correctly. Could have the rule
+    // that we simply add all the gateway bend dummies below the gateway (or above, which is
+    // arbitrary and without consequence, just needs to be consistent).
     n!(this_node_id).node_above_in_same_lane = above.map(|node_id| {
         if let NodeType::BendDummy {
             originating_node, ..
@@ -718,13 +722,13 @@ fn handle_gateway_node_one_side(this_node_id: NodeId, graph: &mut Graph, directi
     // Later these are our own newly inserted dummy nodes.
     let mut current_top_barrier = graph
         .iter_upwards_same_pool(StartAt::Node(this_node_id), Some(top_most_pool_lane))
-        .find(|&node| !is_skippable_dummy_node(node, graph))
+        .find(|&node| !is_skippable_dummy_node(node, this_node_id))
         .map(|node| node.id);
 
     // This is always the same. We iterate always until we hit this one.
     let bottom_barrier = graph
         .iter_downwards_same_pool(StartAt::Node(this_node_id), Some(bottom_most_pool_lane))
-        .find(|node| !is_skippable_dummy_node(node, graph))
+        .find(|node| !is_skippable_dummy_node(node, this_node_id))
         .map(|node| node.id);
 
     let mut above_nodes_in_other_layer = HashSet::<NodeId>::from_iter(
@@ -1122,26 +1126,16 @@ fn add_bend_dummy_node(
     dummy_node_id
 }
 
-fn is_skippable_dummy_node(node: &Node, graph: &Graph) -> bool {
-    if !node.is_any_dummy() {
+fn is_skippable_dummy_node(node_being_in_the_way: &Node, current_node: NodeId) -> bool {
+    match &node_being_in_the_way.node_type {
         // A real node is a barrier through which we cannot send our edges further.
-        return false;
+        NodeType::RealNode { .. } => false,
+        // No problem this can be crossed.
+        NodeType::LongEdgeDummy => true,
+        // A bend dummy is skippable if it is *out* bend dummy, i.e. from the current node that is
+        // augmented with bend dummies.
+        NodeType::BendDummy {
+            originating_node, ..
+        } => current_node == *originating_node,
     }
-    let [single_incoming] = node.incoming[..] else {
-        unreachable!("or is it?");
-    };
-    let [single_outgoing] = node.outgoing[..] else {
-        unreachable!("or is it?");
-    };
-    let from_layer = from!(single_incoming).layer_id;
-    let to_layer = to!(single_outgoing).layer_id;
-    // Just some sanity checks, in case this ever changes.
-    assert!(from_layer == node.layer_id || from_layer.0 + 1 == node.layer_id.0);
-    assert!(to_layer == node.layer_id || node.layer_id.0 + 1 == to_layer.0);
-    if from_layer == node.layer_id || to_layer == node.layer_id {
-        // A dummy which is looping in the same layer. This means that it is likely a
-        // helper node for a neighboring gateway or node with boundary events.
-        return false;
-    }
-    true
 }

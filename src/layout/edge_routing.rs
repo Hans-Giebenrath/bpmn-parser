@@ -253,30 +253,23 @@ impl MessageFlowBendPointStore {
         let to_xy = to.port_of_incoming(edge_id).as_pair();
         let is_down = from.pool < to.pool;
         let is_right = from.layer_id < to.layer_id;
-        let edge = &mut e!(edge_id);
-        let EdgeType::Regular {
-            bend_points: out_bend_points,
-            ..
-        } = &mut edge.edge_type
-        else {
-            unreachable!();
-        };
+        let mut bend_points;
+
         use MessageFlowBendState::*;
-        use RegularEdgeBendPoints::FullyRouted;
         match state {
             HorVerHor => {
                 assert!(is_right);
-                *out_bend_points = FullyRouted(vec![from_xy, p1, p2, to_xy]);
+                bend_points = vec![from_xy, p1, p2, to_xy];
             }
             VerHorVer { .. } => {
                 let (p1, p2) = transpose(p1, p2, is_down);
-                *out_bend_points = FullyRouted(vec![from_xy, p1, p2, to_xy]);
+                bend_points = vec![from_xy, p1, p2, to_xy];
             }
             HorVerHorVer { bend_point_1, .. } => {
                 if let Some(bend_point_1) = bend_point_1 {
                     // State is full, so this was the MF inter-pool routing.
                     let (p1, p2) = transpose(p1, p2, is_down);
-                    *out_bend_points = FullyRouted(vec![from_xy, *bend_point_1, p1, p2, to_xy]);
+                    bend_points = vec![from_xy, *bend_point_1, p1, p2, to_xy];
                 } else {
                     *bend_point_1 = Some(p1);
                     return;
@@ -286,7 +279,7 @@ impl MessageFlowBendPointStore {
                 if let Some(bend_point_2) = bend_point_2 {
                     // State is full, so this was the MF inter-pool routing.
                     let (p1, p2) = transpose(p1, p2, is_down);
-                    *out_bend_points = FullyRouted(vec![from_xy, p1, p2, *bend_point_2, to_xy]);
+                    bend_points = vec![from_xy, p1, p2, *bend_point_2, to_xy];
                 } else {
                     *bend_point_2 = Some(p2);
                     return;
@@ -299,8 +292,7 @@ impl MessageFlowBendPointStore {
             } => {
                 // State is full, so this was the MF inter-pool routing.
                 let (p1, p2) = transpose(p1, p2, is_down);
-                *out_bend_points =
-                    FullyRouted(vec![from_xy, *bend_point_1, p1, p2, *bend_point_2, to_xy]);
+                bend_points = vec![from_xy, *bend_point_1, p1, p2, *bend_point_2, to_xy];
             }
             HorVerHorVerHor {
                 bend_point_1: Some(_),
@@ -334,6 +326,50 @@ impl MessageFlowBendPointStore {
                 return;
             }
         }
+
+        // Now comes the funny part. What just got routed was the long part of the edge. It could be
+        // that the edge did not start and/or end at the real nodes, but that there was a bend dummy
+        // in between. So we need to find this out as well.
+        {
+            let from = &from!(edge_id);
+            if from.is_bend_dummy() {
+                let &[vertical_edge_id] = &from.incoming[..] else {
+                    unreachable!("{from:?},\n{graph:?}");
+                };
+                let real_node_from = &from!(vertical_edge_id);
+                bend_points.insert(
+                    0,
+                    real_node_from.port_of_outgoing(vertical_edge_id).as_pair(),
+                );
+            }
+        }
+        {
+            let to = &to!(edge_id);
+            if to.is_bend_dummy() {
+                let &[vertical_edge_id] = &to.outgoing[..] else {
+                    unreachable!("{to:?},\n{graph:?}");
+                };
+                let real_node_to = &to!(vertical_edge_id);
+                bend_points.push(real_node_to.port_of_incoming(vertical_edge_id).as_pair());
+            }
+        }
+
+        let edge = &mut e!(edge_id);
+        // At this point we know that the edge is really fully routed, so we can stop here.
+        use RegularEdgeBendPoints::FullyRouted;
+        match &mut edge.edge_type {
+            EdgeType::Regular {
+                bend_points: out_bend_points,
+                ..
+            } => *out_bend_points = FullyRouted(bend_points),
+            EdgeType::ReplacedByDummies { text, .. } => {
+                edge.edge_type = EdgeType::Regular {
+                    text: text.take(),
+                    bend_points: FullyRouted(bend_points),
+                }
+            }
+            _ => unreachable!(),
+        };
         // Ensure that if we finished and would access this value again, it will crash.
         self.store.remove(&edge_id);
     }
