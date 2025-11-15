@@ -144,6 +144,8 @@ fn handle_nongateway_node(this_node_id: NodeId, graph: &mut Graph) {
     let mut below_inc = 0;
     let mut below_out = 0;
 
+    // The logic around these is rather f'd up - this probably needs to be an usize as well,
+    // as for message flows there could be rather many.
     let mut has_vertical_edge_above = false;
     let mut has_vertical_edge_below = false;
 
@@ -155,7 +157,28 @@ fn handle_nongateway_node(this_node_id: NodeId, graph: &mut Graph) {
     match &this_node.incoming[..] {
         [] => (),
         [single] => match is_vertical_edge(*single, graph, this_node_id) {
-            None => (),
+            None => {
+                if from!(*single).pool < to!(*single).pool {
+                    if !graph
+                        .iter_upwards_same_pool(StartAt::Node(this_node.id), None)
+                        .any(|node| !node.is_long_edge_dummy())
+                    {
+                        above_inc = 1;
+                        // This is probably semantically wrong
+                        has_vertical_edge_above = true;
+                    }
+                } else if from!(*single).pool > to!(*single).pool {
+                    // <- clippy collapsible if
+                    if !graph
+                        .iter_downwards_same_pool(StartAt::Node(this_node.id), None)
+                        .any(|node| !node.is_long_edge_dummy())
+                    {
+                        below_inc = 1;
+                        // This is probably semantically wrong
+                        has_vertical_edge_below = true;
+                    }
+                }
+            }
             Some(VerticalEdgeDocks::Above) => {
                 above_inc = 1;
                 has_vertical_edge_above = true;
@@ -210,6 +233,22 @@ fn handle_nongateway_node(this_node_id: NodeId, graph: &mut Graph) {
                 if graph.attached_to_boundary_event(this_node.id, *single) {
                     below_out = 1;
                 }
+                if from!(*single).pool < to!(*single).pool {
+                    if !graph
+                        .iter_upwards_same_pool(StartAt::Node(this_node.id), None)
+                        .any(|node| !node.is_long_edge_dummy())
+                    {
+                        below_out = 1;
+                    }
+                } else if from!(*single).pool > to!(*single).pool {
+                    // <- clippy collapsible if
+                    if !graph
+                        .iter_downwards_same_pool(StartAt::Node(this_node.id), None)
+                        .any(|node| !node.is_long_edge_dummy())
+                    {
+                        above_out = 1;
+                    }
+                }
             }
             Some(VerticalEdgeDocks::Above) => {
                 above_out = 1;
@@ -251,6 +290,9 @@ fn handle_nongateway_node(this_node_id: NodeId, graph: &mut Graph) {
                 }
             }
 
+            // TODO This could also be an end event with multiple outgoing edges like a data flow
+            // and a message flow.
+
             // Now refine that number by looking at boundary events.
             // By default boundary events are placed below the node. So
             // start from the end to look for boundary events and a sequence flow.
@@ -272,7 +314,21 @@ fn handle_nongateway_node(this_node_id: NodeId, graph: &mut Graph) {
                 // If the last one was actually a vertical sequence flow, then we *still* want
                 // to continue putting BEs on `below`. So just skip the vertical edge.
                 .skip(below_out);
+            let mut allows_for_vertical_message_flow_exit = true;
+            let message_flow_could_exit_vertically = !graph
+                .iter_downwards_same_pool(StartAt::Node(this_node.id), None)
+                .any(|node| !node.is_long_edge_dummy());
             for (rev_idx, (_, edge_id)) in it.by_ref() {
+                if allows_for_vertical_message_flow_exit
+                    && message_flow_could_exit_vertically
+                    && e!(edge_id).is_message_flow()
+                {
+                    below_out = rev_idx + 1;
+                }
+                // As soon as anything else comes, we don't want the nodes on the bottom side
+                // anymore. Because then we just need to bend along, but then it is cleaner to just
+                // leave directly to the right side.
+                allows_for_vertical_message_flow_exit = false;
                 if graph.attached_to_boundary_event(this_node.id, edge_id) {
                     // rev_idx starts at 0, but if the 0th element is on `below` we want to
                     // have `below_out == 1`.
@@ -281,7 +337,23 @@ fn handle_nongateway_node(this_node_id: NodeId, graph: &mut Graph) {
                     break;
                 }
             }
+            // Reverse logic to `allows_for_vertical_message_flow_exit`.
+            let mut mf_is_new_sight = true;
+            let message_flow_could_exit_vertically = !graph
+                .iter_upwards_same_pool(StartAt::Node(this_node.id), None)
+                .any(|node| !node.is_long_edge_dummy());
             for (_, (idx, edge_id)) in it {
+                if message_flow_could_exit_vertically && e!(edge_id).is_message_flow() {
+                    if mf_is_new_sight {
+                        above_out = idx + 1;
+                        mf_is_new_sight = false;
+                    }
+                    // This should be forbidden anyway, boundary event attached to message flow, but
+                    // this is also our break condition.
+                    assert!(!graph.attached_to_boundary_event(this_node.id, edge_id));
+                    continue;
+                }
+                mf_is_new_sight = true;
                 if graph.attached_to_boundary_event(this_node.id, edge_id) {
                     // idx starts at 0, but if the 0th element is on `above` we want to
                     // have `above_out == 1`.
