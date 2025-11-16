@@ -5,6 +5,7 @@
 use crate::common::edge::DummyEdgeBendPoints;
 use crate::common::edge::Edge;
 use crate::common::edge::EdgeType;
+use crate::common::edge::FlowType;
 use crate::common::graph::Coord3;
 use crate::common::graph::DUMMY_NODE_WIDTH;
 use crate::common::graph::EdgeId;
@@ -13,6 +14,7 @@ use crate::common::graph::LaneId;
 use crate::common::graph::NodeId;
 use crate::common::graph::Place;
 use crate::common::graph::PoolAndLane;
+use crate::common::graph::PoolId;
 use crate::common::graph::StartAt;
 use crate::common::graph::add_node;
 use crate::common::graph::adjust_above_and_below_for_new_inbetween;
@@ -135,9 +137,164 @@ pub(crate) enum PlaceForBendDummy {
 ///  and in that case the outgoing edge will be assigned the respective E or W.
 ///
 fn handle_nongateway_node(this_node_id: NodeId, graph: &mut Graph) {
+    enum PortFlowType {
+        // The other end message flow is in an upwards pool (smaller PoolId).
+        // `would_like_to_go_vertical`: true if it has free vertical room to the inter-pool where
+        // it will bend. So, weaker than `must_go_vertical`, can be overridden.
+        MessageAbove { would_like_to_go_vertical: bool },
+        // The other end message flow is in a downwards pool (larger PoolId).
+        // `would_like_to_go_vertical`: true if it has free vertical room to the inter-pool where
+        // it will bend. So, weaker than `must_go_vertical`, can be overridden.
+        MessageBelow { would_like_to_go_vertical: bool },
+        Data,
+        Sequence,
+    }
+    struct PortInfo {
+        is_outgoing: bool, // else: `edge.incoming`
+        // `self` refers to `edge.outgoing[port_idx]`
+        port_idx: usize,
+        // Position of the port on the boundary of the node. (Well, for gateways and events we
+        // approximate a square form here. TODO This will be taken care of in some later stage as
+        // otherwise the `node.port_is_left_or_right()` function becomes complicated.)
+        coordinate: RelativePort,
+        must_go_vertical: Option<VerticalEdgeDocks>,
+        flow_type: PortFlowType,
+        requires_bend_dummy: Option<bool>,
+    }
+
     let this_node = &graph.nodes[this_node_id];
-    let mut incoming_ports = Vec::<RelativePort>::new();
-    let mut outgoing_ports = Vec::<RelativePort>::new();
+
+    let mut incoming_ports = this_node
+        .incoming
+        .iter()
+        .cloned()
+        .enumerate()
+        .map(|(port_idx, edge_id)| (port_idx, edge_id, &e!(edge_id)))
+        .map(|(port_idx, edge_id, edge)| {
+            let flow_type = match edge.flow_type {
+                FlowType::SequenceFlow => PortFlowType::Sequence,
+                FlowType::DataFlow(_) => PortFlowType::Data,
+                FlowType::MessageFlow(_) if from!(edge_id).pool < this_node.pool => {
+                    PortFlowType::MessageAbove {
+                        would_like_to_go_vertical: graph
+                            .iter_upwards_all_pools(
+                                StartAt::Node(this_node.id),
+                                Some(PoolAndLane {
+                                    pool: PoolId(
+                                        graph.interpool_y(from!(edge_id).pool, this_node.pool).0.0
+                                            + 1,
+                                    ),
+                                    lane: LaneId(0),
+                                }),
+                            )
+                            .all(|node| node.is_long_edge_dummy()),
+                    }
+                }
+                FlowType::MessageFlow(_) => PortFlowType::MessageBelow {
+                    would_like_to_go_vertical: graph
+                        .iter_downwards_all_pools(
+                            StartAt::Node(this_node.id),
+                            Some(PoolAndLane {
+                                pool: PoolId(
+                                    graph.interpool_y(from!(edge_id).pool, this_node.pool).0.0,
+                                ),
+                                lane: LaneId(usize::MAX),
+                            }),
+                        )
+                        .all(|node| node.is_long_edge_dummy()),
+                },
+            };
+
+            PortInfo {
+                is_outgoing: false,
+                port_idx,
+                coordinate: RelativePort { x: 0, y: 0 },
+                must_go_vertical: is_vertical_edge(edge_id, graph, this_node_id),
+                flow_type,
+                requires_bend_dummy: None,
+            }
+        })
+        .collect::<Vec<_>>();
+
+    let mut outgoing_ports = this_node
+        .outgoing
+        .iter()
+        .cloned()
+        .enumerate()
+        .map(|(port_idx, edge_id)| (port_idx, edge_id, &e!(edge_id)))
+        .map(|(port_idx, edge_id, edge)| {
+            let flow_type = match edge.flow_type {
+                FlowType::SequenceFlow => PortFlowType::Sequence,
+                FlowType::DataFlow(_) => PortFlowType::Data,
+                FlowType::MessageFlow(_) if this_node.pool < to!(edge_id).pool => {
+                    PortFlowType::MessageBelow {
+                        would_like_to_go_vertical: graph
+                            .iter_downwards_all_pools(
+                                StartAt::Node(this_node.id),
+                                Some(PoolAndLane {
+                                    pool: PoolId(
+                                        graph.interpool_y(this_node.pool, to!(edge_id).pool).0.0,
+                                    ),
+                                    lane: LaneId(usize::MAX),
+                                }),
+                            )
+                            .all(|node| node.is_long_edge_dummy()),
+                    }
+                }
+                FlowType::MessageFlow(_) => PortFlowType::MessageAbove {
+                    would_like_to_go_vertical: graph
+                        .iter_upwards_all_pools(
+                            StartAt::Node(this_node.id),
+                            Some(PoolAndLane {
+                                pool: PoolId(
+                                    graph.interpool_y(this_node.pool, to!(edge_id).pool).0.0 + 1,
+                                ),
+                                lane: LaneId(0),
+                            }),
+                        )
+                        .all(|node| node.is_long_edge_dummy()),
+                },
+            };
+
+            PortInfo {
+                is_outgoing: true,
+                port_idx,
+                coordinate: RelativePort { x: 0, y: 0 },
+                must_go_vertical: is_vertical_edge(edge_id, graph, this_node_id),
+                flow_type,
+                requires_bend_dummy: None,
+            }
+        })
+        .collect::<Vec<_>>();
+
+    {
+        let below_to_above_split_point = outgoing_ports.iter().rev().position(|port_info| {
+            match &port_info.must_go_vertical {
+                Some(VerticalEdgeDocks::Below) => return false,
+                Some(VerticalEdgeDocks::Above) => return true,
+                None => (),
+            }
+
+            match &port_info.flow_type {
+                PortFlowType::MessageAbove { .. } => return true,
+                PortFlowType::MessageBelow { .. } => return false,
+                // It was not a specifically downwards-going sequence flow, so it is going right.
+                // Hence, we crossed the border from below-ports to above-ports.
+                PortFlowType::Sequence => return true,
+                // Not sure. This could just as well stay on the right side which is fine, `below`
+                // will be split into `right-below` as well.
+                PortFlowType::Data => return false,
+            }
+        });
+        let (below, above) = if let Some(split_point) = below_to_above_split_point {
+            (
+                &outgoing_ports[split_point + 1..],
+                &outgoing_ports[..=split_point],
+            )
+        } else {
+            (&outgoing_ports[..], &outgoing_ports[0..0])
+        };
+    }
 
     let mut above_inc = 0;
     let mut above_out = 0;
@@ -225,143 +382,71 @@ fn handle_nongateway_node(this_node_id: NodeId, graph: &mut Graph) {
     }
 
     // Determine how many outgoing ports are `above` and `below` (and implicitly `right`).
-    match &this_node.outgoing[..] {
-        [] => (),
-        [single] => match is_vertical_edge(*single, graph, this_node_id) {
-            None => {
-                // A single boundary event usually is placed on the bottom side.
-                if graph.attached_to_boundary_event(this_node.id, *single) {
-                    below_out = 1;
-                }
-                if from!(*single).pool < to!(*single).pool {
-                    if !graph
-                        .iter_upwards_same_pool(StartAt::Node(this_node.id), None)
-                        .any(|node| !node.is_long_edge_dummy())
-                    {
-                        below_out = 1;
-                    }
-                } else if from!(*single).pool > to!(*single).pool {
-                    // <- clippy collapsible if
-                    if !graph
-                        .iter_downwards_same_pool(StartAt::Node(this_node.id), None)
-                        .any(|node| !node.is_long_edge_dummy())
-                    {
-                        above_out = 1;
-                    }
-                }
-            }
-            Some(VerticalEdgeDocks::Above) => {
-                above_out = 1;
-                assert!(!has_vertical_edge_above);
-                has_vertical_edge_above = true;
-                e!(*single).is_vertical = true;
-            }
-            Some(VerticalEdgeDocks::Below) => {
-                below_out = 1;
-                assert!(!has_vertical_edge_below);
-                has_vertical_edge_below = true;
-                e!(*single).is_vertical = true;
-            }
-        },
-        many @ [first, .., last] => {
-            // First check if `first` and `last` are vertical edges.
-            match is_vertical_edge(*first, graph, this_node_id) {
-                None => (),
-                Some(VerticalEdgeDocks::Above) => {
-                    above_out += 1;
-                    assert!(!has_vertical_edge_above);
-                    has_vertical_edge_above = true;
-                    e!(*first).is_vertical = true;
-                }
-                Some(VerticalEdgeDocks::Below) => {
-                    unreachable!("Can't be")
-                }
-            }
-            match is_vertical_edge(*last, graph, this_node_id) {
-                None => (),
-                Some(VerticalEdgeDocks::Above) => {
-                    unreachable!("Can't be")
-                }
-                Some(VerticalEdgeDocks::Below) => {
-                    below_out += 1;
-                    assert!(!has_vertical_edge_below);
-                    has_vertical_edge_below = true;
-                    e!(*last).is_vertical = true;
-                }
-            }
+    {
+        // By default boundary events are placed below the node. So
+        // start from the end to look for boundary events and a sequence flow.
+        // The sequence flow flips over from moving stuff on the `below` side to putting
+        // stuff on the `above` side. For example:
+        //       `(DF, BE1, DF, BE2, DF, MF, SF, DF, BE3, DF, BE4, DF)`
+        // Then everything up to (including) BE2 is on `above`, and everything
+        // starting from BE3 is on `below`. If there would be no SF, then instead
+        // everything starting from BE1 would be on `below`, and the first data flow would be on
+        // `right`.
+        let many = &this_node.outgoing[..];
 
-            // TODO This could also be an end event with multiple outgoing edges like a data flow
-            // and a message flow.
+        many.iter().position(|edge_id| {
+            let edge = e!(edge_id);
+            //if edge.isseq
+        });
 
-            // Now refine that number by looking at boundary events.
-            // By default boundary events are placed below the node. So
-            // start from the end to look for boundary events and a sequence flow.
-            // The sequence flow flips over from moving stuff on the `below` side to putting
-            // stuff on the `above` side. For example:
-            //       `(DF, BE1, DF, BE2, DF, MF, SF, DF, BE3, DF, BE4, DF)`
-            // Then everything up to (including) BE2 is on `above`, and everything
-            // starting from BE3 is on `below`. If there would be no SF, then instead
-            // everything starting from BE1 would be on `below`, and the first data flow would be on
-            // `right`.
-            let mut it = many
-                .iter()
-                .cloned()
-                .enumerate()
-                // That one was already covered, no need to process it again.
-                .skip(above_out)
-                .rev()
-                .enumerate()
-                // If the last one was actually a vertical sequence flow, then we *still* want
-                // to continue putting BEs on `below`. So just skip the vertical edge.
-                .skip(below_out);
-            let mut allows_for_vertical_message_flow_exit = true;
-            let message_flow_could_exit_vertically = !graph
-                .iter_downwards_same_pool(StartAt::Node(this_node.id), None)
-                .any(|node| !node.is_long_edge_dummy());
-            for (rev_idx, (_, edge_id)) in it.by_ref() {
-                if allows_for_vertical_message_flow_exit
-                    && message_flow_could_exit_vertically
-                    && e!(edge_id).is_message_flow()
-                {
-                    below_out = rev_idx + 1;
-                }
-                // As soon as anything else comes, we don't want the nodes on the bottom side
-                // anymore. Because then we just need to bend along, but then it is cleaner to just
-                // leave directly to the right side.
-                allows_for_vertical_message_flow_exit = false;
-                if graph.attached_to_boundary_event(this_node.id, edge_id) {
-                    // rev_idx starts at 0, but if the 0th element is on `below` we want to
-                    // have `below_out == 1`.
-                    below_out = rev_idx + 1;
-                } else if graph.edges[edge_id].is_sequence_flow() {
-                    break;
-                }
+        let mut it = many.iter().cloned().enumerate().rev().enumerate();
+        let mut allows_for_vertical_message_flow_exit = true;
+        let message_flow_could_exit_vertically = !graph
+            .iter_downwards_same_pool(StartAt::Node(this_node.id), None)
+            .any(|node| !node.is_long_edge_dummy());
+        for (rev_idx, (_, edge_id)) in it.by_ref() {
+            if allows_for_vertical_message_flow_exit
+                && message_flow_could_exit_vertically
+                && e!(edge_id).is_message_flow()
+            {
+                below_out = rev_idx + 1;
             }
-            // Reverse logic to `allows_for_vertical_message_flow_exit`.
-            let mut mf_is_new_sight = true;
-            let message_flow_could_exit_vertically = !graph
-                .iter_upwards_same_pool(StartAt::Node(this_node.id), None)
-                .any(|node| !node.is_long_edge_dummy());
-            for (_, (idx, edge_id)) in it {
-                if message_flow_could_exit_vertically && e!(edge_id).is_message_flow() {
-                    if mf_is_new_sight {
-                        above_out = idx + 1;
-                        mf_is_new_sight = false;
-                    }
-                    // This should be forbidden anyway, boundary event attached to message flow, but
-                    // this is also our break condition.
-                    assert!(!graph.attached_to_boundary_event(this_node.id, edge_id));
-                    continue;
-                }
-                mf_is_new_sight = true;
-                if graph.attached_to_boundary_event(this_node.id, edge_id) {
-                    // idx starts at 0, but if the 0th element is on `above` we want to
-                    // have `above_out == 1`.
+            // As soon as anything else comes, we don't want the nodes on the bottom side
+            // anymore. Because then we just need to bend along, but then it is cleaner to just
+            // leave directly to the right side.
+            allows_for_vertical_message_flow_exit = false;
+            if graph.attached_to_boundary_event(this_node.id, edge_id) {
+                // rev_idx starts at 0, but if the 0th element is on `below` we want to
+                // have `below_out == 1`.
+                below_out = rev_idx + 1;
+            } else if graph.edges[edge_id].is_sequence_flow() {
+                break;
+            }
+        }
+        // Reverse logic to `allows_for_vertical_message_flow_exit`.
+        let mut mf_is_new_sight = true;
+        let message_flow_could_exit_vertically = !graph
+            .iter_upwards_same_pool(StartAt::Node(this_node.id), None)
+            .any(|node| !node.is_long_edge_dummy());
+        for (_, (idx, edge_id)) in it {
+            if message_flow_could_exit_vertically && e!(edge_id).is_message_flow() {
+                if mf_is_new_sight {
                     above_out = idx + 1;
-                    // We found the right-most boundary event, so we can short-circuit away
-                    // here. Everything else left of it now must be on `above` as well.
-                    break;
+                    mf_is_new_sight = false;
                 }
+                // This should be forbidden anyway, boundary event attached to message flow, but
+                // this is also our break condition.
+                assert!(!graph.attached_to_boundary_event(this_node.id, edge_id));
+                continue;
+            }
+            mf_is_new_sight = true;
+            if graph.attached_to_boundary_event(this_node.id, edge_id) {
+                // idx starts at 0, but if the 0th element is on `above` we want to
+                // have `above_out == 1`.
+                above_out = idx + 1;
+                // We found the right-most boundary event, so we can short-circuit away
+                // here. Everything else left of it now must be on `above` as well.
+                break;
             }
         }
     }
@@ -672,6 +757,8 @@ fn is_vertical_edge(
             if !node.is_any_dummy() {
                 // This function should run before gateway bend dummies are added. If this is not
                 // possible then this logic needs to be adapted, will be a bit annoying...
+                // TODO Actually, gateways should just not be taken out, but xy should just account
+                // for the fact that it does not apply the above/below constraints.
                 assert!(
                     !matches!(node.node_type, NodeType::BendDummy { originating_node , .. } if n!(originating_node).is_gateway())
                 );

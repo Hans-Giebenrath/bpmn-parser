@@ -242,6 +242,26 @@ impl Graph {
                 && edge.from == node_id)
     }
 
+    pub fn interpool_y(
+        &self,
+        from_pool: PoolId,
+        to_pool: PoolId,
+    ) -> (/* bends after this pool */ PoolId, usize) {
+        // MFs bend away immediately when they leave their `from` pool. Port ordering is set up as per
+        // this convention.
+        let pool_id = if from_pool < to_pool {
+            from_pool
+        } else {
+            assert!(
+                from_pool > to_pool,
+                "from_pool: {from_pool:?}, to_pool: {to_pool:?}"
+            );
+            PoolId(from_pool.0 - 1)
+        };
+        let reference_pool = &self.pools[pool_id];
+        (pool_id, reference_pool.y.strict_add(reference_pool.height))
+    }
+
     pub(crate) fn get_bottom_node(&self, pool_lane: PoolAndLane, layer: LayerId) -> Option<NodeId> {
         let PoolAndLane { pool, lane } = pool_lane;
         let mut it = self.pools[pool].lanes[lane].nodes.iter().cloned();
@@ -342,6 +362,53 @@ impl Graph {
                 None
             }
         })
+    }
+
+    pub(crate) fn iter_upwards_all_pools(
+        &self,
+        start: StartAt,
+        final_pool_lane_to_consider: Option<PoolAndLane>,
+    ) -> impl Iterator<Item = &Node> {
+        todo!();
+        None.into_iter()
+        // Copy-pasta from iter_downwards_all_pools
+
+        //        let (first_pool, layer) = match &start {
+        //            StartAt::Node(start_node_id) => {
+        //                let current_node = &self.nodes[*start_node_id];
+        //                (current_node.pool, current_node.layer_id)
+        //            }
+        //            StartAt::PoolLane(Coord3 {
+        //                pool_and_lane,
+        //                layer,
+        //                ..
+        //            }) => (pool_and_lane.pool, *layer),
+        //        };
+        //        self.iter_downwards_same_pool(start, final_pool_lane_to_consider)
+        //            .chain(
+        //                self.pools
+        //                    .iter()
+        //                    .enumerate()
+        //                    .take(
+        //                        final_pool_lane_to_consider
+        //                            .map(|poolane| poolane.pool.0.saturating_add(1))
+        //                            .unwrap_or(usize::MAX),
+        //                    )
+        //                    .skip(first_pool.0.saturating_add(1))
+        //                    .flat_map(move |(pool_idx, _)| {
+        //                        self.iter_downwards_same_pool(
+        //                            StartAt::PoolLane(Coord3 {
+        //                                pool_and_lane: PoolAndLane {
+        //                                    pool: PoolId(pool_idx),
+        //                                    lane: LaneId(0),
+        //                                },
+        //                                layer,
+        //                                half_layer: false,
+        //                            }),
+        //                            final_pool_lane_to_consider,
+        //                        )
+        //                    }),
+        //            )
     }
 
     pub(crate) fn get_top_node(&self, pool_lane: PoolAndLane, layer: LayerId) -> Option<NodeId> {

@@ -857,22 +857,6 @@ fn determine_segment_layers_up_or_down_edges(
     routing_edges.len()
 }
 
-fn interpool_y(graph: &Graph, from_pool: PoolId, to_pool: PoolId) -> (PoolId, usize) {
-    // MFs bend away immediately when they leave their `from` pool. Port ordering is set up as per
-    // this convention.
-    let pool_id = if from_pool < to_pool {
-        from_pool
-    } else {
-        assert!(
-            from_pool > to_pool,
-            "from_pool: {from_pool:?}, to_pool: {to_pool:?}"
-        );
-        PoolId(from_pool.0 - 1)
-    };
-    let reference_pool = &graph.pools[pool_id];
-    (pool_id, reference_pool.y.strict_add(reference_pool.height))
-}
-
 fn get_layered_edges(graph: &mut Graph) -> (Vec<SegmentsOfSameLayer>, MessageFlowBendPointStore) {
     let mut mf_store = MessageFlowBendPointStore::default();
     let mut edge_layers = Vec::<Vec<VerticalSegment>>::new();
@@ -942,7 +926,7 @@ fn get_layered_edges(graph: &mut Graph) -> (Vec<SegmentsOfSameLayer>, MessageFlo
 
         let from_hor = from_node.is_bend_dummy() || from_node.port_is_left_or_right(start_y);
         let to_hor = to_node.is_bend_dummy() || to_node.port_is_left_or_right(end_y);
-        let (bends_after_pool, interpool_y) = interpool_y(graph, from_node.pool, to_node.pool);
+        let (bends_after_pool, interpool_y) = graph.interpool_y(from_node.pool, to_node.pool);
         if from_hor && to_hor {
             if from_node.layer_id.0 + 1 == to_node.layer_id.0 {
                 // The edge goes to the next layer, so there is just one vertical segment. No
