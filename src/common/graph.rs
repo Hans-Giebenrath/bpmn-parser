@@ -254,7 +254,7 @@ impl Graph {
         } else {
             assert!(
                 from_pool > to_pool,
-                "from_pool: {from_pool:?}, to_pool: {to_pool:?}"
+                "from_pool: {from_pool:?}, to_pool: {to_pool:?}, self: \n{self:?}"
             );
             PoolId(from_pool.0 - 1)
         };
@@ -369,46 +369,47 @@ impl Graph {
         start: StartAt,
         final_pool_lane_to_consider: Option<PoolAndLane>,
     ) -> impl Iterator<Item = &Node> {
-        todo!();
-        None.into_iter()
-        // Copy-pasta from iter_downwards_all_pools
-
-        //        let (first_pool, layer) = match &start {
-        //            StartAt::Node(start_node_id) => {
-        //                let current_node = &self.nodes[*start_node_id];
-        //                (current_node.pool, current_node.layer_id)
-        //            }
-        //            StartAt::PoolLane(Coord3 {
-        //                pool_and_lane,
-        //                layer,
-        //                ..
-        //            }) => (pool_and_lane.pool, *layer),
-        //        };
-        //        self.iter_downwards_same_pool(start, final_pool_lane_to_consider)
-        //            .chain(
-        //                self.pools
-        //                    .iter()
-        //                    .enumerate()
-        //                    .take(
-        //                        final_pool_lane_to_consider
-        //                            .map(|poolane| poolane.pool.0.saturating_add(1))
-        //                            .unwrap_or(usize::MAX),
-        //                    )
-        //                    .skip(first_pool.0.saturating_add(1))
-        //                    .flat_map(move |(pool_idx, _)| {
-        //                        self.iter_downwards_same_pool(
-        //                            StartAt::PoolLane(Coord3 {
-        //                                pool_and_lane: PoolAndLane {
-        //                                    pool: PoolId(pool_idx),
-        //                                    lane: LaneId(0),
-        //                                },
-        //                                layer,
-        //                                half_layer: false,
-        //                            }),
-        //                            final_pool_lane_to_consider,
-        //                        )
-        //                    }),
-        //            )
+        let (first_pool, layer) = match &start {
+            StartAt::Node(start_node_id) => {
+                let current_node = &self.nodes[*start_node_id];
+                (current_node.pool, current_node.layer_id)
+            }
+            StartAt::PoolLane(Coord3 {
+                pool_and_lane,
+                layer,
+                ..
+            }) => (pool_and_lane.pool, *layer),
+        };
+        self.iter_upwards_same_pool(start, final_pool_lane_to_consider)
+            .chain(
+                self.pools
+                    .iter()
+                    .enumerate()
+                    // Don't take the `first_pool` itself, as this is iterated in the outermost call
+                    // to `self.iter_upwards_same_pool()`.
+                    .take(first_pool.0)
+                    .skip(
+                        final_pool_lane_to_consider
+                            .map(|poolane| poolane.pool.0)
+                            .unwrap_or(0),
+                    )
+                    .rev()
+                    .flat_map(move |(pool_idx, pool)| {
+                        self.iter_upwards_same_pool(
+                            StartAt::PoolLane(Coord3 {
+                                pool_and_lane: PoolAndLane {
+                                    pool: PoolId(pool_idx),
+                                    // There should always be *some* lane for a pool (is this also
+                                    // true for collapsed pools?), so can safely subtract one.
+                                    lane: LaneId(pool.lanes.len().strict_sub(1)),
+                                },
+                                layer,
+                                half_layer: false,
+                            }),
+                            final_pool_lane_to_consider,
+                        )
+                    }),
+            )
     }
 
     pub(crate) fn get_top_node(&self, pool_lane: PoolAndLane, layer: LayerId) -> Option<NodeId> {
@@ -538,6 +539,9 @@ impl Graph {
                             .map(|poolane| poolane.pool.0.saturating_add(1))
                             .unwrap_or(usize::MAX),
                     )
+                    // ` + 1`: Because we did the first pool already in the outermost/first call to
+                    // `self.iter_downwards_same_pool`. That one has a different `start` and hence
+                    // must be treated differently.
                     .skip(first_pool.0.saturating_add(1))
                     .flat_map(move |(pool_idx, _)| {
                         self.iter_downwards_same_pool(

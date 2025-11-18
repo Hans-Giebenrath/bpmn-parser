@@ -1,0 +1,50 @@
+= P 1
+
+== L 1
+# S
+. E
+== L 2
+
+# S
+. E
+
+= P 2
+
+== L 1
+
+F<-be0
+. BE0
+F<-be1
+. BE1
+
+== L 2
+
+# Start
+- Task
+M! ->be0
+T! ->be1
+C! ->be2
+S! ->be3
+. End
+
+== L 3
+
+F<-be2
+. BE2
+F<-be3
+. BE3
+
+= P 3
+
+== L 1
+# S
+. E
+== L 2
+
+# S
+. E
+
+MF <-p1l1e ->p2l2task
+MF <-p1l2e ->p2l2task
+MF <-p3l1e ->p2l2task
+MF <-p3l2e ->p2l2task

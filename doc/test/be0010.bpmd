@@ -1,0 +1,16 @@
+= P
+
+== L 1
+
+# Start
+- Task
+M! ->be0
+T! ->be1
+. End
+
+== L 2
+
+F<-be0
+. BE0
+F<-be1
+. BE1

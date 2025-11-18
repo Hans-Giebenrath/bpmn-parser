@@ -590,7 +590,7 @@ fn determine_segment_layers(
         |left: &&VerticalSegment, right: &&VerticalSegment| left.min_y() < right.min_y(),
     )
     .for_each(|new_edge| {
-        sliding_window_of_segments.retain(|old_edge| old_edge.max_y() > new_edge.min_y());
+        sliding_window_of_segments.retain(|old_edge| old_edge.max_y() >= new_edge.min_y());
         sliding_window_of_segments.push(new_edge);
         sliding_window_of_segments.sort_unstable_by_key(|edge| edge.idx);
         let idx = sliding_window_of_segments
@@ -1238,7 +1238,11 @@ impl LogicalIdx {
     fn new(len: usize, reverse: bool) -> Self {
         Self {
             rev_multiplier: if reverse { -1 } else { 1 },
-            rev_offset: if reverse { (len - 1) as isize } else { 0 },
+            rev_offset: if reverse && len > 0 {
+                (len - 1) as isize
+            } else {
+                0
+            },
         }
     }
 
