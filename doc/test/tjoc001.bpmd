@@ -51,12 +51,11 @@ OD E3.1 Input Data <-p3.1 ->p3.2 ->p3.3
  & E3.2 Protected Input Data <-p3.3 ->p3.4
  & E3.2 Protected Input Data <-tee-received-input-data ->p3.5.1 ->p3.5.2
  & E3.3 Protected Input Data Store <-p3.5.2 ->p4.1 ->p4.2
- // Buggy Visibility Table analysis TODO, missing protection
- //& E3.3 Protected Input Data Store <-p4.2
-SD E4.1 Output Data <-p5.4
- & E4.1 Protected Output Data Store <-p4.1 ->p5.2 ->p5.3
+ & E3.3 Protected Input Data Store <-p4.2
+SD E4.1 Protected Output Data Store <-p4.1 ->p5.2 ->p5.3
  & E4.1 Protected Output Data Store <-p5.3
  & E4.1 Protected Output Data Store <-p5.1 ->p5.4
+ & E4.1 Output Data <-p5.4
 
 MF <-p3.4 ->tee-received
 
