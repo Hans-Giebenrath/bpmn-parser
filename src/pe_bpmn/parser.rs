@@ -146,7 +146,7 @@ impl Parser {
                     (None, None) => {
                         if permitted_sdes.is_empty() {
                             return Err(vec![
-                                ("You need to define IDs when you use pre-sent and post-received simultaneously".to_string(), 
+                                ("You need to define IDs when you use pre-sent and post-received simultaneously".to_string(),
                                 self.context.current_token_coordinate, Level::Error)
                                 ]
                             );
@@ -837,7 +837,7 @@ impl Parser {
             .iter()
             .map(|edge_id| &self.graph.edges[*edge_id])
             .any(|edge| {
-                (edge.is_message_flow() || edge.is_message_flow()) && {
+                (edge.is_message_flow() || edge.is_data_flow()) && {
                     edge.get_transported_data()
                         .iter()
                         .any(|sde_id| !node_transportated_data.contains(sde_id))

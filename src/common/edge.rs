@@ -83,14 +83,21 @@ pub struct Edge {
     /// TODO did I keep in mind to copy this property to replacement dummy nodes?
     pub attached_to_boundary_event: Option<BoundaryEvent>,
 
-    // For vertical edges or edge segments. E.g. the part which leaves a real node and then goes
-    // into a bend dummy. Or for message flows or sequence flows which go straight up or down
-    // without having any obstacle (non-dummy) in the way.
+    // For vertical edges or edge segments, primarily sequence flows and data flows. E.g. the part
+    // which leaves a real node and then goes into a bend dummy. Or for message flows or sequence
+    // flows which go straight up or down without having any obstacle (non-dummy) in the way.
     // (Explicitly not meant for loop edges! They first go to the side, then up/down, and then back
     // into the same layer. They are handled as regular sequence flows.)
     // This information is used in the edge routing phase of direct edges. It could be derived from
     // scratch again, but this is computationally rather complex. Since this is already computed
     // once, the information is just stored as a bool.
+    // TODO this is not 100% adequate. Thing is, due to message flows and boundary events, the upper
+    // port of a vertical edge could be at relative x 80 and the lower port at relative x 20. So
+    // this means that everywhere is the possibility of additional horizontal edge segments which
+    // must be coordinated with other dummy nodes (both long edge and bend). Likely should be its
+    // own category? `HorizontalSegmentDummy`. Then those could also have an `is_vertical == true`
+    // set, but right now this is not set for message flows. Then the special casing of
+    // `is_vertical` would need to disappear from `straight_edge_routing`.
     pub is_vertical: bool,
 
     pub stroke_color: Option<String>,

@@ -547,7 +547,10 @@ fn partition_ports<'a>(ports: &'a mut [PortInfo]) -> PartitionedPortInfo<'a> {
     {
         let mut requires_bend_dummy = false;
         for port_info in top.iter_mut() {
-            if port_info.is_boundary_event {
+            if !requires_bend_dummy
+                && (port_info.is_boundary_event
+                    || matches!(port_info.flow_type, PortFlowType::MessageAbove { would_like_to_go_vertical } if !would_like_to_go_vertical))
+            {
                 requires_bend_dummy = true;
             }
             port_info.requires_bend_dummy = requires_bend_dummy;
@@ -555,7 +558,10 @@ fn partition_ports<'a>(ports: &'a mut [PortInfo]) -> PartitionedPortInfo<'a> {
 
         let mut requires_bend_dummy = false;
         for port_info in bottom.iter_mut().rev() {
-            if port_info.is_boundary_event {
+            if !requires_bend_dummy
+                && (port_info.is_boundary_event
+                    || matches!(port_info.flow_type, PortFlowType::MessageBelow { would_like_to_go_vertical } if !would_like_to_go_vertical))
+            {
                 requires_bend_dummy = true;
             }
             port_info.requires_bend_dummy = requires_bend_dummy;

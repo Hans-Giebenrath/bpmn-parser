@@ -34,7 +34,6 @@ pub fn find_straight_edges(graph: &mut Graph) {
 
     data_edge_routing(&matrix, graph);
     sequence_edge_routing(graph);
-    message_edge_routing(&matrix, graph);
 }
 
 fn add_to_matrix(
@@ -80,6 +79,10 @@ fn sequence_edge_routing(graph: &mut Graph) {
             // phase, hence they are skipped here.
             continue;
         }
+        assert!(
+            !edge.is_vertical,
+            "Check whether this should be handled via new HorizontalSegmentDummy nodes."
+        );
         let edge_id = EdgeId(edge_idx);
         let [start @ (_, start_y), end @ (_, end_y)] = graph.start_and_end_ports(edge_id);
         if start_y != end_y {
@@ -156,44 +159,6 @@ fn data_edge_routing(matrix: &HashMap<usize, (usize, usize, usize, usize)>, grap
             // so we can just leave them in the state which they are. Also no need to
             // touch the outgoing/incoming fields as they are no longer looked at.
         }
-    }
-}
-
-// MFs which go straight up or down will be routed directly.
-fn message_edge_routing(_matrix: &HashMap<usize, (usize, usize, usize, usize)>, graph: &mut Graph) {
-    for (edge_idx, edge) in graph.edges.iter_mut().enumerate() {
-        let edge_id = EdgeId(edge_idx);
-        if !edge.is_message_flow() || !edge.is_vertical {
-            continue;
-        }
-
-        let EdgeType::Regular {
-            bend_points: out_bend_points,
-            ..
-        } = &mut edge.edge_type
-        else {
-            continue;
-        };
-
-        // TODO this is present as `from_and_to_xy` in `replace_dummy_nodes`, should be moved to
-        // `graph` and return an array instead of vector.
-        let mut bend_points = vec![
-            n!(edge.from).port_of_outgoing(edge_id).as_pair(),
-            n!(edge.to).port_of_incoming(edge_id).as_pair(),
-        ];
-        // NB this is a bit brain-exploding probably. Thing is, there could be many ports, and then
-        // the one port could be shifted more to the side than the other port. But we want the ports
-        // to be x-aligned, to have a perfectly vertical line (not slightly diagonal). My hypothesis
-        // is that there is never a collision if we take the `min` value. But this is just a bad
-        // hypothesis / gamble and probably needs to be revisited in the future.
-        let min_x = bend_points[0].0.min(bend_points[1].0);
-        bend_points[0].0 = min_x;
-        bend_points[1].0 = min_x;
-        if edge.is_reversed {
-            bend_points.reverse();
-        }
-
-        *out_bend_points = RegularEdgeBendPoints::FullyRouted(bend_points);
     }
 }
 

@@ -109,10 +109,6 @@ impl PoolAndLane {
         pool: PoolId(0),
         lane: LaneId(0),
     };
-    pub const MAX: Self = PoolAndLane {
-        pool: PoolId(usize::MAX),
-        lane: LaneId(usize::MAX),
-    };
 }
 
 pub struct Coord3 {
@@ -326,6 +322,9 @@ impl Graph {
         };
         let final_pool_lane_to_consider = final_pool_lane_to_consider.unwrap_or(PoolAndLane::MIN);
         from_fn(move || {
+            if graph.pools[current_pool_and_lane.pool].lanes.is_empty() {
+                return None;
+            }
             let Some(current_node) = current_node_opt else {
                 // Should only enter this once at the beginning for `LayerIterationStart::PoolLane`.
                 current_node_opt = graph
@@ -394,13 +393,13 @@ impl Graph {
                             .unwrap_or(0),
                     )
                     .rev()
+                    .filter(|(_, pool)| !pool.lanes.is_empty())
                     .flat_map(move |(pool_idx, pool)| {
                         self.iter_upwards_same_pool(
                             StartAt::PoolLane(Coord3 {
                                 pool_and_lane: PoolAndLane {
                                     pool: PoolId(pool_idx),
-                                    // There should always be *some* lane for a pool (is this also
-                                    // true for collapsed pools?), so can safely subtract one.
+                                    // Previous `filter` skips pools without lanes.
                                     lane: LaneId(pool.lanes.len().strict_sub(1)),
                                 },
                                 layer,
@@ -475,8 +474,21 @@ impl Graph {
                 ..
             }) => (None, pool_and_lane, layer),
         };
-        let final_pool_lane_to_consider = final_pool_lane_to_consider.unwrap_or(PoolAndLane::MAX);
+        let final_pool_lane_to_consider =
+            final_pool_lane_to_consider.unwrap_or_else(|| PoolAndLane {
+                pool: current_pool_and_lane.pool,
+                lane: LaneId(
+                    self.pools[current_pool_and_lane.pool]
+                        .lanes
+                        .len()
+                        // `from_fn` has a check in the beginning to return early for empty pools.
+                        .strict_sub(1),
+                ),
+            });
         from_fn(move || {
+            if graph.pools[current_pool_and_lane.pool].lanes.is_empty() {
+                return None;
+            }
             let Some(current_node) = current_node_opt else {
                 // Should only enter this once at the beginning for `LayerIterationStart::PoolLane`.
                 current_node_opt = graph
@@ -543,6 +555,7 @@ impl Graph {
                     // `self.iter_downwards_same_pool`. That one has a different `start` and hence
                     // must be treated differently.
                     .skip(first_pool.0.saturating_add(1))
+                    .filter(|(_, pool)| !pool.lanes.is_empty())
                     .flat_map(move |(pool_idx, _)| {
                         self.iter_downwards_same_pool(
                             StartAt::PoolLane(Coord3 {

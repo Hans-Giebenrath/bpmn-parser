@@ -55,8 +55,6 @@ This tool tries to fall into the same niche as PlantUML and similar tools. The t
 Layout (probably not a good first issue):
 
 * Bug fixes (see separate TODO file)
-* Boundary Events
-* Message Flow Orthogonal Routing
 * Gateway *happy path* marking (though this might fall into the layout-instructions section): right
   now the gateway nodes are balanced between outgoing edges. But sometimes one outgoing edge is the
   *happy path* and this should go straight out. Non-happy path edges lead to tasks to handle
@@ -65,6 +63,10 @@ Layout (probably not a good first issue):
 * Cycles
 * Nested states
 * Separate Interrupt States
+* Make data nodes in half-layers more integrated (force message flow endpoint nodes into other
+  layers if they would otherwise go through a half layer with a data node, similar mechanism for
+  when the message flow ends in the same lane, to ensure the crossing minimization phase accounts
+  for that)
 * Layout-Instructions (`@a above @b` etc)
 * Labels could be positioned a tidbit more intelligently to not cross outgoing/incoming edges
   (probably an easy issue)
@@ -89,8 +91,10 @@ Non-Layout (good for contributors):
   the diagram. In that regard I deem it impossible to achieve a *perfect* diagram layout.
 * Support of *grouping*. This is just not compatible with the layout algorithm being employed.
   Groups can stretch across lanes and pools, but the algorithm is primarily lane-focused with just
-  some inter-lane and inter-pool extensions. That is to say, I think one can achieve grouping for
+  some inter-lane and inter-pool extensions. That is to say, I think one could achieve grouping for
   simple use cases, but better just use colors to denote that some nodes are semantically related.
+  So I think that, unless someone points me to a fun algorithm to make it work for non-trivial cases
+  (multiple nodes, across lanes and pools), grouping will not happen.
 
 ## DSL Syntax Overview
 

@@ -861,6 +861,7 @@ fn get_layered_edges(graph: &mut Graph) -> (Vec<SegmentsOfSameLayer>, MessageFlo
     let mut mf_store = MessageFlowBendPointStore::default();
     let mut edge_layers = Vec::<Vec<VerticalSegment>>::new();
     edge_layers.resize_with(graph.num_layers + 1, Default::default);
+    let mut vertical_message_flows = Vec::new();
 
     for (edge_idx, edge) in graph.edges.iter().enumerate() {
         if edge.is_vertical {
@@ -1020,27 +1021,24 @@ fn get_layered_edges(graph: &mut Graph) -> (Vec<SegmentsOfSameLayer>, MessageFlo
         } else {
             assert!(!to_hor);
             assert!(!from_hor);
-            //let segment_vec = &mut edge_layers[from_node.layer_id.0 + 1];
-            //segment_vec.push(VerticalSegment {
-            //    id: edge_id,
-            //    start_y: interpool_y,
-            //    end_y,
-            //    idx: 0,
-            //    idx2: None,
-            //    alignment: Alignment::Center,
-            //    is_message_flow: true,
-            //    x_coordinate: Default::default(),
-            //});
-            mf_store.register_edge(
-                edge_id,
-                MessageFlowBendState::VerHorVer {
-                    bends_after_pool,
-                    interpool_bendpoint1_x: start_x,
-                    interpool_bendpoint2_x: end_x,
-                },
-            );
+            if start_x != end_x {
+                mf_store.register_edge(
+                    edge_id,
+                    MessageFlowBendState::VerHorVer {
+                        bends_after_pool,
+                        interpool_bendpoint1_x: start_x,
+                        interpool_bendpoint2_x: end_x,
+                    },
+                );
+            } else {
+                vertical_message_flows.push(edge_id);
+            }
         }
     }
+
+    vertical_message_flows
+        .into_iter()
+        .for_each(|edge_id| finish_straight_vertical_message_flow(graph, edge_id));
 
     let mut result: Vec<SegmentsOfSameLayer> = vec![];
     for mut edge_layer in edge_layers.into_iter() {
@@ -1116,7 +1114,7 @@ fn get_layered_mfs(
     edge_layers.resize_with(graph.pools.len(), Default::default);
 
     for (pool_id, edge_id, StartEnd { start, end }) in mf_store.iter_edges_for_break_after_pool() {
-        assert_ne!(start, end);
+        assert_ne!(start, end, "{graph:?}");
         let ((_, start_y), (_, end_y)) = transpose(
             (start, 0),
             (end, 0),
@@ -1249,4 +1247,27 @@ impl LogicalIdx {
     fn compute(&self, idx: usize) -> usize {
         (self.rev_offset + self.rev_multiplier * idx as isize) as usize
     }
+}
+
+fn finish_straight_vertical_message_flow(graph: &mut Graph, edge_id: EdgeId) {
+    // TODO this is present as `from_and_to_xy` in `replace_dummy_nodes`, should be moved to
+    // `graph` and return an array instead of vector.
+    let mut bend_points = vec![
+        from!(edge_id).port_of_outgoing(edge_id).as_pair(),
+        to!(edge_id).port_of_incoming(edge_id).as_pair(),
+    ];
+
+    if e!(edge_id).is_reversed {
+        bend_points.reverse();
+    }
+
+    let EdgeType::Regular {
+        bend_points: out_bend_points,
+        ..
+    } = &mut e!(edge_id).edge_type
+    else {
+        unreachable!();
+    };
+
+    *out_bend_points = RegularEdgeBendPoints::FullyRouted(bend_points);
 }

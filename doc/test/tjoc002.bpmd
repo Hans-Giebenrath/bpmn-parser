@@ -1,0 +1,21 @@
+= Computing Parties
+
+# Receive Request
+- P5.2: Send Protected Output Data store
+- P5.3: Delete Protected Output Data
+. Finish
+
+= Output Party
+
+# Start
+- P5.1: Retrieve Protected Output Data
+- P5.4: Remove protection of the Output Data
+. Finish
+
+SD E4.1: Protected Output Data store <-p5.3 ->p5.2
+ & E4.1: Protected Output Data store <-P5.1 ->p5.4
+// TODO this should be `O&` as this is semantically the same object.
+OD E5.1: Output Data <-p5.4
+
+MF Request for Protected Output Data <-p5.1 ->cp-receive
+MF <-p5.2 ->p5.1

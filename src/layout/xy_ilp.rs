@@ -147,7 +147,7 @@ fn assign_y(graph: &mut Graph, pool: PoolId, lane: LaneId, min_y_value: usize) -
             (FlowType::DataFlow(_), true) => graph.config.long_data_edge_weight,
             (FlowType::MessageFlow(_), _) => graph.config.message_edge_weight,
         };
-        if edge.is_vertical {
+        if edge.is_vertical && edge.is_message_flow() {
             // Vertical edges should also be kept short, but not at the expense of malaligning
             // the bend dummy node and the neighboring node.
             edge_weight *= 0.1;
