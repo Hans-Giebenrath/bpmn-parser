@@ -1,0 +1,30 @@
+// GENERATE VISIBILITY TABLE
+= P1
+
+== L1
+
+# Start
+- Protect
+. Send
+
+= P2
+
+== L1
+
+# Receive
+- TEE
+. End
+
+OD Data ->protect
+ & Data <-protect ->send
+ & Protected Data <-receive ->tee
+
+MF <-send ->receive
+
+[pe-bpmn
+  (tee-tasks @tee)
+  (tee-external-root-access)
+  (tee-in-protect @send @p1)
+  (stroke-color #a9d31e)
+  (fill-color #eef7d0)
+]

@@ -21,6 +21,7 @@ use crate::common::node::BendDummyKind;
 use crate::common::node::LayerId;
 use crate::common::node::NodeType;
 use crate::common::node::RelativePort;
+use itertools::Itertools;
 use proc_macros::{e, from, n, to};
 use std::collections::HashSet;
 
@@ -135,6 +136,7 @@ pub(crate) enum PlaceForBendDummy {
 ///
 fn handle_nongateway_node(this_node_id: NodeId, graph: &mut Graph) {
     let this_node = &graph.nodes[this_node_id];
+    let this_layer = this_node.layer_id;
 
     let top_barrier = top_barrier(graph, this_node_id);
     let bottom_barrier = bottom_barrier(graph, this_node_id);
@@ -149,7 +151,11 @@ fn handle_nongateway_node(this_node_id: NodeId, graph: &mut Graph) {
         .cloned()
         .map(|edge_id| {
             let edge = &e!(edge_id);
-            let other_pool_lane = from!(edge_id).pool_and_lane();
+            let Coord3 {
+                pool_and_lane: other_pool_lane,
+                layer: other_layer,
+                ..
+            } = from!(edge_id).coord3();
             let flow_type = match edge.flow_type {
                 FlowType::SequenceFlow => PortFlowType::Sequence,
                 FlowType::DataFlow(_) => PortFlowType::Data,
@@ -196,7 +202,9 @@ fn handle_nongateway_node(this_node_id: NodeId, graph: &mut Graph) {
                 .flatten();
 
             PortInfo {
+                is_incoming: true,
                 other_pool_lane,
+                other_layer,
                 edge_id,
                 coordinate: RelativePort { x: 0, y: 0 },
                 must_go_vertical,
@@ -213,7 +221,11 @@ fn handle_nongateway_node(this_node_id: NodeId, graph: &mut Graph) {
         .cloned()
         .map(|edge_id| {
             let edge = &e!(edge_id);
-            let other_pool_lane = to!(edge_id).pool_and_lane();
+            let Coord3 {
+                pool_and_lane: other_pool_lane,
+                layer: other_layer,
+                ..
+            } = to!(edge_id).coord3();
             let flow_type = match edge.flow_type {
                 FlowType::SequenceFlow => PortFlowType::Sequence,
                 FlowType::DataFlow(_) => PortFlowType::Data,
@@ -260,7 +272,9 @@ fn handle_nongateway_node(this_node_id: NodeId, graph: &mut Graph) {
                 .flatten();
 
             PortInfo {
+                is_incoming: false,
                 other_pool_lane,
+                other_layer,
                 edge_id,
                 coordinate: RelativePort { x: 0, y: 0 },
                 must_go_vertical,
@@ -271,8 +285,50 @@ fn handle_nongateway_node(this_node_id: NodeId, graph: &mut Graph) {
         })
         .collect::<Vec<_>>();
 
+    let top_and_bottom_merger = |inc: &&mut PortInfo, outg: &&mut PortInfo| {
+        //
+        if inc.must_go_vertical.is_none()
+            && matches!(inc.flow_type, PortFlowType::Sequence | PortFlowType::Data)
+        {
+            // Incoming sequence flows and data flows always come first.
+            return true;
+        }
+
+        if outg.must_go_vertical.is_none()
+            && matches!(outg.flow_type, PortFlowType::Sequence | PortFlowType::Data)
+        {
+            // Outgoing sequence flows and data flows always come last.
+            return true;
+        }
+
+        if inc.other_layer < this_layer {
+            if outg.other_layer < this_layer {
+                return false;
+            } else {
+                return true;
+            }
+        }
+
+        if outg.other_layer <= this_layer {
+            return false;
+        } else {
+            return true;
+        }
+    };
+
     let mut incoming = partition_ports(&mut incoming_ports);
     let mut outgoing = partition_ports(&mut outgoing_ports);
+    let top = incoming
+        .top
+        .iter_mut()
+        .rev()
+        .merge_by(outgoing.top.iter_mut(), top_and_bottom_merger)
+        .collect::<Vec<_>>();
+    let bottom = incoming
+        .bottom
+        .iter_mut()
+        .merge_by(outgoing.bottom.iter_mut().rev(), top_and_bottom_merger)
+        .collect::<Vec<_>>();
 
     /********************************************************/
     /*  PHASE 2: Assign specific XY positions to each port  */
@@ -281,22 +337,11 @@ fn handle_nongateway_node(this_node_id: NodeId, graph: &mut Graph) {
     // At this point we know exactly how many ports are at what side, so we can do simple math
     // stuff to place the ports using `points_on_side`.
     // above_coordinates
-    for (x, port_info) in points_on_side(this_node.width, incoming.top.len() + outgoing.top.len())
-        .zip(incoming.top.iter_mut().rev().chain(outgoing.top.iter_mut()))
-    {
+    for (x, port_info) in points_on_side(this_node.width, top.len()).zip(top.iter_mut()) {
         port_info.coordinate = RelativePort { x, y: 0 };
     }
     // below_coordinates
-    for (x, port_info) in points_on_side(
-        this_node.width,
-        incoming.bottom.len() + outgoing.bottom.len(),
-    )
-    .zip(
-        incoming
-            .bottom
-            .iter_mut()
-            .chain(outgoing.bottom.iter_mut().rev()),
-    ) {
+    for (x, port_info) in points_on_side(this_node.width, bottom.len()).zip(bottom.iter_mut()) {
         port_info.coordinate = RelativePort {
             x,
             y: this_node.height,
@@ -347,7 +392,7 @@ fn handle_nongateway_node(this_node_id: NodeId, graph: &mut Graph) {
     assert!(DUMMY_NODE_WIDTH >= this_node_width);
     let relative_port_x = |x| (x + (DUMMY_NODE_WIDTH / 2)) - (this_node_width / 2);
 
-    let requires_bend_dummies = |port_info: &&PortInfo| port_info.requires_bend_dummy;
+    let requires_bend_dummies = |port_info: &&&mut PortInfo| port_info.requires_bend_dummy;
 
     let Coord3 {
         pool_and_lane: from_pool_and_lane,
@@ -355,13 +400,36 @@ fn handle_nongateway_node(this_node_id: NodeId, graph: &mut Graph) {
         ..
     } = this_node.coord3();
 
+    let bend_dummy_order_split_point_position = |port_info: &&mut PortInfo| {
+        if matches!(
+            port_info.flow_type,
+            PortFlowType::MessageAbove { .. } | PortFlowType::MessageAbove { .. }
+        ) && !port_info.is_incoming
+        {
+            port_info.other_layer > this_layer
+        } else {
+            port_info.other_layer >= this_layer
+        }
+    };
+
+    let top_split_point = top
+        .iter()
+        .position(bend_dummy_order_split_point_position)
+        .unwrap_or(top.len());
+    let (top_left, top_right) = top.split_at(top_split_point);
+    let bottom_split_point = bottom
+        .iter()
+        .position(bend_dummy_order_split_point_position)
+        .unwrap_or(bottom.len());
+    let (bottom_left, bottom_right) = bottom.split_at(bottom_split_point);
     // TODO technically this should do the same bendpoint-upwards-shifting strategy as the gateway
     // nodes already do. But this will take some time to implement, so use this approximation of it
     // for the moment.
-    for port_info in incoming
-        .top
+    // TODO this is now wrong, as it should use `top` and itself understand where is the "middle".
+    for port_info in top_left
         .iter()
-        .chain(outgoing.top.iter())
+        .rev()
+        .chain(top_right.iter())
         .filter(requires_bend_dummies)
     {
         let bendpoint_pool_and_lane = if let Some(barrier) = &top_barrier {
@@ -388,11 +456,11 @@ fn handle_nongateway_node(this_node_id: NodeId, graph: &mut Graph) {
             BendDummyKind::FromBoundaryEvent,
         );
     }
-    for port_info in incoming
-        .bottom
+    // TODO this is now wrong, as it should use `top` and itself understand where is the "middle".
+    for port_info in bottom_left
         .iter()
         .rev()
-        .chain(outgoing.bottom.iter().rev())
+        .chain(bottom_right.iter())
         .filter(requires_bend_dummies)
     {
         let bendpoint_pool_and_lane = if let Some(barrier) = &bottom_barrier {
@@ -448,12 +516,14 @@ enum PortFlowType {
 #[derive(Debug)]
 struct PortInfo {
     edge_id: EdgeId,
+    is_incoming: bool,
     // Position of the port on the boundary of the node. (Well, for gateways and events we
     // approximate a square form here. TODO This will be taken care of in some later stage as
     // otherwise the `node.port_is_left_or_right()` function becomes complicated.)
     coordinate: RelativePort,
     must_go_vertical: Option<VerticalEdgeDocks>,
     other_pool_lane: PoolAndLane,
+    other_layer: LayerId,
     flow_type: PortFlowType,
     requires_bend_dummy: bool,
     is_boundary_event: bool,

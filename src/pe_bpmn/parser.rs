@@ -735,9 +735,15 @@ impl Parser {
         cur_sde: &SdeId,
         end: &[NodeId],
         visited: &mut HashSet<NodeId>,
-        is_reverse: bool,
         protection: &PeBpmnProtection,
     ) -> Result<bool, ParseError> {
+        // TODO this function should do a more broad graph traversal:
+        // On a data element, follow all (in and out) edges. On a node, (1) if coming in (through MF or
+        // DF) then follow all DF and MF which are in or out of that node. (2) If it came backwards
+        // through outgoing, then only traverse through other in/out of that node if there was some
+        // incoming of that data into the node (transported_data contains the sde), as otherwise
+        // this node produced the data, and it is totally possible that it produced a protected and
+        // a non-protected version of the data.
         let edge = &mut self.graph.edges[edge_id];
         let node = if is_reverse { edge.from } else { edge.to };
 
@@ -799,21 +805,14 @@ impl Parser {
 
         let mut reach_end = false;
         for next_edge_id in next_edges {
-            if self.protection_channel(
-                next_edge_id,
-                meta,
-                cur_sde,
-                end,
-                visited,
-                is_reverse,
-                protection,
-            )? {
+            if self.protection_channel(next_edge_id, meta, cur_sde, end, visited, protection)? {
                 reach_end = true;
             };
         }
         Ok(reach_end)
     }
 
+    #[track_caller]
     fn check_protection_paths(
         &mut self,
         node_id: NodeId,
@@ -831,7 +830,7 @@ impl Parser {
         } else {
             &self.graph.nodes[node_id].outgoing
         };
-        let node_transportated_data = self.graph.nodes[node_id].get_node_transported_data();
+        let node_transportated_data = dbg!(self.graph.nodes[node_id].get_node_transported_data());
 
         if edges
             .iter()
@@ -840,26 +839,29 @@ impl Parser {
                 (edge.is_message_flow() || edge.is_data_flow()) && {
                     edge.get_transported_data()
                         .iter()
-                        .any(|sde_id| !node_transportated_data.contains(sde_id))
+                        .any(|sde_id| !node_transportated_data.contains(dbg!(sde_id)))
                 }
             })
         {
+            // TODO understand and document this.
             return self.missing_sde_id_error(node_id, is_reverse);
         }
+        let mut visited = std::iter::once(node_id).collect();
         for edge_id in edges.clone() {
+            dbg!(&self.graph, edge_id);
             let transported_data: HashSet<SdeId> = self.graph.edges[edge_id]
                 .get_transported_data()
                 .iter()
                 .copied()
                 .collect();
+            dbg!(&transported_data);
             for sde_id in transported_data.iter().filter(|sde_id| filter(sde_id)) {
                 if !self.protection_channel(
                     edge_id,
                     meta,
                     sde_id,
                     ends,
-                    &mut HashSet::new(),
-                    if is_pool { false } else { is_reverse },
+                    &mut visited,
                     protection_type,
                 )? && enforce_reach_end
                 {
@@ -876,6 +878,13 @@ impl Parser {
         Ok(())
     }
 
+    // TODO rename: The semantics is as follows: When a traversal reaches its end, then we want to
+    // ensure that the protected data leaves the end (`node_id`) as unprotected data. It is an
+    // error to have protected data enter an unprotect node (or in reverse, leave the protect node)
+    // without having the unprotected version of the data on the other side.
+    // But this function should have a semantically more meaningful name. Actually, this whole
+    // check should probably move into this function, this is currently scattered on the caller
+    // side. Then it would become more coherent.
     fn missing_sde_id_error(&self, node_id: NodeId, is_reverse: bool) -> Result<(), ParseError> {
         let node_str = self.graph.nodes[node_id]
             .display_text()
