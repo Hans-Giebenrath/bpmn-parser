@@ -312,7 +312,10 @@ impl Parser {
             },
         );
         err_from_unfinished_lifeline(old_state, self.context.current_token_coordinate)?;
-        let pool_id = self.graph.add_pool(Some(label.to_string()));
+        let pool_id = self.graph.add_pool(
+            Some(label.to_string()),
+            self.context.current_token_coordinate,
+        );
         self.context.grouping_state = GroupingState::WithinPool {
             pool_id,
             ptc: self.context.current_token_coordinate,
@@ -345,7 +348,10 @@ impl Parser {
             }
             GroupingState::WithinPool { pool_id, ptc }
             | GroupingState::WithinLane { pool_id, ptc, .. } => {
-                let lane_id = self.graph.pools[pool_id.0].add_lane(Some(label.to_string()));
+                let lane_id = self.graph.pools[pool_id.0].add_lane(
+                    Some(label.to_string()),
+                    self.context.current_token_coordinate,
+                );
                 self.context.grouping_state = GroupingState::WithinLane {
                     pool_id,
                     ptc,
@@ -975,8 +981,11 @@ _ => (),
     fn manage_pool_and_lane_ids_for_new_node(&mut self) -> PoolAndLane {
         match self.context.grouping_state {
             GroupingState::Init => {
-                let pool_id = self.graph.add_pool(None);
-                let lane_id = self.graph.pools[pool_id.0].add_lane(None);
+                let pool_id = self
+                    .graph
+                    .add_pool(None, self.context.current_token_coordinate);
+                let lane_id = self.graph.pools[pool_id.0]
+                    .add_lane(None, self.context.current_token_coordinate);
                 self.context.grouping_state = GroupingState::WithinAnonymousPool {
                     first_encountered_node: self.context.current_token_coordinate,
                     pool_id,
@@ -994,7 +1003,8 @@ _ => (),
                 lane: lane_id,
             },
             GroupingState::WithinPool { pool_id, ptc } => {
-                let lane_id = self.graph.pools[pool_id.0].add_lane(None);
+                let lane_id = self.graph.pools[pool_id.0]
+                    .add_lane(None, self.context.current_token_coordinate);
                 self.context.grouping_state = GroupingState::WithinAnonymousLane {
                     first_encountered_node: self.context.current_token_coordinate,
                     pool_id,

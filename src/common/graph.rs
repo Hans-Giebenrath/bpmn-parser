@@ -6,7 +6,7 @@ use crate::common::edge::{Edge, EdgeType};
 use crate::common::node::LayerId;
 use crate::common::node::{Node, NodeType};
 use crate::common::pool::Pool;
-use crate::lexer::{DataType, EventType};
+use crate::lexer::{DataType, EventType, TokenCoordinate};
 use crate::parser::ParseError;
 use annotate_snippets::Level;
 use proc_macros::{from, n, to};
@@ -137,8 +137,8 @@ impl fmt::Display for NodeId {
 }
 
 impl Graph {
-    pub fn add_pool(&mut self, pool: Option<String>) -> PoolId {
-        self.pools.push(Pool::new(pool));
+    pub fn add_pool(&mut self, pool: Option<String>, tc: TokenCoordinate) -> PoolId {
+        self.pools.push(Pool::new(pool, tc));
         PoolId(self.pools.len() - 1)
     }
 

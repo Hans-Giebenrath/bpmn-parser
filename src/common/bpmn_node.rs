@@ -18,8 +18,8 @@ pub enum BpmnNode {
     Event(EventType, EventVisual), // Start event with label
     Gateway(GatewayType),          // Exclusive gateway event
     Activity(ActivityType),        // Task with label
-    // TODO boundary event should be attached directly to the Activity::Task.
-    //BoundaryEvent(String, usize, bool, BoundaryEventType, InterruptingKind), // Boundary event with label, attached to node ID, cancel activity flag
+    // `DataAux`: This should be some `HashMap<Something, Any>` where plugins can store arbitrary
+    // data. Right now this is just hardcoded PE-BPMN data but is subject to change.
     Data(DataType, DataAux), // Data store reference with label
 }
 

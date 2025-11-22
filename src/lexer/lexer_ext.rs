@@ -16,9 +16,10 @@ pub(crate) enum PeBpmnType {
 
 #[derive(Debug, Clone, PartialEq, Default)]
 pub(crate) struct SecureChannel {
-    pub sender: Option<String>,
-    pub receiver: Option<String>,
-    pub argument_ids: Vec<String>,
+    pub sender: Option<(String, TokenCoordinate)>,
+    pub receiver: Option<(String, TokenCoordinate)>,
+    pub argument_ids: Vec<(String, TokenCoordinate)>,
+    pub tc: TokenCoordinate,
 }
 
 #[derive(Debug, Clone, PartialEq, Default)]
@@ -29,43 +30,43 @@ pub struct Tee {
 #[derive(Debug, Clone, PartialEq, Default)]
 pub struct Mpc {
     pub common: ComputationCommon,
-    // TODO: Add the correct type and usage for this field
-    // pub in_protect_pre_sent: <Type>,
-    // pub in_protect_post_received: <Type>,
-    // pub in_channel: <Type>,
-    // pub out_channel: <Type>,
 }
 
 #[derive(Debug, Clone, PartialEq, Default)]
 pub(crate) struct ComputationCommon {
     pub pebpmn_type: PeBpmnSubType,
-    pub in_protect: Vec<DataFlowAnnotationLexer>,
-    pub in_unprotect: Vec<DataFlowAnnotationLexer>,
-    pub out_protect: Vec<DataFlowAnnotationLexer>,
-    pub out_unprotect: Vec<DataFlowAnnotationLexer>,
-    pub data_without_protection: Vec<String>,
-    pub data_already_protected: Vec<String>,
-    pub admin: Option<String>,
-    pub external_root_access: Vec<String>,
+    pub in_protect: Vec<Protection>,
+    pub in_unprotect: Vec<Protection>,
+    pub out_protect: Vec<Protection>,
+    pub out_unprotect: Vec<Protection>,
+    // Does this also need a token coordinate?
+    pub data_without_protection: Vec<(String, TokenCoordinate)>,
+    pub data_already_protected: Vec<(String, TokenCoordinate)>,
+    pub admin: Option<(String, TokenCoordinate)>,
+    pub external_root_access: Vec<(String, TokenCoordinate)>,
+    pub tc: TokenCoordinate,
 }
 
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) enum PeBpmnSubType {
-    Pool(String),
-    Lane(String),
-    Tasks(Vec<String>),
+    Pool(String, TokenCoordinate),
+    Lane(String, TokenCoordinate),
+    Tasks(Vec<(String, TokenCoordinate)>),
 }
 
 impl Default for PeBpmnSubType {
     fn default() -> Self {
-        PeBpmnSubType::Pool(String::new())
+        PeBpmnSubType::Pool(String::new(), TokenCoordinate::default())
     }
 }
 
 #[derive(Debug, Clone, PartialEq)]
-pub struct DataFlowAnnotationLexer {
+pub struct Protection {
     pub node: String,
+    pub tc: TokenCoordinate,
     pub rv: Option<String>,
+    // `no-rv` makes `rv` None, but there is still a TokenCoordinate.
+    pub rv_tc: Option<TokenCoordinate>,
 }
 
 #[derive(Debug, Clone, PartialEq, Default)]
@@ -79,31 +80,28 @@ enum BlockState {
     Opened,
 }
 
-fn assemble_secure_channel(mut tokens: Tokens, mut tc: TokenCoordinate) -> AResult {
-    let mut secure_channel = None;
+fn assemble_secure_channel(mut tokens: Tokens, tc: TokenCoordinate) -> AResult {
+    let mut secure_channel = SecureChannel::default();
+    secure_channel.tc = tc;
     let mut pe_bpmn_meta = PeBpmnMeta {
         stroke_color: None,
         fill_color: None,
     };
 
-    let sender = parse_id_or_placeholder(tokens.next(), tc, "pre-sent", "sender")?;
-    tc.end += sender.len() + 1;
-    secure_channel
-        .get_or_insert_with(SecureChannel::default)
-        .sender = Some(sender).filter(|s| !s.is_empty());
+    secure_channel.sender =
+        parse_id_or_placeholder(tokens.next(), &mut secure_channel.tc, "pre-sent", "sender")?;
 
-    let receiver = parse_id_or_placeholder(tokens.next(), tc, "post-received", "receiver")?;
-    secure_channel
-        .get_or_insert_with(SecureChannel::default)
-        .receiver = Some(receiver).filter(|s| !s.is_empty());
+    secure_channel.receiver = parse_id_or_placeholder(
+        tokens.next(),
+        &mut secure_channel.tc,
+        "post-received",
+        "receiver",
+    )?;
 
-    let args = parse_optional_ids(&mut tokens)?;
-    secure_channel
-        .get_or_insert_with(SecureChannel::default)
-        .argument_ids = args;
+    secure_channel.argument_ids = parse_optional_ids(&mut tokens)?;
 
     while let Some(it) = tokens.next() {
-        tc.end = it.0.end;
+        secure_channel.tc.end = it.0.end;
         match it.1.clone() {
             Token::ExtensionArgument(val) => match val.as_str() {
                 "secure-channel" => {
@@ -134,9 +132,7 @@ fn assemble_secure_channel(mut tokens: Tokens, mut tc: TokenCoordinate) -> AResu
     }
 
     Ok(Statement::PeBpmn(PeBpmn {
-        r#type: PeBpmnType::SecureChannel(
-            secure_channel.expect("Programming error: an secure channel should always be created."),
-        ),
+        r#type: PeBpmnType::SecureChannel(secure_channel),
         meta: pe_bpmn_meta,
     }))
 }
@@ -145,43 +141,44 @@ fn assemble_tee_or_mpc(
     mut tokens: Tokens,
     mut tc: TokenCoordinate,
     pe_bpmn_type: PeBpmnType,
-    pe_bpmn_subtype: PeBpmnSubType,
+    mut pe_bpmn_subtype: PeBpmnSubType,
 ) -> AResult {
     let tee_or_mpc = match pe_bpmn_type {
         PeBpmnType::Tee(_) => "tee",
         PeBpmnType::Mpc(_) => "mpc",
         _ => return Err((tc, "Invalid pe-bpmn type for tee or mpc".to_string())),
     };
-    let ids = parse_optional_ids(&mut tokens)?;
-    let pebpmn_type = if !ids.is_empty() {
-        match pe_bpmn_subtype {
-            PeBpmnSubType::Pool(_) => {
-                if ids.len() > 1 {
-                    return Err((
-                        tc,
-                        format!(
-                            "Expected exactly one ID for {tee_or_mpc}-pool. Please remove the others."
-                        ),
-                    ));
-                }
-                PeBpmnSubType::Pool(ids[0].clone())
+    let mut ids = parse_optional_ids(&mut tokens)?;
+    match &mut pe_bpmn_subtype {
+        PeBpmnSubType::Lane(name, out_tc) | PeBpmnSubType::Pool(name, out_tc) => match &mut ids[..]
+        {
+            [(_, _good_tc), (_, bad_tc), rest @ ..] => {
+                bad_tc.end = rest.last().map(|id| id.1.end).unwrap_or(bad_tc.end);
+                return Err((
+                    *bad_tc,
+                    format!(
+                        "Expected exactly one ID for {tee_or_mpc}-pool. Please remove {}.",
+                        if rest.is_empty() {
+                            "this one"
+                        } else {
+                            " these ones"
+                        }
+                    ),
+                ));
             }
-            PeBpmnSubType::Lane(_) => {
-                if ids.len() > 1 {
-                    return Err((
-                        tc,
-                        format!(
-                            "Expected exactly one ID for {tee_or_mpc}-lane. Please remove the others."
-                        ),
-                    ));
-                }
-                PeBpmnSubType::Lane(ids[0].clone())
+            [(a, b)] => {
+                *name = std::mem::take(a);
+                *out_tc = b.clone();
             }
-            PeBpmnSubType::Tasks(_) => PeBpmnSubType::Tasks(ids.clone()),
+            [] => return Err((tc, "Missing an ID. Please add it.".to_string())),
+        },
+        PeBpmnSubType::Tasks(out_ids) => {
+            if ids.is_empty() {
+                return Err((tc, "Missing an ID. Please add it.".to_string()));
+            }
+            *out_ids = ids;
         }
-    } else {
-        return Err((tc, "Missing an ID. Please add it.".to_string()));
-    };
+    }
 
     let mut pe_bpmn_meta = PeBpmnMeta {
         stroke_color: None,
@@ -195,7 +192,7 @@ fn assemble_tee_or_mpc(
     let mut external_root_access = vec![];
     let mut data_without_protection = vec![];
     let mut data_already_protected = vec![];
-    let mut admin: Option<String> = None;
+    let mut admin: Option<(String, TokenCoordinate)> = None;
 
     let mut seen_external_root_access = false;
 
@@ -267,7 +264,7 @@ fn assemble_tee_or_mpc(
                         }
 
                         admin = match tokens.next() {
-                            Some((_, Token::Id(id))) => Ok(Some(id)),
+                            Some((tc, Token::Id(id))) => Ok(Some((id, tc))),
                             Some((tc, _)) => {
                                 Err((tc, "Unexpected argument. Only accepting IDs".to_string()))
                             }
@@ -347,7 +344,7 @@ fn assemble_tee_or_mpc(
     }
 
     let computation_common = ComputationCommon {
-        pebpmn_type,
+        pebpmn_type: pe_bpmn_subtype,
         in_protect,
         in_unprotect,
         out_protect,
@@ -356,6 +353,7 @@ fn assemble_tee_or_mpc(
         data_already_protected,
         admin,
         external_root_access,
+        tc,
     };
 
     return match pe_bpmn_type {
@@ -387,13 +385,13 @@ pub fn to_pe_bpmn(mut tokens: Tokens) -> AResult {
                 tokens,
                 tc,
                 PeBpmnType::Tee(Tee::default()),
-                PeBpmnSubType::Pool(String::new()),
+                PeBpmnSubType::Pool(String::new(), TokenCoordinate::default()),
             ),
             "tee-lane" => assemble_tee_or_mpc(
                 tokens,
                 tc,
                 PeBpmnType::Tee(Tee::default()),
-                PeBpmnSubType::Lane(String::new()),
+                PeBpmnSubType::Lane(String::new(), TokenCoordinate::default()),
             ),
             "tee-tasks" => assemble_tee_or_mpc(
                 tokens,
@@ -405,13 +403,13 @@ pub fn to_pe_bpmn(mut tokens: Tokens) -> AResult {
                 tokens,
                 tc,
                 PeBpmnType::Mpc(Mpc::default()),
-                PeBpmnSubType::Pool(String::new()),
+                PeBpmnSubType::Pool(String::new(), TokenCoordinate::default()),
             ),
             "mpc-lane" => assemble_tee_or_mpc(
                 tokens,
                 tc,
                 PeBpmnType::Mpc(Mpc::default()),
-                PeBpmnSubType::Lane(String::new()),
+                PeBpmnSubType::Lane(String::new(), TokenCoordinate::default()),
             ),
             "mpc-tasks" => assemble_tee_or_mpc(
                 tokens,
@@ -641,18 +639,18 @@ fn parse_data_flow_annotation(
     tc: TokenCoordinate,
     is_in: bool,
     is_protected: bool,
-) -> Result<DataFlowAnnotationLexer, (TokenCoordinate, String)> {
-    let id = match tokens.next() {
-        Some((_, Token::Id(id))) => Ok(id),
+) -> Result<Protection, (TokenCoordinate, String)> {
+    let (tc, id) = match tokens.next() {
+        Some((tc, Token::Id(id))) => Ok((tc, id)),
         Some((tc, Token::Separator)) => Err((tc, "Missing ID. Add an ID.".to_string())),
         Some((tc, _)) => Err((tc, "Only accepting IDs.".to_string())),
         None => Err((tc, "Missing ID. Add an ID.".to_string())),
     }?;
 
-    let arg = if (is_in && is_protected) || (!is_in && !is_protected) {
-        Some(match tokens.next() {
-            Some((_, Token::Id(id))) => Ok(Some(id)),
-            Some((_, Token::Text(text))) if text == "no-rv" => Ok(None),
+    let (rv_tc, rv) = if (is_in && is_protected) || (!is_in && !is_protected) {
+        match tokens.next() {
+            Some((tc, Token::Id(id))) => Ok((Some(tc), Some(id))),
+            Some((tc, Token::Text(text))) if text == "no-rv" => Ok((Some(tc), None)),
             Some((tc, Token::Separator)) => Err((
                 tc,
                 "Reference value missing. Add an ID or 'no-rv' before closing the block."
@@ -663,16 +661,18 @@ fn parse_data_flow_annotation(
                 "Unknown argument. Expected an ID or 'no-rv'.".to_string(),
             )),
             None => Err((tc, "Missing second argument.".to_string())),
-        }?)
+        }?
     } else {
-        None
+        (None, None)
     };
 
     check_end_block(tokens.next())?;
 
-    let result = DataFlowAnnotationLexer {
+    let result = Protection {
         node: id,
-        rv: arg.flatten(),
+        tc,
+        rv,
+        rv_tc,
     };
 
     Ok(result)
@@ -694,16 +694,17 @@ fn check_end_block(
 
 fn parse_id_or_placeholder(
     token: Option<(TokenCoordinate, Token)>,
-    prev_tc: TokenCoordinate,
+    prev_tc: &mut TokenCoordinate,
     placeholder: &str,
     actor: &str,
-) -> Result<String, (TokenCoordinate, String)> {
+) -> Result<Option<(String, TokenCoordinate)>, (TokenCoordinate, String)> {
     if let Some((tc, token)) = token {
+        prev_tc.end = tc.end;
         match token {
-            Token::Id(id) => Ok(id),
+            Token::Id(id) => Ok(Some((id, tc))),
             Token::Text(text) => {
                 if text == placeholder {
-                    Ok(String::new())
+                    Ok(None)
                 } else {
                     Err((
                         tc,
@@ -722,7 +723,7 @@ fn parse_id_or_placeholder(
         }
     } else {
         Err((
-            prev_tc,
+            *prev_tc,
             format!("Missing {actor}. Add a {actor} ID or \"{placeholder}\"",),
         ))
     }
@@ -730,7 +731,7 @@ fn parse_id_or_placeholder(
 
 fn parse_optional_ids(
     tokens: &mut impl Iterator<Item = (TokenCoordinate, Token)>,
-) -> Result<Vec<String>, (TokenCoordinate, String)> {
+) -> Result<Vec<(String, TokenCoordinate)>, (TokenCoordinate, String)> {
     let mut arguments_ids = Vec::new();
     for (tc, t) in tokens.by_ref() {
         match t {
@@ -738,7 +739,7 @@ fn parse_optional_ids(
                 break;
             }
             Token::Id(id) => {
-                arguments_ids.push(id);
+                arguments_ids.push((id, tc));
             }
             _ => {
                 return Err((tc, "Unexpected argument. Only accepting IDs".to_string()));

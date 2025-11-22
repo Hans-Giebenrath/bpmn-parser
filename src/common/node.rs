@@ -182,6 +182,13 @@ impl Node {
         )
     }
 
+    pub fn tc(&self) -> TokenCoordinate {
+        match &self.node_type {
+            NodeType::RealNode { tc, .. } => *tc,
+            _ => unreachable!(),
+        }
+    }
+
     pub fn get_data_aux(&self) -> Option<&DataAux> {
         if let NodeType::RealNode {
             event: BpmnNode::Data(_, data_aux),

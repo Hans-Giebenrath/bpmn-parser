@@ -1,4 +1,5 @@
 use crate::common::node::Node;
+use crate::lexer::TokenCoordinate;
 use std::collections::HashSet;
 use vecset::VecSet;
 
@@ -23,6 +24,9 @@ pub struct Pool {
     pub height: usize,
     pub stroke_color: Option<String>,
     pub fill_color: Option<String>,
+    /// If `name.is_none()`, then this is the tc of the statement which implicitly created the
+    /// anonymous lane.
+    pub tc: TokenCoordinate,
 
     #[allow(non_snake_case)]
     pub tee_admin_has_pe_bpmn_visibility_A_for: VecSet<SdeId>,
@@ -32,9 +36,10 @@ pub struct Pool {
 }
 
 impl Pool {
-    pub fn new(name: Option<String>) -> Self {
+    pub fn new(name: Option<String>, tc: TokenCoordinate) -> Self {
         Pool {
             name,
+            tc,
             lanes: Vec::new(),
             x: 0,
             y: 0,
@@ -49,8 +54,8 @@ impl Pool {
         }
     }
 
-    pub fn add_lane(&mut self, lane: Option<String>) -> LaneId {
-        self.lanes.push(Lane::new(lane));
+    pub fn add_lane(&mut self, lane: Option<String>, tc: TokenCoordinate) -> LaneId {
+        self.lanes.push(Lane::new(lane, tc));
         LaneId(self.lanes.len() - 1)
     }
 
