@@ -10,6 +10,8 @@ mod parser;
 mod pe_bpmn;
 mod pool_id_matcher;
 mod to_xml;
+use std::path::PathBuf;
+
 use clap::Parser;
 use layout::all_crossing_minimization::reduce_all_crossings;
 use layout::dummy_node_generation::generate_dummy_nodes;
@@ -51,8 +53,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut graph: Graph = parser::parse(bpmd)?;
 
     if let Some(visibility_path) = &cli.visibility_table {
-        let visibility_data = pe_bpmn::visibility_table::generate_visibility_table(&graph)?;
-        std::fs::write(visibility_path, visibility_data)?;
+        pebpmn_analysis(&mut graph, visibility_path);
     };
 
     layout_graph(&mut graph);
@@ -85,4 +86,14 @@ pub fn layout_graph(graph: &mut Graph) {
     find_straight_edges(graph);
     edge_routing(graph);
     replace_dummy_nodes(graph);
+}
+
+pub fn pebpmn_analysis(
+    graph: &mut Graph,
+    visibility_path: &PathBuf,
+) -> Result<(), Box<dyn std::error::Error>> {
+    pe_bpmn::analysis::analyse(graph);
+    let visibility_data = pe_bpmn::visibility_table::generate_visibility_table(&graph)?;
+    std::fs::write(visibility_path, visibility_data)?;
+    Ok(())
 }

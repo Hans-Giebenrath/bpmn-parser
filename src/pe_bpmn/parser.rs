@@ -31,7 +31,8 @@ pub(crate) enum PeBpmnType {
 pub(crate) struct SecureChannel {
     pub sender: Option<(NodeId, TokenCoordinate)>,
     pub receiver: Option<(NodeId, TokenCoordinate)>,
-    pub argument_ids: Vec<(SdeId, TokenCoordinate)>,
+    pub permitted_ids: Vec<(SdeId, TokenCoordinate)>,
+    pub tc: TokenCoordinate,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -57,6 +58,8 @@ pub(crate) struct ComputationCommon {
     pub data_already_protected: Vec<(SdeId, TokenCoordinate)>,
     pub admin: PoolId,
     pub external_root_access: Vec<PoolId>,
+
+    pub tc: TokenCoordinate,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -64,7 +67,7 @@ pub(crate) enum PeBpmnSubType {
     Pool(PoolId),
     Lane { pool_id: PoolId, lane_id: LaneId },
     // They are all part of the same lane ... Or pool? TODO
-    Tasks(Vec<NodeId>),
+    Tasks(Vec<(NodeId, TokenCoordinate)>),
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -76,7 +79,7 @@ pub struct Protection {
 }
 
 impl Parser {
-    pub fn parse_pe_bpmn(&mut self, pe_bpmn: lexer::PeBpmn) -> Result<PeBpmn, ParseError> {
+    pub fn parse_pe_bpmn(&mut self, pe_bpmn: lexer::PeBpmn) -> Result<(), ParseError> {
         let r#type = match pe_bpmn.r#type {
             lexer::PeBpmnType::SecureChannel(secure_channel) => {
                 let sender_id = secure_channel
@@ -138,7 +141,8 @@ impl Parser {
                 PeBpmnType::SecureChannel(SecureChannel {
                     sender: sender_id,
                     receiver: receiver_id,
-                    argument_ids: permitted_sdes.into_iter().collect(),
+                    permitted_ids: permitted_sdes.into_iter().collect(),
+                    tc: secure_channel.tc,
                 })
             }
             lexer::PeBpmnType::Tee(lexer::Tee { common }) => PeBpmnType::Tee(Tee {
@@ -148,10 +152,13 @@ impl Parser {
                 common: self.parse_tee_or_mpc(common, "mpc")?,
             }),
         };
-        Ok(PeBpmn {
+
+        self.graph.pe_bpmn_definitions.push(PeBpmn {
             r#type,
             meta: pe_bpmn.meta,
-        })
+        });
+
+        Ok(())
     }
 
     fn parse_tee_or_mpc(
@@ -227,15 +234,16 @@ impl Parser {
                 (PeBpmnSubType::Lane { pool_id, lane_id }, pool_id)
             }
             lexer::PeBpmnSubType::Tasks(tasks) => {
-                let task_ids = tasks
+                let task_ids: Vec<(NodeId, TokenCoordinate)> = tasks
                     .iter()
                     .map(|(task_str, tc)| {
                         self.find_node_id_or_error(task_str, &format!("{tee_or_mpc}-tasks"), *tc)
+                            .map(|node_id| (node_id, *tc))
                     })
-                    .collect::<Result<Vec<NodeId>, _>>()?;
+                    .collect::<Result<Vec<_>, _>>()?;
 
                 let first_node_id = task_ids.first().ok_or_else(|| self.admin_missing_error(tee_or_mpc, &format!("In {tee_or_mpc}-tasks, the pool of the {tee_or_mpc}-tasks is used as the {tee_or_mpc}-admin by default")))?;
-                let admin = self.graph.nodes[*first_node_id].pool;
+                let admin = self.graph.nodes[first_node_id.0].pool;
 
                 if let Some((admin_str, tc)) = &lexer.admin {
                     let node_id =
@@ -316,6 +324,7 @@ impl Parser {
             data_already_protected,
             admin,
             external_root_access,
+            tc: lexer.tc,
         })
     }
 
@@ -518,7 +527,7 @@ impl Parser {
             // Guaranteed by the caller.
             unreachable!();
         };
-        for task in tasks {
+        for (task, _) in tasks {
             if let NodeType::RealNode {
                 pe_bpmn_hides_protection_operations,
                 ..
@@ -551,16 +560,33 @@ impl Parser {
         if tee_or_mpc == "tee" {
             let unique_pools: Vec<_> = tasks
                 .iter()
-                .map(|id| self.graph.nodes[*id].pool)
+                .map(|(id, _)| self.graph.nodes[*id].pool)
                 .unique()
                 .collect();
 
             if unique_pools.len() != 1 {
-                return Err(vec![(
+                let mut error = vec![(
                     "All tee-tasks must be in the same pool.".to_string(),
                     self.context.current_token_coordinate,
                     Level::Error,
-                )]);
+                )];
+                for (node_id, node_tc) in tasks.iter() {
+                    let node = &self.graph.nodes[*node_id];
+                    let pool = &self.graph.pools[node.pool];
+                    error.push(("This node selector ..".to_string(), *node_tc, Level::Info));
+
+                    error.push((
+                        ".. matches this node ..".to_string(),
+                        node.tc(),
+                        Level::Info,
+                    ));
+                    error.push((
+                        ".. which is part of this pool.".to_string(),
+                        pool.tc,
+                        Level::Info,
+                    ));
+                }
+                return Err(error);
             }
         }
 
@@ -578,6 +604,7 @@ mod tests {
             graph::SdeId,
         },
         lexer::PeBpmnProtection,
+        lexer::TokenCoordinate,
         parser::parse,
     };
 
@@ -638,7 +665,10 @@ OD Data Element 2 <-task1 ->forward1
                     .pebpmn_protection;
 
                 assert!(
-                    protection.contains(&PeBpmnProtection::SecureChannel),
+                    protection.contains(&PeBpmnProtection::SecureChannel(TokenCoordinate {
+                        /* TODO */ start: 0,
+                        /* TODO */ end: 0
+                    })),
                     "Expected SecureChannel protection on node '{}' in SDE {}",
                     node.id,
                     i + 1
@@ -680,7 +710,10 @@ OD Data Element 2 <-task1 ->forward1
                             .find(|e| e.0 == SdeId(i))
                             .unwrap()
                             .1
-                            .contains(&PeBpmnProtection::SecureChannel)
+                            .contains(&PeBpmnProtection::SecureChannel(TokenCoordinate {
+                                start: 0,
+                                end: 0
+                            }))
                     );
                 }
             }
@@ -744,7 +777,10 @@ OD Data Element 2 <-task1 ->forward1
 
                 if should_have_protection {
                     assert!(
-                        protection.contains(&PeBpmnProtection::SecureChannel),
+                        protection.contains(&PeBpmnProtection::SecureChannel(TokenCoordinate {
+                            start: 0,
+                            end: 0
+                        })),
                         "Expected SecureChannel on node '{}' in SDE {} at index {}",
                         node.id,
                         sde_index,

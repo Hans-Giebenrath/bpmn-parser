@@ -25,7 +25,14 @@ pub(crate) enum NodeType {
         display_text: String,
         /// The node, but also a sequence flow jump or landing associated with this node.
         tc: TokenCoordinate,
+        /// Invariant: Contains only unique elements. By coincidence it is also sorted, but don't
+        /// rely on that.
         transported_data: Vec<SdeId>,
+
+        /// In the "tee-tasks"/"mpc-tasks" form, the TEE activity is abstracted away in a single box
+        /// (activity), and so there is no dedicated "tee-in-unprotect"/"tee-out-protect" (and the
+        /// same for MPC), hence some checks need to be omitted because we simply must assume that
+        /// they will be done correctly within these abstracted away black boxes.
         pe_bpmn_hides_protection_operations: bool,
     },
     // Dummy nodes are inserted in three stages:
@@ -230,6 +237,8 @@ impl Node {
         } = &mut self.node_type
         {
             transported_data.extend_from_slice(data);
+            transported_data.sort();
+            transported_data.dedup();
         }
     }
 

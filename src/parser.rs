@@ -965,7 +965,7 @@ _ => (),
                     bend_points: RegularEdgeBendPoints::ToBeDetermined,
                 },
                 FlowType::DataFlow(DataFlowAux {
-                    transported_data: vec![sde_id],
+                    transported_data: Some(sde_id),
                 }),
                 None,
             );

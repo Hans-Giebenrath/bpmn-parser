@@ -14,13 +14,17 @@ pub enum FlowType {
 
 #[derive(Default, Debug, Clone, PartialEq)]
 pub struct MessageFlowAux {
+    /// Invariant: Contains only unique elements. By coincidence it is also sorted, but don't
+    /// rely on that.
     pub transported_data: Vec<SdeId>,
     pub pebpmn_protection: Vec<(SdeId, Vec<PeBpmnProtection>)>,
 }
 
 #[derive(Default, Debug, Clone, PartialEq)]
 pub struct DataFlowAux {
-    pub transported_data: Vec<SdeId>,
+    // A data edge can only ever transport a single element, namely the one which is connected to
+    // it.
+    pub transported_data: Option<SdeId>,
 }
 
 #[derive(Debug, Clone)]
@@ -132,7 +136,7 @@ impl Edge {
 
     pub fn get_transported_data(&self) -> &[SdeId] {
         if let FlowType::DataFlow(aux) = &self.flow_type {
-            &aux.transported_data
+            aux.transported_data.as_slice()
         } else if let FlowType::MessageFlow(aux) = &self.flow_type {
             &aux.transported_data
         } else {
@@ -140,15 +144,16 @@ impl Edge {
         }
     }
 
-    pub fn set_pebpmn_protection(&mut self, sde: &SdeId, protection: PeBpmnProtection) {
+    pub fn set_pebpmn_protection(&mut self, sde: SdeId, protection: PeBpmnProtection) {
         if let FlowType::MessageFlow(MessageFlowAux {
             pebpmn_protection, ..
         }) = &mut self.flow_type
         {
-            if let Some((_, protections)) = pebpmn_protection.iter_mut().find(|(id, _)| id == sde) {
+            if let Some((_, protections)) = pebpmn_protection.iter_mut().find(|(id, _)| *id == sde)
+            {
                 protections.push(protection);
             } else {
-                pebpmn_protection.push((*sde, vec![protection]));
+                pebpmn_protection.push((sde, vec![protection]));
             }
         }
     }

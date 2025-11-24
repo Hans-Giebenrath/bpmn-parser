@@ -4,6 +4,8 @@
 //! case of using it for real-time error diagnostics (as an LSP basically which does not do
 //! layouting) then maybe(?) it needs to be optimized to get sub-millisecond speed out of it.
 
+use core::fmt::Display;
+
 use annotate_snippets::Level;
 use annotate_snippets::Snippet;
 use annotate_snippets::renderer::Renderer;
@@ -96,11 +98,21 @@ pub struct DataAux {
     pub pebpmn_protection: Vec<PeBpmnProtection>,
 }
 
-#[derive(Debug, Clone, Eq, PartialEq)]
+#[derive(Debug, Clone, Copy, Eq, PartialEq)]
 pub enum PeBpmnProtection {
-    SecureChannel,
-    Tee,
-    Mpc,
+    SecureChannel(TokenCoordinate),
+    Tee(TokenCoordinate),
+    Mpc(TokenCoordinate),
+}
+
+impl Display for PeBpmnProtection {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        match self {
+            PeBpmnProtection::Mpc(..) => write!(f, "mpc"),
+            PeBpmnProtection::Tee(..) => write!(f, "tee"),
+            PeBpmnProtection::SecureChannel(..) => write!(f, "secure-channel"),
+        }
+    }
 }
 
 #[derive(Debug, Clone, Eq, PartialEq)]

@@ -8,6 +8,7 @@ use crate::common::node::{Node, NodeType};
 use crate::common::pool::Pool;
 use crate::lexer::{DataType, EventType, TokenCoordinate};
 use crate::parser::ParseError;
+use crate::pe_bpmn::parser::PeBpmn;
 use annotate_snippets::Level;
 use proc_macros::{from, n, to};
 use std::fmt::{self, Debug};
@@ -72,12 +73,27 @@ pub struct Graph {
     pub config: Config,
 
     pub num_layers: usize,
+
+    pub pe_bpmn_definitions: Vec<PeBpmn>,
 }
 
 #[derive(Debug, Eq, PartialEq, Hash, Clone)]
 pub struct SemanticDataElement {
     pub name: String,
     pub data_element: Vec<NodeId>,
+}
+
+impl SemanticDataElement {
+    pub fn tc(&self, graph: &Graph) -> TokenCoordinate {
+        TokenCoordinate {
+            start: graph.nodes[*self.data_element.first().expect("SDEs are not empty")]
+                .tc()
+                .start,
+            end: graph.nodes[*self.data_element.last().expect("SDEs are not empty")]
+                .tc()
+                .end,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Eq, PartialEq, Copy, Hash, PartialOrd, Ord)]
@@ -194,13 +210,8 @@ impl Graph {
         sde_id
     }
 
-    pub fn transported_data(&self, edge_id: EdgeId) -> Option<&[SdeId]> {
-        let edge = &self.edges[edge_id];
-        match &edge.flow_type {
-            FlowType::DataFlow(aux) => Some(&aux.transported_data),
-            FlowType::MessageFlow(aux) => Some(&aux.transported_data),
-            _ => None,
-        }
+    pub fn transported_data(&self, edge_id: EdgeId) -> &[SdeId] {
+        &self.edges[edge_id].get_transported_data()
     }
 
     /// Only allowed before the bend points are added.
