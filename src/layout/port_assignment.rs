@@ -318,13 +318,13 @@ fn handle_nongateway_node(this_node_id: NodeId, graph: &mut Graph) {
 
     let mut incoming = partition_ports(&mut incoming_ports);
     let mut outgoing = partition_ports(&mut outgoing_ports);
-    let top = incoming
+    let mut top = incoming
         .top
         .iter_mut()
         .rev()
         .merge_by(outgoing.top.iter_mut(), top_and_bottom_merger)
         .collect::<Vec<_>>();
-    let bottom = incoming
+    let mut bottom = incoming
         .bottom
         .iter_mut()
         .merge_by(outgoing.bottom.iter_mut().rev(), top_and_bottom_merger)

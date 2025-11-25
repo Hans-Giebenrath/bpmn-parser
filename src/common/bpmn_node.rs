@@ -1,5 +1,3 @@
-use annotate_snippets::Level;
-
 use crate::lexer::DataAux;
 use crate::lexer::DataType;
 use crate::lexer::TokenCoordinate;
@@ -68,7 +66,7 @@ pub enum TaskType {
 
 // TODO not sure if the inlined InterruptingKind is a good idea. Maybe it should be
 // part of the container, but this should depend on how the logic can be written more easily in the
-// emitting code (xml, svg, ..).
+// emitting code (xml, svg, ...).
 #[derive(Eq, Debug, Clone, PartialEq)]
 pub enum EventVisual {
     Start(InterruptKind),
@@ -84,7 +82,7 @@ impl EventVisual {
         use lexer::EventVisual as E;
         match lexed {
             E::None | E::Receive | E::Catch => Ok(Self::Start(InterruptKind::Interrupting)),
-            E::Send | E::Throw => Err(vec![("Start events can only be ~catch or ~receive events (or simply remove this attribute).".to_string(), tc, Level::Error)]),
+            E::Send | E::Throw => Err(vec![("Start events can only be ~catch or ~receive events (or simply remove this attribute).".to_string(), tc, )]),
         }
     }
 
@@ -107,21 +105,18 @@ impl EventVisual {
                     "Error events cannot be intermediate events, but only end or boundary events."
                         .to_string(),
                     tc,
-                    Level::Error,
                 )]),
                 EventType::Escalation => Ok(Self::Throw),
                 EventType::Termination => Err(vec![(
                     "Termination events cannot be intermediate events, but only end events."
                         .to_string(),
                     tc,
-                    Level::Error,
                 )]),
                 EventType::Compensation => Ok(Self::Throw),
                 EventType::Cancel => Err(vec![(
                     "Cancel events cannot be intermediate events, but only end or boundary events."
                         .to_string(),
                     tc,
-                    Level::Error,
                 )]),
                 EventType::Multiple => Ok(Self::Catch(InterruptKind::Interrupting)),
                 EventType::MultipleParallel => Ok(Self::Catch(InterruptKind::Interrupting)),
@@ -139,7 +134,6 @@ impl EventVisual {
                 "End events can only ~send or ~throw events (or simply remove this attribute)."
                     .to_string(),
                 tc,
-                Level::Error,
             )]),
         }
     }

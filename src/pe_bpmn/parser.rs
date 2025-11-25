@@ -1,4 +1,3 @@
-use annotate_snippets::Level;
 use itertools::Itertools;
 use std::collections::HashMap;
 
@@ -14,13 +13,13 @@ use crate::{
 };
 
 #[derive(Debug, Clone, PartialEq)]
-pub(crate) struct PeBpmn {
+pub struct PeBpmn {
     pub r#type: PeBpmnType,
     pub meta: PeBpmnMeta, // stroke color, etc
 }
 
 #[derive(Debug, Clone, PartialEq)]
-pub(crate) enum PeBpmnType {
+pub enum PeBpmnType {
     SecureChannel(SecureChannel),
     //SecureChannelWithExplicitSecret(SecureChannelWithExplicitSecret),
     Tee(Tee),
@@ -28,7 +27,7 @@ pub(crate) enum PeBpmnType {
 }
 
 #[derive(Debug, Clone, PartialEq, Default)]
-pub(crate) struct SecureChannel {
+pub struct SecureChannel {
     pub sender: Option<(NodeId, TokenCoordinate)>,
     pub receiver: Option<(NodeId, TokenCoordinate)>,
     pub permitted_ids: Vec<(SdeId, TokenCoordinate)>,
@@ -46,7 +45,7 @@ pub struct Mpc {
 }
 
 #[derive(Debug, Clone, PartialEq)]
-pub(crate) struct ComputationCommon {
+pub struct ComputationCommon {
     pub pebpmn_type: PeBpmnSubType,
 
     pub in_protect: Vec<Protection>,
@@ -63,7 +62,7 @@ pub(crate) struct ComputationCommon {
 }
 
 #[derive(Debug, Clone, PartialEq)]
-pub(crate) enum PeBpmnSubType {
+pub enum PeBpmnSubType {
     Pool(PoolId),
     Lane { pool_id: PoolId, lane_id: LaneId },
     // They are all part of the same lane ... Or pool? TODO
@@ -89,7 +88,7 @@ impl Parser {
                         self.find_node_id(sender_name).map(|sender_id| Some((sender_id, *tc))).ok_or(vec![(
                             format!("Sender node with ID ({sender_name}) was not found. Have you defined it?"),
                             *tc,
-                            Level::Error,
+
                         )])
                     })?;
 
@@ -100,7 +99,7 @@ impl Parser {
                         self.find_node_id(receiver_name).map(|receiver_id| Some((receiver_id, *tc))).ok_or(vec![(
                             format!("Receiver node with ID ({receiver_name}) was not found. Have you defined it?"),
                             *tc,
-                            Level::Error,
+
                         )])
                     })?;
 
@@ -111,15 +110,15 @@ impl Parser {
                         let node_id = self.find_node_id(string_id).ok_or(vec![(
                             format!("Data element with ID ({string_id}) was not found. Have you defined it?"),
                             *tc,
-                            Level::Error,
+
                         )])?;
                         let target_node = &self.graph.nodes[node_id];
                         if !target_node.is_data() {
                             return Err(vec![(
                                 format!("Only Data elements IDs are allowed! Node with ID ({string_id}) is not a data element"),
                                 *tc,
-                                Level::Error,
-                            ), (format!("This is the node which was selected by your `@{string_id}` selector"),target_node.tc(), Level::Info),]);
+
+                            ), (format!("This is the node which was selected by your `@{string_id}` selector"),target_node.tc(), ),]);
                         }
                         Ok(self.graph
                             .data_elements
@@ -134,7 +133,7 @@ impl Parser {
                 if sender_id.is_none() && receiver_id.is_none() && permitted_sdes.is_empty() {
                     return Err(vec![
                                 ("You need to define IDs when you use pre-sent and post-received simultaneously, like:\n\t(secure-channel pre-sent post-received @data_to_send)".to_string(),
-                                self.context.current_token_coordinate, Level::Error)
+                                self.context.current_token_coordinate, )
                                 ]
                             );
                 }
@@ -200,7 +199,7 @@ impl Parser {
                 let (pool_id, lane_id) = self.context.pool_id_matcher.find_pool_and_lane_id_by_lane_name_fuzzy(&self.graph, &lane_str).ok_or_else(|| vec![(
                     format!("Lane with name {lane_str} was not found in any pool. Have you defined it?"),
                     lane_tc,
-                    Level::Error,
+
                 )])?;
                 if let Some((admin_str, admin_tc)) = &lexer.admin {
                     let node_id = self.find_node_id_or_error(
@@ -216,17 +215,14 @@ impl Parser {
                                     "The specified {tee_or_mpc}-admin with ID {admin_str} does not match the pool of the {tee_or_mpc}-lane. In {tee_or_mpc}-lane, the pool of the {tee_or_mpc}-lane is used as the {tee_or_mpc}-admin by default. If you specify an admin explicitly, it must be the same as the lane's pool."
                                 ),
                                 *admin_tc,
-                                Level::Error,
                             ),
                             (
                                 "This would be the correct pool".to_string(),
                                 self.graph.pools[expected_pool_id].tc,
-                                Level::Info,
                             ),
                             (
                                 "But you specified this one".to_string(),
                                 self.graph.pools[pool_id].tc,
-                                Level::Info,
                             ),
                         ])?;
                     }
@@ -256,17 +252,14 @@ impl Parser {
                                     "The specified {tee_or_mpc}-admin with ID {admin_str} does not match the pool of the {tee_or_mpc}-tasks. In {tee_or_mpc}-tasks, the pool of the {tee_or_mpc}-tasks is used as the {tee_or_mpc}-admin by default. If you specify an admin explicitly, it must be the same as the task's pool."
                                 ),
                                 self.context.current_token_coordinate,
-                                Level::Error,
                             ),
                             (
                                 "This would be the correct pool".to_string(),
                                 self.graph.pools[expected_pool_id].tc,
-                                Level::Info,
                             ),
                             (
                                 "But you specified this one".to_string(),
                                 self.graph.pools[admin].tc,
-                                Level::Info,
                             ),
                         ])?;
                     }
@@ -285,7 +278,7 @@ impl Parser {
                     self.context.pool_id_matcher.find_pool_id(pool_str).ok_or_else(|| vec![(
                         format!("external_root_access pool with ID ({pool_str}) was not found. Have you defined it?"),
                         *pool_tc,
-                        Level::Error,
+
                     )])
                 }).collect::<Result<Vec<PoolId>, _>>()?;
 
@@ -304,10 +297,10 @@ impl Parser {
                     return Err(vec![(
                         "Each ID may only be used once within the entire [pe-bpmn] block, but this one has been used twice".to_string(),
                         *tc,
-                        Level::Error,
+
                     ), (
                         "This was the first use of the same ID".to_string(),
-                            old_duplicate_tc, Level::Info
+                            old_duplicate_tc,
                     )]);
                 }
                 set.insert(node_id, *tc);
@@ -344,7 +337,7 @@ impl Parser {
                             "ID of the pool ({rv_str}) which created the reference value was not found. Have you defined it?"
                         ),
                         self.context.current_token_coordinate,
-                        Level::Error,
+
                     )])?)
                 } else {
                     None
@@ -365,7 +358,6 @@ impl Parser {
             vec![(
                 format!("{label} node with ID {node_str} was not found. Have you defined it?"),
                 tc,
-                Level::Error,
             )]
         })
     }
@@ -378,7 +370,6 @@ impl Parser {
                 vec![(
                     format!("Pool with ID ({pool_str}) was not found. Have you defined it?"),
                     self.context.current_token_coordinate,
-                    Level::Error,
                 )]
             })
     }
@@ -387,7 +378,6 @@ impl Parser {
         vec![(
             format!("{tee_or_mpc}-admin is missing. Please define it.") + optional_text,
             self.context.current_token_coordinate,
-            Level::Error,
         )]
     }
 
@@ -407,7 +397,7 @@ impl Parser {
                                 "{kind} node with ID {data_str} was not found. Have you defined it?"
                             ),
                             *tc,
-                            Level::Error,
+
                         )]
                     })
                     .map(|node_id| {
@@ -422,12 +412,10 @@ impl Parser {
                     return Err(vec![(
                         "This is referencing the same semantic data element as a previous ID, this is not allowed. It is sufficient to just specify it once, so you can simply omit this ID".to_string(),
                         tc,
-                        Level::Error
-
                     ),
                     ("Previous reference to the same semantic data element is this one".to_string(),
-                            old_tc, Level::Info),
-                        ("This is the semantic data element which both reference".to_string(), sde_tc, Level::Info),
+                            old_tc, ),
+                        ("This is the semantic data element which both reference".to_string(), sde_tc, ),
                     ]);
                 }
             uniqueness_set.insert(sde_id, tc);
@@ -452,7 +440,6 @@ impl Parser {
                     "The pool already represents the {tee_or_mpc}. It cannot represent the administrator at the same time. Change the pool id of {tee_or_mpc}-pool or {tee_or_mpc}-admin."
                 ),
                 self.context.current_token_coordinate,
-                Level::Error,
             )]);
         }
 
@@ -464,7 +451,6 @@ impl Parser {
             return Err(vec![(
                 format!("'{tee_or_mpc}-in-protect' is not allowed inside {tee_or_mpc} pool."),
                 self.context.current_token_coordinate,
-                Level::Error,
             )]);
         }
 
@@ -476,7 +462,6 @@ impl Parser {
             return Err(vec![(
                 format!("'{tee_or_mpc}-out-unprotect' is not allowed inside {tee_or_mpc} pool."),
                 self.context.current_token_coordinate,
-                Level::Error,
             )]);
         }
 
@@ -500,7 +485,6 @@ impl Parser {
             return Err(vec![(
                 format!("'{tee_or_mpc}-in-protect' is not allowed inside {tee_or_mpc} lane."),
                 self.context.current_token_coordinate,
-                Level::Error,
             )]);
         }
 
@@ -511,7 +495,6 @@ impl Parser {
             return Err(vec![(
                 format!("'{tee_or_mpc}-out-unprotect' is not allowed inside {tee_or_mpc} lane."),
                 self.context.current_token_coordinate,
-                Level::Error,
             )]);
         }
 
@@ -543,7 +526,6 @@ impl Parser {
                     "{tee_or_mpc}-tasks does not allow the {tee_or_mpc}-out-protect attribute, as created data is implicitly protected. You may opt-out of encryption using the {tee_or_mpc}-already-protected attribute."
                 ),
                 prot.tc,
-                Level::Error,
             )]);
         }
 
@@ -553,7 +535,6 @@ impl Parser {
                     "{tee_or_mpc}-tasks does not allow the {tee_or_mpc}-in-unprotect attribute, as created data is implicitly protected. You may opt-out of encryption using the {tee_or_mpc}-already-protected attribute."
                 ),
                 prot.tc,
-                Level::Error,
             )]);
         }
 
@@ -568,23 +549,14 @@ impl Parser {
                 let mut error = vec![(
                     "All tee-tasks must be in the same pool.".to_string(),
                     self.context.current_token_coordinate,
-                    Level::Error,
                 )];
                 for (node_id, node_tc) in tasks.iter() {
                     let node = &self.graph.nodes[*node_id];
                     let pool = &self.graph.pools[node.pool];
-                    error.push(("This node selector ..".to_string(), *node_tc, Level::Info));
+                    error.push(("This node selector ..".to_string(), *node_tc));
 
-                    error.push((
-                        ".. matches this node ..".to_string(),
-                        node.tc(),
-                        Level::Info,
-                    ));
-                    error.push((
-                        ".. which is part of this pool.".to_string(),
-                        pool.tc,
-                        Level::Info,
-                    ));
+                    error.push((".. matches this node ..".to_string(), node.tc()));
+                    error.push((".. which is part of this pool.".to_string(), pool.tc));
                 }
                 return Err(error);
             }
@@ -603,14 +575,12 @@ mod tests {
             edge::{FlowType, MessageFlowAux},
             graph::SdeId,
         },
-        lexer::PeBpmnProtection,
-        lexer::TokenCoordinate,
-        parser::parse,
+        lexer::{PeBpmnProtection, TokenCoordinate},
+        parser::{ParseError, parse},
     };
 
     #[test]
-    fn multiple_data_elements_secure_channel_protection() -> Result<(), Box<dyn std::error::Error>>
-    {
+    fn multiple_data_elements_secure_channel_protection() -> Result<(), ParseError> {
         let input = r#"
 = Pool1
 # Start1
@@ -643,7 +613,7 @@ OD Data Element 2 <-task1 ->forward1
 [pe-bpmn (secure-channel @forward1 @receive3)]
     "#;
 
-        let graph = parse(input.to_string())?;
+        let graph = parse(input.to_string(), &mut Vec::new())?;
 
         for (i, sde) in graph.data_elements.iter().enumerate() {
             let node_ids: Vec<_> = sde.data_element.iter().collect();
@@ -667,7 +637,8 @@ OD Data Element 2 <-task1 ->forward1
                 assert!(
                     protection.contains(&PeBpmnProtection::SecureChannel(TokenCoordinate {
                         /* TODO */ start: 0,
-                        /* TODO */ end: 0
+                        /* TODO */ end: 0,
+                        source_file_idx: 0
                     })),
                     "Expected SecureChannel protection on node '{}' in SDE {}",
                     node.id,
@@ -712,7 +683,8 @@ OD Data Element 2 <-task1 ->forward1
                             .1
                             .contains(&PeBpmnProtection::SecureChannel(TokenCoordinate {
                                 start: 0,
-                                end: 0
+                                end: 0,
+                                source_file_idx: 0
                             }))
                     );
                 }
@@ -722,8 +694,7 @@ OD Data Element 2 <-task1 ->forward1
     }
 
     #[test]
-    fn secure_channel_only_applied_to_middle_nodes_of_first_sde()
-    -> Result<(), Box<dyn std::error::Error>> {
+    fn secure_channel_only_applied_to_middle_nodes_of_first_sde() -> Result<(), ParseError> {
         let input = r#"
 = Pool1
 # Start1
@@ -756,7 +727,7 @@ OD Data Element 2 <-task1 ->forward1
 [pe-bpmn (secure-channel @forward1 @receive3 @data-element1)]
     "#;
 
-        let graph = parse(input.to_string())?;
+        let graph = parse(input.to_string(), &mut Vec::new())?;
 
         for (sde_index, sde) in graph.data_elements.iter().enumerate() {
             assert_eq!(
@@ -779,7 +750,8 @@ OD Data Element 2 <-task1 ->forward1
                     assert!(
                         protection.contains(&PeBpmnProtection::SecureChannel(TokenCoordinate {
                             start: 0,
-                            end: 0
+                            end: 0,
+                            source_file_idx: 0
                         })),
                         "Expected SecureChannel on node '{}' in SDE {} at index {}",
                         node.id,

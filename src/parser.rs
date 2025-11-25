@@ -28,10 +28,6 @@ use std::collections::HashMap;
 use std::collections::HashSet;
 use std::dbg;
 
-use annotate_snippets::Level;
-use annotate_snippets::Snippet;
-use annotate_snippets::renderer::Renderer;
-
 pub struct ParseContext {
     last_node_id: Option<usize>,
     grouping_state: GroupingState,
@@ -46,6 +42,7 @@ pub struct ParseContext {
     shorthand_blank_events: HashSet<NodeId>,
     node_id_matcher: NodeIdMatcher,
     pub pool_id_matcher: PoolIdMatcher,
+    source_file_idx: usize,
 }
 
 // X ->l1 ; l1: - task; J end; X<-end
@@ -131,7 +128,7 @@ struct DanglingSequenceFlows {
     dangling_start_map: HashMap<String, Vec<DanglingEdgeInfo>>,
 }
 
-pub type ParseError = Vec<(String, TokenCoordinate, Level)>;
+pub type ParseError = Vec<(String, TokenCoordinate)>;
 
 pub struct Parser {
     pub graph: Graph,
@@ -154,38 +151,12 @@ impl Parser {
                 shorthand_blank_events: Default::default(),
                 node_id_matcher: NodeIdMatcher::new(),
                 pool_id_matcher: PoolIdMatcher::new(),
+                source_file_idx: 0,
             },
         }
     }
 
-    /// Parses the input and returns a graph
-    fn parse(
-        self,
-        input: String,
-        tokens: StatementStream,
-    ) -> Result<Graph, Box<dyn std::error::Error>> {
-        self.parse_inner(tokens).map_err(|e| {
-            let result = Renderer::styled()
-                .render(
-                    Level::Error.title("Parser error").snippet(
-                        Snippet::source(&input)
-                            .line_start(1)
-                            .fold(true)
-                            .annotations(e.iter().map(
-                                |(label, TokenCoordinate { start, end }, annotation_type)| {
-                                    annotation_type.span(*start..*end).label(label)
-                                },
-                            )),
-                    ),
-                )
-                .to_string();
-
-            Box::new(lexer::MyParseError(result)).into()
-        })
-    }
-
-    /// Exists purely for easier mapping of ParseError to Box<dyn...>
-    fn parse_inner(mut self, tokens: StatementStream) -> Result<Graph, ParseError> {
+    fn parse(mut self, tokens: StatementStream) -> Result<Graph, ParseError> {
         // Parse the input
         for (coordinate, token) in tokens {
             self.context.current_token_coordinate = coordinate;
@@ -236,13 +207,11 @@ impl Parser {
                                                 "The sequence flow connection `{key}` is not allowed to cross pools, but this node ..."
                                             ),
                                             start.tc,
-                                            Level::Error,
                                         ),
                                         (
                                             "... and this node live in different pools."
                                                 .to_string(),
                                             end.tc,
-                                            Level::Error,
                                         ),
                                     ]);
                                 }
@@ -286,7 +255,7 @@ impl Parser {
                                 (
                                     format!("Label `{key}` is not defined elsewhere in this pool{additional_hint}."),
                                     still_dangling.tc,
-                                    Level::Error,
+
                                 )
                             })
                             .collect());
@@ -343,7 +312,7 @@ impl Parser {
                 return Err(vec![(
                     "Lanes must always be part of a pool, please add a pool (e.g. `= My Pool`) above this line.".to_string(),
                     self.context.current_token_coordinate,
-                    Level::Error,
+
                 )]);
             }
             GroupingState::WithinPool { pool_id, ptc }
@@ -367,12 +336,12 @@ impl Parser {
                     (
                         "This lane is part of a diagram without pools and lanes, since the diagram does not start with a pool. Hence this lane statement is illegal.".to_string(),
                         self.context.current_token_coordinate,
-                        Level::Error,
+
                     ),
                     (
                         "If you want to use pools and lanes, please add a pool (e.g. `= My Pool`) and a lane (e.g. `== My Lane`) *before your first node*.".to_string(),
                         first_encountered_node,
-                        Level::Note,
+
                     ),
                 ]);
             }
@@ -385,14 +354,14 @@ impl Parser {
                     (
                         "This lane is part of a pool without explicit lanes, since the pool does not start with a lane. Hence this lane statement is illegal.".to_string(),
                         self.context.current_token_coordinate,
-                        Level::Error,
+
                     ),
                     (
                         "If you want to use multiple lanes within this pool, please add a lane (e.g. `== My Lane`) as the first statement inside of you pool *before any other nodes*.".to_string(),
                         first_encountered_node,
-                        Level::Note,
+
                     ),
-                    ("The pool started here.".to_string(), ptc, Level::Note),
+                    ("The pool started here.".to_string(), ptc, ),
                 ]);
             }
         }
@@ -705,11 +674,11 @@ impl Parser {
             return Err(vec![
 (
                 "A boundary event can only follow a task (- Some Task), a subprocess, a call activity or a transaction.".to_string(),
-                self.context.current_token_coordinate,Level::Error
+                self.context.current_token_coordinate,
             ),
             (
                 "This node is of wrong type.".to_string(),
-                    *tc, Level::Note
+                    *tc,
             )
             ]);
         }
@@ -783,11 +752,11 @@ LifelineState::ActiveLifeline { token_coordinate, .. } | LifelineState::StartedF
             return Err(vec![
 (
                 "Any sequence flow above this statement should be finished, but this is not the case.".to_string(),
-                self.context.current_token_coordinate,Level::Error
+                self.context.current_token_coordinate,
             ),
             (
                 "This statement does not finish the sequence flow. Try using `. End Event`, `F ->somewhere` or `X ->lbl1 ->lbl2` to finish the sequence flow.".to_string(),
-                    token_coordinate, Level::Note
+                    token_coordinate,
             )
             ]),
 _ => (),
@@ -818,7 +787,6 @@ _ => (),
                         meta.sender_id
                     ),
                     self.context.current_token_coordinate,
-                    Level::Error,
                 )]
             })?;
 
@@ -833,7 +801,6 @@ _ => (),
                         meta.receiver_id
                     ),
                     self.context.current_token_coordinate,
-                    Level::Error,
                 )]
             })?;
 
@@ -847,7 +814,6 @@ _ => (),
                         sender_node.pool.0
                     ),
                     self.context.current_token_coordinate,
-                    Level::Error,
                 )]);
             }
         }
@@ -877,7 +843,6 @@ _ => (),
             return Err(vec![(
                 "Data element without recipients is unsupported at the moment.".to_string(),
                 self.context.current_token_coordinate,
-                Level::Error,
             )]);
         }
 
@@ -895,7 +860,6 @@ _ => (),
                         "Data node recipient {target:?} has not yet been defined within the current pool. (Have you defined it afterwards? TODO).",
                     ),
                     self.context.current_token_coordinate,
-                    Level::Error,
                 )]);
             };
             let recipient_node = &self.graph.nodes[node_id];
@@ -907,7 +871,6 @@ _ => (),
                         "Data node recipient {target:?} is in another pool than the previous recipients. However, they must appear within the same pool (but may appear in different lanes)."
                     ),
                     self.context.current_token_coordinate,
-                    Level::Error,
                 )]);
             }
             pool_id = Some(recipient_node.pool);
@@ -1085,25 +1048,25 @@ fn err_from_no_lifeline_active(
             LifelineState::NoLifelineActive { previous_lifeline_termination_statement: None } => vec![
 (
                 "This statement requires an active sequence flow. Try to add a start event `#` before this line.".to_string(),
-                current_token_coordinate, Level::Error
+                current_token_coordinate,
 )]
             ,
             LifelineState::NoLifelineActive { previous_lifeline_termination_statement: Some(tc) } => vec![
 (
                 "This statement requires an active sequence flow.".to_string(),
-                current_token_coordinate, Level::Error
+                current_token_coordinate,
 ),(
                 "The sequence flow was previously terminated here.".to_string(),
-                tc, Level::Note
+                tc,
 )]
             ,
             LifelineState::StartedFromSequenceFlowLanding { token_coordinate, .. } => vec![
 (
                 "This statement requires an active sequence flow.".to_string(),
-                current_token_coordinate, Level::Error
+                current_token_coordinate,
 ),(
                 "This statement itself is just a meta instruction and does not add a node. Try adding a `- Some Activity` after this statement.".to_string(),
-                token_coordinate, Level::Note
+                token_coordinate,
 )]
             ,
         l => panic!("{l:?}, {current_token_coordinate:?}"),
@@ -1121,13 +1084,11 @@ fn err_from_unfinished_lifeline(
             (
                 "This statement cannot appear within an active sequence flow.".to_string(),
                 current_token_coordinate,
-                Level::Error,
             ),
             (
                 // Have a slightly clearer error message here.
                 "This statement introduced a sequence flow.".to_string(),
                 token_coordinate,
-                Level::Note,
             ),
         ]),
         LifelineState::ActiveLifeline {
@@ -1136,20 +1097,20 @@ fn err_from_unfinished_lifeline(
             (
                 "This statement cannot appear within an active sequence flow.".to_string(),
                 current_token_coordinate,
-                Level::Error,
             ),
             (
                 "This statement is part of the currently active sequence flow.".to_string(),
                 token_coordinate,
-                Level::Note,
             ),
         ]),
         LifelineState::NoLifelineActive { .. } => Ok(()),
     }
 }
 
-pub fn parse(input: String) -> Result<Graph, Box<dyn std::error::Error>> {
-    Parser::new().parse(input.clone(), lex(input)?)
+pub fn parse(input: String, bpmd_input_sources: &mut Vec<String>) -> Result<Graph, ParseError> {
+    let source_file_idx = 0;
+    bpmd_input_sources.push(input.clone());
+    Parser::new().parse(lex(input, source_file_idx)?)
 }
 
 #[cfg(test)]
@@ -1157,14 +1118,14 @@ mod tests {
     use super::*;
 
     #[test]
-    fn basic() -> Result<(), Box<dyn std::error::Error>> {
+    fn basic() -> Result<(), ParseError> {
         let input = r#"
 # Start Event
 - Middle Event
 . End Event
 "#;
 
-        let graph = parse(input.to_string())?;
+        let graph = parse(input.to_string(), &mut Vec::new())?;
         assert!(
             graph.edges.len() == 2,
             "Edge count is wrong, should be: {}",
@@ -1174,7 +1135,7 @@ mod tests {
     }
 
     #[test]
-    fn gateway() -> Result<(), Box<dyn std::error::Error>> {
+    fn gateway() -> Result<(), ParseError> {
         let input = r#"
 # Start Event
 X ->Branch1 "Condition 1" ->Branch2 "Cond 2"
@@ -1191,7 +1152,7 @@ X<-JoinPoint
 . End Event
 "#;
 
-        let graph = parse(input.to_string())?;
+        let graph = parse(input.to_string(), &mut Vec::new())?;
         assert!(
             graph.edges.len() == 6,
             "Edge count is wrong, should be: {}",
@@ -1201,7 +1162,7 @@ X<-JoinPoint
     }
 
     #[test]
-    fn pool() -> Result<(), Box<dyn std::error::Error>> {
+    fn pool() -> Result<(), ParseError> {
         let input = r#"
 = Pool
 == Lane1
@@ -1214,7 +1175,7 @@ X<-JoinPoint
 . End Event 2
 "#;
 
-        let graph = parse(input.to_string())?;
+        let graph = parse(input.to_string(), &mut Vec::new())?;
         assert!(
             graph.edges.len() == 4,
             "Edge count is wrong, should be: {}",
@@ -1224,7 +1185,7 @@ X<-JoinPoint
     }
 
     #[test]
-    fn jump() -> Result<(), Box<dyn std::error::Error>> {
+    fn jump() -> Result<(), ParseError> {
         let input = r#"
 = Pool
 == Lane1
@@ -1237,7 +1198,7 @@ F <-jump
 . End Event
 "#;
 
-        let graph = parse(input.to_string())?;
+        let graph = parse(input.to_string(), &mut Vec::new())?;
         assert!(
             graph.edges.len() == 3,
             "Edge count is wrong, should be: {}",
@@ -1247,7 +1208,7 @@ F <-jump
     }
 
     #[test]
-    fn message_flow() -> Result<(), Box<dyn std::error::Error>> {
+    fn message_flow() -> Result<(), ParseError> {
         let input = r#"
 = Pool 1
 # Start Event
@@ -1261,7 +1222,7 @@ F <-jump
 MF <-sender ->receiver
 "#;
 
-        let graph = parse(input.to_string())?;
+        let graph = parse(input.to_string(), &mut Vec::new())?;
         assert!(
             graph.edges.len() == 5,
             "Edge count is wrong, should be: {}",
@@ -1276,7 +1237,7 @@ MF <-sender ->receiver
     }
 
     #[test]
-    fn illegal_message_flow_between_lanes() -> Result<(), Box<dyn std::error::Error>> {
+    fn illegal_message_flow_between_lanes() -> Result<(), ParseError> {
         let input = r#"
 = Pool
 == Lane1
@@ -1289,7 +1250,7 @@ MF <-sender ->receiver
 . End Event
 MF <-sender ->receiver
 "#;
-        let result = parse(input.to_string());
+        let result = parse(input.to_string(), &mut Vec::new());
         assert!(
             result.is_err(),
             "Expected an error for illegal message flow between lanes"

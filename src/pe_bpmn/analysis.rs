@@ -1,8 +1,8 @@
-use crate::common::graph::{Graph, PoolId};
+use crate::common::graph::{Graph, LaneId, PoolId};
 use crate::common::node::NodeType;
 use crate::lexer::TokenCoordinate;
 use crate::pe_bpmn::parser::{
-    ComputationCommon, Mpc, PeBpmn, PeBpmnType, Protection, SecureChannel, Tee,
+    ComputationCommon, Mpc, PeBpmn, PeBpmnSubType, PeBpmnType, Protection, SecureChannel, Tee,
 };
 use crate::{
     common::{
@@ -12,9 +12,8 @@ use crate::{
     lexer::{PeBpmnMeta, PeBpmnProtection},
     parser::ParseError,
 };
-use annotate_snippets::Level;
 use itertools::Itertools;
-use proc_macros::{e, from, n, to};
+use proc_macros::{e, n};
 use std::collections::HashSet;
 
 pub fn analyse(graph: &mut Graph) -> Result<(), ParseError> {
@@ -30,67 +29,96 @@ pub fn analyse(graph: &mut Graph) -> Result<(), ParseError> {
 
 pub fn analyse_single(pe_bpmn: &PeBpmn, graph: &mut Graph) -> Result<(), ParseError> {
     let enforce_reach_end = true;
-    match pe_bpmn.r#type {
+    match &pe_bpmn.r#type {
         PeBpmnType::SecureChannel(secure_channel) => {
-            analyse_secure_channel(secure_channel, graph);
+            analyse_secure_channel(&secure_channel, &pe_bpmn.meta, graph);
         }
-        lexer::PeBpmnType::Tee(lexer_tee) => match &tee.pebpmn_type {
-            PeBpmnTypeParse::Pool(pool_id) => {
-                graph.pools[pool_id].fill_color = meta.fill_color.clone();
-                graph.pools[pool_id].stroke_color = meta.stroke_color.clone();
-            }
-            PeBpmnTypeParse::Lane { pool_id, lane_id } => {
-                graph.pools[pool_id].lanes[*lane_id].fill_color = meta.fill_color.clone();
-                graph.pools[pool_id].lanes[*lane_id].stroke_color = meta.stroke_color.clone();
-            }
-            PeBpmnTypeParse::Tasks(tasks) => {
-                for task in tasks {
-                    if let NodeType::RealNode {
-                        pe_bpmn_hides_protection_operations,
-                        ..
-                    } = &mut graph.nodes[*task].node_type
-                    {
-                        *pe_bpmn_hides_protection_operations = true;
-                    }
-                }
-                parse_pebpmn_tasks(tasks.clone(), &tee, &pe_bpmn.meta, enforce_reach_end, "tee")
-            }
-        }?,
-        lexer::PeBpmnType::Mpc(lexer_mpc) => {
-            let mpc = compute_visibility_tee_or_mpc(lexer_mpc.common, "mpc")?;
-
-            match &mpc.pebpmn_type {
-                PeBpmnTypeParse::Pool(pool_id) => parse_pebpmn_pool_or_lane(
-                    *pool_id,
-                    &mpc,
+        PeBpmnType::Tee(Tee { common }) => {
+            compute_visibility_tee_or_mpc(graph, common)?;
+            match &common.pebpmn_type {
+                &PeBpmnSubType::Pool(pool_id) => parse_pebpmn_pool_or_lane(
+                    graph,
+                    &common,
                     &pe_bpmn.meta,
                     enforce_reach_end,
-                    "mpc",
+                    PeBpmnProtection::Tee(common.tc),
+                    pool_id,
                     None,
-                ),
-                PeBpmnTypeParse::Lane { pool_id, lane_id } => parse_pebpmn_pool_or_lane(
-                    *pool_id,
-                    &mpc,
+                )?,
+                &PeBpmnSubType::Lane { pool_id, lane_id } => parse_pebpmn_pool_or_lane(
+                    graph,
+                    &common,
                     &pe_bpmn.meta,
                     enforce_reach_end,
-                    "mpc",
+                    PeBpmnProtection::Tee(common.tc),
+                    pool_id,
                     Some(lane_id),
-                ),
-                PeBpmnTypeParse::Tasks(tasks) => {
-                    for task in tasks {
+                )?,
+                PeBpmnSubType::Tasks(tasks) => {
+                    for (node_id, _) in tasks {
                         if let NodeType::RealNode {
                             pe_bpmn_hides_protection_operations,
                             ..
-                        } = &mut graph.nodes[*task].node_type
+                        } = &mut graph.nodes[*node_id].node_type
                         {
                             *pe_bpmn_hides_protection_operations = true;
                         }
                     }
-                    parse_pebpmn_tasks(tasks.clone(), &mpc, &pe_bpmn.meta, enforce_reach_end, "mpc")
+                    parse_pebpmn_tasks(
+                        graph,
+                        &tasks,
+                        &common,
+                        &pe_bpmn.meta,
+                        enforce_reach_end,
+                        PeBpmnProtection::Tee(common.tc),
+                    )?
                 }
-            }?
+            }
+        }
+        PeBpmnType::Mpc(Mpc { common }) => {
+            compute_visibility_tee_or_mpc(graph, common)?;
+            match &common.pebpmn_type {
+                &PeBpmnSubType::Pool(pool_id) => parse_pebpmn_pool_or_lane(
+                    graph,
+                    &common,
+                    &pe_bpmn.meta,
+                    enforce_reach_end,
+                    PeBpmnProtection::Mpc(common.tc),
+                    pool_id,
+                    None,
+                )?,
+                &PeBpmnSubType::Lane { pool_id, lane_id } => parse_pebpmn_pool_or_lane(
+                    graph,
+                    &common,
+                    &pe_bpmn.meta,
+                    enforce_reach_end,
+                    PeBpmnProtection::Mpc(common.tc),
+                    pool_id,
+                    Some(lane_id),
+                )?,
+                PeBpmnSubType::Tasks(tasks) => {
+                    for (node_id, _) in tasks {
+                        if let NodeType::RealNode {
+                            pe_bpmn_hides_protection_operations,
+                            ..
+                        } = &mut graph.nodes[*node_id].node_type
+                        {
+                            *pe_bpmn_hides_protection_operations = true;
+                        }
+                    }
+                    parse_pebpmn_tasks(
+                        graph,
+                        &tasks,
+                        &common,
+                        &pe_bpmn.meta,
+                        enforce_reach_end,
+                        PeBpmnProtection::Mpc(common.tc),
+                    )?;
+                }
+            }
         }
     }
+    Ok(())
 }
 
 pub fn analyse_secure_channel(
@@ -98,7 +126,12 @@ pub fn analyse_secure_channel(
     meta: &PeBpmnMeta,
     graph: &mut Graph,
 ) -> Result<(), ParseError> {
+    let enforce_reach_end = true;
+    let is_reverse = true;
     let protection = PeBpmnProtection::SecureChannel(secure_channel.tc);
+    let filter = |sde_id: &SdeId| {
+        secure_channel.permitted_ids.is_empty() || contains(&secure_channel.permitted_ids, sde_id)
+    };
     if let Some((sender_id, sender_tc)) = secure_channel.sender {
         check_secure_channel_permitted_sdes_are_valid(
             graph,
@@ -120,88 +153,86 @@ pub fn analyse_secure_channel(
     }
 
     match (secure_channel.sender, secure_channel.receiver) {
-        (Some((sender, sender_tc)), Some((receiver, receiver_tc))) => check_protection_paths(
+        (Some((sender, sender_tc)), Some((receiver, _))) => check_protection_paths(
             graph,
             sender,
             sender_tc,
-            false,
+            !is_reverse,
             meta,
             &[receiver],
             protection,
-            |sde_id| {
-                secure_channel.permitted_ids.is_empty()
-                    || secure_channel.permitted_ids.contains(sde_id)
-            },
-            true,
+            filter,
+            enforce_reach_end,
         )?,
-        (Some(sender), None) => check_protection_paths(
+        (Some((sender, sender_tc)), None) => check_protection_paths(
+            graph,
             sender,
-            false,
-            &pe_bpmn.meta,
+            sender_tc,
+            !is_reverse,
+            meta,
             &[],
             protection,
-            |sde_id| permitted_sdes.is_empty() || permitted_sdes.contains(sde_id),
-            false,
+            filter,
+            !enforce_reach_end,
         )?,
-        (None, Some(receiver)) => check_protection_paths(
+        (None, Some((receiver, receiver_tc))) => check_protection_paths(
+            graph,
             receiver,
-            true,
-            &pe_bpmn.meta,
+            receiver_tc,
+            is_reverse,
+            &meta,
             &[receiver],
             protection,
-            |sde_id| permitted_sdes.is_empty() || permitted_sdes.contains(sde_id),
-            false,
+            filter,
+            !enforce_reach_end,
         )?,
         (None, None) => {
-            if permitted_sdes.is_empty() {
+            if secure_channel.permitted_ids.is_empty() {
                 return Err(vec![(
-                    "You need to define IDs when you use pre-sent and post-received simultaneously"
+                    "You need to define IDs when you use pre-sent and post-received simultaneously to identify data which should be marked as protected (or omit the `[pe-bpmn ...]` statement if there is nothing to protect). Example: `(secure-channel pre-sent post-received @data-obj1 @data-obj2)`"
                         .to_string(),
-                    context.current_token_coordinate,
-                    Level::Error,
+                    secure_channel.tc,
+
                 )]);
             }
 
             // Add protection to data elements and their data flow edges
-            permitted_sdes.iter().for_each(|sde_id| {
+            secure_channel.permitted_ids.iter().for_each(|(sde_id, _)| {
                 let sde = &mut graph.data_elements[*sde_id];
                 sde.data_element.iter().for_each(|node_id| {
                     let node = &mut graph.nodes[*node_id];
-                    node.fill_color = pe_bpmn.meta.fill_color.clone();
-                    node.stroke_color = pe_bpmn.meta.stroke_color.clone();
+                    node.fill_color = meta.fill_color.clone();
+                    node.stroke_color = meta.stroke_color.clone();
                     node.set_pebpmn_protection(protection);
                     for edge_id in node.incoming.iter().chain(&node.outgoing) {
-                        graph.edges[*edge_id].set_pebpmn_protection(sde_id, protection);
-                        graph.edges[*edge_id].stroke_color = pe_bpmn.meta.stroke_color.clone();
+                        graph.edges[*edge_id].set_pebpmn_protection(*sde_id, protection);
+                        graph.edges[*edge_id].stroke_color = meta.stroke_color.clone();
                     }
                 });
             });
 
             // Add protection to message flows transporting data elements
-            for edge in self
-                .graph
-                .edges
-                .iter_mut()
-                .filter(|edge| edge.is_message_flow())
-            {
+            for edge in graph.edges.iter_mut().filter(|edge| edge.is_message_flow()) {
                 let sde_ids: Vec<_> = edge
                     .get_transported_data()
                     .iter()
                     .copied()
-                    .filter(|sde_id| permitted_sdes.contains(sde_id))
+                    .filter(|sde_id| contains(&secure_channel.permitted_ids, sde_id))
                     .collect();
 
                 for sde_id in sde_ids {
-                    edge.set_pebpmn_protection(&sde_id, protection);
+                    edge.set_pebpmn_protection(sde_id, protection);
                 }
             }
         }
     }
+    Ok(())
 }
 
+// TODO make use of this function.
 fn compute_visibility_tee_or_mpc(
     graph: &mut Graph,
-    computation: ComputationCommon,
+    computation: &ComputationCommon,
 ) -> Result<(), ParseError> {
     let admin = computation.admin;
     // For all in-protect nodes that the admin either owns or are unassigned, give the admin visibility A to all the SDEs those nodes carry.
@@ -270,7 +301,16 @@ fn parse_pebpmn_pool_or_lane(
     meta: &PeBpmnMeta,
     enforce_reach_end: bool,
     protection: PeBpmnProtection,
+    pool_id: PoolId,
+    lane_id: Option<LaneId>,
 ) -> Result<(), ParseError> {
+    if let Some(lane_id) = lane_id {
+        graph.pools[pool_id].lanes[lane_id].fill_color = meta.fill_color.clone();
+        graph.pools[pool_id].lanes[lane_id].stroke_color = meta.stroke_color.clone();
+    } else {
+        graph.pools[pool_id].fill_color = meta.fill_color.clone();
+        graph.pools[pool_id].stroke_color = meta.stroke_color.clone();
+    };
     let mut check_protected = |protect_nodes: &Vec<Protection>,
                                unprotect_nodes: &Vec<Protection>,
                                is_reverse: bool|
@@ -566,12 +606,15 @@ fn check_that_protection_is_visually_applied(
                 TokenCoordinate {
                     start: usize::MAX,
                     end: usize::MIN,
+                    source_file_idx: 0,
                 },
                 |acc, el| {
                     let tc = &n!(*el).tc();
                     TokenCoordinate {
                         start: acc.start.min(tc.start),
                         end: acc.end.max(tc.end),
+                        // Should anyway always be the same.
+                        source_file_idx: tc.source_file_idx,
                     }
                 },
             );
@@ -584,16 +627,14 @@ fn check_that_protection_is_visually_applied(
             "This protect node has an outgoing (protected) data element (`OD ... <-@node_id` or similar is present), but the same (unprotected) data object is missing on the incoming side (`OD ... ->@node_id` or similar is missing). The unprotected object must be visually present to not confuse the reader."
         };
         Err(vec![
-            (error_string.to_string(), n!(node_id).tc(), Level::Error),
+            (error_string.to_string(), n!(node_id).tc()),
             (
                 "The PE-BPMN instruction is here".to_string(),
                 pe_protection_tc,
-                Level::Info,
             ),
             (
                 "The data element is declared here".to_string(),
                 full_data_declaration,
-                Level::Info,
             ),
         ])
     } else {
@@ -696,22 +737,15 @@ fn check_secure_channel_permitted_sdes_are_valid(
                         "Data element{data_element}is not connected to the {sender_or_receiver} node",
                     ),
                     *sde_tc,
-                    Level::Error,
                 ),
                 (
                     "This is the semantic data element".to_string(),
                     sde.tc(graph),
-                    Level::Info,
                 ),
-                (
-                    "This is the sender node ..".to_string(),
-                    n!(node_id).tc(),
-                    Level::Info,
-                ),
+                ("This is the sender node ..".to_string(), n!(node_id).tc()),
                 (
                     ".. which was selected by this identifier".to_string(),
                     sender_or_receiver_tc,
-                    Level::Info,
                 ),
             ]);
         }
@@ -745,26 +779,23 @@ fn create_protection_error_message(
                 if is_reverse { "protect" } else { "un-protect" }
             ),
             node_pebpmn_tc,
-            Level::Error,
         ),
         (
             "This node was matched by the node selector".to_string(),
             n!(node_id).tc(),
-            Level::Info,
         ),
         (
             "The traversal path of this data element was followed".to_string(),
             graph.data_elements[sde_id].tc(graph),
-            Level::Info,
         ),
     ];
     for end in ends {
-        result.push((
-            "This end was considered".to_string(),
-            n!(*end).tc(),
-            Level::Info,
-        ));
+        result.push(("This end was considered".to_string(), n!(*end).tc()));
     }
 
     result
+}
+
+fn contains<T: std::cmp::PartialEq>(haystack: &[(T, TokenCoordinate)], needle: &T) -> bool {
+    haystack.iter().any(|(straw, _)| *straw == *needle)
 }

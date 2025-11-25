@@ -9,7 +9,6 @@ use crate::common::pool::Pool;
 use crate::lexer::{DataType, EventType, TokenCoordinate};
 use crate::parser::ParseError;
 use crate::pe_bpmn::parser::PeBpmn;
-use annotate_snippets::Level;
 use proc_macros::{from, n, to};
 use std::fmt::{self, Debug};
 use std::iter::from_fn;
@@ -92,6 +91,9 @@ impl SemanticDataElement {
             end: graph.nodes[*self.data_element.last().expect("SDEs are not empty")]
                 .tc()
                 .end,
+            source_file_idx: graph.nodes[*self.data_element.first().expect("SDEs are not empty")]
+                .tc()
+                .source_file_idx,
         }
     }
 }
@@ -723,7 +725,7 @@ fn check_if_valid_message_flow_start(node: &Node, errors: &mut ValidationErrors)
                 errors.push((
                 "This node type cannot send messages. Only message events (M#) or tasks (e.g. .-) can be used as message flow starts. Note that shorthand events (#) are automatically transformed into message events when they are used in a message flow.".to_string(),
                     *tc,
-                    Level::Error
+
                 ));
             }
         }
@@ -740,7 +742,7 @@ fn check_if_valid_message_flow_end(node: &Node, errors: &mut ValidationErrors) {
                 errors.push((
                 "This node type cannot catch messages. Only message events (M#) or tasks (e.g. .-) can be used as message flow ends. Note that shorthand events (#) are automatically transformed into message events when they are used in a message flow.".to_string(),
                     *tc,
-                    Level::Error
+
                 ));
             }
         }

@@ -6,10 +6,6 @@
 
 use core::fmt::Display;
 
-use annotate_snippets::Level;
-use annotate_snippets::Snippet;
-use annotate_snippets::renderer::Renderer;
-
 use crate::common::bpmn_node::ActivityType;
 use crate::common::bpmn_node::BoundaryEvent;
 use crate::common::bpmn_node::BoundaryEventType;
@@ -17,6 +13,7 @@ use crate::common::bpmn_node::InterruptKind;
 use crate::common::bpmn_node::TaskType;
 use crate::common::graph::SdeId;
 use crate::lexer::*;
+use crate::parser::ParseError;
 
 // TODO in the future make this &'static str
 #[derive(Debug, Default, Clone)]
@@ -259,9 +256,9 @@ struct AssembledAttributes {
 //id: String,
 //}
 
-pub type AResult = Result<Statement, (TokenCoordinate, String)>;
+pub type AResult = Result<Statement, ParseError>;
 
-fn to_pool(atts: Tokens) -> AResult {
+fn to_pool(atts: Tokens, backup_tc: TokenCoordinate) -> AResult {
     let atts = assemble_attributes(
         "Pools",
         atts,
@@ -272,11 +269,12 @@ fn to_pool(atts: Tokens) -> AResult {
             task_type: AROptionalAttribute::Forbidden,
             event_visual: AROptionalAttribute::Forbidden,
         },
+        backup_tc,
     )?;
     Ok(Statement::Pool(atts.display_text.unwrap()))
 }
 
-fn to_lane(atts: Tokens) -> AResult {
+fn to_lane(atts: Tokens, backup_tc: TokenCoordinate) -> AResult {
     let atts = assemble_attributes(
         "Lanes",
         atts,
@@ -287,11 +285,12 @@ fn to_lane(atts: Tokens) -> AResult {
             task_type: AROptionalAttribute::Forbidden,
             event_visual: AROptionalAttribute::Forbidden,
         },
+        backup_tc,
     )?;
     Ok(Statement::Lane(atts.display_text.unwrap()))
 }
 
-fn to_event(atts: Tokens) -> AResult {
+fn to_event(atts: Tokens, backup_tc: TokenCoordinate) -> AResult {
     let atts = assemble_attributes(
         "Action Events",
         atts,
@@ -302,6 +301,7 @@ fn to_event(atts: Tokens) -> AResult {
             task_type: AROptionalAttribute::Forbidden,
             event_visual: AROptionalAttribute::Forbidden,
         },
+        backup_tc,
     )?;
     Ok(Statement::Event(EventMeta {
         node_meta: NodeMeta {
@@ -316,7 +316,7 @@ fn to_event(atts: Tokens) -> AResult {
     }))
 }
 
-fn to_event_end(atts: Tokens) -> AResult {
+fn to_event_end(atts: Tokens, backup_tc: TokenCoordinate) -> AResult {
     // TODO use virtual tokens to distinguish end from non-end.
     let atts = assemble_attributes(
         "End events",
@@ -328,6 +328,7 @@ fn to_event_end(atts: Tokens) -> AResult {
             task_type: AROptionalAttribute::Forbidden,
             event_visual: AROptionalAttribute::Forbidden,
         },
+        backup_tc,
     )?;
     Ok(Statement::EventEnd(EventMeta {
         node_meta: NodeMeta {
@@ -341,7 +342,7 @@ fn to_event_end(atts: Tokens) -> AResult {
     }))
 }
 
-fn to_task_activity(atts: Tokens) -> AResult {
+fn to_task_activity(atts: Tokens, backup_tc: TokenCoordinate) -> AResult {
     let atts = assemble_attributes(
         "Activity Tasks",
         atts,
@@ -352,6 +353,7 @@ fn to_task_activity(atts: Tokens) -> AResult {
             task_type: AROptionalAttribute::Forbidden,
             event_visual: AROptionalAttribute::Forbidden,
         },
+        backup_tc,
     )?;
     Ok(Statement::Activity(ActivityMeta {
         activity_type: ActivityType::Task(TaskType::None),
@@ -362,9 +364,9 @@ fn to_task_activity(atts: Tokens) -> AResult {
     }))
 }
 
-fn to_gateway_outer(mut atts: Tokens) -> AResult {
+fn to_gateway_outer(mut atts: Tokens, backup_tc: TokenCoordinate) -> AResult {
     let (_, Token::GatewayType(gateway_type)) = atts.next().unwrap() else {
-        return Err((TokenCoordinate::default(), "Programming error: an outer gateway node should always have its type as the first attribute.".to_string()));
+        unreachable!();
     };
     let atts = assemble_attributes(
         "Gateway Nodes",
@@ -376,6 +378,7 @@ fn to_gateway_outer(mut atts: Tokens) -> AResult {
             task_type: AROptionalAttribute::Forbidden,
             event_visual: AROptionalAttribute::Forbidden,
         },
+        backup_tc,
     )?;
     let sequence_flows = atts.arrows_with_same_direction.unwrap();
     let meta = GatewayNodeMeta {
@@ -392,17 +395,9 @@ fn to_gateway_outer(mut atts: Tokens) -> AResult {
     })
 }
 
-fn to_data(mut tokens: Tokens) -> AResult {
-    let (_, Token::DataKind(data_kind, is_continuation)) = tokens.next().ok_or_else(|| {
-        (
-            TokenCoordinate::default(),
-            "Programming error: a data statement should always have a DataKind token as the first attribute.".to_string(),
-        )
-    })? else {
-        return Err((
-            TokenCoordinate::default(),
-            "Programming error: a data statement should always have its kind (SD/OD) as the first attribute.".to_string(),
-        ));
+fn to_data(mut tokens: Tokens, backup_tc: TokenCoordinate) -> AResult {
+    let Some((_, Token::DataKind(data_kind, is_continuation))) = tokens.next() else {
+        unreachable!();
     };
 
     let atts = assemble_attributes(
@@ -415,6 +410,7 @@ fn to_data(mut tokens: Tokens) -> AResult {
             task_type: AROptionalAttribute::Forbidden,
             event_visual: AROptionalAttribute::Forbidden,
         },
+        backup_tc,
     )?;
 
     let node_meta = NodeMeta {
@@ -441,17 +437,9 @@ fn to_data(mut tokens: Tokens) -> AResult {
     }))
 }
 
-fn to_boundary_event(mut tokens: Tokens) -> AResult {
-    let (_, Token::BoundaryEvent(event_type, interrupt_kind)) = tokens.next().ok_or_else(|| {
-        (
-            TokenCoordinate::default(),
-            "Programming error: a boundary event statement should always have a BoundaryEvent token as the first attribute.".to_string(),
-        )
-    })? else {
-        return Err((
-            TokenCoordinate::default(),
-            "Programming error: a boundary event statement should always have its boundary event token and interrupt kind as the first attribute.".to_string(),
-        ));
+fn to_boundary_event(mut tokens: Tokens, backup_tc: TokenCoordinate) -> AResult {
+    let Some((_, Token::BoundaryEvent(event_type, interrupt_kind))) = tokens.next() else {
+        unreachable!();
     };
 
     let atts = assemble_attributes(
@@ -465,6 +453,7 @@ fn to_boundary_event(mut tokens: Tokens) -> AResult {
             task_type: AROptionalAttribute::Forbidden,
             event_visual: AROptionalAttribute::Forbidden,
         },
+        backup_tc,
     )?;
 
     let Some((Direction::Outgoing, mut edge_metas)) = atts.arrows_with_same_direction else {
@@ -481,7 +470,7 @@ fn to_boundary_event(mut tokens: Tokens) -> AResult {
     }))
 }
 
-fn to_message_flow(atts: Tokens) -> AResult {
+fn to_message_flow(atts: Tokens, backup_tc: TokenCoordinate) -> AResult {
     let atts = assemble_attributes(
         "Message Flows",
         atts,
@@ -492,6 +481,7 @@ fn to_message_flow(atts: Tokens) -> AResult {
             task_type: AROptionalAttribute::Forbidden,
             event_visual: AROptionalAttribute::Forbidden,
         },
+        backup_tc,
     )?;
 
     let flows = atts.left_and_right_arrows.unwrap();
@@ -510,7 +500,7 @@ fn to_message_flow(atts: Tokens) -> AResult {
     }))
 }
 
-fn to_sequence_flow(atts: Tokens) -> AResult {
+fn to_sequence_flow(atts: Tokens, backup_tc: TokenCoordinate) -> AResult {
     let atts = assemble_attributes(
         "Sequence Flows",
         atts,
@@ -521,6 +511,7 @@ fn to_sequence_flow(atts: Tokens) -> AResult {
             task_type: AROptionalAttribute::Forbidden,
             event_visual: AROptionalAttribute::Forbidden,
         },
+        backup_tc,
     )?;
     let sequence_flows = atts.arrows_with_same_direction.unwrap();
     let sequence_flow_jump_meta = sequence_flows.1.into_iter().next().unwrap();
@@ -533,7 +524,7 @@ fn to_sequence_flow(atts: Tokens) -> AResult {
     })
 }
 
-fn to_layout_above(atts: Tokens) -> AResult {
+fn to_layout_above(atts: Tokens, backup_tc: TokenCoordinate) -> AResult {
     let atts = assemble_attributes(
         "Layout Above Statements",
         atts,
@@ -544,6 +535,7 @@ fn to_layout_above(atts: Tokens) -> AResult {
             task_type: AROptionalAttribute::Forbidden,
             event_visual: AROptionalAttribute::Forbidden,
         },
+        backup_tc,
     )?;
     let mut ids = atts.ids.unwrap().into_iter();
     let id1 = ids.next().unwrap();
@@ -551,7 +543,7 @@ fn to_layout_above(atts: Tokens) -> AResult {
     Ok(Statement::Layout(LayoutStatement::Above(id1, id2)))
 }
 
-fn to_layout_leftof(atts: Tokens) -> AResult {
+fn to_layout_leftof(atts: Tokens, backup_tc: TokenCoordinate) -> AResult {
     let atts = assemble_attributes(
         "Layout LeftOf Statements",
         atts,
@@ -562,33 +554,12 @@ fn to_layout_leftof(atts: Tokens) -> AResult {
             task_type: AROptionalAttribute::Forbidden,
             event_visual: AROptionalAttribute::Forbidden,
         },
+        backup_tc,
     )?;
     let mut ids = atts.ids.unwrap().into_iter();
     let id1 = ids.next().unwrap();
     let id2 = ids.next().unwrap();
     Ok(Statement::Layout(LayoutStatement::LeftOf(id1, id2)))
-}
-
-fn to_layout_rowwidth(atts: Tokens) -> AResult {
-    let atts = assemble_attributes(
-        "Layout RowWidth Statements",
-        atts,
-        AssemblyRequest {
-            display_text: ARAttribute::Required,
-            ids: ARAttribute::Forbidden,
-            flows: ARFlowAttribute::Forbidden,
-            task_type: AROptionalAttribute::Forbidden,
-            event_visual: AROptionalAttribute::Forbidden,
-        },
-    )?;
-    let text = atts.display_text.unwrap();
-    let rownumber = text.parse().map_err(|e| {
-        (
-            TokenCoordinate::default(),
-            format!("rowwidth expects a positive number as argument (e.g. `rowwidth 5`). The argument `{text}` could not be parsed as a positive number: {e}"),
-        )
-    })?;
-    Ok(Statement::Layout(LayoutStatement::RowWidth(rownumber)))
 }
 
 //Maybe find some more type safe approach. Right now if `request` contains something Required, then
@@ -597,7 +568,8 @@ fn assemble_attributes(
     what_plural: &'static str,
     atts: Tokens,
     request: AssemblyRequest,
-) -> Result<AssembledAttributes, (TokenCoordinate, String)> {
+    backup_tc: TokenCoordinate,
+) -> Result<AssembledAttributes, ParseError> {
     let mut tc = None;
     let mut out = AssembledAttributes::default();
     for it in atts.into_iter() {
@@ -605,27 +577,30 @@ fn assemble_attributes(
         match it.1 {
             Token::Text(val) => {
                 if matches!(request.display_text, ARAttribute::Forbidden) {
-                    return Err((it.0, format!("{what_plural} cannot have a display text.")));
+                    return Err(vec![(
+                        format!("{what_plural} cannot have a display text."),
+                        it.0,
+                    )]);
                 }
                 if let Some(display_text) = out.display_text {
-                    return Err((
-                        it.0,
+                    return Err(vec![(
                         format!(
                             "Only one display text should be recognized by the lexer. This seems like a programming bug. Please report this together with your input file. (1: {display_text}, 2: {val})"
                         ),
-                    ));
+                        it.0,
+                    )]);
                 }
                 out.display_text = Some(val);
             }
             Token::Id(val) => {
                 if matches!(request.ids, ARAttribute::Forbidden) {
-                    return Err((it.0, format!("{what_plural} cannot have ids.")));
+                    return Err(vec![(format!("{what_plural} cannot have ids."), it.0)]);
                 }
                 out.ids.get_or_insert_default().push(val);
             }
             Token::Flow(val_direction, val_edge) => match request.flows {
                 ARFlowAttribute::Forbidden => {
-                    return Err(((it.0), format!("{what_plural} cannot have flows.")));
+                    return Err(vec![(format!("{what_plural} cannot have flows."), (it.0))]);
                 }
                 ARFlowAttribute::RequiredLeftAndRightArrows => {
                     out.left_and_right_arrows
@@ -636,12 +611,12 @@ fn assemble_attributes(
                     match &mut out.arrows_with_same_direction {
                         Some((direction, edge_metas)) => {
                             if *direction != val_direction {
-                                return Err((
-                                    it.0,
+                                return Err(vec![(
                                     format!(
                                         "{what_plural} can only have one direction of flows (either '->label' or '<-label')."
                                     ),
-                                ));
+                                    it.0,
+                                )]);
                             }
                             edge_metas.push(val_edge);
                         }
@@ -653,12 +628,12 @@ fn assemble_attributes(
                 ARFlowAttribute::RequiredExactlyOneArrow => {
                     match &mut out.arrows_with_same_direction {
                         Some((_, _)) => {
-                            return Err((
-                                it.0,
+                            return Err(vec![(
                                 format!(
                                     "{what_plural} must have exactly 1 flow (e.g. <-label or ->label), not more."
                                 ),
-                            ));
+                                it.0,
+                            )]);
                         }
                         None => {
                             out.arrows_with_same_direction = Some((val_direction, vec![val_edge]));
@@ -668,21 +643,21 @@ fn assemble_attributes(
                 ARFlowAttribute::RequiredExactlyOneRightArrow => {
                     match &mut out.arrows_with_same_direction {
                         Some((_, _)) => {
-                            return Err((
-                                it.0,
+                            return Err(vec![(
                                 format!(
                                     "{what_plural} must have exactly 1 outgoing flow (->label), not more."
                                 ),
-                            ));
+                                it.0,
+                            )]);
                         }
                         None => {
                             if val_direction == Direction::Incoming {
-                                return Err((
-                                    it.0,
+                                return Err(vec![(
                                     format!(
                                         "{what_plural} must have exactly 1 outgoing flow (->label). Incoming flows (<-label) are not allowed."
                                     ),
-                                ));
+                                    it.0,
+                                )]);
                             }
                             out.arrows_with_same_direction = Some((val_direction, vec![val_edge]));
                         }
@@ -694,20 +669,20 @@ fn assemble_attributes(
                             if edge_metas.len() == 1 {
                                 let first_dir = edge_metas[0].0.clone();
                                 if first_dir == val_direction {
-                                    return Err((
-                                        it.0,
+                                    return Err(vec![(
                                         format!(
                                             "Arrows have to be different directions. Found multiple arrows with the same direction: {first_dir:?} and {val_direction:?}."
                                         ),
-                                    ));
+                                        it.0,
+                                    )]);
                                 }
                                 edge_metas.push((val_direction, val_edge));
                             } else {
-                                return Err((
-                                    it.0,
+                                return Err(vec![(
                                     "Too many arrows. Only one left and one right arrow allowed"
                                         .to_string(),
-                                ));
+                                    it.0,
+                                )]);
                             }
                         }
                         None => {
@@ -717,25 +692,25 @@ fn assemble_attributes(
                 }
             },
             Token::GatewayType(_) => {
-                return Err((
-                    it.0,
+                return Err(vec![(
                     "Programming error: GatewayType should be handled by the calling function."
                         .to_string(),
-                ));
+                    it.0,
+                )]);
             }
             Token::DataKind(_, _) => {
-                return Err((
-                    it.0,
+                return Err(vec![(
                     "Programming error: DataKind should be handled by the calling function."
                         .to_string(),
-                ));
+                    it.0,
+                )]);
             }
             Token::BoundaryEvent(_, _) => {
-                return Err((
-                    it.0,
+                return Err(vec![(
                     "Programming error: BoundaryEvent should be handled by the calling function."
                         .to_string(),
-                ));
+                    it.0,
+                )]);
             }
             Token::UsedShorthandSyntax => out.used_shorthand_syntax = true,
             Token::ExtensionArgument(_) | Token::Separator => (),
@@ -748,14 +723,14 @@ fn assemble_attributes(
     // TODO ensure data flow errors are triggered even when no attributes are provided with a data-statement
     // Example: "OD" should prompt the user to add data flows.
     let Some(tc) = tc else {
-        return Err((TokenCoordinate::default(), "This statement seems to be missing attributes? Consider adding a display text, IDs (@id), flows (<-label\"Text\") etc".to_string()));
+        return Err(vec![("This statement seems to be missing attributes? Consider adding a display text, IDs (@id), flows (<-label\"Text\") etc".to_string(), backup_tc, )]);
     };
 
     if matches!(request.display_text, ARAttribute::Required if out.display_text.is_none()) {
-        return Err((
-            tc,
+        return Err(vec![(
             format!("{what_plural} must have a display text, but it is missing."),
-        ));
+            tc,
+        )]);
     }
     assert!(
         !matches!(request.display_text, ARAttribute::RequiredExact(_)),
@@ -763,21 +738,21 @@ fn assemble_attributes(
     );
 
     if matches!(request.ids, ARAttribute::Required) && out.ids.is_none() {
-        return Err((
-            tc,
+        return Err(vec![(
             format!("{what_plural} must have at least one ID (@id), but it is missing."),
-        ));
+            tc,
+        )]);
     }
 
     if let ARAttribute::RequiredExact(len) = request.ids {
         let found_len = out.ids.as_ref().map_or_else(|| 0, |x| x.len());
         if len != found_len {
-            return Err((
-                tc,
+            return Err(vec![(
                 format!(
                     "{what_plural} must have exactly {len} ID (@id) attribute(s), but you gave {found_len}."
                 ),
-            ));
+                tc,
+            )]);
         }
     }
 
@@ -786,23 +761,23 @@ fn assemble_attributes(
         ARFlowAttribute::RequiredArrowsOfSameDirection
     ) && out.arrows_with_same_direction.is_none()
     {
-        return Err((
-            tc,
+        return Err(vec![(
             format!(
                 "{what_plural} must have one flow (e.g. <-label or ->label), but it is missing."
             ),
-        ));
+            tc,
+        )]);
     }
 
     if matches!(request.flows, ARFlowAttribute::RequiredLeftAndRightArrows)
         && out.left_and_right_arrows.is_none()
     {
-        return Err((
-            tc,
+        return Err(vec![(
             format!(
                 "{what_plural} must have at least one data flow (e.g. <-label or ->label), but it is missing."
             ),
-        ));
+            tc,
+        )]);
     }
 
     if let ARFlowAttribute::RequiredExactlyOneArrow = request.flows {
@@ -811,12 +786,12 @@ fn assemble_attributes(
             .as_ref()
             .map_or_else(|| 0, |x| x.1.len());
         if found_len != 1 {
-            return Err((
-                tc,
+            return Err(vec![(
                 format!(
                     "{what_plural} must have exactly 1 flow (e.g. <-label or ->label), but you gave {found_len}."
                 ),
-            ));
+                tc,
+            )]);
         }
     }
 
@@ -826,12 +801,12 @@ fn assemble_attributes(
             .as_ref()
             .map_or_else(|| 0, |x| x.1.len());
         if found_len != 1 {
-            return Err((
-                tc,
+            return Err(vec![(
                 format!(
                     "{what_plural} must have exactly 1 outgoing flow (->label), but you gave {found_len}."
                 ),
-            ));
+                tc,
+            )]);
         }
     }
 
@@ -971,10 +946,10 @@ macro_rules! maybe_parse_boundary_event {
 pub struct TokenCoordinate {
     pub start: usize,
     pub end: usize,
+    pub source_file_idx: usize,
 }
 
-pub type LexerError = (TokenCoordinate, String);
-type StatementCallback = fn(Tokens) -> AResult;
+type StatementCallback = fn(Tokens, TokenCoordinate) -> AResult;
 
 #[derive(Default, Clone)]
 pub struct StatementAssemblyState {
@@ -1015,10 +990,10 @@ impl StatementAssemblyState {
         mut tc: TokenCoordinate,
         new_end: usize,
         t: Token,
-    ) -> Result<(), Box<dyn std::error::Error>> {
+    ) -> Result<(), ParseError> {
         tc.end = new_end;
         if self.assemble_statement_callback.is_none() {
-            return Err(self.conv_err((tc, "You have not begun a statement, yet. Please start a statement (#, =, ==, -, etc) before writing any other tokens.".to_string())));
+            return Err(vec![("You have not begun a statement, yet. Please start a statement (#, =, ==, -, etc) before writing any other tokens.".to_string(), tc, )]);
         }
         // Freetext is the first fragment to come, ever. So if we are about to push another
         // fragment, then implicitly also flush the freetext buffer.
@@ -1027,22 +1002,22 @@ impl StatementAssemblyState {
         Ok(())
     }
 
-    pub fn add_freetext(
-        &mut self,
-        tc: TokenCoordinate,
-        c: char,
-    ) -> Result<(), Box<dyn std::error::Error>> {
+    pub fn add_freetext(&mut self, tc: TokenCoordinate, c: char) -> Result<(), ParseError> {
         if !self.fts.active {
             if self.allow_new_statement {
-                return Err(self.conv_err((
+                return Err(vec![(
+                    format!(
+                        "Found freeform text ({c}) which is not allowed in this position. Freeform text is only allowed as the first element of a statement. Did you intend to start a new statement? In this case, this statement type ({c}) is not known."
+                    ),
                     tc,
-                    format!("Found freeform text ({c}) which is not allowed in this position. Freeform text is only allowed as the first element of a statement. Did you intend to start a new statement? In this case, this statement type ({c}) is not known."),
-                )));
+                )]);
             } else {
-                return Err(self.conv_err((
+                return Err(vec![(
+                    format!(
+                        "Found freeform text ({c}) which is not allowed in this position. Freeform text is only allowed as the first element of a statement."
+                    ),
                     tc,
-                    format!("Found freeform text ({c}) which is not allowed in this position. Freeform text is only allowed as the first element of a statement."),
-                )));
+                )]);
             }
         }
         match self.fts.text {
@@ -1055,7 +1030,7 @@ impl StatementAssemblyState {
         Ok(())
     }
 
-    fn finish_freetext(&mut self) -> Result<(), Box<dyn std::error::Error>> {
+    fn finish_freetext(&mut self) -> Result<(), ParseError> {
         fn trim_with_counts(input: &str) -> (String, usize, usize) {
             let trimmed_start = input.trim_start();
             let start_trimmed = input.len() - trimmed_start.len();
@@ -1068,7 +1043,7 @@ impl StatementAssemblyState {
 
         if let Some((mut tc, s)) = self.fts.text.take() {
             if self.assemble_statement_callback.is_none() {
-                return Err(self.conv_err((tc, "You have not begun a statement, yet. Please start a statement (#, =, ==, -, etc) before writing any other tokens.".to_string())));
+                return Err(vec![("You have not begun a statement, yet. Please start a statement (#, =, ==, -, etc) before writing any other tokens.".to_string(), tc, )]);
             }
             let (s, start, end) = trim_with_counts(&s);
             if !s.is_empty() {
@@ -1086,7 +1061,7 @@ impl StatementAssemblyState {
         mut tc: TokenCoordinate,
         new_end: usize,
         callback: StatementCallback,
-    ) -> Result<(), Box<dyn std::error::Error>> {
+    ) -> Result<(), ParseError> {
         tc.end = new_end;
         assert!(self.allow_new_statement);
         self.allow_new_statement = false;
@@ -1095,16 +1070,14 @@ impl StatementAssemblyState {
             self.fragments
                 .last()
                 .inspect(|(token_tc, _)| tc.end = token_tc.end);
-            match callback(std::mem::take(&mut self.fragments).into_iter()) {
-                Ok(s) => self.assembled_statements.push((tc, s)),
-                Err(e) => return Err(self.conv_err_int(e, tc)),
-            }
+            let s = callback(std::mem::take(&mut self.fragments).into_iter(), tc)?;
+            self.assembled_statements.push((tc, s));
         }
         self.fts.active = true;
         Ok(())
     }
 
-    fn end_line(&mut self) -> Result<(), Box<dyn std::error::Error>> {
+    fn end_line(&mut self) -> Result<(), ParseError> {
         self.finish_freetext()?;
         // If we have parsed any fragments, then we are open to parsing a new statement in the next
         // line.
@@ -1113,7 +1086,7 @@ impl StatementAssemblyState {
         Ok(())
     }
 
-    pub fn finish(&mut self) -> Result<StatementStream, Box<dyn std::error::Error>> {
+    pub fn finish(&mut self) -> Result<StatementStream, ParseError> {
         self.finish_freetext()?;
 
         // Just insert some random statement to finish off the old one.
@@ -1123,66 +1096,12 @@ impl StatementAssemblyState {
         Ok(self.assembled_statements.clone().into_iter())
     }
 
-    pub fn conv_err(&mut self, e: LexerError) -> Box<dyn std::error::Error> {
-        if let Some((tc, _)) = self.assemble_statement_callback.take() {
-            self.conv_err_int(e, tc)
-        } else {
-            Box::new(MyParseError(self.annotate_snippet(e.0, e.1, Level::Error)))
-        }
-    }
-
-    fn previous_data_type(
-        &mut self,
-        tc: TokenCoordinate,
-    ) -> Result<DataType, Box<dyn std::error::Error>> {
+    fn previous_data_type(&mut self, tc: TokenCoordinate) -> Result<DataType, ParseError> {
         if let Some((_, Token::DataKind(data_type, _))) = self.fragments.first() {
             Ok(data_type.clone())
         } else {
-            return Err(self.conv_err((tc, "You are not continuing a data element. Please only use '&' when continuing a data element ('OD' or 'SD').".to_string())));
+            return Err(vec![("You are not continuing a data element. Please only use '&' when continuing a data element ('OD' or 'SD').".to_string(), tc, )]);
         }
-    }
-
-    fn conv_err_int(
-        &mut self,
-        e: LexerError,
-        statement_tc: TokenCoordinate,
-    ) -> Box<dyn std::error::Error> {
-        if e.0 == TokenCoordinate::default() {
-            Box::new(MyParseError(self.annotate_snippet(
-                statement_tc,
-                e.1,
-                Level::Error,
-            )))
-        } else {
-            Box::new(MyParseError(format!(
-                "{}\n\n{}",
-                self.annotate_snippet(
-                    statement_tc,
-                    "Error occurred while parsing this statement".to_string(),
-                    Level::Info
-                ),
-                self.annotate_snippet(e.0, e.1, Level::Error)
-            )))
-        }
-    }
-
-    fn annotate_snippet(
-        &self,
-        TokenCoordinate { start, end, .. }: TokenCoordinate,
-        e: String,
-        annotation_type: Level,
-    ) -> String {
-        let result = Renderer::styled()
-            .render(
-                Level::Error.title("Parser error").snippet(
-                    Snippet::source(&self.input)
-                        .line_start(1)
-                        .fold(true)
-                        .annotation(annotation_type.span(start..end).label(&e)),
-                ),
-            )
-            .to_string();
-        result
     }
 }
 
@@ -1201,15 +1120,21 @@ pub struct Lexer<'a> {
     pub current_char: Option<char>, // Current character being examined
     pub line: usize,                // Current line number
     pub sas: StatementAssemblyState,
+    pub source_file_idx: usize,
 }
 
 impl<'a> Lexer<'a> {
     // Create a new lexer from an input string
-    pub fn new(input: String, mut remaining_input: std::str::Chars<'a>) -> Self {
+    pub fn new(
+        input: String,
+        mut remaining_input: std::str::Chars<'a>,
+        source_file_idx: usize,
+    ) -> Self {
         let current_char = remaining_input.next();
 
         Lexer {
             input: input.clone(),
+            source_file_idx,
             remaining_input,
             position: 0,
             current_char,
@@ -1239,7 +1164,7 @@ impl<'a> Lexer<'a> {
     }
 
     // Get the next token from the input
-    pub fn run(&mut self) -> Result<StatementStream, Box<dyn std::error::Error>> {
+    pub fn run(&mut self) -> Result<StatementStream, ParseError> {
         self.skip_whitespace(); // Skip any unnecessary whitespace
 
         loop {
@@ -1279,7 +1204,7 @@ impl<'a> Lexer<'a> {
                 Some('@') => {
                     let tc = self.current_coord();
                     self.advance();
-                    let (tc_end, id) = self.read_label().map_err(|e| self.sas.conv_err(e))?;
+                    let (tc_end, id) = self.read_label()?;
                     self.sas.add_fragment(tc, tc_end.end, Token::Id(id))?;
                 }
                 Some('-') if self.continues_with(">") => {
@@ -1287,10 +1212,9 @@ impl<'a> Lexer<'a> {
                     self.advance();
                     self.advance();
 
-                    let (tc_end, target) = self.read_label().map_err(|e| self.sas.conv_err(e))?;
+                    let (tc_end, target) = self.read_label()?;
                     let (tc_end, text_label) = self
-                        .read_quoted_text()
-                        .map_err(|e| self.sas.conv_err(e))?
+                        .read_quoted_text()?
                         .unwrap_or_else(|| (tc_end, String::new()));
 
                     self.sas.add_fragment(
@@ -1304,10 +1228,9 @@ impl<'a> Lexer<'a> {
                     self.advance();
                     self.advance();
 
-                    let (tc_end, target) = self.read_label().map_err(|e| self.sas.conv_err(e))?;
+                    let (tc_end, target) = self.read_label()?;
                     let (tc_end, text_label) = self
-                        .read_quoted_text()
-                        .map_err(|e| self.sas.conv_err(e))?
+                        .read_quoted_text()?
                         .unwrap_or_else(|| (tc_end, String::new()));
 
                     self.sas.add_fragment(
@@ -1469,20 +1392,6 @@ impl<'a> Lexer<'a> {
                     self.sas
                         .next_statement(tc, self.position, to_layout_leftof)?;
                 }
-                // experimental stuff - this will not stay as is.
-                Some('r') if self.sas.allow_new_statement && self.continues_with("owwidth") => {
-                    let tc = self.current_coord();
-                    self.advance(); // `r`
-                    self.advance(); // `o`
-                    self.advance(); // `w`
-                    self.advance(); // `w`
-                    self.advance(); // `i`
-                    self.advance(); // `d`
-                    self.advance(); // `t`
-                    self.advance(); // `h`
-                    self.sas
-                        .next_statement(tc, self.position, to_layout_rowwidth)?;
-                }
                 Some('\n') | Some('\r') => {
                     self.advance();
                     self.sas.end_line()?;
@@ -1517,7 +1426,7 @@ impl<'a> Lexer<'a> {
 
     /// Labels are always mandatory, so if we would return an empty string, then we return an error
     /// instead.
-    pub fn read_label(&mut self) -> Result<(TokenCoordinate, String), LexerError> {
+    pub fn read_label(&mut self) -> Result<(TokenCoordinate, String), ParseError> {
         self.skip_whitespace();
         let coord_start = self.current_coord();
         let mut text = String::with_capacity(15);
@@ -1532,13 +1441,16 @@ impl<'a> Lexer<'a> {
         self.skip_whitespace();
 
         if text.is_empty() {
-            Err((coord_start, "Expected a label appearing here.".to_string()))
+            Err(vec![(
+                "Expected a label appearing here.".to_string(),
+                coord_start,
+            )])
         } else {
             Ok((coord_end, text))
         }
     }
 
-    fn read_quoted_text(&mut self) -> Result<Option<(TokenCoordinate, String)>, LexerError> {
+    fn read_quoted_text(&mut self) -> Result<Option<(TokenCoordinate, String)>, ParseError> {
         self.skip_whitespace();
         let coord_start = self.current_coord();
         if self.current_char != Some('"') {
@@ -1548,20 +1460,20 @@ impl<'a> Lexer<'a> {
         let mut text = String::new();
         loop {
             let Some(c) = self.current_char else {
-                return Err((
-                    coord_start,
+                return Err(vec![(
                     "Quoted string was not finished, file input ended".to_string(),
-                ));
+                    coord_start,
+                )]);
             };
             self.advance();
             if c == '"' {
                 break;
             }
             if c == '\n' {
-                return Err((
-                    coord_start,
+                return Err(vec![(
                     "Quoted string was not finished before line break".to_string(),
-                ));
+                    coord_start,
+                )]);
             }
             text.push(c);
         }
@@ -1578,6 +1490,7 @@ impl<'a> Lexer<'a> {
         TokenCoordinate {
             start: self.position,
             end: self.position + 1,
+            source_file_idx: self.source_file_idx,
         }
     }
 }
@@ -1586,28 +1499,8 @@ pub fn is_allowed_symbol_in_label_or_id(c: char) -> bool {
     c.is_alphanumeric() || matches!(c, '_' | '-' | '.')
 }
 
-pub(crate) struct MyParseError(pub String);
-
-impl std::fmt::Display for MyParseError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", self.0)
-    }
-}
-
-impl std::fmt::Debug for MyParseError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", self.0)
-    }
-}
-
-impl std::error::Error for MyParseError {
-    //fn source(&self) -> Option<&(dyn Error + 'static)> {
-    //Some(&self.source)
-    //}
-}
-
-pub(crate) fn lex(input: String) -> Result<StatementStream, Box<dyn std::error::Error>> {
-    Lexer::new(input.clone(), input.chars()).run()
+pub(crate) fn lex(input: String, source_file_idx: usize) -> Result<StatementStream, ParseError> {
+    Lexer::new(input.clone(), input.chars(), source_file_idx).run()
 }
 
 #[cfg(test)]
@@ -1615,35 +1508,41 @@ mod tests {
     use super::*;
 
     #[test]
-    fn basic_pool() -> Result<(), Box<dyn std::error::Error>> {
-        let mut result = lex("= Pool".to_string())?;
+    fn basic_pool() -> Result<(), ParseError> {
+        let mut result = lex("= Pool".to_string(), 0)?;
         assert!(matches!(result.next().unwrap().1, Statement::Pool(a) if a == "Pool"));
         Ok(())
     }
 
     #[test]
-    fn basic_lane() -> Result<(), Box<dyn std::error::Error>> {
-        let mut result = lex("== Lane Yeah ".to_string())?;
+    fn basic_lane() -> Result<(), ParseError> {
+        let mut result = lex("== Lane Yeah ".to_string(), 0)?;
         assert!(matches!(result.next().unwrap().1, Statement::Lane(a) if a == "Lane Yeah"));
         Ok(())
     }
 
     #[test]
-    fn basic_activity_task() -> Result<(), Box<dyn std::error::Error>> {
-        let mut result = lex("- Lane Yeah @diddy ".to_string())?;
+    fn basic_activity_task() -> Result<(), ParseError> {
+        let mut result = lex("- Lane Yeah @diddy ".to_string(), 0)?;
         assert!(matches!(result.next().unwrap().1, Statement::Activity(_)));
         Ok(())
     }
 
     #[test]
-    fn basic_outer_gateway() -> Result<(), Box<dyn std::error::Error>> {
-        let mut result = lex("X Lane Yeah ->label \"text\" ->label2 \"text\"".to_string())?;
+    fn basic_outer_gateway() -> Result<(), ParseError> {
+        let mut result = lex(
+            "X Lane Yeah ->label \"text\" ->label2 \"text\"".to_string(),
+            0,
+        )?;
         assert!(matches!(
             result.next().unwrap().1,
             Statement::GatewayBranchStart(_)
         ));
 
-        let mut result = lex("X Lane Yeah <-label \"text\" <-label2 \"text\"".to_string())?;
+        let mut result = lex(
+            "X Lane Yeah <-label \"text\" <-label2 \"text\"".to_string(),
+            0,
+        )?;
         assert!(matches!(
             result.next().unwrap().1,
             Statement::GatewayJoinEnd(_)
@@ -1653,8 +1552,8 @@ mod tests {
     }
 
     #[test]
-    fn basic_message_flow() -> Result<(), Box<dyn std::error::Error>> {
-        let mut result = lex("MF <-sender ->receiver".to_string())?;
+    fn basic_message_flow() -> Result<(), ParseError> {
+        let mut result = lex("MF <-sender ->receiver".to_string(), 0)?;
         assert!(matches!(
             result.next().unwrap().1,
             Statement::MessageFlow(_)
@@ -1664,14 +1563,14 @@ mod tests {
     }
 
     #[test]
-    fn basic_sequence_flow() -> Result<(), Box<dyn std::error::Error>> {
-        let mut result = lex("F ->lbl".to_string())?;
+    fn basic_sequence_flow() -> Result<(), ParseError> {
+        let mut result = lex("F ->lbl".to_string(), 0)?;
         assert!(matches!(
             result.next().unwrap().1,
             Statement::SequenceFlowJump(_)
         ));
 
-        let mut result = lex("F <-label \"text\"".to_string())?;
+        let mut result = lex("F <-label \"text\"".to_string(), 0)?;
         assert!(matches!(
             result.next().unwrap().1,
             Statement::SequenceFlowLand(_)
@@ -1681,8 +1580,8 @@ mod tests {
     }
 
     #[test]
-    fn basic_leftof() -> Result<(), Box<dyn std::error::Error>> {
-        let mut result = lex("leftof @id1 @id2".to_string())?;
+    fn basic_leftof() -> Result<(), ParseError> {
+        let mut result = lex("leftof @id1 @id2".to_string(), 0)?;
         assert!(matches!(
             result.next().unwrap().1,
             Statement::Layout(LayoutStatement::LeftOf(..))
@@ -1692,8 +1591,8 @@ mod tests {
     }
 
     #[test]
-    fn basic_above() -> Result<(), Box<dyn std::error::Error>> {
-        let mut result = lex("above @id1 @id2".to_string())?;
+    fn basic_above() -> Result<(), ParseError> {
+        let mut result = lex("above @id1 @id2".to_string(), 0)?;
         assert!(matches!(
             result.next().unwrap().1,
             Statement::Layout(LayoutStatement::Above(..))
@@ -1703,8 +1602,8 @@ mod tests {
     }
 
     #[test]
-    fn basic_rowcount() -> Result<(), Box<dyn std::error::Error>> {
-        let mut result = lex("rowwidth 5".to_string())?;
+    fn basic_rowcount() -> Result<(), ParseError> {
+        let mut result = lex("rowwidth 5".to_string(), 0)?;
         assert!(matches!(
             result.next().unwrap().1,
             Statement::Layout(LayoutStatement::RowWidth(..))
