@@ -1,7 +1,7 @@
 use crate::common::bpmn_node::BoundaryEvent;
 use crate::common::graph::{EdgeId, NodeId, SdeId};
 use crate::common::macros::impl_index;
-use crate::lexer::PeBpmnProtection;
+use crate::lexer::{PeBpmnProtection, TokenCoordinate};
 
 /// TODO better name.
 #[derive(Debug, Clone, PartialEq)]
@@ -18,6 +18,7 @@ pub struct MessageFlowAux {
     /// rely on that.
     pub transported_data: Vec<SdeId>,
     pub pebpmn_protection: Vec<(SdeId, Vec<PeBpmnProtection>)>,
+    pub tc: TokenCoordinate,
 }
 
 #[derive(Default, Debug, Clone, PartialEq)]
@@ -132,6 +133,14 @@ impl Edge {
 
     pub fn is_data_flow(&self) -> bool {
         matches!(self.flow_type, FlowType::DataFlow(_))
+    }
+
+    pub fn tc(&self) -> TokenCoordinate {
+        // This probably needs to be improved for other types in the future.
+        match &self.flow_type {
+            FlowType::MessageFlow(aux) => aux.tc,
+            _ => unreachable!(),
+        }
     }
 
     pub fn get_transported_data(&self) -> &[SdeId] {

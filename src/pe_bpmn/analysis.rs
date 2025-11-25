@@ -312,8 +312,7 @@ fn parse_pebpmn_pool_or_lane(
         graph.pools[pool_id].stroke_color = meta.stroke_color.clone();
     };
     let mut check_protected = |protect_nodes: &Vec<Protection>,
-                               unprotect_nodes: &Vec<Protection>,
-                               is_reverse: bool|
+                               unprotect_nodes: &Vec<Protection>|
      -> Result<(), ParseError> {
         let unprotected_nodes = unprotect_nodes.iter().map(|n| n.node).collect::<Vec<_>>();
         for node in protect_nodes {
@@ -323,11 +322,12 @@ fn parse_pebpmn_pool_or_lane(
                 .cloned()
                 .collect();
 
+            let is_reverse = true;
             check_protection_paths(
                 graph,
                 node.node,
                 node.tc,
-                is_reverse,
+                !is_reverse,
                 meta,
                 &unprotected_nodes,
                 protection,
@@ -338,8 +338,8 @@ fn parse_pebpmn_pool_or_lane(
         Ok(())
     };
 
-    check_protected(&common.in_protect, &common.in_unprotect, false)?;
-    check_protected(&common.out_protect, &common.out_unprotect, true)?;
+    check_protected(&common.in_protect, &common.in_unprotect)?;
+    check_protected(&common.out_protect, &common.out_unprotect)?;
 
     Ok(())
 }
@@ -772,9 +772,9 @@ fn create_protection_error_message(
             format!(
                 "Protection analysis found a node which {} data, but the data does not reach any of the respective {} nodes. {what_to_do_instead}",
                 if is_reverse {
-                    " un-protects"
+                    "un-protects"
                 } else {
-                    " protects "
+                    "protects "
                 },
                 if is_reverse { "protect" } else { "un-protect" }
             ),

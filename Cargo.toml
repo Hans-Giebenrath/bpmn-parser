@@ -1,4 +1,4 @@
-cargo-features = ["profile-rustflags"]
+cargo-features = ["profile-rustflags", "codegen-backend"]
 
 [package]
 name = "bpmn-parser"
@@ -22,3 +22,13 @@ proc_macros = { path = "./proc_macros" }
 
 [profile.test]
 rustflags = ["-Adead_code", "-Aunused_variables", "-Aunused_imports"]
+
+[profile.nightly]
+inherits = "dev"
+opt-level = 0
+debug = 0
+strip = "none"
+lto = false
+codegen-units = 256
+incremental = true
+codegen-backend = "cranelift"

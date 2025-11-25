@@ -828,6 +828,7 @@ _ => (),
             FlowType::MessageFlow(MessageFlowAux {
                 transported_data: vec![],
                 pebpmn_protection: vec![],
+                tc: self.context.current_token_coordinate,
             }),
             None,
         );

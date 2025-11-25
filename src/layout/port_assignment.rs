@@ -137,6 +137,7 @@ pub(crate) enum PlaceForBendDummy {
 fn handle_nongateway_node(this_node_id: NodeId, graph: &mut Graph) {
     let this_node = &graph.nodes[this_node_id];
     let this_layer = this_node.layer_id;
+    let this_pool = this_node.pool;
 
     let top_barrier = top_barrier(graph, this_node_id);
     let bottom_barrier = bottom_barrier(graph, this_node_id);
@@ -286,33 +287,68 @@ fn handle_nongateway_node(this_node_id: NodeId, graph: &mut Graph) {
         .collect::<Vec<_>>();
 
     let top_and_bottom_merger = |inc: &&mut PortInfo, outg: &&mut PortInfo| {
-        //
+        let inc_first = true;
+        let outg_first = false;
         if inc.must_go_vertical.is_none()
             && matches!(inc.flow_type, PortFlowType::Sequence | PortFlowType::Data)
         {
+            dbg!();
             // Incoming sequence flows and data flows always come first.
-            return true;
+            return inc_first;
         }
 
         if outg.must_go_vertical.is_none()
             && matches!(outg.flow_type, PortFlowType::Sequence | PortFlowType::Data)
         {
             // Outgoing sequence flows and data flows always come last.
-            return true;
+            return inc_first;
+        }
+
+        if !matches!(
+            inc.flow_type,
+            PortFlowType::MessageAbove { .. } | PortFlowType::MessageBelow { .. }
+        )
+            // Message flows bend on their first encountered inter-pool area. This means, for longer
+        // message flows we have as a result weird ordering comparisons, but in the case where only
+        // one space is crossed for the incoming node, then it is rather intuitive:
+        || this_node.pool.0.abs_diff(inc.other_pool_lane.pool.0) == 1
+        {
+            return if inc.other_layer < outg.other_layer {
+                inc_first
+            } else if inc.other_layer > outg.other_layer {
+                outg_first
+            } else {
+                // This could be untrue for when we get loops. But this does in practice mean we
+                // have a neighboring node with an `incoming` and an `outgoing` flow of the same kind.
+                // Which is not too surprising actually when writing out this comment ... happens
+                // with sub states. But these asserts are here because `Edge::tc()` right now only
+                // works for MessageFlows.
+                assert!(e!(inc.edge_id).is_message_flow());
+                assert!(e!(outg.edge_id).is_message_flow());
+                if e!(inc.edge_id).tc().start < e!(outg.edge_id).tc().start {
+                    inc_first
+                } else {
+                    outg_first
+                }
+            };
         }
 
         if inc.other_layer < this_layer {
             if outg.other_layer < this_layer {
-                return false;
+                dbg!();
+                return outg_first;
             } else {
-                return true;
+                dbg!();
+                return inc_first;
             }
         }
 
         if outg.other_layer <= this_layer {
-            return false;
+            dbg!();
+            inc_first
         } else {
-            return true;
+            dbg!();
+            outg_first
         }
     };
 
