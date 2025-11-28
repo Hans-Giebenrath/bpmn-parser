@@ -324,6 +324,7 @@ impl OnDemandVisibilityTableCell {
             let protection_string = self.calculate_for_pool(graph, pool, sde_id)?;
             self.cache_pool
                 .insert((pool, sde_id), protection_string.clone());
+            self.endless_recursion_detection_pool.pop();
             Ok(protection_string)
         }
     }
@@ -351,6 +352,7 @@ impl OnDemandVisibilityTableCell {
             let protection_string = self.calculate_for_pebpmn(graph, protection, sde_id)?;
             self.cache_pebpmn
                 .insert((protection, sde_id), protection_string.clone());
+            self.endless_recursion_detection_pebpmn.pop();
             Ok(protection_string)
         }
     }
