@@ -50,15 +50,27 @@ struct Cli {
     visibility_table: Option<std::path::PathBuf>,
 }
 
+pub struct BpmdSourceFile {
+    // Standard input, file path, or URL in include, or whatever.
+    location: String,
+    content: String,
+}
+
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let cli = Cli::parse();
 
-    let bpmd = cli.input.map_or_else(
+    let bpmd = cli.input.as_ref().map_or_else(
         || std::io::read_to_string(std::io::stdin()),
         std::fs::read_to_string,
     )?;
 
-    let mut bpmd_source_files = Vec::new();
+    let mut bpmd_source_files = vec![BpmdSourceFile {
+        location: cli.input.map_or_else(
+            || "(source read from standard input)".to_string(),
+            |pathbuf| pathbuf.to_string_lossy().to_string(),
+        ),
+        content: bpmd.clone(),
+    }];
     let mut graph: Graph =
         parser::parse(bpmd, &mut bpmd_source_files).bpmd_format_err(&bpmd_source_files)?;
 
@@ -101,7 +113,7 @@ pub fn layout_graph(graph: &mut Graph) {
 pub fn pebpmn_analysis(
     graph: &mut Graph,
     visibility_path: &PathBuf,
-    bpmd_source_files: &[String],
+    bpmd_source_files: &[BpmdSourceFile],
 ) -> Result<(), Box<dyn std::error::Error>> {
     pe_bpmn::analysis::analyse(graph).bpmd_format_err(bpmd_source_files)?;
     let visibility_data = pe_bpmn::visibility_table::generate_visibility_table(graph)?;
@@ -127,11 +139,17 @@ impl std::fmt::Debug for BpmdParseError {
 impl std::error::Error for BpmdParseError {}
 
 trait ParseErrorMapToBoxError<T> {
-    fn bpmd_format_err(self, source_files: &[String]) -> Result<T, Box<dyn std::error::Error>>;
+    fn bpmd_format_err(
+        self,
+        source_files: &[BpmdSourceFile],
+    ) -> Result<T, Box<dyn std::error::Error>>;
 }
 
 impl<T> ParseErrorMapToBoxError<T> for Result<T, ParseError> {
-    fn bpmd_format_err(self, source_files: &[String]) -> Result<T, Box<dyn std::error::Error>> {
+    fn bpmd_format_err(
+        self,
+        source_files: &[BpmdSourceFile],
+    ) -> Result<T, Box<dyn std::error::Error>> {
         self.map_err(|annotations| {
             Box::new(BpmdParseError(render_snippet_report(
                 source_files,
@@ -143,7 +161,7 @@ impl<T> ParseErrorMapToBoxError<T> for Result<T, ParseError> {
 }
 
 fn render_snippet_report(
-    source_files: &[String],
+    source_files: &[BpmdSourceFile],
     annotations: Vec<(String, TokenCoordinate)>,
 ) -> String {
     assert!(!annotations.is_empty());
@@ -152,19 +170,29 @@ fn render_snippet_report(
         .iter()
         .take(1)
         .map(|e| {
-            Level::ERROR.clone().primary_title(e.0.clone()).element(
-                Snippet::source(&source_files[annotations[0].1.source_file_idx])
+            Level::ERROR.clone().primary_title("Error").element(
+                Snippet::source(&source_files[e.1.source_file_idx].content)
+                    .path(&source_files[e.1.source_file_idx].location)
                     .line_start(1)
                     .fold(true)
-                    .annotation(AnnotationKind::Primary.span(e.1.start..e.1.end)),
+                    .annotation(
+                        AnnotationKind::Primary
+                            .span(e.1.start..e.1.end)
+                            .label(e.0.clone()),
+                    ),
             )
         })
         .chain(annotations.iter().skip(1).map(|e| {
-            Level::INFO.clone().secondary_title(e.0.clone()).element(
-                Snippet::source(&source_files[annotations[0].1.source_file_idx])
+            Level::HELP.clone().secondary_title("").element(
+                Snippet::source(&source_files[e.1.source_file_idx].content)
+                    .path(&source_files[e.1.source_file_idx].location)
                     .line_start(1)
                     .fold(true)
-                    .annotation(AnnotationKind::Context.span(e.1.start..e.1.end)),
+                    .annotation(
+                        AnnotationKind::Context
+                            .span(e.1.start..e.1.end)
+                            .label(e.0.clone()),
+                    ),
             )
         }))
         .collect::<Vec<_>>();

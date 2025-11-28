@@ -1,3 +1,4 @@
+use crate::BpmdSourceFile;
 use crate::common::bpmn_node;
 use crate::common::bpmn_node::ActivityType;
 use crate::common::bpmn_node::BpmnNode;
@@ -1108,9 +1109,11 @@ fn err_from_unfinished_lifeline(
     }
 }
 
-pub fn parse(input: String, bpmd_input_sources: &mut Vec<String>) -> Result<Graph, ParseError> {
+pub fn parse(
+    input: String,
+    _bpmd_input_sources: &mut Vec<BpmdSourceFile>,
+) -> Result<Graph, ParseError> {
     let source_file_idx = 0;
-    bpmd_input_sources.push(input.clone());
     Parser::new().parse(lex(input, source_file_idx)?)
 }
 

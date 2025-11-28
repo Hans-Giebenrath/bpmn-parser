@@ -15,12 +15,13 @@ use crate::{
 use itertools::Itertools;
 use proc_macros::{e, n};
 use std::collections::HashSet;
+use std::iter::Extend;
 
 pub fn analyse(graph: &mut Graph) -> Result<(), ParseError> {
     create_transported_data(graph);
     let pebpmn_definitions = std::mem::take(&mut graph.pe_bpmn_definitions);
     for pebpmn_definition in &pebpmn_definitions {
-        analyse_single(&pebpmn_definition, graph)?;
+        analyse_single(pebpmn_definition, graph)?;
     }
     graph.pe_bpmn_definitions = pebpmn_definitions;
 
@@ -31,14 +32,15 @@ pub fn analyse_single(pe_bpmn: &PeBpmn, graph: &mut Graph) -> Result<(), ParseEr
     let enforce_reach_end = true;
     match &pe_bpmn.r#type {
         PeBpmnType::SecureChannel(secure_channel) => {
-            analyse_secure_channel(&secure_channel, &pe_bpmn.meta, graph);
+            analyse_secure_channel(secure_channel, &pe_bpmn.meta, graph)?;
         }
         PeBpmnType::Tee(Tee { common }) => {
-            compute_visibility_tee_or_mpc(graph, common)?;
+            compute_visibility_tee_or_mpc(graph, common, PeBpmnProtection::Tee(common.tc))?;
+            check_that_protection_is_visually_applied_tee_or_mpc(graph, common)?;
             match &common.pebpmn_type {
                 &PeBpmnSubType::Pool(pool_id) => parse_pebpmn_pool_or_lane(
                     graph,
-                    &common,
+                    common,
                     &pe_bpmn.meta,
                     enforce_reach_end,
                     PeBpmnProtection::Tee(common.tc),
@@ -47,7 +49,7 @@ pub fn analyse_single(pe_bpmn: &PeBpmn, graph: &mut Graph) -> Result<(), ParseEr
                 )?,
                 &PeBpmnSubType::Lane { pool_id, lane_id } => parse_pebpmn_pool_or_lane(
                     graph,
-                    &common,
+                    common,
                     &pe_bpmn.meta,
                     enforce_reach_end,
                     PeBpmnProtection::Tee(common.tc),
@@ -66,8 +68,8 @@ pub fn analyse_single(pe_bpmn: &PeBpmn, graph: &mut Graph) -> Result<(), ParseEr
                     }
                     parse_pebpmn_tasks(
                         graph,
-                        &tasks,
-                        &common,
+                        tasks,
+                        common,
                         &pe_bpmn.meta,
                         enforce_reach_end,
                         PeBpmnProtection::Tee(common.tc),
@@ -76,11 +78,12 @@ pub fn analyse_single(pe_bpmn: &PeBpmn, graph: &mut Graph) -> Result<(), ParseEr
             }
         }
         PeBpmnType::Mpc(Mpc { common }) => {
-            compute_visibility_tee_or_mpc(graph, common)?;
+            compute_visibility_tee_or_mpc(graph, common, PeBpmnProtection::Mpc(common.tc))?;
+            check_that_protection_is_visually_applied_tee_or_mpc(graph, common)?;
             match &common.pebpmn_type {
                 &PeBpmnSubType::Pool(pool_id) => parse_pebpmn_pool_or_lane(
                     graph,
-                    &common,
+                    common,
                     &pe_bpmn.meta,
                     enforce_reach_end,
                     PeBpmnProtection::Mpc(common.tc),
@@ -89,7 +92,7 @@ pub fn analyse_single(pe_bpmn: &PeBpmn, graph: &mut Graph) -> Result<(), ParseEr
                 )?,
                 &PeBpmnSubType::Lane { pool_id, lane_id } => parse_pebpmn_pool_or_lane(
                     graph,
-                    &common,
+                    common,
                     &pe_bpmn.meta,
                     enforce_reach_end,
                     PeBpmnProtection::Mpc(common.tc),
@@ -108,8 +111,8 @@ pub fn analyse_single(pe_bpmn: &PeBpmn, graph: &mut Graph) -> Result<(), ParseEr
                     }
                     parse_pebpmn_tasks(
                         graph,
-                        &tasks,
-                        &common,
+                        tasks,
+                        common,
                         &pe_bpmn.meta,
                         enforce_reach_end,
                         PeBpmnProtection::Mpc(common.tc),
@@ -140,6 +143,13 @@ pub fn analyse_secure_channel(
             &secure_channel.permitted_ids,
             "sender",
         )?;
+        check_that_protection_is_visually_applied(
+            graph,
+            sender_id,
+            sender_tc,
+            !is_reverse,
+            filter,
+        )?;
     }
 
     if let Some((receiver_id, receiver_tc)) = secure_channel.receiver {
@@ -149,6 +159,13 @@ pub fn analyse_secure_channel(
             receiver_tc,
             &secure_channel.permitted_ids,
             "receiver",
+        )?;
+        check_that_protection_is_visually_applied(
+            graph,
+            receiver_id,
+            receiver_tc,
+            is_reverse,
+            filter,
         )?;
     }
 
@@ -180,7 +197,7 @@ pub fn analyse_secure_channel(
             receiver,
             receiver_tc,
             is_reverse,
-            &meta,
+            meta,
             &[receiver],
             protection,
             filter,
@@ -229,10 +246,10 @@ pub fn analyse_secure_channel(
     Ok(())
 }
 
-// TODO make use of this function.
 fn compute_visibility_tee_or_mpc(
     graph: &mut Graph,
     computation: &ComputationCommon,
+    protection: PeBpmnProtection,
 ) -> Result<(), ParseError> {
     let admin = computation.admin;
     // For all in-protect nodes that the admin either owns or are unassigned, give the admin visibility A to all the SDEs those nodes carry.
@@ -251,7 +268,8 @@ fn compute_visibility_tee_or_mpc(
                         .get_node_transported_data()
                         .iter()
                         .copied()
-                }),
+                })
+                .map(|sde_id| (sde_id, protection)),
         );
 
     // For all out-unprotect nodes that the admin either owns or are unassigned, give the admin visibility H to all the SDEs those nodes carry.
@@ -270,40 +288,49 @@ fn compute_visibility_tee_or_mpc(
                         .get_node_transported_data()
                         .iter()
                         .copied()
-                }),
+                })
+                .map(|sde_id| (sde_id, protection)),
         );
 
-    let all_sdes = std::iter::empty::<&Protection>()
-        .chain(computation.in_protect.iter())
-        .chain(computation.in_unprotect.iter())
-        .chain(computation.out_protect.iter())
-        .chain(computation.out_unprotect.iter())
-        .map(|protection| protection.node)
-        .flat_map(|node_id| {
-            graph.nodes[node_id]
-                .get_node_transported_data()
-                .iter()
-                .copied()
-        })
-        .collect::<HashSet<SdeId>>();
+    let mut all_sdes = HashSet::<SdeId>::new();
+    // Consider all data which is transported to/within/out of the TEE/MPC.
+    for node in &graph.nodes {
+        let consider = match &computation.pebpmn_type {
+            &PeBpmnSubType::Pool(pool_id) => node.pool == pool_id,
+            &PeBpmnSubType::Lane { pool_id, lane_id } => {
+                node.pool == pool_id && node.lane == lane_id
+            }
+            PeBpmnSubType::Tasks(tasks) => tasks.iter().any(|(node_id, _)| *node_id == node.id),
+        };
+        if consider {
+            all_sdes.extend(
+                node.incoming
+                    .iter()
+                    .chain(node.outgoing.iter())
+                    .flat_map(|edge_id| e!(*edge_id).get_transported_data())
+                    .cloned(),
+            );
+        }
+    }
 
     for pool in &computation.external_root_access {
         graph.pools[*pool]
             .tee_external_root_access
-            .extend(all_sdes.iter().copied());
+            .extend(all_sdes.iter().copied().map(|sde_id| (sde_id, protection)));
     }
     Ok(())
 }
 
 fn parse_pebpmn_pool_or_lane(
     graph: &mut Graph,
-    common: &ComputationCommon,
+    computation: &ComputationCommon,
     meta: &PeBpmnMeta,
     enforce_reach_end: bool,
     protection: PeBpmnProtection,
     pool_id: PoolId,
     lane_id: Option<LaneId>,
 ) -> Result<(), ParseError> {
+    let filter = computation_filter(computation);
     if let Some(lane_id) = lane_id {
         graph.pools[pool_id].lanes[lane_id].fill_color = meta.fill_color.clone();
         graph.pools[pool_id].lanes[lane_id].stroke_color = meta.stroke_color.clone();
@@ -316,12 +343,6 @@ fn parse_pebpmn_pool_or_lane(
      -> Result<(), ParseError> {
         let unprotected_nodes = unprotect_nodes.iter().map(|n| n.node).collect::<Vec<_>>();
         for node in protect_nodes {
-            let node_transported_data: HashSet<SdeId> = graph.nodes[node.node]
-                .get_node_transported_data()
-                .iter()
-                .cloned()
-                .collect();
-
             let is_reverse = true;
             check_protection_paths(
                 graph,
@@ -331,15 +352,15 @@ fn parse_pebpmn_pool_or_lane(
                 meta,
                 &unprotected_nodes,
                 protection,
-                |sde_id| node_transported_data.contains(sde_id),
+                &filter,
                 enforce_reach_end,
             )?
         }
         Ok(())
     };
 
-    check_protected(&common.in_protect, &common.in_unprotect)?;
-    check_protected(&common.out_protect, &common.out_unprotect)?;
+    check_protected(&computation.in_protect, &computation.in_unprotect)?;
+    check_protected(&computation.out_protect, &computation.out_unprotect)?;
 
     Ok(())
 }
@@ -352,6 +373,7 @@ fn parse_pebpmn_tasks(
     enforce_reach_end: bool,
     protection: PeBpmnProtection,
 ) -> Result<(), ParseError> {
+    let filter = computation_filter(computation);
     let end_out = computation
         .out_unprotect
         .iter()
@@ -379,12 +401,7 @@ fn parse_pebpmn_tasks(
                 meta,
                 ends,
                 protection,
-                |sde_id| {
-                    computation
-                        .data_without_protection
-                        .iter()
-                        .all(|(without_prot, _)| *sde_id != *without_prot)
-                },
+                &filter,
                 enforce_reach_end,
             )?
         }
@@ -400,7 +417,6 @@ fn protection_channel(
     end: &[NodeId],
     state: &mut ProtectionPathTraversalState,
     is_reverse: bool,
-    protection: PeBpmnProtection,
 ) -> Result<(), ParseError> {
     // TODO this function should do a more broad graph traversal:
     // On a data-element, follow all (in and out) edges. On a node, (1) if coming in (through MF or
@@ -467,15 +483,7 @@ fn protection_channel(
             .cloned()
             .filter(|next_edge_id| *next_edge_id != edge_id)
         {
-            protection_channel(
-                graph,
-                next_edge_id,
-                cur_sde,
-                end,
-                state,
-                is_reverse,
-                protection,
-            )?;
+            protection_channel(graph, next_edge_id, cur_sde, end, state, is_reverse)?;
         }
     }
     Ok(())
@@ -491,6 +499,7 @@ struct ProtectionPathTraversalState {
 }
 
 #[track_caller]
+#[allow(clippy::too_many_arguments)]
 fn check_protection_paths(
     graph: &mut Graph,
     node_id: NodeId,
@@ -521,15 +530,7 @@ fn check_protection_paths(
             state.visited.clear();
             state.visited.insert(node_id);
 
-            protection_channel(
-                graph,
-                edge_id,
-                sde_id,
-                ends,
-                &mut state,
-                is_reverse,
-                protection_type,
-            )?;
+            protection_channel(graph, edge_id, sde_id, ends, &mut state, is_reverse)?;
             if enforce_reach_end && ends.iter().all(|end| !state.visited.contains(end)) {
                 assert_ne!(ends.len(), 0); // If `enforce_reach_end` is `true` but no `end` was
                 // provided by the caller, then this is a programming error on the caller side.
@@ -559,6 +560,33 @@ fn check_protection_paths(
         node.stroke_color = meta.stroke_color.clone();
         node.set_pebpmn_protection(protection_type);
     }
+    Ok(())
+}
+
+// TODO is data_without_protection and data_with_protection used anywhere? Not specifically in this
+// function.
+fn check_that_protection_is_visually_applied_tee_or_mpc(
+    graph: &Graph,
+    computation: &ComputationCommon,
+) -> Result<(), ParseError> {
+    let is_reverse = true;
+    let filter = computation_filter(computation);
+    for Protection { node, tc, .. } in computation
+        .in_protect
+        .iter()
+        .chain(computation.out_protect.iter())
+    {
+        check_that_protection_is_visually_applied(graph, *node, *tc, !is_reverse, &filter)?;
+    }
+
+    for Protection { node, tc, .. } in computation
+        .in_unprotect
+        .iter()
+        .chain(computation.out_unprotect.iter())
+    {
+        check_that_protection_is_visually_applied(graph, *node, *tc, is_reverse, &filter)?;
+    }
+
     Ok(())
 }
 
@@ -643,7 +671,6 @@ fn check_that_protection_is_visually_applied(
 }
 
 pub fn create_transported_data(graph: &mut Graph) {
-    // Create transported data hashmap
     for edge_id in 0..graph.edges.len() {
         if !graph.edges[edge_id].is_message_flow() {
             continue;
@@ -774,7 +801,7 @@ fn create_protection_error_message(
                 if is_reverse {
                     "un-protects"
                 } else {
-                    "protects "
+                    "protects"
                 },
                 if is_reverse { "protect" } else { "un-protect" }
             ),
@@ -798,4 +825,13 @@ fn create_protection_error_message(
 
 fn contains<T: std::cmp::PartialEq>(haystack: &[(T, TokenCoordinate)], needle: &T) -> bool {
     haystack.iter().any(|(straw, _)| *straw == *needle)
+}
+
+fn computation_filter(computation: &ComputationCommon) -> impl Fn(&SdeId) -> bool + '_ {
+    |sde_id| {
+        computation
+            .data_without_protection
+            .iter()
+            .all(|(without_prot, _)| *sde_id != *without_prot)
+    }
 }

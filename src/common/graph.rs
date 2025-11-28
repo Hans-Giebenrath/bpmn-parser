@@ -213,7 +213,7 @@ impl Graph {
     }
 
     pub fn transported_data(&self, edge_id: EdgeId) -> &[SdeId] {
-        &self.edges[edge_id].get_transported_data()
+        self.edges[edge_id].get_transported_data()
     }
 
     /// Only allowed before the bend points are added.
@@ -807,7 +807,7 @@ pub(crate) fn adjust_above_and_below_for_new_inbetween(
 /// as well.
 pub(crate) fn add_node(
     nodes: &mut Vec<Node>,
-    pools: &mut Vec<Pool>,
+    pools: &mut [Pool],
     node_type: NodeType,
     PoolAndLane { pool, lane }: PoolAndLane,
     layer: Option<LayerId>,

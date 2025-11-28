@@ -50,7 +50,6 @@ use crate::common::edge::DummyEdgeBendPoints;
 use crate::common::edge::{EdgeType, RegularEdgeBendPoints};
 use crate::common::graph::{EdgeId, Graph};
 use crate::common::node::AbsolutePort;
-use itertools::Itertools;
 
 /// Created for one `SegmentsOfSameLayer`. Is meant to calculate left-to-right paths of overlapping
 /// segment intervals.

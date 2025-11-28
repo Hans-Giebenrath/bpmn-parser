@@ -6,7 +6,6 @@ use crate::common::graph::Graph;
 use crate::common::graph::NodeId;
 use crate::common::node::Node;
 use proc_macros::e;
-use proc_macros::n;
 use std::collections::HashMap;
 
 const NODE_MARGIN: usize = 5;
@@ -44,7 +43,7 @@ fn add_to_matrix(
     x: usize,
     y: usize,
 ) {
-    matrix.insert(node_id.clone(), (x, y, x + width, y + height));
+    matrix.insert(*node_id, (x, y, x + width, y + height));
 }
 
 fn is_in_obstacle_ignore_self(
@@ -109,7 +108,7 @@ fn data_edge_routing(matrix: &HashMap<usize, (usize, usize, usize, usize)>, grap
     let mut end_point_buffer = vec![];
     for data_edge_idx in 0..graph.edges.len() {
         let data_edge = &mut graph.edges[data_edge_idx];
-        if !Edge::is_data_flow(&data_edge) {
+        if !Edge::is_data_flow(data_edge) {
             continue;
         }
 
@@ -132,17 +131,17 @@ fn data_edge_routing(matrix: &HashMap<usize, (usize, usize, usize, usize)>, grap
         for start_points in start_point_buffer.iter() {
             for end_points in end_point_buffer.iter() {
                 if possible_direct(
-                    &matrix,
+                    matrix,
                     start_points,
                     end_points,
                     data_edge.from,
                     data_edge.to,
                 ) {
-                    bend_points.push((start_points.clone(), end_points.clone()));
+                    bend_points.push((*start_points, *end_points));
                 }
             }
         }
-        if bend_points.len() > 0 {
+        if !bend_points.is_empty() {
             let edge = find_shortest_path(&bend_points);
             let mut bend_points = vec![edge.0, edge.1];
             if data_edge.is_reversed {
@@ -255,7 +254,7 @@ fn find_start_and_end_points(
 }
 
 fn find_shortest_path(
-    bend_points: &Vec<((usize, usize), (usize, usize))>,
+    bend_points: &[((usize, usize), (usize, usize))],
 ) -> ((usize, usize), (usize, usize)) {
     let mut min_distance = usize::MAX;
     let mut start_xy: (usize, usize) = (0, 0);

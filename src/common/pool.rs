@@ -1,7 +1,6 @@
 use crate::common::node::Node;
-use crate::lexer::TokenCoordinate;
+use crate::lexer::{PeBpmnProtection, TokenCoordinate};
 use std::collections::HashSet;
-use vecset::VecSet;
 
 // pool.rs
 use crate::common::graph::{LaneId, NodeId};
@@ -29,10 +28,10 @@ pub struct Pool {
     pub tc: TokenCoordinate,
 
     #[allow(non_snake_case)]
-    pub tee_admin_has_pe_bpmn_visibility_A_for: VecSet<SdeId>,
+    pub tee_admin_has_pe_bpmn_visibility_A_for: HashSet<(SdeId, PeBpmnProtection)>,
     #[allow(non_snake_case)]
-    pub tee_admin_has_pe_bpmn_visibility_H_for: VecSet<SdeId>,
-    pub tee_external_root_access: HashSet<SdeId>,
+    pub tee_admin_has_pe_bpmn_visibility_H_for: HashSet<(SdeId, PeBpmnProtection)>,
+    pub tee_external_root_access: HashSet<(SdeId, PeBpmnProtection)>,
 }
 
 impl Pool {
@@ -48,8 +47,8 @@ impl Pool {
             is_right_of_the_previous_pool: false,
             stroke_color: None,
             fill_color: None,
-            tee_admin_has_pe_bpmn_visibility_A_for: VecSet::new(),
-            tee_admin_has_pe_bpmn_visibility_H_for: VecSet::new(),
+            tee_admin_has_pe_bpmn_visibility_A_for: HashSet::new(),
+            tee_admin_has_pe_bpmn_visibility_H_for: HashSet::new(),
             tee_external_root_access: HashSet::new(),
         }
     }

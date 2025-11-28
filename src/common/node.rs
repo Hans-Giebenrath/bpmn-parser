@@ -18,7 +18,7 @@ use crate::lexer::TokenCoordinate;
 use std::ops::Add;
 
 #[derive(Debug)]
-pub(crate) enum NodeType {
+pub enum NodeType {
     RealNode {
         /// Is data node -> DataStoreReference or DataObjectReference
         event: BpmnNode,
@@ -57,7 +57,7 @@ pub(crate) enum NodeType {
 /// This is primarily used to make some Y-ILP stuff easier.
 /// Check whether it makes sense to inline this, i.e. make more BendDummy variants on NodeType.
 #[derive(Debug)]
-pub(crate) enum BendDummyKind {
+pub enum BendDummyKind {
     /// The target node is in another lane but the bend dummy stayed *in the same* lane as the
     /// gateway node due to a blocker.
     FromGatewayBlockedLaneCrossing {
@@ -156,7 +156,7 @@ pub struct AbsolutePort {
 }
 
 impl AbsolutePort {
-    pub(crate) fn as_pair(&self) -> (usize, usize) {
+    pub fn as_pair(&self) -> (usize, usize) {
         (self.x, self.y)
     }
 }
@@ -172,7 +172,7 @@ impl Add<XY> for &RelativePort {
     }
 }
 
-pub(crate) enum LoneDataElement {
+pub enum LoneDataElement {
     Nope,
     IsInput(EdgeId),
     IsOutput(EdgeId),
@@ -213,10 +213,9 @@ impl Node {
             event: BpmnNode::Data(_, data_aux),
             ..
         } = &mut self.node_type
+            && !data_aux.pebpmn_protection.contains(&protection)
         {
             data_aux.pebpmn_protection.push(protection);
-        } else {
-            return;
         }
     }
 

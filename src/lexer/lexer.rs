@@ -95,7 +95,7 @@ pub struct DataAux {
     pub pebpmn_protection: Vec<PeBpmnProtection>,
 }
 
-#[derive(Debug, Clone, Copy, Eq, PartialEq)]
+#[derive(Debug, Clone, Copy, Eq, PartialEq, PartialOrd, Ord, Hash)]
 pub enum PeBpmnProtection {
     SecureChannel(TokenCoordinate),
     Tee(TokenCoordinate),
@@ -942,11 +942,11 @@ macro_rules! maybe_parse_boundary_event {
     }};
 }
 
-#[derive(Debug, Clone, Default, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Default, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct TokenCoordinate {
+    pub source_file_idx: usize,
     pub start: usize,
     pub end: usize,
-    pub source_file_idx: usize,
 }
 
 type StatementCallback = fn(Tokens, TokenCoordinate) -> AResult;
@@ -1086,21 +1086,21 @@ impl StatementAssemblyState {
         Ok(())
     }
 
-    pub fn finish(&mut self) -> Result<StatementStream, ParseError> {
+    pub fn finish(mut self) -> Result<StatementStream, ParseError> {
         self.finish_freetext()?;
 
         // Just insert some random statement to finish off the old one.
         self.allow_new_statement = true;
         self.next_statement(TokenCoordinate::default(), 0, to_pool)?;
 
-        Ok(self.assembled_statements.clone().into_iter())
+        Ok(self.assembled_statements.into_iter())
     }
 
     fn previous_data_type(&mut self, tc: TokenCoordinate) -> Result<DataType, ParseError> {
         if let Some((_, Token::DataKind(data_type, _))) = self.fragments.first() {
             Ok(data_type.clone())
         } else {
-            return Err(vec![("You are not continuing a data element. Please only use '&' when continuing a data element ('OD' or 'SD').".to_string(), tc, )]);
+            Err(vec![("You are not continuing a data element. Please only use '&' when continuing a data element ('OD' or 'SD').".to_string(), tc, )])
         }
     }
 }
@@ -1164,7 +1164,7 @@ impl<'a> Lexer<'a> {
     }
 
     // Get the next token from the input
-    pub fn run(&mut self) -> Result<StatementStream, ParseError> {
+    pub fn run(mut self) -> Result<StatementStream, ParseError> {
         self.skip_whitespace(); // Skip any unnecessary whitespace
 
         loop {
@@ -1431,13 +1431,14 @@ impl<'a> Lexer<'a> {
         let coord_start = self.current_coord();
         let mut text = String::with_capacity(15);
 
+        let mut coord_end = self.current_coord();
         while let Some(c) = self.current_char
             && is_allowed_symbol_in_label_or_id(c)
         {
             text.push(c);
+            coord_end = self.current_coord();
             self.advance();
         }
-        let coord_end = self.current_coord();
         self.skip_whitespace();
 
         if text.is_empty() {
