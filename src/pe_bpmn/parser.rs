@@ -3,8 +3,8 @@ use std::collections::HashMap;
 
 use crate::common::graph::{LaneId, PoolId};
 use crate::common::node::NodeType;
-use crate::lexer;
 use crate::lexer::TokenCoordinate;
+use crate::lexer::{self, PeBpmnProtection};
 use crate::parser::Parser;
 use crate::{
     common::graph::{NodeId, SdeId},
@@ -24,6 +24,16 @@ pub enum PeBpmnType {
     //SecureChannelWithExplicitSecret(SecureChannelWithExplicitSecret),
     Tee(Tee),
     Mpc(Mpc),
+}
+
+impl PeBpmnType {
+    pub fn protection(&self) -> PeBpmnProtection {
+        match self {
+            Self::SecureChannel(inner) => PeBpmnProtection::SecureChannel(inner.tc),
+            Self::Tee(inner) => PeBpmnProtection::Tee(inner.common.tc),
+            Self::Mpc(inner) => PeBpmnProtection::Mpc(inner.common.tc),
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Default)]
