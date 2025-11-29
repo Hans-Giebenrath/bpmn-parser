@@ -1,0 +1,15 @@
+= Pool 1
+
+# Start
+- Send
+- Receive
+. End
+
+= Pool 2
+
+# Receive
+- Workywork
+. Finish
+
+MF Display Text 1 <-p1-send ->p2-recv
+MF Display Text 2 <-p2-finish ->p1-recv

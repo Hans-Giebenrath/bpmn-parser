@@ -109,6 +109,129 @@ in the text file.
 Some diagrams place two shorter pools horizontally on the same line next to each other. This is
 currently not supported but is on the roadmap.
 
+== Sequence Flow across Lanes
+
+You can reuse the `F` statement to transition from one lane to another lane.
+
+image::generated/overview-lane-crossing.png[]
+
+[,bpmd]
+----
+include::example$overview-lane-crossing.bpmd[]
+----
+<1> You can still omit a dedicated lane if you want.
+
+IMPORTANT:: The syntax will likely get rid of `F` meta statements and just use `<-` and `->` on the task and
+event statements. The dedicated statement does better highlight that there is a break in the
+sequence flow, but it also adds quite a lot of length to the text file for otherwise small diagram.
+To avoid situations where some people prefer one way and some people prefer the other way, only one
+syntax will stay valid (think of the wasted hours when these differently opinionated people mix and
+start bike-shedding). Maybe an empty newline will become mandatory to enforce clear visuals.
+
+As you can see, `Lane 2` does not start with a start event. Instead it starts off with an incoming
+sequence flow landing.
+
 == Message Flows
+
+Inter-pool communication is done via message flows. Those are added as dedicated statements:
+
+[,bpmd]
+----
+`MF <-from ->to`.
+----
+
+image::generated/overview-message-flow.png[]
+
+[,bpmd]
+----
+include::example$overview-message-flow.bpmd[]
+----
+
+A message flow statement is special in that it does not represent a node, but only a single arrow.
+Hence it must have exactly one incoming arrow `<-from` which designates the source, and `->to` which
+designates the target.
+
+While with gateways you had to match the labels of the `X ->lbl` and `F <-lbl` statements, the `from` and `to`
+labels can use _fuzzy matching_. That is, you can specify some shortened version of the source /
+target node display text as
+the label, and that shortened version then looks through all previously defined nodes for the best
+match. As you can see, the pool display text (and actually also the lane display text, if it were
+present), can be used as well in the label, whereas you should first specify the pool components (if
+you want to use some), then the lane components (if you want to use some) and then the node
+components. Sometimes it might be too tedious to think about a good fuzzy selector, or you are sure
+that the display text will change in the future but you want stable references now. In that case you can
+also make use of unique identifiers which are specified via the `@identifier` attribute as follows:
+
+[,bpmd]
+----
+= Pool K
+
+// ...
+- Rest by the Tumtum Tree @abc
+// ...
+
+= Pool L
+
+// ...
+- Whiffle through the Tulgey Wood @def
+// ...
+
+MF <-abc ->def // Uses identifiers, not the display text
+----
+
+== Data Elements
+
+Data elements use the statment type `OD` for data object and `SD` for data store. They use incoming
+`<-label` and outgoing `->label` labels to connect data associations with activities.
+
+image::generated/overview-data.png[]
+
+[,bpmd]
+----
+include::example$overview-data.bpmd[]
+----
+
+Since the source and targets for the data associations are nodes, the same fuzzy matching algorithm
+is used as is for message flows.
+
+== Semantic Data Elements - Data Continuations
+
+In the previous example the data object was used in activities that lay close together on the
+layouted diagram. There can be situations where (1) the diagram becomes larger and you don't want to
+have super long edges uglifying the diagram, (2) show that data goes through stages by giving it
+different names, whereas it is still the very same data object, (3) send data across pools and show
+that they are the same data object. For these situations, there is the data continuation syntax `&`
+(with friends `O&` and `S&`) to create a new data icon in the layouted diagram, but communicate to
+the reader (and to possible analysis extensions) that they are _actually_ the same piece of data.
+
+image::generated/overview-data-continuations.png[]
+
+[,bpmd]
+----
+include::example$overview-data-continuations.bpmd[]
+----
+
+In the given example you could argue whether the book that is now augmented with a signature is
+actually a new object, but this is a question which very much depends on the use case. But you get
+the idea of what you could do with the feature.
+
+In the future it will be possible to change the icon type during the continuation, e.g. in a chain
+of `OD .. S& .. D& ..`.
+
+== Recommended Structure of a `.bpmd` File
+
+Pools, lanes and their contained events and tasks are naturally grouped. For data elements and
+message flows the recommendation is to keep data objects at the end of the pool or lane where they
+are used, or after the last pool if they stretch across multiple pool.
+
+For message flows it is recommended to keep them after the last pool after any data elements. This
+way a reader knows where to look for what kind of statement, and they don't have to search through
+the whole file.
+
+Also be aware that node fuzzy matching only looks at nodes which have been defined _previously_. So
+if the referenced node is only coming later, it cannot be found. Therefor, you cannot put data
+objects or message flows at the very top, as then no events / tasks have been defined, yet.
+
+== Boundary Events
 
 

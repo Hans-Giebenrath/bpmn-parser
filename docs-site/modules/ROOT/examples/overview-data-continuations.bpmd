@@ -1,0 +1,22 @@
+= Signing Office
+
+# Receive Book
+- Evaluate Book Authenticity
+- Sign Book
+. Return Book
+
+= Fan
+
+# Decide it is time for a Signature
+- Get Book
+- Send Book
+. Receive Book
+
+OD The Book <-fan-get ->fan-send
+ & The Book <-office-receive ->office-evaluate
+ & The Book [Evaluated] <-office-evaluate ->office-sign
+ & The Book [Signed] <-office-sign ->office-return
+ & The Book [Signed] <-fan-receive
+
+MF <-fan-send ->office-receive
+MF <-office-return ->fan-receive

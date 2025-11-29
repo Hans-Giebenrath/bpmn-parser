@@ -1,0 +1,17 @@
+= Pool 1
+
+== Lane 1
+
+# Receive Data
+- Evaluate Data
+F ->label
+
+== Lane 2
+
+F <-label
+- Shred the Paper @shred
+- Drink Coffee
+- Blame the Machine for Shredding the Paper
+. Done
+
+OD Valuable Data <-recv ->eval ->shred

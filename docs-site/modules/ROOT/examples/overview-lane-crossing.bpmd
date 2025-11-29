@@ -1,0 +1,17 @@
+= Pool
+
+== Lane 1
+
+# Start
+- Task
+F ->handover
+
+F <-handback
+- Clean up
+. Finish
+
+== Lane 2
+
+F<-handover
+- Follow-up Task
+F ->handback
