@@ -64,6 +64,7 @@ pub struct ComputationCommon {
     pub out_unprotect: Vec<Protection>,
 
     pub data_without_protection: Vec<(SdeId, TokenCoordinate)>,
+    /// TODO this is not used anywhere, yet.
     pub data_already_protected: Vec<(SdeId, TokenCoordinate)>,
     pub admin: PoolId,
     pub external_root_access: Vec<PoolId>,

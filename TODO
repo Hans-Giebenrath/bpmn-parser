@@ -10,4 +10,6 @@
 * Saw some youtuber who talks about generating BPMNs via ChatGPT. I guess I should write him when the tool is in a more usable state, then he can evaluate that: https://www.youtube.com/watch?v=StqnUeWv6Lc
 * Check whether t0033.bpmd can be fixed or is too weird a situation.
 * Add `Edge::is_detached`: For DF edges which will be directly routed (TODO direct routing check should include that it does not add intersections with other edges of the same node). They should ideally only leave or enter at the edges, as this will be the least interruptive? But not sure about this.
-* pe-bpmn `tee-external-root-access` if there is none this should instead require keyword `blocked`.
+* pe-bpmn MPC should be able to be in multiple pools, or at least in multiple lanes. And then specify multiple admins.
+* pe-bpmn data_already_protected is not used anywhere, yet.
+* pe-bpmn TEEs could be in a cyclic dependency of being each other's admin. This is currently reported as an error but in principle is solvable.

@@ -418,13 +418,6 @@ fn protection_channel(
     state: &mut ProtectionPathTraversalState,
     is_reverse: bool,
 ) -> Result<(), ParseError> {
-    // TODO this function should do a more broad graph traversal:
-    // On a data-element, follow all (in and out) edges. On a node, (1) if coming in (through MF or
-    // data-flow) then follow all data-flow and message-flow which are in or out of that node. (2)
-    // If it came backwards through outgoing, then only traverse through other in/out of that node
-    // if there was some incoming of that data into the node (transported_data contains the sde), as
-    // otherwise this node produced the data, and it is totally possible that it produced a
-    // protected and a non-protected version of the data.
     let edge = &e!(edge_id);
     let next_node_id = if is_reverse { edge.from } else { edge.to };
 

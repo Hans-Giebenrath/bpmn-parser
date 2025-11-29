@@ -67,7 +67,7 @@ pub fn generate_visibility_table(graph: &Graph) -> Result<String, Box<dyn std::e
     for edge in graph.edges.iter().filter(|e| Edge::is_message_flow(e)) {
         if let FlowType::MessageFlow(aux) = &edge.flow_type {
             for sde_id in &aux.transported_data {
-                let protection_count = dbg!(aux)
+                let protection_count = aux
                     .pebpmn_protection
                     .iter()
                     .find(|(id, _)| id == sde_id)

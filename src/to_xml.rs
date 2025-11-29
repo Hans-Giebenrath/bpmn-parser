@@ -117,9 +117,8 @@ pub fn generate_bpmn(graph: &Graph) -> String {
     xmlns:di="http://www.omg.org/spec/DD/20100524/DI"
     xmlns:bioc="http://bpmn.io/schema/bpmn/biocolor/1.0"
     xmlns:color="http://www.omg.org/spec/BPMN/non-normative/color/1.0"
-    xmlns:modeler="http://camunda.org/schema/modeler/1.0" id="Definitions_1"
-    targetNamespace="http://bpmn.io/schema/bpmn" exporter="Camunda Modeler"
-    exporterVersion="5.17.0">
+    targetNamespace="http://bpmn.io/schema/bpmn" exporter="BPMD"
+    exporterVersion="0.0.1">
 "#,
     );
 
@@ -614,14 +613,10 @@ r#"    <bpmn:boundaryEvent id="BoundaryEvent_{node_idx}_{edge_idx}" attachedToRe
                 bpmn.push_str("           <bpmn:compensationEventDefinition {id}/>");
             }
             BoundaryEventType::Multiple => {
-                dbg!(
-                    "TODO - camunda and bpmn.io don't support it, so I don't know how it looks like"
-                );
+                dbg!("TODO - bpmn.io don't support it, so I don't know how it looks like");
             }
             BoundaryEventType::MultipleParallel => {
-                dbg!(
-                    "TODO - camunda and bpmn.io don't support it, so I don't know how it looks like"
-                );
+                dbg!("TODO - bpmn.io don't support it, so I don't know how it looks like");
             }
             BoundaryEventType::Cancel => {
                 // Cancel does not have anything.

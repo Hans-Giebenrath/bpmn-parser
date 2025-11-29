@@ -7,10 +7,6 @@ use crate::lexer;
 use crate::lexer::EventType;
 use crate::lexer::GatewayType;
 
-// TODO this should be simplified a lot: Event, Gateway, Task, BoundaryEvent, DataElement, something like that.
-// The granularity here has no benefits and just makes other pieces more cumbersome.
-// Also: Check if it is ok to have NodeMeta separate from EventMeta. Or also create a GatewayMeta
-// and ActivityMeta.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum BpmnNode {
     Event(EventType, EventVisual), // Start event with label

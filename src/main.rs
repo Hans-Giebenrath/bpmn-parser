@@ -56,8 +56,45 @@ pub struct BpmdSourceFile {
     content: String,
 }
 
+#[derive(Default)]
+struct Timer {
+    measurements: Vec<(&'static str, std::time::Duration)>,
+}
+
+impl Timer {
+    fn time_it<F, R>(&mut self, label: &'static str, f: F) -> R
+    where
+        F: FnOnce() -> R,
+    {
+        let t = std::time::Instant::now();
+        let r = f();
+        self.measurements.push((label, t.elapsed()));
+        r
+    }
+}
+
+impl Drop for Timer {
+    fn drop(&mut self) {
+        if self.measurements.is_empty() {
+            return;
+        }
+        let longest_label = self
+            .measurements
+            .iter()
+            .max_by_key(|(label, _)| label.len())
+            .expect("Just checked before")
+            .0
+            .len();
+        for (label, duration) in &mut self.measurements {
+            let padding = std::iter::repeat_n(' ', longest_label - label.len()).collect::<String>();
+            println!("{padding}{label} took {}ms", duration.as_millis());
+        }
+    }
+}
+
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let cli = Cli::parse();
+    let mut timer = Timer::default();
 
     let bpmd = cli.input.as_ref().map_or_else(
         || std::io::read_to_string(std::io::stdin()),
@@ -71,15 +108,18 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         ),
         content: bpmd.clone(),
     }];
-    let mut graph: Graph =
-        parser::parse(bpmd, &mut bpmd_source_files).bpmd_format_err(&bpmd_source_files)?;
+    let mut graph: Graph = timer.time_it("Parsing", || {
+        parser::parse(bpmd, &mut bpmd_source_files).bpmd_format_err(&bpmd_source_files)
+    })?;
 
     if let Some(visibility_path) = &cli.visibility_table {
-        pebpmn_analysis(&mut graph, visibility_path, &bpmd_source_files)?;
+        timer.time_it("PE-BPMN analysis", || {
+            pebpmn_analysis(&mut graph, visibility_path, &bpmd_source_files)
+        })?;
     };
 
-    layout_graph(&mut graph);
-    let bpmn = to_xml::generate_bpmn(&graph);
+    layout_graph(&mut graph, &mut timer);
+    let bpmn = timer.time_it("XML export", || to_xml::generate_bpmn(&graph));
 
     match cli.output {
         Some(pb) => std::fs::write(pb, bpmn)?,
@@ -89,25 +129,29 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
-pub fn layout_graph(graph: &mut Graph) {
+fn layout_graph(graph: &mut Graph, timer: &mut Timer) {
     // Phase 2
-    solve_layer_assignment(graph);
-    generate_dummy_nodes(graph);
-    sort_lanes_by_layer(graph);
+    timer.time_it("solve_layer_assignment", || solve_layer_assignment(graph));
+    timer.time_it("generate_dummy_nodes", || generate_dummy_nodes(graph));
+    timer.time_it("sort_lanes_by_layer", || sort_lanes_by_layer(graph));
 
     // Phase 3
-    reduce_all_crossings(graph);
-    port_assignment(graph);
+    timer.time_it("reduce_all_crossings", || reduce_all_crossings(graph));
+    timer.time_it("port_assignment", || port_assignment(graph));
 
     // Phase 4
-    assign_xy_ilp(graph);
+    timer.time_it("assign_xy_ilp", || assign_xy_ilp(graph));
 
     // Phase 5
-    postprocess_ports_and_vertical_edges(graph);
-    try_move_nodes_into_half_layer(graph);
-    find_straight_edges(graph);
-    edge_routing(graph);
-    replace_dummy_nodes(graph);
+    timer.time_it("postprocess_ports_and_vertical_edges", || {
+        postprocess_ports_and_vertical_edges(graph)
+    });
+    timer.time_it("try_move_nodes_into_half_layer", || {
+        try_move_nodes_into_half_layer(graph)
+    });
+    timer.time_it("find_straight_edges", || find_straight_edges(graph));
+    timer.time_it("edge_routing", || edge_routing(graph));
+    timer.time_it("replace_dummy_nodes", || replace_dummy_nodes(graph));
 }
 
 pub fn pebpmn_analysis(

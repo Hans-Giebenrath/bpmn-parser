@@ -6,7 +6,7 @@ use crate::lexer::TokenCoordinate;
 
 #[derive(Default)]
 pub struct Lane {
-    /// TODO Not sure yet if a None could also just be an empty String.
+    /// `None` is for the anonymous lane. See invariant at `Pool::name`.
     pub name: Option<String>,
     /// These will be sorted by layers after the layer assignment is solved.
     pub nodes: Vec<NodeId>,

@@ -129,7 +129,7 @@ pub(crate) struct DataFlowMeta {
 }
 
 #[derive(Debug, Clone, Eq, PartialEq)]
-pub(crate) enum GatewayType {
+pub enum GatewayType {
     /// X
     Exclusive,
     /// +
@@ -173,7 +173,7 @@ pub(crate) enum Direction {
 }
 
 #[derive(Eq, Debug, Clone, Copy, PartialEq)]
-pub(crate) enum EventType {
+pub enum EventType {
     Blank,
     Message,
     Timer,
