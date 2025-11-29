@@ -177,12 +177,32 @@ impl Parser {
                 Statement::PeBpmn(pe_bpmn) => self.parse_pe_bpmn(pe_bpmn)?,
                 Statement::Layout(_) => {
                     eprintln!("Warning: layout instructions are currently ignored.")
-                } //Token::Go => {
-                  //    self.parse_go()?;
-                  //    continue;
-                  //}
-                  //Token::Label(label) => self.parse_label(&label)?,
-                  //Token::Join(exit_label, text) => self.parse_join(exit_label, text)?,
+                }
+            }
+        }
+
+        match &self.context.lifeline_state {
+            LifelineState::NoLifelineActive { .. } =>
+            /* all good */
+            {
+                ()
+            }
+            LifelineState::StartedFromSequenceFlowLanding {
+                token_coordinate, ..
+            } => {
+                return Err(vec![(
+                    "The text file ended with an active sequence flow. Add an end event like `. End` after this line to finish the sequence flow.".to_string(),
+                    *token_coordinate,
+                )]);
+            }
+            LifelineState::ActiveLifeline {
+                token_coordinate, ..
+            } => {
+                //
+                return Err(vec![(
+                    "The text file ended with an active sequence flow. Add an end event like `. End` after this line to finish the sequence flow.".to_string(),
+                    *token_coordinate,
+                )]);
             }
         }
 
@@ -358,7 +378,7 @@ impl Parser {
 
                     ),
                     (
-                        "If you want to use multiple lanes within this pool, please add a lane (e.g. `== My Lane`) as the first statement inside of you pool *before any other nodes*.".to_string(),
+                        "If you want to use multiple lanes within this pool, please add a lane (e.g. `== My Lane`) as the first statement inside of your pool *before any other nodes*.".to_string(),
                         first_encountered_node,
 
                     ),
@@ -809,13 +829,27 @@ _ => (),
             let sender_node = &self.graph.nodes[sender_node];
             let receiver_node = &self.graph.nodes[receiver_node];
             if sender_node.pool == receiver_node.pool {
-                return Err(vec![(
-                    format!(
-                        "Sender node and receiver node are not allowed to come from the same pool ({}). Did you IDs match the expected nodes, or do you need to make it more specific?",
-                        sender_node.pool.0
+                return Err(vec![
+                    (
+                        format!(
+                            "Sender node and receiver node are not allowed to come from the same pool ({}). Did the IDs match the expected nodes, or do you need to make it more specific?",
+                            sender_node.pool.0
+                        ),
+                        self.context.current_token_coordinate,
                     ),
-                    self.context.current_token_coordinate,
-                )]);
+                    (
+                        "The sender node selector matched this node".to_string(),
+                        sender_node.tc(),
+                    ),
+                    (
+                        "The receiver node selector matched this node".to_string(),
+                        receiver_node.tc(),
+                    ),
+                    (
+                        "Both are within this pool".to_string(),
+                        self.graph.pools[receiver_node.pool].tc,
+                    ),
+                ]);
             }
         }
 

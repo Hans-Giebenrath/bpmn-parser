@@ -1,0 +1,21 @@
+= Welcome!
+
+For introductory words about what is BPMD and why it might be useful, please refer to the project
+README: https://github.com/Hans-Giebenrath/bpmn-parser/blob/main/README.md
+
+== An Introductory Example
+
+Here you see what the tool is all about. The following image is auto-generated, using only the
+text which comes after it and another tool called link:https://github.com/bpmn-io/bpmn-to-image[bpmn-to-image].
+
+You likely see some wonky things (if I have not fixed them, yet), but you should get an impression
+of what this tool wants to become. Some things will also stay wonky for some definition of wonky, as
+some things are simply subjective and I try to do what is reasonable within the bounds of the layout
+algorithm.
+
+image::generated/welcome.png[]
+
+[,bpmd]
+----
+include::example$welcome.bpmd[]
+----

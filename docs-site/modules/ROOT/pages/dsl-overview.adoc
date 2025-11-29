@@ -1,0 +1,114 @@
+= Text Format (DSL) Overview
+
+If you are not super familiar with BPMN, I recommend you to refer to the
+link:https://camunda.com/bpmn/reference/[BPMN Reference] provided by Camunda.
+
+BPMN diagrams might be easy in the beginning - just non-decorated tasks and events. To support this
+quicker phase in the beginning, there is a shorthand syntax for the common diagram elements. These
+are shown first. The shorthand syntax and full syntax can be mixed freely at will, but for a more uniform
+visual appearance I recommend to eventually convert everything to the full syntax when a diagram
+makes more use of it.
+
+== Events and Activities - Shorthand Syntax
+
+Let's look as this tiny example:
+
+image::generated/overview-tiny.png[]
+
+[,bpmd]
+----
+include::example$overview-tiny.bpmd[]
+----
+
+One line usually corresponds to one statement. We have here in total four statements.
+A statement begins with the type identifier (`#`, `-`, `.`), and then there are a bunch of further attributes.
+Here we only have the display text attribute, which is mostly arbitrary free-form text.
+
+In BPMN the most common thing you want to do is connect events and tasks via sequence flows. This is
+reflected by the file: You just list line-by-line events and tasks, and they are automatically
+connected by sequence flows.
+
+A business process begins usually with some event (although there are exceptions).
+Events are typed with the `#` sigil, hence the first line in the simple example is the following:
+
+[,bpmd]
+----
+# Start
+----
+
+As you noticed, the `# Start` and `# Intermediate Event` have different visuals - `bpmd`
+automatically chooses the correct symbol, you don't have to think about it. The only exception is
+the end of a process which has a dedicated sigil:
+
+[,bpmd]
+----
+. End
+----
+
+During testing it looked more readable to have a dedicated sigil for ending a process, instead of
+repurposing `#`.
+
+Feel free to compile the argument with the start event or end event removed. If you feel the error
+messages are lacking, then link:github.com/Hans-Giebenrath/bpmn-parser/issues[open an issue] with a
+constructive suggestion.
+
+== Gateways - Shorthand Syntax
+
+image::generated/overview-gateway.png[]
+
+[,bpmd]
+----
+include::example$overview-gateway.bpmd[]
+----
+<1> The node label `Gateway` is not yet rendered.
+<2> The edge label `Edge Text` is not yet rendered.
+
+Gateways break up the natural sequence flow from line to line. Instead, a gateway finishes it and
+sends the sequence flow elsewhere via `->one` and `->two` "jumps". The "landing" counterparts are `F
+<-label` meta statements. These `F` statements don't correlate to a node in the resulting diagram,
+they are purely for connecting loose ends of a detached sequence flow.
+
+In principle, you can add a display text to an edge via `<-label"Display Text"` but the actual
+rendering is still waiting on the roadmap.
+
+As you see, labels don't need to be unique. The `end` label is reused, and this is possible as well
+with on the branching gateway node:
+
+image::generated/overview-gateway2.png[]
+
+[,bpmd]
+----
+include::example$overview-gateway2.bpmd[]
+----
+
+You might notice that the order of the nodes is not quite what is written in the file ("Three",
+"One", "Two" instead of "One", "Two", "Three"). This is also on the roadmap to nudge this vertical
+node order into the same order as they appeared in the file (if the order can be changed without
+affecting the layout quality).
+
+You might be tempted to check whether you can mix `+` with `X` gateway nodes. At the moment this
+works perfectly fine, but a correctness analysis to prevent this is on the roadmap.
+
+== Pools and Lanes
+
+The examples above omitted pools and lanes to focus on the sequence flows and nodes. Here they are:
+
+image::generated/overview-pool-lane.png[]
+
+[,bpmd]
+----
+include::example$overview-pool-lane.bpmd[]
+----
+<1> You can still omit a dedicated lane if you want.
+
+Pools are introduced via `= Display Text` and lanes via `== Display Text`. A pool can have any
+number of lanes. While you saw that the order of gateway branches can change for layout quality
+purposes, this is not done for lanes or pools. They always appear in the order as they are declared
+in the text file.
+
+Some diagrams place two shorter pools horizontally on the same line next to each other. This is
+currently not supported but is on the roadmap.
+
+== Message Flows
+
+

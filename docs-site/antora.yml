@@ -1,0 +1,5 @@
+name: bpmd
+version: ~
+title: BPMD - A DSL and Layout Tool for Creating BPMN
+nav:
+- modules/ROOT/nav.adoc

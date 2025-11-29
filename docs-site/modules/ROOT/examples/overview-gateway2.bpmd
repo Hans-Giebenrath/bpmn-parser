@@ -1,0 +1,32 @@
+# Start
+X Gateway ->branch
+
+F <-branch
+- One
+F ->join
+
+F <-branch
+- Two
+F ->join
+
+F <-branch
+- Three
+F ->join
+
++ <-join
+O Gateway ->branch2
+
+F <-branch2
+- One
+F ->join2
+
+F <-branch2
+- Two
+F ->join2
+
+F <-branch2
+- Three
+F ->join2
+
+* <-join2
+. End

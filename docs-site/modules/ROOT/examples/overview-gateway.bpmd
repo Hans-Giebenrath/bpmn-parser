@@ -1,0 +1,13 @@
+# Start
+X Gateway ->one ->two // <1>
+
+F <-one
+- One
+F ->end"Edge Text" // <2>
+
+F <-two
+- Two
+F ->end
+
+X <-end
+. End

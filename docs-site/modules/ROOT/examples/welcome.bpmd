@@ -1,0 +1,34 @@
+= Customer
+
+# Becoming Interested
+# Ask Quote
+- Receive Quote
+ T! ->bored"Waiting too long"
+X Evaluate Quote ->accept ->deny
+
+F <-bored
+. Search Elsewhere
+
+F <-deny
+. Search Elsewhere
+
+F <-accept
+. Accept Quote
+
+
+= My Company
+
+# Receive Request
+- Work through Request
+# Send Quote
+- Wait for Accept
+  T! ->postmortem"Portmortem Time"
+. WorkyWork
+
+F <-postmortem
+. Why did we fail?
+
+
+MF <-ask-quote ->recv-req
+MF <-send-quote ->recv-quote
+MF <-accept-quote ->wait-for-accept
