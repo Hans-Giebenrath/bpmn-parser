@@ -121,6 +121,24 @@ pub fn pebpmn_analysis(
     Ok(())
 }
 
+// XXX Don't use `String.into()` instead of this, as otherwise it will verbatim print all the
+// terminal color escape codes, instead of printing colored output.
+pub(crate) struct BpmdParseError(pub String);
+
+impl std::fmt::Display for BpmdParseError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.0)
+    }
+}
+
+impl std::fmt::Debug for BpmdParseError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.0)
+    }
+}
+
+impl std::error::Error for BpmdParseError {}
+
 trait ParseErrorMapToBoxError<T> {
     fn bpmd_format_err(
         self,
@@ -133,7 +151,13 @@ impl<T> ParseErrorMapToBoxError<T> for Result<T, ParseError> {
         self,
         source_files: &[BpmdSourceFile],
     ) -> Result<T, Box<dyn std::error::Error>> {
-        self.map_err(|annotations| render_snippet_report(source_files, annotations).into())
+        self.map_err(|annotations| {
+            Box::new(BpmdParseError(render_snippet_report(
+                source_files,
+                annotations,
+            )))
+            .into()
+        })
     }
 }
 
