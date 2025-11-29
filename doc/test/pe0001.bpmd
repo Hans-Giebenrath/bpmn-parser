@@ -23,7 +23,7 @@ MF <-send ->receive
 
 [pe-bpmn
   (tee-tasks @tee)
-  (tee-external-root-access)
+  (tee-external-root-access blocked)
   (tee-in-protect @send @p1)
   (stroke-color #a9d31e)
   (fill-color #eef7d0)

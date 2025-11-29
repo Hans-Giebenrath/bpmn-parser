@@ -43,6 +43,6 @@ MF <-sending ->steal
   (tee-tasks @echo)
   (tee-in-protect @tee-protect no-rv)
   (tee-out-unprotect @tee-unprotect no-rv)
-  (tee-external-root-access)
+  (tee-external-root-access blocked)
   (stroke-color #5a5)
 ]

@@ -18,8 +18,8 @@ cleanup() {
 trap cleanup EXIT
 
 pushd "../.."
-release=true
-if $release; then
+release="${release:-false}"
+if [ "$release" = "true" ]; then
     cargo build --release
 else
     cargo build
@@ -61,6 +61,7 @@ for f in "${all[@]}"; do
             if run -i "$f" -o "${f%.bpmd}.xml"; then
                 echo "finished generating ${f%.bpmd}.xml, now generating the png" &&
                     doc/node_modules/.bin/bpmn-to-image "${f%.bpmd}.xml":"${f%.bpmd}.png" &&
+                    cp "${f%.bpmd}.xml" /tmp/ &&
                     rm "${f%.bpmd}.xml"
             else
                 failed=true

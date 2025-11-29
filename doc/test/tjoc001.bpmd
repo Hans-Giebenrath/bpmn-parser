@@ -64,7 +64,7 @@ MF ->p5.1 <-p5.2
 
 [pe-bpmn
   (tee-tasks @p3.5.1 @p4.1)
-  (tee-external-root-access)
+  (tee-external-root-access blocked)
   (tee-in-protect @p3.3 @input-party)
   (tee-out-unprotect @p5.4 @output-party)
   (stroke-color #a9d31e)
@@ -73,7 +73,7 @@ MF ->p5.1 <-p5.2
 
 [pe-bpmn
   (mpc-tasks @p3.5.1 @p4.1)
-  (mpc-external-root-access)
+  (mpc-external-root-access blocked)
   (mpc-in-protect @p3.3 @input-party)
   (mpc-out-unprotect @p5.4 @output-party)
   (stroke-color #1ed39f)

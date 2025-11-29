@@ -31,7 +31,7 @@ MF <-sending ->tee-unprotect-inner
 [pe-bpmn
   (tee-tasks @process)
   (tee-in-protect @tee-protect-outer @better-client)
-  (tee-external-root-access)
+  (tee-external-root-access blocked)
   (stroke-color #7a7)
 ]
 
@@ -39,7 +39,7 @@ MF <-sending ->tee-unprotect-inner
   (tee-tasks @echo)
   (tee-in-protect @tee-protect-inner no-rv)
   (tee-out-unprotect @tee-unprotect-inner no-rv)
-  (tee-external-root-access)
+  (tee-external-root-access blocked)
   (stroke-color #a55)
 ]
 

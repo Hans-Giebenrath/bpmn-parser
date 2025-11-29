@@ -4,7 +4,6 @@
 * In the crossing minimization, make a tiny factor to favor gateway branch orderings as they were specified in the file, ie. on `NodeId`.
 * fix the doc/test/build.sh to use Make/parallel (or Rust threadpools) so we can have bounded parallelism.
 * Also handle JXI routing: swap up-down order to down-up order (or vice versa), or if it is unavoidable then move JXIs the the IXI handling. (JXI is an edge cross where only one side (top or bottom) has the same y coordinate)
-* top and bottom ports should actually mix incoming and outcoming, at least for message flows. Check out `tjoc002.bpmd` which looks does not sort it.
 * Add more checks for the correctness of the BPMN semantics:
   * Check that the gateway branching and joining nodes match (use a dedicated graph analysis phase, not in the parser)
 * Saw some youtuber who talks about generating BPMNs via ChatGPT. I guess I should write him when the tool is in a more usable state, then he can evaluate that: https://www.youtube.com/watch?v=StqnUeWv6Lc
