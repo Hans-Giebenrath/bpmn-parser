@@ -160,7 +160,9 @@ impl Edge {
         {
             if let Some((_, protections)) = pebpmn_protection.iter_mut().find(|(id, _)| *id == sde)
             {
-                protections.push(protection);
+                if !protections.contains(&protection) {
+                    protections.push(protection);
+                }
             } else {
                 pebpmn_protection.push((sde, vec![protection]));
             }

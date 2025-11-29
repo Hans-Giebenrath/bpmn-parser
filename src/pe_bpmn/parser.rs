@@ -73,6 +73,7 @@ pub struct ComputationCommon {
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum PeBpmnSubType {
+    // TODO Pool and Lane need to be Vecs because MPC is on multiple pools and lanes.
     Pool(PoolId),
     Lane { pool_id: PoolId, lane_id: LaneId },
     // They are all part of the same lane ... Or pool? TODO

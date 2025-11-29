@@ -81,8 +81,10 @@ enum BlockState {
 }
 
 fn assemble_secure_channel(mut tokens: Tokens, tc: TokenCoordinate) -> AResult {
-    let mut secure_channel = SecureChannel::default();
-    secure_channel.tc = tc;
+    let mut secure_channel = SecureChannel {
+        tc,
+        ..Default::default()
+    };
     let mut pe_bpmn_meta = PeBpmnMeta {
         stroke_color: None,
         fill_color: None,
@@ -98,7 +100,7 @@ fn assemble_secure_channel(mut tokens: Tokens, tc: TokenCoordinate) -> AResult {
         "receiver",
     )?;
 
-    secure_channel.argument_ids = parse_optional_ids(&mut tokens)?;
+    secure_channel.argument_ids = parse_optional_ids(&mut tokens, &mut secure_channel.tc)?;
 
     while let Some(it) = tokens.next() {
         secure_channel.tc.end = it.0.end;
@@ -153,7 +155,7 @@ fn assemble_tee_or_mpc(
             )]);
         }
     };
-    let mut ids = parse_optional_ids(&mut tokens)?;
+    let mut ids = parse_optional_ids(&mut tokens, &mut tc)?;
     match &mut pe_bpmn_subtype {
         PeBpmnSubType::Lane(name, out_tc) | PeBpmnSubType::Pool(name, out_tc) => match &mut ids[..]
         {
@@ -173,7 +175,7 @@ fn assemble_tee_or_mpc(
             }
             [(a, b)] => {
                 *name = std::mem::take(a);
-                *out_tc = b.clone();
+                *out_tc = *b;
             }
             [] => {
                 return Err(vec![("Missing an ID. Please add it.".to_string(), tc)]);
@@ -211,11 +213,13 @@ fn assemble_tee_or_mpc(
             if let Some(suffix) = val.strip_prefix(&format!("{tee_or_mpc}-")) {
                 match suffix {
                     "data-without-protection" => {
-                        data_without_protection.append(&mut parse_optional_ids(&mut tokens)?);
+                        data_without_protection
+                            .append(&mut parse_optional_ids(&mut tokens, &mut tc)?);
                         continue;
                     }
                     "already-protected" => {
-                        data_already_protected.append(&mut parse_optional_ids(&mut tokens)?);
+                        data_already_protected
+                            .append(&mut parse_optional_ids(&mut tokens, &mut tc)?);
                         continue;
                     }
                     "in-protect" => {
@@ -294,7 +298,13 @@ fn assemble_tee_or_mpc(
                             )]);
                         }
                         seen_external_root_access = true;
-                        external_root_access = parse_optional_ids(&mut tokens)?;
+                        external_root_access = parse_optional_ids_or_placeholder(
+                            &mut tokens,
+                            it.0,
+                            &mut tc,
+                            "blocked",
+                            "pool",
+                        )?;
                         continue;
                     }
                     _ => {}
@@ -366,7 +376,7 @@ fn assemble_tee_or_mpc(
         tc,
     };
 
-    return match pe_bpmn_type {
+    match pe_bpmn_type {
         PeBpmnType::Tee(_) => Ok(Statement::PeBpmn(PeBpmn {
             r#type: PeBpmnType::Tee(Tee {
                 common: computation_common,
@@ -379,13 +389,11 @@ fn assemble_tee_or_mpc(
             }),
             meta: pe_bpmn_meta,
         })),
-        _ => {
-            return Err(vec![(
-                "Invalid pe-bpmn type for tee or mpc".to_string(),
-                tc,
-            )]);
-        }
-    };
+        _ => Err(vec![(
+            "Invalid pe-bpmn type for tee or mpc".to_string(),
+            tc,
+        )]),
+    }
 }
 
 pub fn to_pe_bpmn(mut tokens: Tokens, _backup_tc: TokenCoordinate) -> AResult {
@@ -738,9 +746,11 @@ fn parse_id_or_placeholder(
 
 fn parse_optional_ids(
     tokens: &mut impl Iterator<Item = (TokenCoordinate, Token)>,
+    prev_tc: &mut TokenCoordinate,
 ) -> Result<Vec<(String, TokenCoordinate)>, ParseError> {
     let mut arguments_ids = Vec::new();
     for (tc, t) in tokens.by_ref() {
+        prev_tc.end = tc.end;
         match t {
             Token::Separator => {
                 break;
@@ -757,6 +767,73 @@ fn parse_optional_ids(
         }
     }
 
+    Ok(arguments_ids)
+}
+
+fn parse_optional_ids_or_placeholder(
+    tokens: &mut impl Iterator<Item = (TokenCoordinate, Token)>,
+    prev_tc: TokenCoordinate,
+    full_pebpmn_tc: &mut TokenCoordinate,
+    placeholder: &str,
+    actor: &str,
+) -> Result<Vec<(String, TokenCoordinate)>, ParseError> {
+    let mut arguments_ids = Vec::<(String, TokenCoordinate)>::new();
+    let mut placeholder_found = false;
+    for (tc, t) in tokens.by_ref() {
+        full_pebpmn_tc.end = tc.end;
+        match t {
+            Token::Separator => {
+                break;
+            }
+            Token::Text(text) => {
+                if text == placeholder {
+                    placeholder_found = true;
+                } else {
+                    return Err(vec![(
+                        format!("Unexpected argument. Did you mean \"{placeholder}\"?",),
+                        tc,
+                    )]);
+                }
+                if let [.., last] = arguments_ids.as_slice() {
+                    return Err(vec![
+                        (
+                            format!(
+                                "You already supplied an ID, so you cannot use \"{placeholder}\" anymore",
+                            ),
+                            tc,
+                        ),
+                        (
+                            format!("Remove this one if you want to use \"{placeholder}\""),
+                            last.1,
+                        ),
+                    ]);
+                }
+            }
+            Token::Id(id) => {
+                arguments_ids.push((id, tc));
+                if placeholder_found {
+                    return Err(vec![(
+                        format!(
+                            "You already supplied \"{placeholder}\", so no more IDs are allowed. Either use \"{placeholder}\" or use IDs",
+                        ),
+                        tc,
+                    )]);
+                }
+            }
+            _ => {
+                return Err(vec![(
+                    "Unexpected argument. Only accepting IDs".to_string(),
+                    tc,
+                )]);
+            }
+        }
+    }
+    if !placeholder_found && arguments_ids.is_empty() {
+        return Err(vec![(
+            format!("Expected more arguments. Add a {actor} ID or \"{placeholder}\""),
+            prev_tc,
+        )]);
+    }
     Ok(arguments_ids)
 }
 

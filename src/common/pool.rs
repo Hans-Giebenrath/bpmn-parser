@@ -27,6 +27,9 @@ pub struct Pool {
     /// anonymous lane.
     pub tc: TokenCoordinate,
 
+    /// This happens if a sender uses tee-protect `no-rv` or with the `@admin-of-tee`, as then the
+    /// admin could replace the TEE with something they control (the remote user doesn't do correct
+    /// RA, so they won't notice) and hence decrypt what they should not have seen.
     #[allow(non_snake_case)]
     pub tee_admin_has_pe_bpmn_visibility_A_for: HashSet<(SdeId, PeBpmnProtection)>,
     #[allow(non_snake_case)]

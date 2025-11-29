@@ -1,0 +1,5 @@
+Pool,E2.4 CTA,E3.1 Input Data,E4.1 Protected Output Data Store
+Input Party,V,V,
+Computing Parties,,HH,HH
+Output Party,,,V
+Network,,HH,HH
