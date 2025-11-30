@@ -89,6 +89,20 @@ affecting the layout quality).
 You might be tempted to check whether you can mix `+` with `X` gateway nodes. At the moment this
 works perfectly fine, but a correctness analysis to prevent this is on the roadmap.
 
+== Gateways - Full Syntax
+
+* `XG` Exclusive
+* `X` Shorthand for `XG`.
+* `+G` Parallel
+* `+` Shorthand for `+G`.
+* `OG` Inclusive
+* `O` Shorthand for `OG`.
+* `*G` Complex
+* `*` Shorthand for `*G`.
+* `#G` Event-Based
+
+pass:[<del>]#G and +G can be the start of a business process{empty}pass:[</del>] (not supported yet).
+
 == Pools and Lanes
 
 The examples above omitted pools and lanes to focus on the sequence flows and nodes. Here they are:
@@ -106,8 +120,11 @@ number of lanes. While you saw that the order of gateway branches can change for
 purposes, this is not done for lanes or pools. They always appear in the order as they are declared
 in the text file.
 
-Some diagrams place two shorter pools horizontally on the same line next to each other. This is
-currently not supported but is on the roadmap.
+Some manually crafted diagrams show two shorter pools horizontally on the same line next to each
+other. This is currently not supported but is on the roadmap.
+
+pass:[<del>]A pool can be marked as multiple with the `~multiple` attribute.{empty}pass:[</del>]
+(not supported yet)
 
 == Sequence Flow across Lanes
 
@@ -119,7 +136,6 @@ image::generated/overview-lane-crossing.png[]
 ----
 include::example$overview-lane-crossing.bpmd[]
 ----
-<1> You can still omit a dedicated lane if you want.
 
 IMPORTANT:: The syntax will likely get rid of `F` meta statements and just use `<-` and `->` on the task and
 event statements. The dedicated statement does better highlight that there is a break in the
@@ -137,7 +153,7 @@ Inter-pool communication is done via message flows. Those are added as dedicated
 
 [,bpmd]
 ----
-`MF <-from ->to`.
+MF <-from ->to
 ----
 
 image::generated/overview-message-flow.png[]
@@ -182,7 +198,7 @@ MF <-abc ->def // Uses identifiers, not the display text
 == Data Elements
 
 Data elements use the statment type `OD` for data object and `SD` for data store. They use incoming
-`<-label` and outgoing `->label` labels to connect data associations with activities.
+`<-label` and outgoing `->label` arrows to connect data associations with activities.
 
 image::generated/overview-data.png[]
 
@@ -218,7 +234,28 @@ the idea of what you could do with the feature.
 In the future it will be possible to change the icon type during the continuation, e.g. in a chain
 of `OD .. S& .. D& ..`.
 
+== Data - Full Syntax
+
+* `OD` Data Object
+* `SD` Data Store
+* `<D` pass:[<del>]Data Input{empty}pass:[</del>]
+* `>D`  pass:[<del>]Data Output{empty}pass:[</del>]
+* `&` A continuation of the previous data object, to indicate that a new symbol should be used in the diagram but it's still part of the same semantic object.
+* `O&` pass:[<del>]Data Continuation with a Symbol Change{empty}pass:[</del>]
+* `S&` pass:[<del>]Data Continuation with a Symbol Change{empty}pass:[</del>]
+* `<&` pass:[<del>]Data Continuation with a Symbol Change{empty}pass:[</del>]
+* `>&` pass:[<del>]Data Continuation with a Symbol Change{empty}pass:[</del>]
+
 == Recommended Structure of a `.bpmd` File
+
+[,bpmd]
+----
+// Roughly:
+//  (1) Sequence Flows
+//  (2) Data Flows
+//  (3) Message Flows
+//  (4) Other directives (more about them later)
+----
 
 Pools, lanes and their contained events and tasks are naturally grouped. For data elements and
 message flows the recommendation is to keep data objects at the end of the pool or lane where they
@@ -234,4 +271,109 @@ objects or message flows at the very top, as then no events / tasks have been de
 
 == Boundary Events
 
+Boundary events are added through their own statements right below the task which they are attached
+to.
 
+image::generated/overview-boundary-events.png[]
+
+[,bpmd]
+----
+include::example$overview-boundary-events.bpmd[]
+----
+
+This is the list of supported boundary events:
+
+* Boundary Event Interrupting
+** `M!` Message event.
+** `T!` Timer
+** `C!` Conditional
+** `S!` Signal
+** `E!` Error
+** `^!` Escalation
+** `<!` Compensation
+** `X!` Cancel
+** `#!` +++<del>+++Multiple+++</del>+++ (not yet supported since I don't know how the XML looks like.)
+** `+!` +++<del>+++Multiple Parallel+++</del>+++ (not yet supported since I don't know how the XML looks like.)
+* Boundary Event Non-Interrupting
+** `M+` Message event.
+** `T+` Timer
+** `C+` Conditional
+** `S+` Signal
+** `^+` Escalation
+** `#+` +++<del>+++Multiple+++</del>+++ (not yet supported since I don't know how the XML looks like.)
+** `++` pass:[<del>]Multiple Parallel{empty}pass:[</del>] (not yet supported since I don't know how the XML looks like.)
+
+== Events - Full Syntax
+
+* Event statements
+** `.#` None event.
+** `#` Shorthand for `.#` or `M#`, depending on whether a message flow is connected.
+** `M#` Message event.
+** `T#` Timer
+** `C#` Conditional
+** `>#` Link
+** `S#` Signal
+** `E#` Error
+** `^#` Escalation
+** `<#` Compensation
+** `X#` Cancel
+** `##` Multiple
+** `+#` Multiple Parallel
+* End Event statements
+** `..` Blank end event
+** `.` Shorthand for `..` or `M.`, depending on whether a message flow is connected`
+** `M.` Message event
+** `S.` Signal
+** `E.` Error
+** `^.` Escalation
+** `!.` Termination
+** `<.` Compensation
+** `X.` Cancel
+** `#.` Multiple
+
+In some situations it can be automatically deduced whether an event is throwing or catching, e.g. if
+a message flow is attached for a message event, or if you use an event for which only one form is
+legal. In the other cases, you can explicitly specify the event type:
+
+* `M# Some Event ~throw`: Creates the throwing icon
+* `M# Some Event ~catch`: Creates the catching icon
+
+== Activities - Full Syntax
+
+* `.-` A regular Task (task types, only applicable for regular tasks, are explained in the next section. They are modeled with an additional attribute)
+* `-` Shorthand for `.-`
+* `S-` pass:[<del>]Subprocess{empty}pass:[</del>] (Must match the name (or ID?) of a `S=` (not
+  supported yet)
+* `C-` pass:[<del>]Call Activity{empty}pass:[</del>] (not supported yet)
+* `!-` pass:[<del>]Event Subprocess Interrupting{empty}pass:[</del>] (not supported yet)
+* `+-` pass:[<del>]Event Subprocess Non-Interrupting{empty}pass:[</del>] (not supported yet)
+* `T-` pass:[<del>]Transaction{empty}pass:[</del>] (not supported yet)
+
+Further, tasks can have some additional icons attached to them. This is controlled via the
+`~something` attribute{empty}footnote:[Using `~` (**T**ilde for **T**ype) instead of new
+first-letter mnemonics, as letters are clashing (service and subprocess) and might clash more if
+there will be more elements in a future version of BPMN. These task types also seem to be usually added when refining the process, so it is not necessarily a fundamental property of the thing to be a manual task type, so it does not need to be on the left hand side. Also, it might be required later to add some information to e.g. script thing, but I am not sure about that.]:
+
+*NONE OF THIS WORKS, YET*
+
+* `.- ~send`: Task with message send symbol
+* `.- ~receive`: Task with message send symbol
+* `.- ~manual`: Manual task type
+* `.- ~user`: User task type
+* `.- ~script`: Script task type
+* `.- ~service`: Service task type
+* `.- ~businessrule`: Business rule task type
+* `.- ~multiple`: Multiple instance task type (also works for pools!)
+
+== Grouping Elements
+
+*NONE OF THIS WORKS, YET*
+
+* `P==` Pool (can have the `~multiple` type to become a Multiple-Instance Participant)
+* `====` Synonym for `P=`.
+* `L===` Lane
+* `S==` Inner content of a subprocess
+* `C==` Inner content of a call activity
+* `!====` Event Subprocess Interrupting (they are put into the lane where they are defined)
+* `+====` Event Subprocess Non-Interrupting (they are put into the lane where they are defined)
+* `(In this case one can add additional `=` to allow for better visual highlighting of groups)

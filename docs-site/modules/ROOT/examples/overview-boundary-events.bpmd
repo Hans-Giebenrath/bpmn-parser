@@ -1,0 +1,14 @@
+# Start
+- Task
+  E! ->handle-error
+  T+ ->handle-timer
+- Continue the Ongoing Sequence Flow
+. Stillstand
+
+F <-handle-error
+- Handle the Error
+. Done
+
+F <-handle-timer
+- Handle the Timer
+. Done

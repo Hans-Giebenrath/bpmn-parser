@@ -2,7 +2,9 @@
 * Documentation.
 * Document infallability of the crate: The crate is meant to be used with catch_unwind: `assert`s are sprinkled throughout the codebase, `.unwrap()`s and index accesses are used everywhere (they are kind-of like assumptions). But the logic is complicated and I am 100% there are remaining hidden logic bugs. (well, right now it is just a binary, so one gets failure isolation "for free", but if I ever make this into a crate, then `catch_unwind`)
 * In the crossing minimization, make a tiny factor to favor gateway branch orderings as they were specified in the file, ie. on `NodeId`.
-* fix the doc/test/build.sh to use Make/parallel (or Rust threadpools) so we can have bounded parallelism.
+* Also, make it that boundary event nodes are more likely to leave downwards. Maybe have at all just a general node ID ordering?
+* with boundary events, have their XY edge length constraint smaller? See `overview-boundary-events.bpmd`, should have nice straight regular outgoing sequence flow.
+* fix the doc/test/build.sh to use Make/parallel (or Rust threadpools - or `fd` which also has a jobqueue) so we can have bounded parallelism.
 * Also handle JXI routing: swap up-down order to down-up order (or vice versa), or if it is unavoidable then move JXIs the the IXI handling. (JXI is an edge cross where only one side (top or bottom) has the same y coordinate)
 * Add more checks for the correctness of the BPMN semantics:
   * Check that the gateway branching and joining nodes match (use a dedicated graph analysis phase, not in the parser)
