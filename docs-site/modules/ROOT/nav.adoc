@@ -1,3 +1,9 @@
 * xref:new-page.adoc[]
 * xref:install.adoc[]
 * xref:dsl-overview.adoc[]
+* Extensions
+** PE-BPMD
+*** xref:pe-bpmd/introduction.adoc[Introduction]
+*** xref:pe-bpmd/secure-channel.adoc[Secure Channel]
+*** xref:pe-bpmd/tee.adoc[TEE]
+*** xref:pe-bpmd/mpc.adoc[MPC]

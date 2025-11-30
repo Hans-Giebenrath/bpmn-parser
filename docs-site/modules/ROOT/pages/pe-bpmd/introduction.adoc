@@ -1,0 +1,47 @@
+= PE-BPMD / PE-BPMN
+
+Privacy-Enhanced BPMN (PE-BPMN) is an extension to BPMN to analyse data leakage. You have a bunch of
+pools, and a bunch of data, and you want to answer the question "Who can see what data?"
+Refer to this research paper which introduces this extension:
+link:https://link.springer.com/chapter/10.1007/978-3-319-65000-5_3[PE-BPMN: Privacy-Enhanced Business Process Model and Notation]
+
+The implementation of this extension in the `bpmd` tool is my interpretation of the goals of
+PE-BPMN, so I call it _PE-BPMD_.
+
+Obviously PE-BPMD operates on a very high level, on a business process level. If you are a
+cryptography researcher researching cryptographic algorithms, then this tool is totally incapable of
+addressing your needs. But if you want to communicate, on a high level, to lay persons that a given
+business process is leaking data, and how to enhance the process to fix the data leakage, then
+PE-BPMN could help.
+
+PE-BPMN has annotations of varying granularity (you can refer to
+link:https://pleak.io/wiki/pe-bpmn-editor_stereotypes[this list of stereotypes]). To keep the scope
+small, I reduced the scope, or annotation kinds, in PE-BPMD. The following list represents the
+existing primitives. If the technologies are unknown to you, then you can still have a look at the
+more detailed pages as they reference to (in my biased opinion) understandable explanations, and
+show them in action (within the scope of BPMN). So I welcome your interest! (Also, the introductory
+texts are obviously simplified and full of caveats, so please excuse the brevity.)
+
+xref:pe-bpmd/secure-channel.adoc[Secure Channel]:: You say where data is protected and where the
+protection is undone. In the simplest form, that's about it.
+xref:pe-bpmd/tee.adoc[Trusted Execution Environments]:: CPU extensions which allow to execute code
+in a protected environment. The host (operating system, hypervisor, a root user) cannot look into
+that environment, i.e. it becomes harder for an attacker to extract encryption keys or other secrets
+from a running program, while the program uses that data. At the same time, a remote user can
+cryptographically verify that the correct (trustworthy) program is running in the protected
+environment. Since this was once my area of expertise, I experimented with new additions that have
+not been part in PE-BPMN.
+xref:pe-bpmd/mpc.adoc[Multi-Party Computation]:: I am no expert in MPC technology, so read this with
+a grain of salt. I primarily had tangential familiarity with the secret-sharing kind of MPC. In this
+model, data is not processed on a single CPU, but it is split into shares and then sent to let's say
+three different machines. They do some fancy math, and in the end someone can bring the results of
+each individual machine together into a meaningful (correct) answer, even though each individual
+machine just saw what looked to them like random data. If the machines are now operated by
+independent people or organisations (Example Corp. A, Example Corp. B and University of Privacy
+Enhancing Technologies) who don't tell each other what they saw, then the data is protected.
+
+If you have further suggestions for technologies to support in PE-BPMD (where you think this is not
+covered by any of the aforementioned ones), then
+link:https://github.com/Hans-Giebenrath/bpmn-parser/issues[create an issue]!.
+(I think about adding a "pseudonymise" primitive, maybe also an "anonymise" primitive, but I need to
+give it more thought.)
