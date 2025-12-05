@@ -195,11 +195,11 @@ All edges `<-label` and `->label` can also have an associated Display Text by us
 Please specify a Display Text only on one side of an edge:
 
 ```
-F -> label "Only specify Display Text once for this edge"
+OD Regular Display Text -> label "Only specify Display Text once for this edge"
 
 ...
 
-F <- label // No Display Text here.
+OD Regular Display Text <- label // No Display Text here.
 ```
 
 == IDs

@@ -10,7 +10,7 @@ T! ->be1
 
 == L 2
 
-F<-be0
-. BE0
-F<-be1
-. BE1
+
+. BE0 <-be0
+
+. BE1 <-be1

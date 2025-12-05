@@ -2,6 +2,7 @@
 #![feature(never_type)]
 #![feature(array_windows)]
 
+mod analysis;
 mod common;
 mod layout;
 mod lexer;
@@ -111,6 +112,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut graph: Graph = timer.time_it("Parsing", || {
         parser::parse(bpmd, &mut bpmd_source_files).bpmd_format_err(&bpmd_source_files)
     })?;
+
+    timer.time_it("Create transported data", || {
+        analysis::create_transported_data(&mut graph);
+    });
 
     if let Some(visibility_path) = &cli.visibility_table {
         timer.time_it("PE-BPMN analysis", || {

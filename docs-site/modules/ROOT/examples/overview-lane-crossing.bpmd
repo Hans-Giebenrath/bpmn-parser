@@ -3,15 +3,11 @@
 == Lane 1
 
 # Start
-- Task
-F ->handover
+- Task ->handover
 
-F <-handback
-- Clean up
+- Clean up <-handback
 . Finish
 
 == Lane 2
 
-F<-handover
-- Follow-up Task
-F ->handback
+- Follow-up Task <-handover ->handback

@@ -4,26 +4,19 @@ M# order received <-
 .- check availability
 XG article available? ->"yes" ->"no"
 
-F <-yes
-.- ship article
-F ->fm
+.- ship article <-yes ->fm
 
-F <-no
-C- procurement
+C- procurement <-no ->fm
   E! ->"not available"
   ^+ ->"late delivery"
-F ->fm
 
-F <-fm
-S- financial management
+S- financial management <-fm
 .. end
 
-F <-late-delivery
-.- inform customer
+.- inform customer <-late-delivery
 .. end
 
-F <-not-available
-.- informm customer
+.- informm customer <-not-available
 .- delete article from catalogue
 .. end
 
@@ -33,12 +26,10 @@ C= procurement
 .- place order
 XG available? ->fast"in <2 days" ->slow"in >2 days" ->"no"
 
-F <-fast
-.- expect delivery
+.- expect delivery <-fast
 .. end
 
-F <-slow
-^# late dellivery ->
+^# late dellivery -> <-slow
 .. // The BPMN diagram from Camunda is wrong here, I believe. It misses an end event after the throwing escalation marker.
 
 F <-no

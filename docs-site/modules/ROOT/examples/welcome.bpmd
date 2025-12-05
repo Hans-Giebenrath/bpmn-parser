@@ -6,14 +6,11 @@
  T! ->bored"Waiting too long"
 X Evaluate Quote ->accept ->deny
 
-F <-bored
-. Search Elsewhere
+. Search Elsewhere <-bored
 
-F <-deny
-. Search Elsewhere
+. Search Elsewhere <-deny
 
-F <-accept
-. Accept Quote
+. Accept Quote <-accept
 
 
 = My Company
@@ -25,8 +22,7 @@ F <-accept
   T! ->postmortem"Portmortem Time"
 . WorkyWork
 
-F <-postmortem
-. Why did we fail?
+. Why did we fail? <-postmortem
 
 
 MF <-ask-quote ->recv-req

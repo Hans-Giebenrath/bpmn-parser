@@ -1,13 +1,9 @@
 # Start
 X Gateway ->one ->two // <1>
 
-F <-one
-- One
-F ->end"Edge Text" // <2>
+- One <-one ->end"Edge Text" // <2>
 
-F <-two
-- Two
-F ->end
+- Two <-two ->end
 
 X <-end
 . End

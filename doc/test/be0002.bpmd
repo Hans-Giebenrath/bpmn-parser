@@ -27,29 +27,29 @@ S+ ->be11
 ^+ ->be12
 . Regular End
 
-F<-be0
-. BE0
-F<-be1
-. BE1
-F<-be2
-. BE2
-F<-be3
-. BE3
-F<-be4
-. BE4
-F<-be5
-. BE5
-F<-be6
-. BE6
-F<-be7
-. BE7
-F<-be8
-. BE8
-F<-be9
-. BE9
-F<-be10
-. BE10
-F<-be11
-. BE11
-F<-be12
-. BE12
+
+. BE0 <-be0
+
+. BE1 <-be1
+
+. BE2 <-be2
+
+. BE3 <-be3
+
+. BE4 <-be4
+
+. BE5 <-be5
+
+. BE6 <-be6
+
+. BE7 <-be7
+
+. BE8 <-be8
+
+. BE9 <-be9
+
+. BE10 <-be10
+
+. BE11 <-be11
+
+. BE12 <-be12

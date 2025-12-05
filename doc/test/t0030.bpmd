@@ -1,25 +1,17 @@
 = Pool
 
 == Lane 1
-# Start Event 1
-F ->l1f1
+# Start Event 1 ->l1f1
 
-F <-l1f2
-. Finish 1
+. Finish 1  <-l1f2
 
-F <-l2f1
-- A-2
-F ->l2f2
+- A-2  <-l2f1 ->l2f2
 
 == Lane 2
 
-# Start Event 2
-F ->l2f1
+# Start Event 2 ->l2f1
 
 X <-l2f2
 . Finish 2
 
-
-F <-l1f1
-- 2-2
-F ->l1f2
+- 2-2  <-l1f1 ->l1f2

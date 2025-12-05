@@ -1,19 +1,11 @@
 # Start Event
 X ->above"Go Here" ->below"No, here!" ->more
 
-F <-above
-- Above
-F ->endjoin
+- Above  <-above ->endjoin
 
-F <-below
-- And beyond
-F ->endjoin
+- And beyond  <-below ->endjoin
 
-F <-more
-- And uahifuh
-F ->endjoin
+- And uahifuh  <-more ->endjoin
 
 X <-endjoin
 . Finish.
-
-

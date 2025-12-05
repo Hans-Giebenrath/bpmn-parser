@@ -15,7 +15,7 @@ include::easiest.bpmd[]
 ----
 <1> The first event, if it is just an empty circle, is represented with a `#`.
 <2> Regular inner activities without a symbol also use a `-`.
-<3> Positive end events use the `.` symbol. `.` is used instead of `-` to better show the   
+<3> Positive end events use the `.` symbol. `.` is used instead of `-` to better show the
 
 == Pools and Lanes
 
@@ -68,11 +68,11 @@ All edges `<-label` and `->label` can also have an associated Display Text by us
 Please specify a Display Text only on one side of an edge:
 
 ```
-F -> label "Only specify Display Text once for this edge"
+OD .. -> label "Only specify Display Text once for this edge"
 
 ...
 
-F <- label // No Display Text here.
+OD .. <- label // No Display Text here.
 ```
 
 == Intermediate Events

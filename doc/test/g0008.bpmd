@@ -4,15 +4,11 @@
 # Start Event
 X ->g1
 
-F <-g1
-- A-1
-F ->j1
+- A-1  <-g1 ->j1
 
 X <-j1
 . Finish.
 
 == Lane 2
 
-F <-g1
-- C-1
-F ->j1
+- C-1  <-g1 ->j1

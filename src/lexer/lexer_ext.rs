@@ -41,8 +41,12 @@ pub struct ComputationCommon {
     pub out_unprotect: Vec<Protection>,
     // Does this also need a token coordinate?
     pub data_without_protection: Vec<(String, TokenCoordinate)>,
+    /// Technically this should be `Vec<Protection>`, since we need to know whether it was `no-rv`.
     pub data_already_protected: Vec<(String, TokenCoordinate)>,
-    pub admin: Option<(String, TokenCoordinate)>,
+    pub software_operators: Vec<(String, TokenCoordinate)>,
+    /// Can contain placeholder `on-premises`: can be distinguished from `@on-premises` via
+    /// TokenCoordinate length.
+    pub hardware_operators: Vec<(String, TokenCoordinate)>,
     pub external_root_access: Vec<(String, TokenCoordinate)>,
     pub tc: TokenCoordinate,
 }
@@ -201,9 +205,12 @@ fn assemble_tee_or_mpc(
     let mut external_root_access = vec![];
     let mut data_without_protection = vec![];
     let mut data_already_protected = vec![];
-    let mut admin: Option<(String, TokenCoordinate)> = None;
+    let mut software_operators = vec![];
+    let mut hardware_operators = vec![];
 
     let mut seen_external_root_access = false;
+    let mut seen_software_operators = false;
+    let mut seen_hardware_operators = false;
 
     while let Some(it) = tokens.next() {
         tc.end = it.0.end;
@@ -264,32 +271,40 @@ fn assemble_tee_or_mpc(
                         )?);
                         continue;
                     }
-                    "admin" => {
-                        if admin.is_some() {
+                    "software-operators" => {
+                        if seen_software_operators {
                             return Err(vec![(
                                 format!(
-                                    "There is already a {tee_or_mpc}-admin defined. Multiple {tee_or_mpc}-admin entries are not allowed."
+                                    "{tee_or_mpc}-software-operators is already defined. To add multiple pools, append them in one declaration, E.g.: ({tee_or_mpc}-software-operators @pool1 @pool2 ...)."
                                 ),
                                 it.0,
                             )]);
                         }
-
-                        admin = match tokens.next() {
-                            Some((tc, Token::Id(id))) => Ok(Some((id, tc))),
-                            Some((tc, _)) => Err(vec![(
-                                "Unexpected argument. Only accepting IDs".to_string(),
-                                tc,
-                            )]),
-                            None => {
-                                return Err(vec![("Missing ID. Add an ID.".to_string(), tc)]);
-                            }
-                        }?;
-
-                        check_end_block(tokens.next())?;
+                        seen_software_operators = true;
+                        software_operators = parse_optional_ids(&mut tokens, &mut tc)?;
+                        continue;
+                    }
+                    "hardware-operators" => {
+                        if seen_hardware_operators {
+                            return Err(vec![(
+                                format!(
+                                    "{tee_or_mpc}-hardware-operators is already defined. To add multiple pools, append them in one declaration, E.g.: ({tee_or_mpc}-hardware-operators @pool1 @pool2 ...)."
+                                ),
+                                it.0,
+                            )]);
+                        }
+                        seen_hardware_operators = true;
+                        hardware_operators = parse_ids_or_placeholder(
+                            &mut tokens,
+                            it.0,
+                            &mut tc,
+                            "on-premises",
+                            "pool",
+                        )?;
                         continue;
                     }
                     "external-root-access" => {
-                        if !external_root_access.is_empty() {
+                        if seen_external_root_access {
                             return Err(vec![(
                                 format!(
                                     "{tee_or_mpc}-external-root-access is already defined. To add multiple pools, append them in one declaration, E.g.: ({tee_or_mpc}-external-root-access @pool1 @pool2 ...)."
@@ -298,7 +313,7 @@ fn assemble_tee_or_mpc(
                             )]);
                         }
                         seen_external_root_access = true;
-                        external_root_access = parse_optional_ids_or_placeholder(
+                        external_root_access = parse_ids_or_placeholder(
                             &mut tokens,
                             it.0,
                             &mut tc,
@@ -371,7 +386,8 @@ fn assemble_tee_or_mpc(
         out_unprotect,
         data_without_protection,
         data_already_protected,
-        admin,
+        software_operators,
+        hardware_operators,
         external_root_access,
         tc,
     };
@@ -770,7 +786,7 @@ fn parse_optional_ids(
     Ok(arguments_ids)
 }
 
-fn parse_optional_ids_or_placeholder(
+fn parse_ids_or_placeholder(
     tokens: &mut impl Iterator<Item = (TokenCoordinate, Token)>,
     prev_tc: TokenCoordinate,
     full_pebpmn_tc: &mut TokenCoordinate,

@@ -6,6 +6,9 @@
 
 use core::fmt::Display;
 
+use itertools::Either;
+use itertools::Itertools;
+
 use crate::common::bpmn_node::ActivityType;
 use crate::common::bpmn_node::BoundaryEvent;
 use crate::common::bpmn_node::BoundaryEventType;
@@ -26,12 +29,7 @@ pub enum Statement {
     Event(EventMeta),       // `#` for start event
     EventEnd(EventMeta),    // `.` for end event
     Activity(ActivityMeta), // `-` for task activity
-    // X ->somewhere
-    GatewayBranchStart(GatewayNodeMeta),
-    // X <-end
-    GatewayJoinEnd(GatewayNodeMeta),
-    SequenceFlowJump(SequenceFlowMeta), // `F ->`
-    SequenceFlowLand(SequenceFlowMeta), // `F <-`
+    Gateway(GatewayNodeMeta),
     MessageFlow(MessageFlowMeta),
     Data(DataMeta), // 'SD' for datastore 'OD' for dataobject '&' for continuation
     Layout(LayoutStatement),
@@ -51,11 +49,6 @@ pub enum LayoutStatement {
 pub type StatementStream = std::vec::IntoIter<(TokenCoordinate, Statement)>;
 
 #[derive(Debug, Clone, PartialEq)]
-pub(crate) struct SequenceFlowMeta {
-    pub(crate) sequence_flow_jump_meta: EdgeMeta,
-}
-
-#[derive(Debug, Clone, PartialEq)]
 pub(crate) struct BoundaryEventMeta {
     pub(crate) sequence_flow_jump_meta: EdgeMeta,
     pub(crate) boundary_event: BoundaryEvent,
@@ -72,7 +65,8 @@ pub(crate) struct MessageFlowMeta {
 pub(crate) struct GatewayNodeMeta {
     pub(crate) gateway_type: GatewayType,
     pub(crate) node_meta: NodeMeta,
-    pub(crate) sequence_flow_jump_metas: Vec<EdgeMeta>,
+    pub(crate) sequence_flow_jumps: Vec<EdgeMeta>,
+    pub(crate) sequence_flow_landings: Vec<EdgeMeta>,
 }
 
 #[derive(Debug, Clone, Eq, PartialEq)]
@@ -87,12 +81,6 @@ pub(crate) struct EdgeMeta {
 pub enum DataType {
     Store,
     Object,
-}
-
-#[derive(Debug, Clone, Eq, PartialEq)]
-pub struct DataAux {
-    pub sde_id: SdeId,
-    pub pebpmn_protection: Vec<PeBpmnProtection>,
 }
 
 #[derive(Debug, Clone, Copy, Eq, PartialEq, PartialOrd, Ord, Hash)]
@@ -147,12 +135,16 @@ pub(crate) struct EventMeta {
     pub(crate) shorthand_syntax: bool,
     pub(crate) event_type: EventType,
     pub(crate) event_visual: (EventVisual, TokenCoordinate),
+    pub(crate) sequence_flow_jump: Option<EdgeMeta>,
+    pub(crate) sequence_flow_landing: Option<EdgeMeta>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct ActivityMeta {
     pub(crate) node_meta: NodeMeta,
     pub(crate) activity_type: ActivityType,
+    pub(crate) sequence_flow_jump: Option<EdgeMeta>,
+    pub(crate) sequence_flow_landing: Option<EdgeMeta>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
@@ -223,7 +215,8 @@ enum ARAttribute {
 
 enum ARFlowAttribute {
     Forbidden,
-    //OptionalLeftAndRightArrows,
+    OptionalOneLeftAndOrRightArrows,
+    OptionalOneLeftArrow,
     RequiredExactlyOneArrow,
     RequiredExactlyOneRightArrow,
     RequiredLeftAndRightArrows,
@@ -242,9 +235,9 @@ struct AssemblyRequest {
 #[derive(Default)]
 struct AssembledAttributes {
     display_text: Option<String>,
-    ids: Option<Vec<String>>,
+    ids: Vec<String>,
     arrows_with_same_direction: Option<(Direction, Vec<EdgeMeta>)>,
-    left_and_right_arrows: Option<Vec<(Direction, EdgeMeta)>>,
+    left_and_right_arrows: Vec<(Direction, EdgeMeta)>,
     task_type: TaskType,
     event_visual: EventVisual,
     // Parses the virtual token, as this is rather ubiquitous, so parse it centrally.
@@ -297,48 +290,68 @@ fn to_event(atts: Tokens, backup_tc: TokenCoordinate) -> AResult {
         AssemblyRequest {
             display_text: ARAttribute::Required,
             ids: ARAttribute::Optional,
-            flows: ARFlowAttribute::Forbidden,
+            flows: ARFlowAttribute::OptionalOneLeftAndOrRightArrows,
             task_type: AROptionalAttribute::Forbidden,
             event_visual: AROptionalAttribute::Forbidden,
         },
         backup_tc,
     )?;
+    let mut sequence_flow_jump = None;
+    let mut sequence_flow_landing = None;
+    for (direction, edge_meta) in atts.left_and_right_arrows {
+        match direction {
+            Direction::Incoming => sequence_flow_landing = Some(edge_meta),
+            Direction::Outgoing => sequence_flow_jump = Some(edge_meta),
+        }
+    }
     Ok(Statement::Event(EventMeta {
         node_meta: NodeMeta {
             display_text: atts.display_text.unwrap(),
-            ids: atts.ids.unwrap_or_default(),
+            ids: atts.ids,
         },
         // TODO
         event_type: EventType::Blank,
         // TODO (Start is discovered by the parser)
         event_visual: (EventVisual::None, Default::default()),
         shorthand_syntax: atts.used_shorthand_syntax,
+        sequence_flow_jump,
+        sequence_flow_landing,
     }))
 }
 
 fn to_event_end(atts: Tokens, backup_tc: TokenCoordinate) -> AResult {
-    // TODO use virtual tokens to distinguish end from non-end.
+    // TODO use virtual tokens to distinguish end from non-end, to DRY with `to_event`.
     let atts = assemble_attributes(
         "End events",
         atts,
         AssemblyRequest {
             display_text: ARAttribute::Required,
             ids: ARAttribute::Optional,
-            flows: ARFlowAttribute::Forbidden,
+            flows: ARFlowAttribute::OptionalOneLeftArrow,
             task_type: AROptionalAttribute::Forbidden,
             event_visual: AROptionalAttribute::Forbidden,
         },
         backup_tc,
     )?;
+    let sequence_flow_landing =
+        if let Some((direction, mut edge_meta)) = atts.arrows_with_same_direction {
+            assert!(direction == Direction::Incoming);
+            assert!(edge_meta.len() == 1);
+            Some(edge_meta.pop().unwrap())
+        } else {
+            None
+        };
     Ok(Statement::EventEnd(EventMeta {
         node_meta: NodeMeta {
             display_text: atts.display_text.unwrap(),
-            ids: atts.ids.unwrap_or_default(),
+            ids: atts.ids,
         },
         // TODO
         event_type: EventType::Blank,
         event_visual: (EventVisual::None, Default::default()),
         shorthand_syntax: atts.used_shorthand_syntax,
+        sequence_flow_jump: None,
+        sequence_flow_landing,
     }))
 }
 
@@ -349,18 +362,28 @@ fn to_task_activity(atts: Tokens, backup_tc: TokenCoordinate) -> AResult {
         AssemblyRequest {
             display_text: ARAttribute::Required,
             ids: ARAttribute::Optional,
-            flows: ARFlowAttribute::Forbidden,
+            flows: ARFlowAttribute::OptionalOneLeftAndOrRightArrows,
             task_type: AROptionalAttribute::Forbidden,
             event_visual: AROptionalAttribute::Forbidden,
         },
         backup_tc,
     )?;
+    let mut sequence_flow_jump = None;
+    let mut sequence_flow_landing = None;
+    for (direction, edge_meta) in atts.left_and_right_arrows {
+        match direction {
+            Direction::Incoming => sequence_flow_landing = Some(edge_meta),
+            Direction::Outgoing => sequence_flow_jump = Some(edge_meta),
+        }
+    }
     Ok(Statement::Activity(ActivityMeta {
         activity_type: ActivityType::Task(TaskType::None),
         node_meta: NodeMeta {
             display_text: atts.display_text.unwrap(),
-            ids: atts.ids.unwrap_or_default(),
+            ids: atts.ids,
         },
+        sequence_flow_jump,
+        sequence_flow_landing,
     }))
 }
 
@@ -374,25 +397,30 @@ fn to_gateway_outer(mut atts: Tokens, backup_tc: TokenCoordinate) -> AResult {
         AssemblyRequest {
             display_text: ARAttribute::Optional,
             ids: ARAttribute::Optional,
-            flows: ARFlowAttribute::RequiredArrowsOfSameDirection,
+            flows: ARFlowAttribute::RequiredLeftAndRightArrows,
             task_type: AROptionalAttribute::Forbidden,
             event_visual: AROptionalAttribute::Forbidden,
         },
         backup_tc,
     )?;
-    let sequence_flows = atts.arrows_with_same_direction.unwrap();
-    let meta = GatewayNodeMeta {
+
+    let (sequence_flow_landings, sequence_flow_jumps) = atts
+        .left_and_right_arrows
+        .into_iter()
+        .partition_map(|(direction, edge_meta)| match direction {
+            Direction::Incoming => Either::Left(edge_meta),
+            Direction::Outgoing => Either::Right(edge_meta),
+        });
+
+    Ok(Statement::Gateway(GatewayNodeMeta {
         gateway_type,
         node_meta: NodeMeta {
             display_text: atts.display_text.unwrap_or_default(),
-            ids: atts.ids.unwrap_or_default(),
+            ids: atts.ids,
         },
-        sequence_flow_jump_metas: sequence_flows.1,
-    };
-    Ok(match sequence_flows.0 {
-        Direction::Outgoing => Statement::GatewayBranchStart(meta),
-        Direction::Incoming => Statement::GatewayJoinEnd(meta),
-    })
+        sequence_flow_jumps,
+        sequence_flow_landings,
+    }))
 }
 
 fn to_data(mut tokens: Tokens, backup_tc: TokenCoordinate) -> AResult {
@@ -415,12 +443,11 @@ fn to_data(mut tokens: Tokens, backup_tc: TokenCoordinate) -> AResult {
 
     let node_meta = NodeMeta {
         display_text: atts.display_text.unwrap_or_default(),
-        ids: atts.ids.unwrap_or_default(),
+        ids: atts.ids,
     };
 
     let data_flow_metas = atts
         .left_and_right_arrows
-        .unwrap_or_default()
         .into_iter()
         .map(|(direction, edge_meta)| DataFlowMeta {
             direction,
@@ -484,7 +511,7 @@ fn to_message_flow(atts: Tokens, backup_tc: TokenCoordinate) -> AResult {
         backup_tc,
     )?;
 
-    let flows = atts.left_and_right_arrows.unwrap();
+    let flows = atts.left_and_right_arrows;
     let (sender_id, receiver_id) = flows.iter().fold((None, None), |mut acc, (dir, meta)| {
         match dir {
             Direction::Incoming => acc.0 = Some(meta.target.clone()),
@@ -500,30 +527,6 @@ fn to_message_flow(atts: Tokens, backup_tc: TokenCoordinate) -> AResult {
     }))
 }
 
-fn to_sequence_flow(atts: Tokens, backup_tc: TokenCoordinate) -> AResult {
-    let atts = assemble_attributes(
-        "Sequence Flows",
-        atts,
-        AssemblyRequest {
-            display_text: ARAttribute::Forbidden,
-            ids: ARAttribute::Forbidden,
-            flows: ARFlowAttribute::RequiredExactlyOneArrow,
-            task_type: AROptionalAttribute::Forbidden,
-            event_visual: AROptionalAttribute::Forbidden,
-        },
-        backup_tc,
-    )?;
-    let sequence_flows = atts.arrows_with_same_direction.unwrap();
-    let sequence_flow_jump_meta = sequence_flows.1.into_iter().next().unwrap();
-    let meta = SequenceFlowMeta {
-        sequence_flow_jump_meta,
-    };
-    Ok(match sequence_flows.0 {
-        Direction::Outgoing => Statement::SequenceFlowJump(meta),
-        Direction::Incoming => Statement::SequenceFlowLand(meta),
-    })
-}
-
 fn to_layout_above(atts: Tokens, backup_tc: TokenCoordinate) -> AResult {
     let atts = assemble_attributes(
         "Layout Above Statements",
@@ -537,7 +540,7 @@ fn to_layout_above(atts: Tokens, backup_tc: TokenCoordinate) -> AResult {
         },
         backup_tc,
     )?;
-    let mut ids = atts.ids.unwrap().into_iter();
+    let mut ids = atts.ids.into_iter();
     let id1 = ids.next().unwrap();
     let id2 = ids.next().unwrap();
     Ok(Statement::Layout(LayoutStatement::Above(id1, id2)))
@@ -556,7 +559,7 @@ fn to_layout_leftof(atts: Tokens, backup_tc: TokenCoordinate) -> AResult {
         },
         backup_tc,
     )?;
-    let mut ids = atts.ids.unwrap().into_iter();
+    let mut ids = atts.ids.into_iter();
     let id1 = ids.next().unwrap();
     let id2 = ids.next().unwrap();
     Ok(Statement::Layout(LayoutStatement::LeftOf(id1, id2)))
@@ -596,16 +599,14 @@ fn assemble_attributes(
                 if matches!(request.ids, ARAttribute::Forbidden) {
                     return Err(vec![(format!("{what_plural} cannot have ids."), it.0)]);
                 }
-                out.ids.get_or_insert_default().push(val);
+                out.ids.push(val);
             }
             Token::Flow(val_direction, val_edge) => match request.flows {
                 ARFlowAttribute::Forbidden => {
                     return Err(vec![(format!("{what_plural} cannot have flows."), (it.0))]);
                 }
                 ARFlowAttribute::RequiredLeftAndRightArrows => {
-                    out.left_and_right_arrows
-                        .get_or_insert_default()
-                        .push((val_direction, val_edge));
+                    out.left_and_right_arrows.push((val_direction, val_edge));
                 }
                 ARFlowAttribute::RequiredArrowsOfSameDirection => {
                     match &mut out.arrows_with_same_direction {
@@ -640,6 +641,29 @@ fn assemble_attributes(
                         }
                     }
                 }
+                ARFlowAttribute::OptionalOneLeftArrow => {
+                    match &mut out.arrows_with_same_direction {
+                        Some((_, _)) => {
+                            return Err(vec![(
+                                format!(
+                                    "{what_plural} can have at most 1 incoming flow (<-label), not more."
+                                ),
+                                it.0,
+                            )]);
+                        }
+                        None => {
+                            if val_direction == Direction::Outgoing {
+                                return Err(vec![(
+                                    format!(
+                                        "{what_plural} can have at most 1 incoming flow (<-label). Outgoing flows (->label) are not allowed."
+                                    ),
+                                    it.0,
+                                )]);
+                            }
+                            out.arrows_with_same_direction = Some((val_direction, vec![val_edge]));
+                        }
+                    }
+                }
                 ARFlowAttribute::RequiredExactlyOneRightArrow => {
                     match &mut out.arrows_with_same_direction {
                         Some((_, _)) => {
@@ -663,31 +687,28 @@ fn assemble_attributes(
                         }
                     }
                 }
-                ARFlowAttribute::RequiredExactlyOneLeftAndOneRightArrow => {
-                    match &mut out.left_and_right_arrows {
-                        Some(edge_metas) => {
-                            if edge_metas.len() == 1 {
-                                let first_dir = edge_metas[0].0.clone();
-                                if first_dir == val_direction {
-                                    return Err(vec![(
-                                        format!(
-                                            "Arrows have to be different directions. Found multiple arrows with the same direction: {first_dir:?} and {val_direction:?}."
-                                        ),
-                                        it.0,
-                                    )]);
-                                }
-                                edge_metas.push((val_direction, val_edge));
-                            } else {
-                                return Err(vec![(
-                                    "Too many arrows. Only one left and one right arrow allowed"
-                                        .to_string(),
-                                    it.0,
-                                )]);
-                            }
+                ARFlowAttribute::OptionalOneLeftAndOrRightArrows
+                | ARFlowAttribute::RequiredExactlyOneLeftAndOneRightArrow => {
+                    let edge_metas = &mut out.left_and_right_arrows;
+                    if edge_metas.is_empty() {
+                        edge_metas.push((val_direction, val_edge));
+                    } else if edge_metas.len() == 1 {
+                        let first_dir = edge_metas[0].0.clone();
+                        if first_dir == val_direction {
+                            return Err(vec![(
+                                format!(
+                                    "Arrows have to be different directions. Found multiple arrows with the same direction: {first_dir:?} and {val_direction:?}."
+                                ),
+                                it.0,
+                            )]);
                         }
-                        None => {
-                            out.left_and_right_arrows = Some(vec![(val_direction, val_edge)]);
-                        }
+                        edge_metas.push((val_direction, val_edge));
+                    } else {
+                        return Err(vec![(
+                            "Too many arrows. Only one left and one right arrow allowed"
+                                .to_string(),
+                            it.0,
+                        )]);
                     }
                 }
             },
@@ -717,9 +738,6 @@ fn assemble_attributes(
         };
     }
 
-    //let check_required = |req, opt: &mut Option<_>| matches!(req, ARAttribute::Required if opt.is_none());
-    //let check_required_exact = |req, opt_vec: &mut Option<Vec<_>>| matches!(req, ARAttribute::RequiredExact(len) if opt_vec.get_or_insert_default().len() != len);
-
     // TODO ensure data flow errors are triggered even when no attributes are provided with a data-statement
     // Example: "OD" should prompt the user to add data flows.
     let Some(tc) = tc else {
@@ -737,7 +755,7 @@ fn assemble_attributes(
         "There can always only be one display text. Using RequiredExact is wrong here."
     );
 
-    if matches!(request.ids, ARAttribute::Required) && out.ids.is_none() {
+    if matches!(request.ids, ARAttribute::Required) && out.ids.is_empty() {
         return Err(vec![(
             format!("{what_plural} must have at least one ID (@id), but it is missing."),
             tc,
@@ -745,7 +763,7 @@ fn assemble_attributes(
     }
 
     if let ARAttribute::RequiredExact(len) = request.ids {
-        let found_len = out.ids.as_ref().map_or_else(|| 0, |x| x.len());
+        let found_len = out.ids.len();
         if len != found_len {
             return Err(vec![(
                 format!(
@@ -769,8 +787,21 @@ fn assemble_attributes(
         )]);
     }
 
+    if matches!(
+        request.flows,
+        ARFlowAttribute::RequiredExactlyOneLeftAndOneRightArrow
+    ) && out.left_and_right_arrows.len() != 2
+    {
+        return Err(vec![(
+            format!(
+                "{what_plural} must have exactly one data flow of each direction (both <-label and ->label), but you did not provide both."
+            ),
+            tc,
+        )]);
+    }
+
     if matches!(request.flows, ARFlowAttribute::RequiredLeftAndRightArrows)
-        && out.left_and_right_arrows.is_none()
+        && out.left_and_right_arrows.is_empty()
     {
         return Err(vec![(
             format!(
@@ -819,7 +850,7 @@ pub enum Token {
     // == Real Tokens ==
     // =================
     // Usually the order is (regex-ish): Text? (Id|Flow)*
-    /// Any freeform test. This should always come first.
+    /// Any freeform text. This should always come first.
     Text(String), // `# This is freeform test ->this-is-not`
 
     // These are in any order
@@ -1360,12 +1391,6 @@ impl<'a> Lexer<'a> {
                         Token::DataKind(previous_data_type, true),
                     );
                 }
-                Some('F') if self.sas.allow_new_statement => {
-                    let tc = self.current_coord();
-                    self.advance();
-                    self.sas
-                        .next_statement(tc, self.position, to_sequence_flow)?;
-                }
                 Some('[') if self.sas.allow_new_statement => {
                     let tc = self.current_coord();
                     self.advance();
@@ -1535,19 +1560,13 @@ mod tests {
             "X Lane Yeah ->label \"text\" ->label2 \"text\"".to_string(),
             0,
         )?;
-        assert!(matches!(
-            result.next().unwrap().1,
-            Statement::GatewayBranchStart(_)
-        ));
+        assert!(matches!(result.next().unwrap().1, Statement::Gateway(_)));
 
         let mut result = lex(
             "X Lane Yeah <-label \"text\" <-label2 \"text\"".to_string(),
             0,
         )?;
-        assert!(matches!(
-            result.next().unwrap().1,
-            Statement::GatewayJoinEnd(_)
-        ));
+        assert!(matches!(result.next().unwrap().1, Statement::Gateway(_)));
 
         Ok(())
     }
@@ -1558,23 +1577,6 @@ mod tests {
         assert!(matches!(
             result.next().unwrap().1,
             Statement::MessageFlow(_)
-        ));
-
-        Ok(())
-    }
-
-    #[test]
-    fn basic_sequence_flow() -> Result<(), ParseError> {
-        let mut result = lex("F ->lbl".to_string(), 0)?;
-        assert!(matches!(
-            result.next().unwrap().1,
-            Statement::SequenceFlowJump(_)
-        ));
-
-        let mut result = lex("F <-label \"text\"".to_string(), 0)?;
-        assert!(matches!(
-            result.next().unwrap().1,
-            Statement::SequenceFlowLand(_)
         ));
 
         Ok(())

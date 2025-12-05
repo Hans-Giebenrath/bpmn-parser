@@ -12,8 +12,6 @@ use crate::common::graph::SdeId;
 use crate::layout::all_crossing_minimization::CrossingMinimizationNodeData;
 use crate::layout::solve_layer_assignment::LayerAssignmentData;
 use crate::layout::xy_ilp::XyIlpNodeData;
-use crate::lexer::DataAux;
-use crate::lexer::PeBpmnProtection;
 use crate::lexer::TokenCoordinate;
 use std::ops::Add;
 
@@ -81,10 +79,10 @@ pub enum BendDummyKind {
     FromBoundaryEvent,
 }
 
-//struct BendDummyCrossLaneTarget {
-//    cross_lane_edge: EdgeId,
-//    gateway_edge:
-//}
+#[derive(Debug, Clone, Eq, PartialEq)]
+pub struct DataAux {
+    pub sde_id: SdeId,
+}
 
 #[derive(Debug)]
 pub enum NodePhaseAuxData {
@@ -205,17 +203,6 @@ impl Node {
             Some(data_aux)
         } else {
             None
-        }
-    }
-
-    pub fn set_pebpmn_protection(&mut self, protection: PeBpmnProtection) {
-        if let NodeType::RealNode {
-            event: BpmnNode::Data(_, data_aux),
-            ..
-        } = &mut self.node_type
-            && !data_aux.pebpmn_protection.contains(&protection)
-        {
-            data_aux.pebpmn_protection.push(protection);
         }
     }
 

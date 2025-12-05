@@ -2,15 +2,11 @@
 
 == Lane 1
 # Start Event 1
-- T1
-F ->l1f1
+- T1 ->l1f1
 
-F <-l1f2
-- T3
+- T3  <-l1f2
 . Finish 1
 
 == Lane 2
 
-F <-l1f1
-- 2-2
-F ->l1f2
+- 2-2  <-l1f1 ->l1f2

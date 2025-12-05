@@ -145,7 +145,7 @@ pub(crate) enum StartAt {
 #[derive(PartialEq, Default, Clone, Debug, Copy, Hash, Eq)]
 pub struct NodeId(pub usize);
 
-#[derive(PartialEq, Default, Clone, Debug, Copy, Hash, Eq)]
+#[derive(PartialEq, Default, Clone, Debug, Copy, Hash, Eq, Ord, PartialOrd)]
 pub struct EdgeId(pub usize);
 
 impl fmt::Display for NodeId {
@@ -696,7 +696,7 @@ pub fn validate_invariants(graph: &Graph) -> Result<(), ValidationErrors> {
     // the edge's to has multiple edges in its incoming vec. TODO in the future this should
     // actually work.
     // (2) No self-loops: An edge's from is different from to.
-    // (3) The gateway connection stuff should make sense
+    // (3) The gateway connection stuff should make sense (only one side has multiple edges)
     // (4) Data names should be consistent (when sending and receiving something)
     // (5) Not all activities can have all boundary events
 

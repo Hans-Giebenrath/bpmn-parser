@@ -45,3 +45,11 @@ covered by any of the aforementioned ones), then
 link:https://github.com/Hans-Giebenrath/bpmn-parser/issues[create an issue]!.
 (I think about adding a "pseudonymise" primitive, maybe also an "anonymise" primitive, but I need to
 give it more thought.)
+
+Visible
+Lightly Protected
+Fortified
+Hidden
+Pseudonymized
+Anonymized
+

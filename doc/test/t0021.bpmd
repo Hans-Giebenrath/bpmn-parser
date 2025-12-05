@@ -12,23 +12,17 @@
 # s
 + ->sf-from-c1 ->sf-from-c2
 
-F <-sf-from-c1
-# Receive message from Client 1 @sp-receive1
-F ->join
+# Receive message from Client 1 @sp-receive1  <-sf-from-c1 ->join
 
-F <-sf-from-c2
-# Receive message from Client 2 @sp-receive2
-F ->join
+# Receive message from Client 2 @sp-receive2  <-sf-from-c2 ->join
 
 + <-join
 - Process Data
 + ->fin1 ->fin2
 
-F <-fin1
-. send-to-c1 @send-to-c1
+. send-to-c1 @send-to-c1  <-fin1
 
-F <-fin2
-. send-to-c2 @send-to-c2
+. send-to-c2 @send-to-c2  <-fin2
 
 = Client 2
 # s

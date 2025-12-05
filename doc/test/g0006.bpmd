@@ -1,39 +1,23 @@
 # Start Event
 X ->g1
 
-F <-g1
-- A-1
-F ->j1
+- A-1  <-g1 ->j1
 
-F <-g1
-- B-1
-F ->j1
+- B-1  <-g1 ->j1
 
-F <-g1
-- C-1
-F ->j1
+- C-1  <-g1 ->j1
 
 X <-j1
 . Finish.
 
-
-
-
 # Start Event
 X ->g2
 
-F <-g2
-- A-2
-F ->j2
+- A-2  <-g2 ->j2
 
-F <-g2
-- B-2
-F ->j2
+- B-2  <-g2 ->j2
 
-F <-g2
-- C-2
-F ->j2
+- C-2  <-g2 ->j2
 
 X <-j2
 . Finish.
-

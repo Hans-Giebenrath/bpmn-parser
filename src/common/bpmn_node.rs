@@ -1,4 +1,4 @@
-use crate::lexer::DataAux;
+use crate::common::node::DataAux;
 use crate::lexer::DataType;
 use crate::lexer::TokenCoordinate;
 use crate::parser::ParseError;
@@ -12,9 +12,7 @@ pub enum BpmnNode {
     Event(EventType, EventVisual), // Start event with label
     Gateway(GatewayType),          // Exclusive gateway event
     Activity(ActivityType),        // Task with label
-    // `DataAux`: This should be some `HashMap<Something, Any>` where plugins can store arbitrary
-    // data. Right now this is just hardcoded PE-BPMN data but is subject to change.
-    Data(DataType, DataAux), // Data store reference with label
+    Data(DataType, DataAux),       // Data store reference with label
 }
 
 #[derive(Eq, Debug, Clone, PartialEq)]

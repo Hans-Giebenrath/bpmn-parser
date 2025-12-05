@@ -3,13 +3,11 @@
 == Lane 1
 
 # Receive Data
-- Evaluate Data
-F ->label
+- Evaluate Data ->label
 
 == Lane 2
 
-F <-label
-- Shred the Paper @shred
+- Shred the Paper @shred <-label
 - Drink Coffee
 - Blame the Machine for Shredding the Paper
 . Done

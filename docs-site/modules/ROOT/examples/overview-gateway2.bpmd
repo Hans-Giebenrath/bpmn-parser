@@ -1,32 +1,20 @@
 # Start
 X Gateway ->branch
 
-F <-branch
-- One
-F ->join
+- One <-branch ->join
 
-F <-branch
-- Two
-F ->join
+- Two <-branch ->join
 
-F <-branch
-- Three
-F ->join
+- Three <-branch ->join
 
 + <-join
 O Gateway ->branch2
 
-F <-branch2
-- One
-F ->join2
+- One <-branch2 ->join2
 
-F <-branch2
-- Two
-F ->join2
+- Two <-branch2 ->join2
 
-F <-branch2
-- Three
-F ->join2
+- Three <-branch2 ->join2
 
 * <-join2
 . End

@@ -9,8 +9,8 @@
 
 == Lane 3-1
 
-F<-up1
-.End 3 1 1
+
+.End 3 1 1 <-up1
 
 
 == Lane 3-2

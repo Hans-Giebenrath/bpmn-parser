@@ -1,24 +1,18 @@
 = Pool
 
 == Lane 1
-# Start A 1
-F ->j1
+# Start A 1 ->j1
 
-# Start C 2
-F ->j2
+# Start C 2 ->j2
 
 X <-j1
 . Finish.
 
-
 == Lane 2
 
-# Start A 2
-F ->j2
+# Start A 2 ->j2
 
-# Start C 1
-F ->j1
-
+# Start C 1 ->j1
 
 X <-j2
 . Finish.

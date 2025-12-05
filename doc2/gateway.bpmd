@@ -1,5 +1,5 @@
 # Start Event
-XG 
+XG
   ->separate-case1"Go Here" // <1>
   ->separate-case2"No, here!" // <2>
   ->multiple-cases // <3>
@@ -7,26 +7,18 @@ XG
 
 <5>
 
- F
-.- Continuing // <4>
- F ->> // <4>
+.- Continuing ->> // <4>
 
 <5>
 
-XG @endjoin // <6>
+XG <-endjoin // <6>
 .. Finish.
 
-F @separate-case1 // <1>
-- Separate Case 1
-F ->endjoin"Optional Label" // <7>
+- Separate Case 1 <-separate-case1 ->endjoin"Optional Label" // <7>
 
-F "Display Text for this exge" @multiple-middle // <3>
-- Middle 1
-F ->endjoin // <7>
+- Middle 1 <-multiple-middle ->endjoin // <3> <7>
 
-F @multiple-middle // <3>
-- Middle 2
-F ->endjoin // <7>
+- Middle 2 <-multiple-middle ->endjoin // <3> <7>
 
 - Separate Case 2 // <2>
 G ->endjoin // <7>

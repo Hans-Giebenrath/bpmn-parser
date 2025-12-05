@@ -1,5 +1,4 @@
 = Pool 1
-
 == Lane 1-1
 
 # Start 1 1
@@ -34,11 +33,11 @@
 
 == Lane 3-1
 
-F<-up1
-.End 3 1 1
 
-F<-up2
-.End 3 1 2
+.End 3 1 1 <-up1
+
+
+.End 3 1 2 <-up2
 
 == Lane 3-2
 
@@ -53,11 +52,11 @@ T! ->down2
 
 == Lane 3-3
 
-F<-down1
-.End 3 3 1
 
-F<-down2
-.End 3 3 2
+.End 3 3 1 <-down1
+
+
+.End 3 3 2 <-down2
 
 = Pool 4
 

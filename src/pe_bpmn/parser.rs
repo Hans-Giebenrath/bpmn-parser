@@ -66,7 +66,8 @@ pub struct ComputationCommon {
     pub data_without_protection: Vec<(SdeId, TokenCoordinate)>,
     /// TODO this is not used anywhere, yet.
     pub data_already_protected: Vec<(SdeId, TokenCoordinate)>,
-    pub admin: PoolId,
+    pub software_operators: Vec<PoolId>,
+    pub hardware_operators: Vec<PoolId>,
     pub external_root_access: Vec<PoolId>,
 
     pub tc: TokenCoordinate,
@@ -196,16 +197,69 @@ impl Parser {
         let in_unprotect = self.parse_pebpmn_nodes(&lexer.in_unprotect, "incoming")?;
         let out_protect = self.parse_pebpmn_nodes(&lexer.out_protect, "outgoing")?;
         let out_unprotect = self.parse_pebpmn_nodes(&lexer.out_unprotect, "outgoing")?;
+        let software_operators_tc = TokenCoordinate {
+            source_file_idx: lexer
+                .software_operators
+                .first()
+                .map(|(_, tc)| tc.source_file_idx)
+                .unwrap_or(0),
+            start: lexer
+                .software_operators
+                .first()
+                .map(|(_, tc)| tc.start)
+                .unwrap_or(0),
+            end: lexer
+                .software_operators
+                .last()
+                .map(|(_, tc)| tc.end)
+                .unwrap_or(0),
+        };
 
-        let (pebpmn_type, admin) = match lexer.pebpmn_type {
+        let (pebpmn_type, software_operators, hardware_operators) = match lexer.pebpmn_type {
             lexer::PeBpmnSubType::Pool(pool_str, _tc) => {
                 let pool_id = self.find_pool_id_or_error(&pool_str)?;
-                let (admin_str, _admin_tc) = lexer
-                    .admin
-                    .as_ref()
-                    .ok_or_else(|| self.admin_missing_error(tee_or_mpc, ""))?;
-                let admin = self.find_pool_id_or_error(admin_str)?;
-                (PeBpmnSubType::Pool(pool_id), admin)
+                if lexer.software_operators.is_empty() {
+                    return Err(self.smthng_missing_error(tee_or_mpc, "software-operators", ""));
+                }
+                if lexer.hardware_operators.is_empty() {
+                    return Err(self.smthng_missing_error(tee_or_mpc, "hardware-operators", ""));
+                }
+                let software_operators = lexer
+                    .software_operators
+                    .into_iter()
+                    .map(|(id, tc)| {
+                        self.find_pool_id_or_error_restricted(
+                            &id,
+                            pool_id,
+                            tc,
+                            tee_or_mpc,
+                            "software-operators",
+                        )
+                    })
+                    .collect::<Result<Vec<_>, _>>()?;
+
+                let hardware_operators = lexer
+                .hardware_operators
+                .into_iter()
+                .map(|(id, tc)| {
+                    if id == "on-premises" && tc.end - tc.start == "on-premises".len() {
+                        Err(vec![
+                            (
+                                format!(
+                                    "{tee_or_mpc}-hardware-operator cannot use 'on-premises' with {tee_or_mpc}-pool"
+                                ),
+                                tc,
+                            )])
+                    } else {
+                        self.find_pool_id_or_error_restricted(&id, pool_id, tc, tee_or_mpc, "hardware-operators")
+                    }
+                })
+                .collect::<Result<Vec<_>, _>>()?;
+                (
+                    PeBpmnSubType::Pool(pool_id),
+                    software_operators,
+                    hardware_operators,
+                )
             }
             lexer::PeBpmnSubType::Lane(lane_str, lane_tc) => {
                 let (pool_id, lane_id) = self.context.pool_id_matcher.find_pool_and_lane_id_by_lane_name_fuzzy(&self.graph, &lane_str).ok_or_else(|| vec![(
@@ -213,33 +267,51 @@ impl Parser {
                     lane_tc,
 
                 )])?;
-                if let Some((admin_str, admin_tc)) = &lexer.admin {
-                    let node_id = self.find_node_id_or_error(
-                        admin_str,
-                        &format!("{tee_or_mpc}-admin"),
-                        *admin_tc,
-                    )?;
-                    let expected_pool_id = self.graph.nodes[node_id].pool;
-                    if pool_id != expected_pool_id {
-                        return Err(vec![
-                            (
-                                format!(
-                                    "The specified {tee_or_mpc}-admin with ID {admin_str} does not match the pool of the {tee_or_mpc}-lane. In {tee_or_mpc}-lane, the pool of the {tee_or_mpc}-lane is used as the {tee_or_mpc}-admin by default. If you specify an admin explicitly, it must be the same as the lane's pool."
-                                ),
-                                *admin_tc,
+                let software_operators = lexer
+                    .software_operators
+                    .into_iter()
+                    .map(|(id, _)| self.find_pool_id_or_error(&id))
+                    .collect::<Result<Vec<_>, _>>()?;
+                if software_operators.is_empty() {
+                } else if !software_operators.contains(&pool_id) {
+                    let mut errors = vec![
+                        (
+                            format!(
+                                "The specified {tee_or_mpc}-software-operators does not contain the pool of the {tee_or_mpc}-lane. In {tee_or_mpc}-lane, the hosting pool is used automatically for the {tee_or_mpc}-software-operators. If you specify software operators explicitly, the list must as well refer to the lane's pool."
                             ),
-                            (
-                                "This would be the correct pool".to_string(),
-                                self.graph.pools[expected_pool_id].tc,
-                            ),
-                            (
-                                "But you specified this one".to_string(),
-                                self.graph.pools[pool_id].tc,
-                            ),
-                        ])?;
+                            software_operators_tc,
+                        ),
+                        (
+                            "This would be the correct pool, but ...".to_string(),
+                            self.graph.pools[pool_id].tc,
+                        ),
+                    ];
+                    for matched_pool_id in software_operators.iter().cloned() {
+                        errors.push((
+                            "... this pool was referenced".to_string(),
+                            self.graph.pools[matched_pool_id].tc,
+                        ));
                     }
+                    return Err(errors);
                 }
-                (PeBpmnSubType::Lane { pool_id, lane_id }, pool_id)
+                // TODO should spot duplicates in the list? In all lists?
+
+                let hardware_operators = lexer
+                    .hardware_operators
+                    .into_iter()
+                    .map(|(id, tc)| {
+                        if id == "on-premises" && tc.end - tc.start == "on-premises".len() {
+                            Ok(pool_id)
+                        } else {
+                            self.find_pool_id_or_error(&id)
+                        }
+                    })
+                    .collect::<Result<Vec<_>, _>>()?;
+                (
+                    PeBpmnSubType::Lane { pool_id, lane_id },
+                    software_operators,
+                    hardware_operators,
+                )
             }
             lexer::PeBpmnSubType::Tasks(tasks) => {
                 let task_ids: Vec<(NodeId, TokenCoordinate)> = tasks
@@ -250,33 +322,60 @@ impl Parser {
                     })
                     .collect::<Result<Vec<_>, _>>()?;
 
-                let first_node_id = task_ids.first().ok_or_else(|| self.admin_missing_error(tee_or_mpc, &format!("In {tee_or_mpc}-tasks, the pool of the {tee_or_mpc}-tasks is used as the {tee_or_mpc}-admin by default")))?;
-                let admin = self.graph.nodes[first_node_id.0].pool;
+                let Some(first_node_id) = task_ids.first() else {
+                    return Err(vec![(
+                        format!("{tee_or_mpc}-tasks needs at least one activity ID as an argument"),
+                        lexer.tc,
+                    )]);
+                };
+                let automatically_derived_software_operator =
+                    self.graph.nodes[first_node_id.0].pool;
 
-                if let Some((admin_str, tc)) = &lexer.admin {
-                    let node_id =
-                        self.find_node_id_or_error(admin_str, &format!("{tee_or_mpc}-admin"), *tc)?;
-                    let expected_pool_id = self.graph.nodes[node_id].pool;
-                    if admin != expected_pool_id {
-                        return Err(vec![
-                            (
-                                format!(
-                                    "The specified {tee_or_mpc}-admin with ID {admin_str} does not match the pool of the {tee_or_mpc}-tasks. In {tee_or_mpc}-tasks, the pool of the {tee_or_mpc}-tasks is used as the {tee_or_mpc}-admin by default. If you specify an admin explicitly, it must be the same as the task's pool."
-                                ),
-                                self.context.current_token_coordinate,
+                let software_operators = lexer
+                    .software_operators
+                    .into_iter()
+                    .map(|(id, _)| self.find_pool_id_or_error(&id))
+                    .collect::<Result<Vec<_>, _>>()?;
+                if software_operators.is_empty() {
+                } else if !software_operators.contains(&automatically_derived_software_operator) {
+                    let mut errors = vec![
+                        (
+                            format!(
+                                "The specified {tee_or_mpc}-software-operators does not contain the pool of the {tee_or_mpc}-tasks. In {tee_or_mpc}-tasks, the hosting pool is used automatically for the {tee_or_mpc}-software-operators. If you specify software operators explicitly, the list must as well refer to the tasks' pool."
                             ),
-                            (
-                                "This would be the correct pool".to_string(),
-                                self.graph.pools[expected_pool_id].tc,
-                            ),
-                            (
-                                "But you specified this one".to_string(),
-                                self.graph.pools[admin].tc,
-                            ),
-                        ])?;
+                            software_operators_tc,
+                        ),
+                        (
+                            "This would be the correct pool, but ...".to_string(),
+                            self.graph.pools[automatically_derived_software_operator].tc,
+                        ),
+                    ];
+                    for matched_pool_id in software_operators.iter().cloned() {
+                        errors.push((
+                            "... this pool was referenced".to_string(),
+                            self.graph.pools[matched_pool_id].tc,
+                        ));
                     }
+                    return Err(errors);
                 }
-                (PeBpmnSubType::Tasks(task_ids), admin)
+                // TODO should spot duplicates in the list? In all lists?
+
+                let hardware_operators = lexer
+                    .hardware_operators
+                    .into_iter()
+                    .map(|(id, tc)| {
+                        if id == "on-premises" && tc.end - tc.start == "on-premises".len() {
+                            Ok(automatically_derived_software_operator)
+                        } else {
+                            self.find_pool_id_or_error(&id)
+                        }
+                    })
+                    .collect::<Result<Vec<_>, _>>()?;
+                (
+                    PeBpmnSubType::Tasks(task_ids),
+                    software_operators,
+                    hardware_operators,
+                )
             }
         };
 
@@ -327,7 +426,8 @@ impl Parser {
             out_unprotect,
             data_without_protection,
             data_already_protected,
-            admin,
+            software_operators,
+            hardware_operators,
             external_root_access,
             tc: lexer.tc,
         })
@@ -386,9 +486,52 @@ impl Parser {
             })
     }
 
-    fn admin_missing_error(&self, tee_or_mpc: &str, optional_text: &str) -> ParseError {
+    fn find_pool_id_or_error_restricted(
+        &self,
+        pool_str: &str,
+        forbidden_value: PoolId,
+        forbidden_tc: TokenCoordinate,
+        tee_or_mpc: &str,
+        attribute: &str,
+    ) -> Result<PoolId, ParseError> {
+        let result = self
+            .context
+            .pool_id_matcher
+            .find_pool_id(pool_str)
+            .ok_or_else(|| {
+                vec![(
+                    format!("Pool with ID ({pool_str}) was not found. Have you defined it?"),
+                    self.context.current_token_coordinate,
+                )]
+            });
+        if let Ok(found_pool_id) = result
+            && found_pool_id == forbidden_value
+        {
+            Err(vec![
+                (
+                    format!(
+                        "The pool already represents the {tee_or_mpc}. It cannot represent the operator at the same time. Change the pool id in {tee_or_mpc}-{attribute}."
+                    ),
+                    forbidden_tc,
+                ),
+                (
+                    "This is the matched pool".to_string(),
+                    self.graph.pools[found_pool_id].tc,
+                ),
+            ])
+        } else {
+            result
+        }
+    }
+
+    fn smthng_missing_error(
+        &self,
+        tee_or_mpc: &str,
+        smthng: &str,
+        optional_text: &str,
+    ) -> ParseError {
         vec![(
-            format!("{tee_or_mpc}-admin is missing. Please define it.") + optional_text,
+            format!("{tee_or_mpc}-{smthng} is missing. Please define it.") + optional_text,
             self.context.current_token_coordinate,
         )]
     }
@@ -446,14 +589,6 @@ impl Parser {
             // Guaranteed by the caller.
             unreachable!();
         };
-        if common.admin == pool_id {
-            return Err(vec![(
-                format!(
-                    "The pool already represents the {tee_or_mpc}. It cannot represent the administrator at the same time. Change the pool id of {tee_or_mpc}-pool or {tee_or_mpc}-admin."
-                ),
-                self.context.current_token_coordinate,
-            )]);
-        }
 
         if common
             .in_protect

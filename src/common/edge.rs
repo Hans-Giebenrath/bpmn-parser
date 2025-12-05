@@ -17,7 +17,6 @@ pub struct MessageFlowAux {
     /// Invariant: Contains only unique elements. By coincidence it is also sorted, but don't
     /// rely on that.
     pub transported_data: Vec<SdeId>,
-    pub pebpmn_protection: Vec<(SdeId, Vec<PeBpmnProtection>)>,
     pub tc: TokenCoordinate,
 }
 
@@ -150,22 +149,6 @@ impl Edge {
             &aux.transported_data
         } else {
             &[]
-        }
-    }
-
-    pub fn set_pebpmn_protection(&mut self, sde: SdeId, protection: PeBpmnProtection) {
-        if let FlowType::MessageFlow(MessageFlowAux {
-            pebpmn_protection, ..
-        }) = &mut self.flow_type
-        {
-            if let Some((_, protections)) = pebpmn_protection.iter_mut().find(|(id, _)| *id == sde)
-            {
-                if !protections.contains(&protection) {
-                    protections.push(protection);
-                }
-            } else {
-                pebpmn_protection.push((sde, vec![protection]));
-            }
         }
     }
 

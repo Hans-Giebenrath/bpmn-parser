@@ -2,10 +2,8 @@
 
 == Lane A
 
-# Start
-F ->cont // <1>
+# Start ->cont // <1>
 
 == Lane B
 
-F <-cont // <2>
-. End
+. End <-cont // <2>

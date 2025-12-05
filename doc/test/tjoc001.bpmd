@@ -17,11 +17,9 @@
 - P3.5.1 Validate Input Data Quality
 X Validated? ->no"no" ->yes"yes"
 
-F <-no
-. Notify Input Party
+. Notify Input Party  <-no
 
-F <-yes
-- P3.5.2 Store Protected Input Data
+- P3.5.2 Store Protected Input Data  <-yes
 - P4.1 Execute Computation
 - P4.2 Delete Input and Interim Data
 X Computation successful? ->success"yes" ->go_to_delete"no"
@@ -30,10 +28,8 @@ X Computation successful? ->success"yes" ->go_to_delete"no"
 // - P4.3 Delete Protected Output Data
 // . CT terminated
 
-F <-success
-# Wait for incoming download request
-- P5.2 Send Protected Output Data Store
-F ->go_to_delete
+# Wait for incoming download request  <-success
+- P5.2 Send Protected Output Data Store ->go_to_delete
 
 X <-go_to_delete
 - P5.3 Delete Protected Output Data
@@ -46,6 +42,7 @@ X <-go_to_delete
 - P5.4 Remove protection of the Output Data
 . Fin
 
+
 OD E2.4 CTA ->p3.1
 OD E3.1 Input Data <-p3.1 ->p3.2 ->p3.3
  & E3.2 Protected Input Data <-p3.3 ->p3.4
@@ -57,10 +54,12 @@ SD E4.1 Protected Output Data Store <-p4.1 ->p5.2 ->p5.3
  & E4.1 Protected Output Data Store <-p5.1 ->p5.4
  & E4.1 Output Data <-p5.4
 
+
 MF <-p3.4 ->tee-received
 
 MF Request for Protected Output Data <-p5.1 ->tee-wait-download-req
 MF ->p5.1 <-p5.2
+
 
 [pe-bpmn
   (tee-tasks @p3.5.1 @p4.1)

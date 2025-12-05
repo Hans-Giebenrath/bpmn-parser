@@ -4,35 +4,118 @@ use crate::lexer::TokenCoordinate;
 use crate::pe_bpmn::parser::{
     ComputationCommon, Mpc, PeBpmn, PeBpmnSubType, PeBpmnType, Protection, SecureChannel, Tee,
 };
+use crate::pe_bpmn::{ProtectionPathsGraph, VisibilityTableInput};
 use crate::{
-    common::{
-        edge::FlowType,
-        graph::{EdgeId, NodeId, SdeId},
-    },
+    common::graph::{EdgeId, NodeId, SdeId},
     lexer::{PeBpmnMeta, PeBpmnProtection},
     parser::ParseError,
 };
 use itertools::Itertools;
 use proc_macros::{e, n};
-use std::collections::HashSet;
+use std::collections::{BTreeSet, HashSet};
+use std::collections::{HashMap, hash_set};
 use std::iter::Extend;
 
-pub fn analyse(graph: &mut Graph) -> Result<(), ParseError> {
-    create_transported_data(graph);
+pub fn analyse(graph: &mut Graph) -> Result<VisibilityTableInput, ParseError> {
+    let mut state = State::default();
     let pebpmn_definitions = std::mem::take(&mut graph.pe_bpmn_definitions);
     for pebpmn_definition in &pebpmn_definitions {
-        analyse_single(pebpmn_definition, graph)?;
+        analyse_single(pebpmn_definition, graph, &mut state)?;
     }
     graph.pe_bpmn_definitions = pebpmn_definitions;
+    apply_colors(graph, &state);
 
-    Ok(())
+    Ok(state.result)
 }
 
-pub fn analyse_single(pe_bpmn: &PeBpmn, graph: &mut Graph) -> Result<(), ParseError> {
+#[derive(Debug, Eq, PartialEq, Hash, Clone, Copy)]
+enum GraphElement {
+    NonData(NodeId),
+    Data(NodeId),
+    // Both message flows and data flows.
+    Edge(EdgeId),
+    // `tee-tasks`. Those are primarily for adding fill color to the nodes.
+    Task(NodeId),
+    // `tee-pool`.
+    Pool(PoolId),
+    // `tee-lane`.
+    Lane(PoolId, LaneId),
+}
+
+#[derive(Default)]
+struct State {
+    // A `data` node represents just one piece of data, but it can be protected simultaneously by
+    // multiple protections (both secure channel and TEE).
+    data_node_protection: HashMap<NodeId, HashSet<PeBpmnProtection>>,
+    message_flow_protection: HashMap<(EdgeId, SdeId), HashSet<PeBpmnProtection>>,
+    // The reverse of `data_node_protection` and `message_flow_protection`. To apply coloring after
+    // the graph is analysed (enables to traverse over `&Graph` instead of `&mut Graph`).
+    protection_graph: HashMap<PeBpmnProtection, HashSet<GraphElement>>,
+    // Like `protection_graph` but more fine-grained. Just contains edges to realise whether
+    // different protections are either correctly nested or disjoint (if some protection path of
+    // pe_bpmn_protection_1 is strictly smaller than some protection path of pe_bpmn_protection_2,
+    // then no protection path of pe_bpmn_protection_2 shall be strictly smaller than some
+    // protection path of pe_bpmn_protection_1).
+    protection_paths_graphs: HashMap<PeBpmnProtection, ProtectionPathsGraph>,
+    result: VisibilityTableInput,
+}
+
+impl State {
+    fn set_data_node_protection(&mut self, data_node_id: NodeId, protection: PeBpmnProtection) {
+        self.data_node_protection
+            .entry(data_node_id)
+            .or_default()
+            .insert(protection);
+        self.protection_graph
+            .entry(protection)
+            .or_default()
+            .insert(GraphElement::Data(data_node_id));
+    }
+
+    fn set_nondata_node_protection(
+        &mut self,
+        nondata_node_id: NodeId,
+        protection: PeBpmnProtection,
+    ) {
+        self.protection_graph
+            .entry(protection)
+            .or_default()
+            .insert(GraphElement::NonData(nondata_node_id));
+    }
+
+    fn set_message_flow_protection(
+        &mut self,
+        mf_id: EdgeId,
+        sde_id: SdeId,
+        protection: PeBpmnProtection,
+    ) {
+        self.message_flow_protection
+            .entry((mf_id, sde_id))
+            .or_default()
+            .insert(protection);
+        self.protection_graph
+            .entry(protection)
+            .or_default()
+            .insert(GraphElement::Edge(mf_id));
+    }
+
+    fn set_data_flow_protection(&mut self, df_id: EdgeId, protection: PeBpmnProtection) {
+        self.protection_graph
+            .entry(protection)
+            .or_default()
+            .insert(GraphElement::Edge(df_id));
+    }
+}
+
+fn analyse_single(
+    pe_bpmn: &PeBpmn,
+    graph: &mut Graph,
+    state: &mut State,
+) -> Result<(), ParseError> {
     let enforce_reach_end = true;
     match &pe_bpmn.r#type {
         PeBpmnType::SecureChannel(secure_channel) => {
-            analyse_secure_channel(secure_channel, &pe_bpmn.meta, graph)?;
+            analyse_secure_channel(secure_channel, &pe_bpmn.meta, graph, state)?;
         }
         PeBpmnType::Tee(Tee { common }) => {
             compute_visibility_tee_or_mpc(graph, common, PeBpmnProtection::Tee(common.tc))?;
@@ -124,10 +207,11 @@ pub fn analyse_single(pe_bpmn: &PeBpmn, graph: &mut Graph) -> Result<(), ParseEr
     Ok(())
 }
 
-pub fn analyse_secure_channel(
+fn analyse_secure_channel(
     secure_channel: &SecureChannel,
     meta: &PeBpmnMeta,
-    graph: &mut Graph,
+    graph: &Graph,
+    state: &mut State,
 ) -> Result<(), ParseError> {
     let enforce_reach_end = true;
     let is_reverse = true;
@@ -220,25 +304,27 @@ pub fn analyse_secure_channel(
                     let node = &mut graph.nodes[*node_id];
                     node.fill_color = meta.fill_color.clone();
                     node.stroke_color = meta.stroke_color.clone();
-                    node.set_pebpmn_protection(protection);
+                    state.set_data_node_protection(node.id, protection);
                     for edge_id in node.incoming.iter().chain(&node.outgoing) {
-                        graph.edges[*edge_id].set_pebpmn_protection(*sde_id, protection);
-                        graph.edges[*edge_id].stroke_color = meta.stroke_color.clone();
+                        state.set_data_flow_protection(*edge_id, protection);
                     }
                 });
             });
 
             // Add protection to message flows transporting data elements
-            for edge in graph.edges.iter_mut().filter(|edge| edge.is_message_flow()) {
-                let sde_ids: Vec<_> = edge
+            for (edge_idx, edge) in graph
+                .edges
+                .iter_mut()
+                .enumerate()
+                .filter(|(_, edge)| edge.is_message_flow())
+            {
+                for sde_id in edge
                     .get_transported_data()
                     .iter()
                     .copied()
                     .filter(|sde_id| contains(&secure_channel.permitted_ids, sde_id))
-                    .collect();
-
-                for sde_id in sde_ids {
-                    edge.set_pebpmn_protection(sde_id, protection);
+                {
+                    state.set_message_flow_protection(EdgeId(edge_idx), sde_id, protection);
                 }
             }
         }
@@ -246,22 +332,65 @@ pub fn analyse_secure_channel(
     Ok(())
 }
 
+fn compute_accessible_data(graph: &Graph, analysis_state: &mut State) {
+    let mut was_in_tasks = Vec::new();
+    for node in &graph.nodes {
+        // Data nodes can be placed funkily. If a TEE lane shares data with the non-TEE lane then I
+        // don't know where the respective data node is drawn. So ignore it and instead look at the
+        // real nodes' incoming and outgoing data edges. (Not node_transported_data because it might
+        // be created in a node and then directly shared with the TEE lane, so need to really
+        // inspect the edges.)
+        if node.is_data() {
+            continue;
+        }
+        let mut was_in_pool = None;
+        let mut was_in_lane = None;
+        was_in_tasks.clear();
+        {
+            for pebpmn in graph.pe_bpmn_definitions {
+                match &pebpmn.r#type {
+                    PeBpmnType::Tee(Tee { common }) | PeBpmnType::Mpc(Mpc { common }) => {
+                        match &common.pebpmn_type {
+                            PeBpmnSubType::Pool(..) => {
+                                assert!(was_in_pool.is_none());
+                                was_in_pool = Some(pebpmn.r#type.protection());
+                            }
+                            PeBpmnSubType::Lane { .. } => {
+                                assert!(was_in_lane.is_none());
+                                was_in_lane = Some(pebpmn.r#type.protection());
+                            }
+                            PeBpmnSubType::Tasks { .. } => {
+                                was_in_tasks.push(Some(pebpmn.r#type.protection()));
+                            }
+                        }
+                    }
+                    PeBpmnType::SecureChannel(_) => continue,
+                };
+            }
+            Now iterate them edges as is present in the analysis table code.
+            analysis_state
+                .result
+                .regular_pool_directly_accessible_data
+                .entry(node.pool)
+                .or_default()
+        }
+    }
+}
+
 fn compute_visibility_tee_or_mpc(
-    graph: &mut Graph,
+    graph: &Graph,
+    analysis_state: &mut State,
     computation: &ComputationCommon,
     protection: PeBpmnProtection,
 ) -> Result<(), ParseError> {
-    let admin = computation.admin;
-    // For all in-protect nodes that the admin either owns or are unassigned, give the admin visibility A to all the SDEs those nodes carry.
-    graph.pools[admin]
-        .tee_admin_has_pe_bpmn_visibility_A_for
-        .extend(
+    for software_operator in computation.software_operators.iter().cloned() {
+        analysis_state.result.tee_vulnerable_rv.extend(
             computation
                 .in_protect
                 .iter()
                 .filter(|data_flow_annotation| {
                     data_flow_annotation.rv_source.is_none()
-                        || data_flow_annotation.rv_source == Some(admin)
+                        || data_flow_annotation.rv_source == Some(software_operator)
                 })
                 .flat_map(|data_flow_annotation| {
                     graph.nodes[data_flow_annotation.node]
@@ -269,29 +398,36 @@ fn compute_visibility_tee_or_mpc(
                         .iter()
                         .copied()
                 })
-                .map(|sde_id| (sde_id, protection)),
+                .map(|sde_id| (software_operator, sde_id, protection)),
         );
+    }
+
+    analysis_state.result.tee_software_operator.extend(
+        computation
+            .software_operators
+            .iter()
+            .cloned()
+            .map(|pool| (pool, protection)),
+    );
+
+    analysis_state.result.tee_hardware_operator.extend(
+        computation
+            .hardware_operators
+            .iter()
+            .cloned()
+            .map(|pool| (pool, protection)),
+    );
 
     // For all out-unprotect nodes that the admin either owns or are unassigned, give the admin visibility H to all the SDEs those nodes carry.
-    graph.pools[admin]
-        .tee_admin_has_pe_bpmn_visibility_H_for
-        .extend(
-            computation
-                .out_unprotect
-                .iter()
-                .filter(|data_flow_annotation| {
-                    data_flow_annotation.rv_source.is_none()
-                        || data_flow_annotation.rv_source == Some(admin)
-                })
-                .flat_map(|data_flow_annotation| {
-                    graph.nodes[data_flow_annotation.node]
-                        .get_node_transported_data()
-                        .iter()
-                        .copied()
-                })
-                .map(|sde_id| (sde_id, protection)),
-        );
 
+    for e in computation.external_root_access.iter().cloned() {
+        analysis_state
+            .result
+            .tee_external_root_access
+            .entry(e)
+            .or_default()
+            .insert(protection);
+    }
     let mut all_sdes = HashSet::<SdeId>::new();
     // Consider all data which is transported to/within/out of the TEE/MPC.
     for node in &graph.nodes {
@@ -312,19 +448,13 @@ fn compute_visibility_tee_or_mpc(
             );
         }
     }
-
-    for pool in &computation.external_root_access {
-        graph.pools[*pool]
-            .tee_external_root_access
-            .extend(all_sdes.iter().copied().map(|sde_id| (sde_id, protection)));
-    }
     Ok(())
 }
 
 fn parse_pebpmn_pool_or_lane(
-    graph: &mut Graph,
+    graph: &Graph,
+    analysis_state: &mut State,
     computation: &ComputationCommon,
-    meta: &PeBpmnMeta,
     enforce_reach_end: bool,
     protection: PeBpmnProtection,
     pool_id: PoolId,
@@ -332,11 +462,17 @@ fn parse_pebpmn_pool_or_lane(
 ) -> Result<(), ParseError> {
     let filter = computation_filter(computation);
     if let Some(lane_id) = lane_id {
-        graph.pools[pool_id].lanes[lane_id].fill_color = meta.fill_color.clone();
-        graph.pools[pool_id].lanes[lane_id].stroke_color = meta.stroke_color.clone();
+        analysis_state
+            .protection_graph
+            .entry(protection)
+            .or_default()
+            .insert(GraphElement::Lane(pool_id, lane_id));
     } else {
-        graph.pools[pool_id].fill_color = meta.fill_color.clone();
-        graph.pools[pool_id].stroke_color = meta.stroke_color.clone();
+        analysis_state
+            .protection_graph
+            .entry(protection)
+            .or_default()
+            .insert(GraphElement::Pool(pool_id));
     };
     let mut check_protected = |protect_nodes: &Vec<Protection>,
                                unprotect_nodes: &Vec<Protection>|
@@ -346,10 +482,10 @@ fn parse_pebpmn_pool_or_lane(
             let is_reverse = true;
             check_protection_paths(
                 graph,
+                analysis_state,
                 node.node,
                 node.tc,
                 !is_reverse,
-                meta,
                 &unprotected_nodes,
                 protection,
                 &filter,
@@ -366,10 +502,10 @@ fn parse_pebpmn_pool_or_lane(
 }
 
 fn parse_pebpmn_tasks(
-    graph: &mut Graph,
+    graph: &Graph,
+    analysis_state: &mut State,
     tasks: &[(NodeId, TokenCoordinate)],
     computation: &ComputationCommon,
-    meta: &PeBpmnMeta,
     enforce_reach_end: bool,
     protection: PeBpmnProtection,
 ) -> Result<(), ParseError> {
@@ -387,18 +523,19 @@ fn parse_pebpmn_tasks(
         .collect_vec();
 
     for (node_id, node_tc) in tasks.iter().cloned() {
-        let node = &mut graph.nodes[node_id];
-        node.fill_color = meta.fill_color.clone();
-        node.stroke_color = meta.stroke_color.clone();
-        node.set_pebpmn_protection(protection);
+        analysis_state
+            .protection_graph
+            .entry(protection)
+            .or_default()
+            .insert(GraphElement::Task(node_id));
 
         for (is_reverse, ends) in [(false, end_out.as_slice()), (true, end_in.as_slice())] {
             check_protection_paths(
                 graph,
+                analysis_state,
                 node_id,
                 node_tc,
                 is_reverse,
-                meta,
                 ends,
                 protection,
                 &filter,
@@ -412,8 +549,9 @@ fn parse_pebpmn_tasks(
 
 fn protection_channel(
     graph: &Graph,
+    analysis_state: &mut State,
     edge_id: EdgeId,
-    cur_sde: SdeId,
+    // Could be in `state` but then we would need to deal with lifetimes ... narp.
     end: &[NodeId],
     state: &mut ProtectionPathTraversalState,
     is_reverse: bool,
@@ -421,24 +559,36 @@ fn protection_channel(
     let edge = &e!(edge_id);
     let next_node_id = if is_reverse { edge.from } else { edge.to };
 
-    let is_data_or_msg = edge.is_message_flow() || edge.is_data_flow();
-    let transports_sde = edge.get_transported_data().contains(&cur_sde);
+    let is_data = edge.is_data_flow();
+    let is_msg = edge.is_message_flow();
+    let transports_sde = edge.get_transported_data().contains(&state.cur_sde);
 
-    if !is_data_or_msg || !transports_sde {
+    if !(is_data || is_msg) || !transports_sde {
         return Ok(());
     }
 
-    state.edges_to_color.push((edge_id, cur_sde));
+    state.visited_edges.insert(edge_id);
+    if is_data {
+        analysis_state.set_data_flow_protection(edge_id, state.protection);
+    } else {
+        analysis_state.set_message_flow_protection(edge_id, state.cur_sde, state.protection);
+    }
 
     // XXX: First augment/check `visited`, and *only then* check `end`, as the caller checks what
     // end nodes were visited, for error reporting.
-    if !state.visited.insert(next_node_id) || end.contains(&next_node_id) {
+    if !state.visited_nodes.insert(next_node_id) || end.contains(&next_node_id) {
         return Ok(());
     }
 
     let next_node = &n!(next_node_id);
-    let (traverse_incoming, traverse_outgoing) = if next_node.is_data() {
-        state.nodes_to_color.push(next_node.id);
+    let is_data_node = next_node.is_data();
+    if is_data_node {
+        analysis_state.set_data_node_protection(next_node_id, state.protection);
+    } else {
+        analysis_state.set_nondata_node_protection(next_node_id, state.protection);
+    }
+
+    let (traverse_incoming, traverse_outgoing) = if is_data_node {
         // This data-icon is protected, so wherever it came from or goes to is considered part of the
         // protection path.
         (true, true)
@@ -447,7 +597,10 @@ fn protection_channel(
         // incoming instances of the same SDE as unprotected version, as they might totally be. If
         // they should still be protected, one can use the "already-protected" version.
         (false, true)
-    } else if next_node.get_node_transported_data().contains(&cur_sde) {
+    } else if next_node
+        .get_node_transported_data()
+        .contains(&state.cur_sde)
+    {
         // We come reverse into the node, and we know that this SDE travelled through this node. So
         // we know that *some* of the incoming flows transported the protected data (this is
         // not an end node, so one *must* be protected). We can't tell which one exactly, so we have
@@ -476,7 +629,7 @@ fn protection_channel(
             .cloned()
             .filter(|next_edge_id| *next_edge_id != edge_id)
         {
-            protection_channel(graph, next_edge_id, cur_sde, end, state, is_reverse)?;
+            protection_channel(graph, analysis_state, next_edge_id, end, state, is_reverse)?;
         }
     }
     Ok(())
@@ -484,23 +637,23 @@ fn protection_channel(
 
 /// Encapsulates the mutable aspects of the traversal, so the graph itself is not mutated during
 /// traversal (circumvents the borrow checker).
-#[derive(Default)]
 struct ProtectionPathTraversalState {
-    edges_to_color: Vec<(EdgeId, SdeId)>,
-    nodes_to_color: Vec<NodeId>,
-    visited: HashSet<NodeId>,
+    visited_nodes: HashSet<NodeId>,
+    protection: PeBpmnProtection,
+    cur_sde: SdeId,
+    visited_edges: BTreeSet<EdgeId>,
 }
 
 #[track_caller]
 #[allow(clippy::too_many_arguments)]
 fn check_protection_paths(
-    graph: &mut Graph,
+    graph: &Graph,
+    analysis_state: &mut State,
     node_id: NodeId,
     node_pebpmn_tc: TokenCoordinate,
     is_reverse: bool,
-    meta: &PeBpmnMeta,
     ends: &[NodeId],
-    protection_type: PeBpmnProtection,
+    protection: PeBpmnProtection,
     filter: impl Fn(&SdeId) -> bool,
     enforce_reach_end: bool,
 ) -> Result<(), ParseError> {
@@ -510,7 +663,14 @@ fn check_protection_paths(
         &graph.nodes[node_id].outgoing
     };
 
-    let mut state = ProtectionPathTraversalState::default();
+    for node_id in std::iter::once(&node_id).chain(ends).cloned() {
+        // This will likely run multiple times for `ends` if the function is run multiple times. But
+        // overall this is in the range of O(3 x 3) per protection I'd say (which is O(1) but you
+        // get the point).
+        // TODO is this check present in the pe-bpmn parser?
+        assert!(!n!(node_id).is_data());
+        analysis_state.set_nondata_node_protection(node_id, protection);
+    }
 
     for edge_id in edges.clone() {
         for sde_id in e!(edge_id)
@@ -519,12 +679,22 @@ fn check_protection_paths(
             .cloned()
             .filter(&filter)
         {
-            // This is a new search, so reset the `visited` buffer.
-            state.visited.clear();
-            state.visited.insert(node_id);
+            if e!(edge_id).is_message_flow() {
+                analysis_state.set_message_flow_protection(edge_id, sde_id, protection);
+            } else {
+                assert!(e!(edge_id).is_data_flow());
+                analysis_state.set_data_flow_protection(edge_id, protection);
+            }
 
-            protection_channel(graph, edge_id, sde_id, ends, &mut state, is_reverse)?;
-            if enforce_reach_end && ends.iter().all(|end| !state.visited.contains(end)) {
+            let mut state = ProtectionPathTraversalState {
+                visited_nodes: HashSet::from([node_id]),
+                visited_edges: Default::default(),
+                protection,
+                cur_sde: sde_id,
+            };
+
+            protection_channel(graph, analysis_state, edge_id, ends, &mut state, is_reverse)?;
+            if enforce_reach_end && ends.iter().all(|end| !state.visited_nodes.contains(end)) {
                 assert_ne!(ends.len(), 0); // If `enforce_reach_end` is `true` but no `end` was
                 // provided by the caller, then this is a programming error on the caller side.
                 return Err(create_protection_error_message(
@@ -533,26 +703,20 @@ fn check_protection_paths(
                     node_pebpmn_tc,
                     sde_id,
                     is_reverse,
-                    protection_type,
+                    protection,
                     ends,
                 ));
             }
+
+            analysis_state
+                .protection_paths_graphs
+                .entry(protection)
+                .or_default()
+                .subgraphs
+                .insert(state.visited_edges);
         }
     }
 
-    for (edge_id, sde_id) in state.edges_to_color.iter().cloned() {
-        let edge = &mut e!(edge_id);
-        if edge.is_message_flow() {
-            edge.set_pebpmn_protection(sde_id, protection_type);
-        }
-        edge.stroke_color = meta.stroke_color.clone();
-    }
-    for node_id in state.nodes_to_color.iter().cloned() {
-        let node = &mut n!(node_id);
-        node.fill_color = meta.fill_color.clone();
-        node.stroke_color = meta.stroke_color.clone();
-        node.set_pebpmn_protection(protection_type);
-    }
     Ok(())
 }
 
@@ -663,75 +827,6 @@ fn check_that_protection_is_visually_applied(
     }
 }
 
-pub fn create_transported_data(graph: &mut Graph) {
-    for edge_id in 0..graph.edges.len() {
-        if !graph.edges[edge_id].is_message_flow() {
-            continue;
-        }
-        let edge = &graph.edges[edge_id];
-
-        let incoming_nodes: HashSet<NodeId> = graph.nodes[edge.from]
-            .incoming
-            .iter()
-            .map(|e| graph.edges[*e].clone())
-            .filter(|e| e.is_data_flow())
-            .map(|e| e.from)
-            .collect();
-
-        let incoming_sde: HashSet<SdeId> = incoming_nodes
-            .iter()
-            .filter_map(|node_id| graph.nodes[*node_id].get_data_aux())
-            .map(|aux| aux.sde_id)
-            .collect();
-
-        let outgoing_nodes: HashSet<NodeId> = graph.nodes[edge.to]
-            .outgoing
-            .iter()
-            .map(|e| graph.edges[*e].clone())
-            .filter(|e| e.is_data_flow())
-            .map(|e| e.to)
-            .collect();
-
-        let outgoing_sde: HashSet<SdeId> = outgoing_nodes
-            .iter()
-            .filter_map(|node_id| graph.nodes[*node_id].get_data_aux())
-            .map(|aux| aux.sde_id)
-            .collect();
-
-        let intersection: Vec<SdeId> = incoming_sde.intersection(&outgoing_sde).cloned().collect();
-
-        if let FlowType::MessageFlow(message_flow_aux) = &mut graph.edges[edge_id].flow_type {
-            message_flow_aux.transported_data.extend(intersection);
-            message_flow_aux.transported_data.sort();
-            message_flow_aux.transported_data.dedup();
-        }
-    }
-
-    for i in 0..graph.nodes.len() {
-        let node = &graph.nodes[i];
-
-        if node.is_gateway() {
-            continue;
-        }
-
-        let incoming = get_edge_data_ids(graph, &node.incoming);
-        let outgoing = get_edge_data_ids(graph, &node.outgoing);
-
-        let intersect: Vec<SdeId> = incoming.intersection(&outgoing).copied().collect();
-        graph.nodes[i].add_node_transported_data(&intersect);
-    }
-}
-
-fn get_edge_data_ids(graph: &Graph, edge_ids: &[EdgeId]) -> HashSet<SdeId> {
-    let mut ids = HashSet::new();
-
-    for edge_id in edge_ids {
-        let edge = &graph.edges[*edge_id];
-        ids.extend(edge.get_transported_data());
-    }
-    ids
-}
-
 // Technically this should be in the parser, but this relies on `transported_data` calculation which
 // is done after all parsing is finished, so this is carried out in the late phase.
 fn check_secure_channel_permitted_sdes_are_valid(
@@ -826,5 +921,38 @@ fn computation_filter(computation: &ComputationCommon) -> impl Fn(&SdeId) -> boo
             .data_without_protection
             .iter()
             .all(|(without_prot, _)| *sde_id != *without_prot)
+    }
+}
+
+fn apply_colors(graph: &mut Graph, state: &State) {
+    for definition in &graph.pe_bpmn_definitions {
+        let protection = definition.r#type.protection();
+        for graph_element in state.protection_graph[&protection].iter().cloned() {
+            match graph_element {
+                GraphElement::Edge(edge_id) => {
+                    let edge = &mut e!(edge_id);
+                    edge.stroke_color = definition.meta.stroke_color.clone();
+                }
+                GraphElement::NonData(node_id) => {
+                    let node = &mut n!(node_id);
+                    node.stroke_color = definition.meta.stroke_color.clone();
+                }
+                GraphElement::Data(node_id) | GraphElement::Task(node_id) => {
+                    let node = &mut n!(node_id);
+                    node.stroke_color = definition.meta.stroke_color.clone();
+                    node.fill_color = definition.meta.fill_color.clone();
+                }
+                GraphElement::Pool(pool_id) => {
+                    let pool = &mut graph.pools[pool_id];
+                    pool.stroke_color = definition.meta.stroke_color.clone();
+                    pool.fill_color = definition.meta.fill_color.clone();
+                }
+                GraphElement::Lane(pool_id, lane_id) => {
+                    let lane = &mut graph.pools[pool_id].lanes[lane_id];
+                    lane.stroke_color = definition.meta.stroke_color.clone();
+                    lane.fill_color = definition.meta.fill_color.clone();
+                }
+            }
+        }
     }
 }

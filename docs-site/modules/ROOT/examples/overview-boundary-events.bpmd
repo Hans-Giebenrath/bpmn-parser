@@ -5,10 +5,8 @@
 - Continue the Ongoing Sequence Flow
 . Stillstand
 
-F <-handle-error
-- Handle the Error
+- Handle the Error  <-handle-error
 . Done
 
-F <-handle-timer
-- Handle the Timer
+- Handle the Timer  <-handle-timer
 . Done

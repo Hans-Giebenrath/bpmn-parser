@@ -1,13 +1,9 @@
 # Start Event
 X ->g1
 
-F <-g1
-- Above
-F ->endjoin
+- Above  <-g1 ->endjoin
 
-F <-g1
-- And beyond
-F ->endjoin
+- And beyond  <-g1 ->endjoin
 
 X <-endjoin
 . Finish.

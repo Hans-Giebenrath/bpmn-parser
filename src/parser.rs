@@ -17,7 +17,6 @@ use crate::lexer::Direction;
 use crate::lexer::EdgeMeta;
 use crate::lexer::EventType;
 use crate::lexer::GatewayNodeMeta;
-use crate::lexer::SequenceFlowMeta;
 use crate::lexer::lex;
 use crate::lexer::{self, MessageFlowMeta};
 use crate::lexer::{DataAux, DataFlowMeta};
@@ -27,7 +26,6 @@ use crate::parser::bpmn_node::BoundaryEvent;
 use crate::pool_id_matcher::PoolIdMatcher;
 use std::collections::HashMap;
 use std::collections::HashSet;
-use std::dbg;
 
 pub struct ParseContext {
     last_node_id: Option<usize>,
@@ -54,11 +52,6 @@ enum LifelineState {
     NoLifelineActive {
         // None if it is the beginning of the text file.
         previous_lifeline_termination_statement: Option<TokenCoordinate>,
-    },
-    /// When a branch target was encountered.
-    StartedFromSequenceFlowLanding {
-        name: String,
-        token_coordinate: TokenCoordinate,
     },
     /// During a chain of tasks/events.
     ActiveLifeline {
@@ -105,6 +98,13 @@ enum GroupingState {
         lane_id: LaneId,
         ltc: TokenCoordinate,
     },
+}
+
+enum NodePositionInLifeline {
+    Start,
+    Middle,
+    End,
+    InferOrIntermediate,
 }
 
 #[derive(Debug)]
@@ -168,10 +168,7 @@ impl Parser {
                 Statement::EventEnd(meta) => self.parse_event(meta, true)?,
                 Statement::Activity(meta) => self.parse_activity(meta)?,
                 Statement::BoundaryEvent(meta) => self.parse_boundary_event(meta)?,
-                Statement::GatewayBranchStart(meta) => self.parse_gateway_branch_start(meta)?,
-                Statement::GatewayJoinEnd(meta) => self.parse_gateway_join_end(meta)?,
-                Statement::SequenceFlowJump(meta) => self.parse_sequence_flow_jump(meta)?,
-                Statement::SequenceFlowLand(meta) => self.parse_sequence_flow_land(meta)?,
+                Statement::Gateway(meta) => self.parse_gateway(meta)?,
                 Statement::MessageFlow(meta) => self.parse_message_flow(meta)?,
                 Statement::Data(meta) => self.parse_data(meta)?,
                 Statement::PeBpmn(pe_bpmn) => self.parse_pe_bpmn(pe_bpmn)?,
@@ -182,19 +179,7 @@ impl Parser {
         }
 
         match &self.context.lifeline_state {
-            LifelineState::NoLifelineActive { .. } =>
-            /* all good */
-            {
-                ()
-            }
-            LifelineState::StartedFromSequenceFlowLanding {
-                token_coordinate, ..
-            } => {
-                return Err(vec![(
-                    "The text file ended with an active sequence flow. Add an end event like `. End` after this line to finish the sequence flow.".to_string(),
-                    *token_coordinate,
-                )]);
-            }
+            LifelineState::NoLifelineActive { .. } => { /* all good */ }
             LifelineState::ActiveLifeline {
                 token_coordinate, ..
             } => {
@@ -301,7 +286,7 @@ impl Parser {
                 previous_lifeline_termination_statement: None,
             },
         );
-        err_from_unfinished_lifeline(old_state, self.context.current_token_coordinate)?;
+        err_from_unfinished_lifeline(&old_state, self.context.current_token_coordinate)?;
         let pool_id = self.graph.add_pool(
             Some(label.to_string()),
             self.context.current_token_coordinate,
@@ -326,7 +311,7 @@ impl Parser {
                 previous_lifeline_termination_statement: None,
             },
         );
-        err_from_unfinished_lifeline(old_state, self.context.current_token_coordinate)?;
+        err_from_unfinished_lifeline(&old_state, self.context.current_token_coordinate)?;
 
         match self.context.grouping_state {
             GroupingState::Init => {
@@ -392,7 +377,7 @@ impl Parser {
     }
 
     /// Parse a gateway
-    fn parse_gateway_branch_start(&mut self, meta: GatewayNodeMeta) -> Result<(), ParseError> {
+    fn parse_gateway(&mut self, mut meta: GatewayNodeMeta) -> Result<(), ParseError> {
         // Assign a unique node ID to this gateway
         let pool_and_lane = self.manage_pool_and_lane_ids_for_new_node();
         let node_id = self.graph.add_node(
@@ -410,71 +395,10 @@ impl Parser {
         self.connect_nodes(
             node_id,
             pool_and_lane.pool,
-            LifelineState::NoLifelineActive {
-                previous_lifeline_termination_statement: Some(
-                    self.context.current_token_coordinate,
-                ),
-            },
-        )?;
-
-        for EdgeMeta { target, text_label } in meta.sequence_flow_jump_metas.into_iter() {
-            self.context
-                .dangling_sequence_flows
-                .entry(pool_and_lane.pool)
-                .or_default()
-                .dangling_end_map
-                .entry(target)
-                .or_default()
-                .push(DanglingEdgeInfo {
-                    known_node_id: node_id,
-                    edge_text: text_label,
-                    tc: self.context.current_token_coordinate,
-                    boundary_event: None,
-                });
-        }
-        Ok(())
-    }
-
-    // Helper to handle joins. Note, this is actually a real BPMN node, other than the Go target
-    // and the intermediate labels.
-    fn parse_gateway_join_end(&mut self, meta: GatewayNodeMeta) -> Result<(), ParseError> {
-        // Assign a unique node ID to this gateway
-        let pool_and_lane = self.manage_pool_and_lane_ids_for_new_node();
-        let node_id = self.graph.add_node(
-            NodeType::RealNode {
-                event: BpmnNode::Gateway(meta.gateway_type),
-                display_text: meta.node_meta.display_text,
-                tc: self.context.current_token_coordinate,
-                transported_data: vec![],
-                pe_bpmn_hides_protection_operations: false,
-            },
-            pool_and_lane,
-            None,
-        );
-        let old_state = std::mem::replace(
-            &mut self.context.lifeline_state,
-            LifelineState::ActiveLifeline {
-                last_node_id: node_id,
-                token_coordinate: self.context.current_token_coordinate,
-            },
-        );
-        err_from_unfinished_lifeline(old_state, self.context.current_token_coordinate)?;
-        for EdgeMeta { target, text_label } in meta.sequence_flow_jump_metas.into_iter() {
-            self.context
-                .dangling_sequence_flows
-                .entry(pool_and_lane.pool)
-                .or_default()
-                .dangling_start_map
-                .entry(target.clone())
-                .or_default()
-                .push(DanglingEdgeInfo {
-                    known_node_id: node_id,
-                    edge_text: text_label,
-                    tc: self.context.current_token_coordinate,
-                    boundary_event: None,
-                });
-        }
-        Ok(())
+            meta.sequence_flow_landings.as_mut_slice(),
+            meta.sequence_flow_jumps.as_mut_slice(),
+            NodePositionInLifeline::InferOrIntermediate,
+        )
     }
 
     /// Connects the current node with the previous node, handling incoming joining/jumping
@@ -483,141 +407,122 @@ impl Parser {
         &mut self,
         current_node_id: NodeId,
         current_pool_id: PoolId,
-        new_lifeline_state: LifelineState,
+        incoming_sequence_flow_landings: &mut [EdgeMeta],
+        outgoing_sequence_flow_jumps: &mut [EdgeMeta],
+        // end event just overrides manually what was stored there.
+        node_position: NodePositionInLifeline,
     ) -> Result<(), ParseError> {
-        // Use `replace` here to avoid lifetime errors.
-        match std::mem::replace(&mut self.context.lifeline_state, new_lifeline_state) {
-            LifelineState::StartedFromSequenceFlowLanding {
-                name,
-                token_coordinate,
-            } => {
+        if !incoming_sequence_flow_landings.is_empty() {
+            err_from_unfinished_lifeline(
+                &self.context.lifeline_state,
+                self.context.current_token_coordinate,
+            )?;
+            for EdgeMeta { target, text_label } in incoming_sequence_flow_landings.iter_mut() {
                 self.context
                     .dangling_sequence_flows
                     .entry(current_pool_id)
                     .or_default()
                     .dangling_start_map
-                    .entry(name)
+                    .entry(std::mem::take(target))
                     .or_default()
                     .push(DanglingEdgeInfo {
                         known_node_id: current_node_id,
-                        edge_text: "".to_string(),
-                        tc: token_coordinate,
+                        edge_text: std::mem::take(text_label),
+                        tc: self.context.current_token_coordinate,
                         boundary_event: None,
                     });
-                // Extend the token coordinate of the node onto the previous sequence flow landing
-                // node, so that error reporting with bad branching connections is more helpful.
-                if let NodeType::RealNode { ref mut tc, .. } =
-                    self.graph.nodes[current_node_id.0].node_type
-                {
-                    tc.start = token_coordinate.start;
-                } else {
-                    panic!("in the beginning there are no dummy nodes.");
-                };
             }
-            LifelineState::ActiveLifeline { last_node_id, .. } => {
-                // No text for regular sequence flow edges.
-                self.graph.add_edge(
-                    last_node_id,
-                    current_node_id,
-                    EdgeType::Regular {
-                        text: None,
-                        bend_points: RegularEdgeBendPoints::ToBeDetermined,
-                    },
-                    FlowType::SequenceFlow,
-                    None,
-                );
-            }
-            a => {
-                return Err(err_from_no_lifeline_active(
-                    a,
-                    self.context.current_token_coordinate,
-                ));
-            }
+        } else if matches!(node_position, NodePositionInLifeline::Start) {
+            err_from_unfinished_lifeline(
+                &self.context.lifeline_state,
+                self.context.current_token_coordinate,
+            )?;
+        } else if let LifelineState::ActiveLifeline { last_node_id, .. } =
+            self.context.lifeline_state
+        {
+            self.graph.add_edge(
+                last_node_id,
+                current_node_id,
+                EdgeType::Regular {
+                    // No text for regular sequence flow edges.
+                    text: None,
+                    bend_points: RegularEdgeBendPoints::ToBeDetermined,
+                },
+                FlowType::SequenceFlow,
+                None,
+            );
+        } else {
+            return Err(err_from_no_lifeline_active(
+                &self.context.lifeline_state,
+                self.context.current_token_coordinate,
+            ));
         }
+
+        self.context.lifeline_state = if !outgoing_sequence_flow_jumps.is_empty() {
+            for EdgeMeta { target, text_label } in outgoing_sequence_flow_jumps.iter_mut() {
+                self.context
+                    .dangling_sequence_flows
+                    .entry(current_pool_id)
+                    .or_default()
+                    .dangling_end_map
+                    .entry(std::mem::take(target))
+                    .or_default()
+                    .push(DanglingEdgeInfo {
+                        known_node_id: current_node_id,
+                        edge_text: std::mem::take(text_label),
+                        tc: self.context.current_token_coordinate,
+                        boundary_event: None,
+                    });
+            }
+            LifelineState::NoLifelineActive {
+                previous_lifeline_termination_statement: Some(
+                    self.context.current_token_coordinate,
+                ),
+            }
+        } else if matches!(node_position, NodePositionInLifeline::End) {
+            LifelineState::NoLifelineActive {
+                previous_lifeline_termination_statement: Some(
+                    self.context.current_token_coordinate,
+                ),
+            }
+        } else {
+            LifelineState::ActiveLifeline {
+                last_node_id: current_node_id,
+                token_coordinate: self.context.current_token_coordinate,
+            }
+        };
+
         Ok(())
     }
 
-    /// Common function to parse an event or task
-    fn parse_event(&mut self, meta: lexer::EventMeta, is_end: bool) -> Result<(), ParseError> {
+    fn parse_event(&mut self, mut meta: lexer::EventMeta, is_end: bool) -> Result<(), ParseError> {
         let pool_and_lane = self.manage_pool_and_lane_ids_for_new_node();
         let ids = meta.node_meta.ids;
-        let node_id = match self.context.lifeline_state {
-            LifelineState::NoLifelineActive { .. } if !is_end => {
-                let last_node_id = self.graph.add_node(
-                    NodeType::RealNode {
-                        event: BpmnNode::Event(
-                            meta.event_type,
-                            bpmn_node::EventVisual::default_start(meta.event_visual)?,
-                        ),
-                        display_text: meta.node_meta.display_text,
-                        tc: self.context.current_token_coordinate,
-                        transported_data: vec![],
-                        pe_bpmn_hides_protection_operations: false,
-                    },
-                    pool_and_lane,
-                    None,
-                );
-                self.context.lifeline_state = LifelineState::ActiveLifeline {
-                    last_node_id,
-                    token_coordinate: self.context.current_token_coordinate,
-                };
-                last_node_id
-            }
-            _ if is_end => {
-                let node_id = self.graph.add_node(
-                    NodeType::RealNode {
-                        event: BpmnNode::Event(
-                            meta.event_type,
-                            bpmn_node::EventVisual::default_end(meta.event_visual)?,
-                        ),
-                        display_text: meta.node_meta.display_text,
-                        tc: self.context.current_token_coordinate,
-                        transported_data: vec![],
-                        pe_bpmn_hides_protection_operations: false,
-                    },
-                    pool_and_lane,
-                    None,
-                );
-                self.connect_nodes(
-                    node_id,
-                    pool_and_lane.pool,
-                    LifelineState::NoLifelineActive {
-                        previous_lifeline_termination_statement: Some(
-                            self.context.current_token_coordinate,
-                        ),
-                    },
-                )?;
-                node_id
-            }
-            _ => {
-                let node_id = self.graph.add_node(
-                    NodeType::RealNode {
-                        event: BpmnNode::Event(
-                            meta.event_type,
-                            bpmn_node::EventVisual::default_intermediate(
-                                meta.event_visual,
-                                meta.event_type,
-                            )?,
-                        ),
-                        display_text: meta.node_meta.display_text,
-                        tc: self.context.current_token_coordinate,
-                        transported_data: vec![],
-                        pe_bpmn_hides_protection_operations: false,
-                    },
-                    pool_and_lane,
-                    None,
-                );
-                self.connect_nodes(
-                    node_id,
-                    pool_and_lane.pool,
-                    LifelineState::ActiveLifeline {
-                        last_node_id: node_id,
-                        token_coordinate: self.context.current_token_coordinate,
-                    },
-                )?;
-                node_id
-            }
+        let (event_visual, node_position) = match self.context.lifeline_state {
+            LifelineState::NoLifelineActive { .. } if !is_end => (
+                bpmn_node::EventVisual::default_start(meta.event_visual)?,
+                NodePositionInLifeline::Start,
+            ),
+            _ if is_end => (
+                bpmn_node::EventVisual::default_end(meta.event_visual)?,
+                NodePositionInLifeline::End,
+            ),
+            _ => (
+                bpmn_node::EventVisual::default_intermediate(meta.event_visual, meta.event_type)?,
+                NodePositionInLifeline::Middle,
+            ),
         };
+        let node_id = self.graph.add_node(
+            NodeType::RealNode {
+                event: BpmnNode::Event(meta.event_type, event_visual),
+                display_text: meta.node_meta.display_text,
+                tc: self.context.current_token_coordinate,
+                transported_data: vec![],
+                pe_bpmn_hides_protection_operations: false,
+            },
+            pool_and_lane,
+            None,
+        );
 
         self.context
             .node_id_matcher
@@ -627,10 +532,16 @@ impl Parser {
             self.context.shorthand_blank_events.insert(node_id);
         }
 
-        Ok(())
+        self.connect_nodes(
+            node_id,
+            pool_and_lane.pool,
+            meta.sequence_flow_landing.as_mut_slice(),
+            meta.sequence_flow_jump.as_mut_slice(),
+            node_position,
+        )
     }
 
-    fn parse_activity(&mut self, meta: ActivityMeta) -> Result<(), ParseError> {
+    fn parse_activity(&mut self, mut meta: ActivityMeta) -> Result<(), ParseError> {
         let pool_and_lane = self.manage_pool_and_lane_ids_for_new_node();
         let ids = meta.node_meta.ids;
         let node_id = self.graph.add_node(
@@ -652,10 +563,9 @@ impl Parser {
         self.connect_nodes(
             node_id,
             pool_and_lane.pool,
-            LifelineState::ActiveLifeline {
-                last_node_id: node_id,
-                token_coordinate: self.context.current_token_coordinate,
-            },
+            meta.sequence_flow_landing.as_mut_slice(),
+            meta.sequence_flow_jump.as_mut_slice(),
+            NodePositionInLifeline::Middle,
         )
     }
 
@@ -665,13 +575,7 @@ impl Parser {
             LifelineState::ActiveLifeline { last_node_id, .. } => *last_node_id,
             a => {
                 return Err(err_from_no_lifeline_active(
-                    std::mem::replace(
-                        a,
-                        // Just put some garbage here, we simply want the value and then return.
-                        LifelineState::NoLifelineActive {
-                            previous_lifeline_termination_statement: None,
-                        },
-                    ),
+                    a,
                     self.context.current_token_coordinate,
                 ));
             }
@@ -717,81 +621,6 @@ impl Parser {
                 tc: self.context.current_token_coordinate,
                 boundary_event: Some(meta.boundary_event),
             });
-
-        Ok(())
-    }
-
-    fn parse_sequence_flow_jump(&mut self, meta: SequenceFlowMeta) -> Result<(), ParseError> {
-        let pool_and_lane = self.manage_pool_and_lane_ids_for_new_node();
-        let old_state = std::mem::replace(
-            &mut self.context.lifeline_state,
-            LifelineState::NoLifelineActive {
-                previous_lifeline_termination_statement: Some(
-                    self.context.current_token_coordinate,
-                ),
-            },
-        );
-        let known_node_id = match old_state {
-            LifelineState::ActiveLifeline { last_node_id, .. } => last_node_id,
-            a => {
-                return Err(err_from_no_lifeline_active(
-                    a,
-                    self.context.current_token_coordinate,
-                ));
-            }
-        };
-
-        if let NodeType::RealNode { tc, .. } = &mut self.graph.nodes[known_node_id.0].node_type {
-            tc.end = self.context.current_token_coordinate.end;
-        } else {
-            panic!("in the beginning there are no dummy nodes.");
-        };
-
-        self.context
-            .dangling_sequence_flows
-            .entry(pool_and_lane.pool)
-            .or_default()
-            .dangling_end_map
-            .entry(meta.sequence_flow_jump_meta.target)
-            .or_default()
-            .push(DanglingEdgeInfo {
-                known_node_id,
-                edge_text: meta.sequence_flow_jump_meta.text_label,
-                tc: self.context.current_token_coordinate,
-                boundary_event: None,
-            });
-
-        Ok(())
-    }
-
-    fn parse_sequence_flow_land(&mut self, meta: SequenceFlowMeta) -> Result<(), ParseError> {
-        // Make sure that this is not in some weird position.
-        let _pool_and_lane = self.manage_pool_and_lane_ids_for_new_node();
-
-        match self.context.lifeline_state {
-LifelineState::ActiveLifeline { token_coordinate, .. } | LifelineState::StartedFromSequenceFlowLanding { token_coordinate, .. } =>
-            return Err(vec![
-(
-                "Any sequence flow above this statement should be finished, but this is not the case.".to_string(),
-                self.context.current_token_coordinate,
-            ),
-            (
-                "This statement does not finish the sequence flow. Try using `. End Event`, `F ->somewhere` or `X ->lbl1 ->lbl2` to finish the sequence flow.".to_string(),
-                    token_coordinate,
-            )
-            ]),
-_ => (),
-        }
-        if !meta.sequence_flow_jump_meta.text_label.is_empty() {
-            dbg!(
-                "The label text should be stored within the edge or so, and warn if the other end already provided a text for this edge."
-            );
-        }
-
-        self.context.lifeline_state = LifelineState::StartedFromSequenceFlowLanding {
-            name: meta.sequence_flow_jump_meta.target,
-            token_coordinate: self.context.current_token_coordinate,
-        };
 
         Ok(())
     }
@@ -1077,7 +906,7 @@ _ => (),
 
 #[track_caller]
 fn err_from_no_lifeline_active(
-    l: LifelineState,
+    l: &LifelineState,
     current_token_coordinate: TokenCoordinate,
 ) -> ParseError {
     match l {
@@ -1093,16 +922,7 @@ fn err_from_no_lifeline_active(
                 current_token_coordinate,
 ),(
                 "The sequence flow was previously terminated here.".to_string(),
-                tc,
-)]
-            ,
-            LifelineState::StartedFromSequenceFlowLanding { token_coordinate, .. } => vec![
-(
-                "This statement requires an active sequence flow.".to_string(),
-                current_token_coordinate,
-),(
-                "This statement itself is just a meta instruction and does not add a node. Try adding a `- Some Activity` after this statement.".to_string(),
-                token_coordinate,
+                *tc,
 )]
             ,
         l => panic!("{l:?}, {current_token_coordinate:?}"),
@@ -1110,23 +930,10 @@ fn err_from_no_lifeline_active(
 }
 
 fn err_from_unfinished_lifeline(
-    l: LifelineState,
+    l: &LifelineState,
     current_token_coordinate: TokenCoordinate,
 ) -> Result<(), ParseError> {
     match l {
-        LifelineState::StartedFromSequenceFlowLanding {
-            token_coordinate, ..
-        } => Err(vec![
-            (
-                "This statement cannot appear within an active sequence flow.".to_string(),
-                current_token_coordinate,
-            ),
-            (
-                // Have a slightly clearer error message here.
-                "This statement introduced a sequence flow.".to_string(),
-                token_coordinate,
-            ),
-        ]),
         LifelineState::ActiveLifeline {
             token_coordinate, ..
         } => Err(vec![
@@ -1136,7 +943,7 @@ fn err_from_unfinished_lifeline(
             ),
             (
                 "This statement is part of the currently active sequence flow.".to_string(),
-                token_coordinate,
+                *token_coordinate,
             ),
         ]),
         LifelineState::NoLifelineActive { .. } => Ok(()),
@@ -1228,11 +1035,9 @@ X<-JoinPoint
 = Pool
 == Lane1
 # Start Event
-- Task
-F ->jump
+- Task ->jump
 == Lane2
-F <-jump
-- Task
+- Task <-jump
 . End Event
 "#;
 

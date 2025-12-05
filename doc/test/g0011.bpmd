@@ -4,19 +4,19 @@
 # Start Event
 X ->g1
 
-F <-g1
-. Fin A 1
 
-F <-g2
-. Fin C 2
+. Fin A 1  <-g1
+
+
+. Fin C 2  <-g2
 
 == Lane 2
 
 # Start Event
 X ->g2
 
-F <-g2
-. Fin A 2
 
-F <-g1
-. Fin C 1
+. Fin A 2  <-g2
+
+
+. Fin C 1  <-g1
