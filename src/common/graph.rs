@@ -6,13 +6,14 @@ use crate::common::edge::{Edge, EdgeType};
 use crate::common::node::LayerId;
 use crate::common::node::{Node, NodeType};
 use crate::common::pool::Pool;
-use crate::lexer::{DataType, EventType, TokenCoordinate};
+use crate::lexer::{DataType, EventType, PeBpmnProtection, TokenCoordinate};
 use crate::parser::ParseError;
 use crate::pe_bpmn::parser::PeBpmn;
 use proc_macros::{from, n, to};
 use std::fmt::{self, Debug};
 use std::iter::from_fn;
 use std::mem;
+use std::ops::Index;
 
 use super::edge::FlowType;
 
@@ -98,7 +99,7 @@ impl SemanticDataElement {
     }
 }
 
-#[derive(Debug, Clone, Eq, PartialEq, Copy, Hash, PartialOrd, Ord)]
+#[derive(Default, Debug, Clone, Eq, PartialEq, Copy, Hash, PartialOrd, Ord)]
 pub struct SdeId(pub usize);
 impl_index!(SdeId, SemanticDataElement, sde_idx);
 
@@ -678,6 +679,17 @@ impl Debug for Graph {
             }
         }
         Ok(())
+    }
+}
+
+impl Index<PeBpmnProtection> for Graph {
+    type Output = PeBpmn;
+
+    fn index(&self, index: PeBpmnProtection) -> &Self::Output {
+        self.pe_bpmn_definitions
+            .iter()
+            .find(|pe| pe.r#type.protection() == index)
+            .unwrap()
     }
 }
 

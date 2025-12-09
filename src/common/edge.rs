@@ -24,7 +24,7 @@ pub struct MessageFlowAux {
 pub struct DataFlowAux {
     // A data edge can only ever transport a single element, namely the one which is connected to
     // it.
-    pub transported_data: Option<SdeId>,
+    pub transported_data: SdeId,
 }
 
 #[derive(Debug, Clone)]
@@ -144,7 +144,7 @@ impl Edge {
 
     pub fn get_transported_data(&self) -> &[SdeId] {
         if let FlowType::DataFlow(aux) = &self.flow_type {
-            aux.transported_data.as_slice()
+            std::slice::from_ref(&aux.transported_data)
         } else if let FlowType::MessageFlow(aux) = &self.flow_type {
             &aux.transported_data
         } else {

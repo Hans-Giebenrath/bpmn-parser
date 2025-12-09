@@ -793,7 +793,7 @@ impl Parser {
                     bend_points: RegularEdgeBendPoints::ToBeDetermined,
                 },
                 FlowType::DataFlow(DataFlowAux {
-                    transported_data: Some(sde_id),
+                    transported_data: sde_id,
                 }),
                 None,
             );

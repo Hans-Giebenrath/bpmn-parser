@@ -14,3 +14,4 @@
 * pe-bpmn MPC should be able to be in multiple pools, or at least in multiple lanes. And then specify multiple admins.
 * pe-bpmn data_already_protected is not used anywhere, yet.
 * pe-bpmn TEEs could be in a cyclic dependency of being each other's admin. This is currently reported as an error but in principle is solvable.
+* Use a more performance hasher for all the hash maps.

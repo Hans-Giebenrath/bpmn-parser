@@ -10,6 +10,12 @@ pub mod analysis;
 pub mod parser;
 pub mod visibility_table;
 
+#[derive(Eq, Hash, PartialEq)]
+pub enum PoolOrProtection {
+    Pool(PoolId),
+    Protection(PeBpmnProtection),
+}
+
 /// This is just a slightly different form of the PeBpmn type, but more digestible for the creation
 /// of the visibility table. All necessary information is assembled in one place.
 #[derive(Default)]
@@ -18,15 +24,27 @@ pub struct VisibilityTableInput {
     /// as then the software operator could replace the TEE with something they control (the remote
     /// user doesn't do correct RA, so they won't notice) and hence decrypt what they should not
     /// have seen.
-    pub tee_vulnerable_rv: HashSet<(PoolId, SdeId, PeBpmnProtection)>,
+    pub tee_vulnerable_rv: HashSet<(/*attacker*/ PoolId, SdeId, PeBpmnProtection)>,
     /// That PoolId gets all the data, which is part of that TEE or MPC, with an additional H.
-    pub tee_software_operator: HashSet<(PoolId, PeBpmnProtection)>,
+    /// Since protections can be nested, they also happen to get an `H`.
+    /// (Conceptually a HashSet<PoolOrProtection, HashSet<PeBpmnProtection>> but just one
+    /// allocation)
+    pub software_operator: HashSet<(PoolOrProtection, PeBpmnProtection)>,
     /// That PoolId gets all the data, which is part of that TEE or MPC, with an additional A.
+    /// Why an `A`? TEE technologies usually exclude the hardware operator from the threat model, or
+    /// at least only protect against a small handful of easyish hardware attacks (cold boot). But
+    /// anything beyond that is out of scope and has been shown and shown again by researchers that
+    /// it can be broken. That is to say, the hardware operator must be trusted or monitored and
+    /// then this can be totally reasonable for a given context. No security measure is perfect, it
+    /// just makes an attack more expensive and/or time consuming. The only silver bullet is to not
+    /// gather any data in the first place.
+    /// TODO verify that a hardware operator is not a `(tee|mpc)-pool`.
     pub tee_hardware_operator: HashSet<(PoolId, PeBpmnProtection)>,
     /// A pool could have root access to multiple TEEs, hence a `Vec`.
     pub tee_external_root_access: HashMap<PoolId, HashSet<PeBpmnProtection>>,
-    // Contains only the `data` nodes. Does not contain data which moves via message flows, as this
-    // is already captured via transitively being that TEE's software/hardware operator.
+    // Contains both the `data` nodes and data which moves via message flows.
+    //
+    // TODO this comment is not totally adequate and should move to `tee_vulnerable_rv`.
     // And the `tee_vulnerable_rv` stuff is applied directly when something is protected at the
     // `tee-in-protect` statement, as this cannot be deferred to the moment when the respective data
     // actually moves into the software operator pool. Because this breaks for subdivided programs
@@ -37,14 +55,12 @@ pub struct VisibilityTableInput {
     // from the multiple smaller `.bpmd` files, really not sure). So err on the safe side here. This
     // basically means that one cannot pretend to encrypt something for the TEE and then not
     // actually send it, but I am not sure whether someone would actually want to do that.
-    pub regular_pool_directly_accessible_data:
-        HashMap<PoolId, HashMap<SdeId, Vec<Vec<PeBpmnProtection>>>>,
-    pub tee_or_mpc_directly_accessible_data:
-        HashMap<PeBpmnProtection, HashMap<SdeId, Vec<Vec<PeBpmnProtection>>>>,
+    pub directly_accessible_data:
+        HashMap<PoolOrProtection, HashMap<SdeId, HashSet<BTreeSet<PeBpmnProtection>>>>,
 }
 
 #[derive(Default)]
-pub struct ProtectionPathsGraph {
+pub struct ProtectionPaths {
     /// Can't nest HashSet in a HashSet due to HashSet not implementing Hash.
     subgraphs: HashSet<BTreeSet<EdgeId>>,
 }
@@ -55,7 +71,7 @@ enum ProtectionGraphCmp {
     Disjoint,
 }
 
-impl ProtectionPathsGraph {
+impl ProtectionPaths {
     fn compare(&self, other: &Self) -> Result<ProtectionGraphCmp, String> {
         let mut some_smaller = false;
         let mut some_larger = false;

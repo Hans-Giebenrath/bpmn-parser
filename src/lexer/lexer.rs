@@ -90,6 +90,20 @@ pub enum PeBpmnProtection {
     Mpc(TokenCoordinate),
 }
 
+impl PeBpmnProtection {
+    pub fn is_secure_channel(&self) -> bool {
+        matches!(self, PeBpmnProtection::SecureChannel(..))
+    }
+
+    pub fn tc(&self) -> TokenCoordinate {
+        match self {
+            &PeBpmnProtection::SecureChannel(tc)
+            | &PeBpmnProtection::Tee(tc)
+            | &PeBpmnProtection::Mpc(tc) => tc,
+        }
+    }
+}
+
 impl Display for PeBpmnProtection {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         match self {
