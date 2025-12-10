@@ -1,10 +1,9 @@
 use crate::common::node::Node;
-use crate::lexer::{PeBpmnProtection, TokenCoordinate};
-use std::collections::HashSet;
+use crate::lexer::TokenCoordinate;
 
 // pool.rs
+use crate::common::graph::PoolId;
 use crate::common::graph::{LaneId, NodeId};
-use crate::common::graph::{PoolId, SdeId};
 use crate::common::lane::Lane;
 use crate::common::macros::impl_index;
 use crate::common::node::LayerId;
@@ -41,9 +40,6 @@ impl Pool {
             is_right_of_the_previous_pool: false,
             stroke_color: None,
             fill_color: None,
-            tee_admin_has_pe_bpmn_visibility_A_for: HashSet::new(),
-            tee_admin_has_pe_bpmn_visibility_H_for: HashSet::new(),
-            tee_external_root_access: HashSet::new(),
         }
     }
 

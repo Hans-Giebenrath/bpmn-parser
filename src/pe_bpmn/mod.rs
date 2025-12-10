@@ -10,7 +10,7 @@ pub mod analysis;
 pub mod parser;
 pub mod visibility_table;
 
-#[derive(Eq, Hash, PartialEq)]
+#[derive(Debug, Eq, Hash, PartialEq, Clone, Copy)]
 pub enum PoolOrProtection {
     Pool(PoolId),
     Protection(PeBpmnProtection),
@@ -42,6 +42,8 @@ pub struct VisibilityTableInput {
     pub tee_hardware_operator: HashSet<(PoolId, PeBpmnProtection)>,
     /// A pool could have root access to multiple TEEs, hence a `Vec`.
     pub tee_external_root_access: HashMap<PoolId, HashSet<PeBpmnProtection>>,
+    /// For generating the network operator visibility row.
+    pub network_message_protections: HashMap<SdeId, HashSet<BTreeSet<PeBpmnProtection>>>,
     // Contains both the `data` nodes and data which moves via message flows.
     //
     // TODO this comment is not totally adequate and should move to `tee_vulnerable_rv`.

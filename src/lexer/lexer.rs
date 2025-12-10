@@ -83,6 +83,8 @@ pub enum DataType {
     Object,
 }
 
+// Copy: 32 Bytes are actually large, but whatever, I don't want to deal with the references all the
+// time. If need arises, this can be changed.
 #[derive(Debug, Clone, Copy, Eq, PartialEq, PartialOrd, Ord, Hash)]
 pub enum PeBpmnProtection {
     SecureChannel(TokenCoordinate),

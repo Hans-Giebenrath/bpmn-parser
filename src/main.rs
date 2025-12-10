@@ -118,9 +118,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     });
 
     if let Some(visibility_path) = &cli.visibility_table {
-        timer.time_it("PE-BPMN analysis", || {
-            pebpmn_analysis(&mut graph, visibility_path, &bpmd_source_files)
-        })?;
+        pebpmn_analysis(&mut graph, visibility_path, &bpmd_source_files, &mut timer)?;
     };
 
     layout_graph(&mut graph, &mut timer);
@@ -163,9 +161,14 @@ pub fn pebpmn_analysis(
     graph: &mut Graph,
     visibility_path: &PathBuf,
     bpmd_source_files: &[BpmdSourceFile],
+    timer: &mut Timer,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    pe_bpmn::analysis::analyse(graph).bpmd_format_err(bpmd_source_files)?;
-    let visibility_data = pe_bpmn::visibility_table::generate_visibility_table(graph)?;
+    let analysis_result = timer
+        .time_it("PE-BPMD analyse", || pe_bpmn::analysis::analyse(graph))
+        .bpmd_format_err(bpmd_source_files)?;
+    let visibility_data = timer.time_it("PE-BPMD generate_visibility_table", || {
+        pe_bpmn::visibility_table::generate_visibility_table(graph, &analysis_result)
+    })?;
     std::fs::write(visibility_path, visibility_data)?;
     Ok(())
 }

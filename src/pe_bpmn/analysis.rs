@@ -30,6 +30,17 @@ pub fn analyse(graph: &mut Graph) -> Result<VisibilityTableInput, ParseError> {
     graph.pe_bpmn_definitions = pebpmn_definitions;
     apply_colors(graph, &state);
 
+    compute_accessible_data(graph, &mut state)?;
+
+    for ((_, sde_id), protections) in state.message_flow_protection.into_iter() {
+        state
+            .result
+            .network_message_protections
+            .entry(sde_id)
+            .or_default()
+            .insert(protections);
+    }
+
     Ok(state.result)
 }
 
@@ -412,7 +423,7 @@ fn compute_accessible_data(graph: &Graph, analysis_state: &mut State) -> Result<
                     .unwrap()
                     .compare(analysis_state.protection_paths_graphs.get(b).unwrap())
                 {
-                    Err(e) => todo!(),
+                    Err(e) => todo!("Write a good error message, {e}"),
                     // Smallest to the right.
                     Ok(ProtectionGraphCmp::Sub) => std::cmp::Ordering::Greater,
                     Ok(ProtectionGraphCmp::Super) => std::cmp::Ordering::Less,
@@ -420,7 +431,7 @@ fn compute_accessible_data(graph: &Graph, analysis_state: &mut State) -> Result<
                     // that there is a TEE which could conditionally execute one MPC algorithm or
                     // another algorithm. But I believe this is a headache to implement, so just
                     // forbid it for the moment. Maybe no-one will ever ask.
-                    Ok(ProtectionGraphCmp::Disjoint) => todo!(),
+                    Ok(ProtectionGraphCmp::Disjoint) => todo!("Write a good error message, pe-bpmns covering the same node shall not be disjoint"),
                 }
             });
 

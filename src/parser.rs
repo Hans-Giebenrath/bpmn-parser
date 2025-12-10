@@ -9,9 +9,11 @@ use crate::common::edge::{MessageFlowAux, RegularEdgeBendPoints};
 use crate::common::graph::PoolAndLane;
 use crate::common::graph::{Graph, SdeId};
 use crate::common::graph::{LaneId, NodeId, PoolId};
+use crate::common::node::DataAux;
 use crate::common::node::NodeType;
 use crate::lexer::ActivityMeta;
 use crate::lexer::BoundaryEventMeta;
+use crate::lexer::DataFlowMeta;
 use crate::lexer::DataMeta;
 use crate::lexer::Direction;
 use crate::lexer::EdgeMeta;
@@ -19,7 +21,6 @@ use crate::lexer::EventType;
 use crate::lexer::GatewayNodeMeta;
 use crate::lexer::lex;
 use crate::lexer::{self, MessageFlowMeta};
-use crate::lexer::{DataAux, DataFlowMeta};
 use crate::lexer::{Statement, StatementStream, TokenCoordinate};
 use crate::node_id_matcher::NodeIdMatcher;
 use crate::parser::bpmn_node::BoundaryEvent;
@@ -691,7 +692,6 @@ impl Parser {
             },
             FlowType::MessageFlow(MessageFlowAux {
                 transported_data: vec![],
-                pebpmn_protection: vec![],
                 tc: self.context.current_token_coordinate,
             }),
             None,
@@ -750,13 +750,7 @@ impl Parser {
                 .add_sde(meta.node_meta.display_text.clone(), vec![])
         };
 
-        let event = BpmnNode::Data(
-            meta.data_type,
-            DataAux {
-                sde_id,
-                pebpmn_protection: vec![],
-            },
-        );
+        let event = BpmnNode::Data(meta.data_type, DataAux { sde_id });
 
         assert!(!lane_ids.is_empty());
         let data_node_id = self.graph.add_node(
