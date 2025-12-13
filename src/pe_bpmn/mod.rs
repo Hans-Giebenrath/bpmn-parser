@@ -24,7 +24,21 @@ pub struct VisibilityTableInput {
     /// as then the software operator could replace the TEE with something they control (the remote
     /// user doesn't do correct RA, so they won't notice) and hence decrypt what they should not
     /// have seen.
-    pub tee_vulnerable_rv: HashSet<(/*attacker*/ PoolId, SdeId, PeBpmnProtection)>,
+    /// The `BTreeSet<PeBpmnProtection>` is the set of protections which already have been present
+    /// on the object. An additional `A` must be appiled hereto.
+    /// Note: This does *not* look at the directly accessible data of the attacker, but only looks
+    /// at the tee-in-protect node which does the encryption. This cannot be deferred to the moment
+    /// when the respective data actually moves into the software operator pool, because this would
+    /// break for subdivided programs where we don't know if an icon is currently moving towards the
+    /// TEE (should replace an `H` with an `A`), or out of the TEE (does not replace anything).
+    /// Maybe in the future one could extend `bpmd` to ingest a suite of diagrams at once, then such
+    /// cross-file analysis might be possible (but I am not sure if it is possible at all to derive
+    /// the `in` or `out` direction from the multiple smaller `.bpmd` files, really not sure). So
+    /// err on the safe side here. This basically means that one cannot pretend to encrypt something
+    /// for the TEE and then not actually send it (or add another secure channel and give that to
+    /// the TEE), but I am not sure whether someone would actually want to do that. So until then we
+    /// *only* look at the protections of SdeId at the tee-in-protect node.
+    pub tee_vulnerable_rv: HashMap<(/*attacker*/ PoolId, SdeId), BTreeSet<PeBpmnProtection>>,
     /// That PoolId gets all the data, which is part of that TEE or MPC, with an additional H.
     /// Since protections can be nested, they also happen to get an `H`.
     /// (Conceptually a HashSet<PoolOrProtection, HashSet<PeBpmnProtection>> but just one
@@ -47,16 +61,6 @@ pub struct VisibilityTableInput {
     // Contains both the `data` nodes and data which moves via message flows.
     //
     // TODO this comment is not totally adequate and should move to `tee_vulnerable_rv`.
-    // And the `tee_vulnerable_rv` stuff is applied directly when something is protected at the
-    // `tee-in-protect` statement, as this cannot be deferred to the moment when the respective data
-    // actually moves into the software operator pool. Because this breaks for subdivided programs
-    // where we don't know if an icon is currently moving towards the TEE (should replace an `H`
-    // with an `A`), or out of the TEE (does not replace anything). Maybe in the future one could
-    // extend `bpmd` to ingest a suite of diagrams at once, then such cross-file analysis might be
-    // possible (but I am not sure if it is possible at all to derive the `in` or `out` direction
-    // from the multiple smaller `.bpmd` files, really not sure). So err on the safe side here. This
-    // basically means that one cannot pretend to encrypt something for the TEE and then not
-    // actually send it, but I am not sure whether someone would actually want to do that.
     pub directly_accessible_data:
         HashMap<PoolOrProtection, HashMap<SdeId, HashSet<BTreeSet<PeBpmnProtection>>>>,
 }

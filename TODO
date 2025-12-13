@@ -1,3 +1,4 @@
+* PE-BPMN enforce (tee-hardware-operator)
 * D1.1, page 53 figure 12 subprocess P5, is a good diagram that should be layoutable now.
 * Documentation.
 * Document infallability of the crate: The crate is meant to be used with catch_unwind: `assert`s are sprinkled throughout the codebase, `.unwrap()`s and index accesses are used everywhere (they are kind-of like assumptions). But the logic is complicated and I am 100% there are remaining hidden logic bugs. (well, right now it is just a binary, so one gets failure isolation "for free", but if I ever make this into a crate, then `catch_unwind`)

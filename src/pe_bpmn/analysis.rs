@@ -368,26 +368,37 @@ fn compute_accessible_data(graph: &Graph, analysis_state: &mut State) -> Result<
         let mut pool_protection = None;
         let mut lane_protection = None;
         task_protections.clear();
+
         {
             for pebpmn in &graph.pe_bpmn_definitions {
                 match &pebpmn.r#type {
                     PeBpmnType::Tee(Tee { common }) | PeBpmnType::Mpc(Mpc { common }) => {
                         match &common.pebpmn_type {
-                            PeBpmnSubType::Pool(..) => {
+                            PeBpmnSubType::Pool(pool_id) if *pool_id == node.pool => {
                                 assert!(pool_protection.is_none());
                                 pool_protection = Some(pebpmn.r#type.protection());
                             }
-                            PeBpmnSubType::Lane { .. } => {
+                            PeBpmnSubType::Lane { pool_id, lane_id }
+                                if *pool_id == node.pool && *lane_id == node.lane =>
+                            {
                                 assert!(lane_protection.is_none());
                                 lane_protection = Some(pebpmn.r#type.protection());
                             }
-                            PeBpmnSubType::Tasks { .. } => {
+                            PeBpmnSubType::Tasks(tasks) if contains(tasks, &node.id) => {
                                 task_protections.push(pebpmn.r#type.protection());
                             }
+                            _ => continue,
                         }
                     }
-                    PeBpmnType::SecureChannel(_) => {
-                        task_protections.push(pebpmn.r#type.protection());
+                    PeBpmnType::SecureChannel(sc) => {
+                        if sc
+                            .sender
+                            .iter()
+                            .chain(sc.receiver.iter())
+                            .any(|(node_id, _)| *node_id == node.id)
+                        {
+                            task_protections.push(pebpmn.r#type.protection());
+                        }
                     }
                 };
             }
