@@ -18,7 +18,7 @@ struct Args<'a> {
     input: &'a VisibilityTableInput,
 }
 
-#[derive(PartialOrd, Ord, PartialEq, Eq, Copy, Clone)]
+#[derive(Debug, PartialOrd, Ord, PartialEq, Eq, Copy, Clone)]
 enum ProtectionString {
     Visible,
     // Protections might be layered, so count each layer here.
@@ -289,6 +289,7 @@ impl OnDemandVisibilityTableCell {
             .endless_recursion_detection
             .contains(&(pool_or_protection, sde_id))
         {
+            // TODO this should have a nice color.
             Err(format!("endless recursion: {:?}", self.endless_recursion_detection).into())
         } else if let Some(protection_string) = self.cache.get(&(pool_or_protection, sde_id)) {
             Ok(*protection_string)

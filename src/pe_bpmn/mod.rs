@@ -18,7 +18,7 @@ pub enum PoolOrProtection {
 
 /// This is just a slightly different form of the PeBpmn type, but more digestible for the creation
 /// of the visibility table. All necessary information is assembled in one place.
-#[derive(Default)]
+#[derive(Default, Debug)]
 pub struct VisibilityTableInput {
     /// This happens if a sender uses tee-protect `no-rv` or with the `@software-operator-of-tee`,
     /// as then the software operator could replace the TEE with something they control (the remote

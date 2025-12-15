@@ -67,7 +67,7 @@ OD Result 2 <-process ->sp-send-c2
   (tee-out-unprotect @receive1 @admin)
   (tee-out-unprotect @receive2 @admin)
   (tee-software-operators @admin)
-  (tee-external-root-access @sp)
+  (tee-external-root-access blocked)
   (tee-hardware-operators @admin)
   (stroke-color #0063B2)
   (fill-color #9CC3D5)
