@@ -32,13 +32,24 @@ pub fn analyse(graph: &mut Graph) -> Result<VisibilityTableInput, ParseError> {
 
     compute_accessible_data(graph, &mut state)?;
 
-    for ((_, sde_id), protections) in state.message_flow_protection.into_iter() {
-        state
-            .result
-            .network_message_protections
-            .entry(sde_id)
-            .or_default()
-            .insert(protections);
+    // Must iterate all edges so we don't miss "V" ones (where there is no flow protection present).
+    for (edge_idx, edge) in graph.edges.iter().enumerate() {
+        if !edge.is_message_flow() {
+            continue;
+        }
+        for sde_id in edge.get_transported_data() {
+            let protections = state
+                .flow_protection
+                .get(&EdgeId(edge_idx))
+                .and_then(|a| a.get(sde_id).cloned())
+                .unwrap_or_default();
+            state
+                .result
+                .network_message_protections
+                .entry(*sde_id)
+                .or_default()
+                .insert(protections);
+        }
     }
 
     Ok(state.result)
@@ -63,8 +74,7 @@ struct State {
     // A `data` node represents just one piece of data, but it can be protected simultaneously by
     // multiple protections (both secure channel and TEE).
     data_node_protection: HashMap<NodeId, HashSet<PeBpmnProtection>>,
-    message_flow_protection: HashMap<(EdgeId, SdeId), BTreeSet<PeBpmnProtection>>,
-    data_flow_protection: HashMap<EdgeId, (SdeId, BTreeSet<PeBpmnProtection>)>,
+    flow_protection: HashMap<EdgeId, HashMap<SdeId, BTreeSet<PeBpmnProtection>>>,
     // The reverse of `data_node_protection` and `message_flow_protection`. To apply coloring after
     // the graph is analysed (enables to traverse over `&Graph` instead of `&mut Graph`).
     protection_graph: HashMap<PeBpmnProtection, HashSet<GraphElement>>,
@@ -100,35 +110,17 @@ impl State {
             .insert(GraphElement::NonData(nondata_node_id));
     }
 
-    fn set_message_flow_protection(
-        &mut self,
-        mf_id: EdgeId,
-        sde_id: SdeId,
-        protection: PeBpmnProtection,
-    ) {
-        self.message_flow_protection
-            .entry((mf_id, sde_id))
+    fn set_flow_protection(&mut self, mf_id: EdgeId, sde_id: SdeId, protection: PeBpmnProtection) {
+        self.flow_protection
+            .entry(mf_id)
+            .or_default()
+            .entry(sde_id)
             .or_default()
             .insert(protection);
         self.protection_graph
             .entry(protection)
             .or_default()
             .insert(GraphElement::Edge(mf_id));
-    }
-
-    fn set_data_flow_protection(
-        &mut self,
-        df_id: EdgeId,
-        sde_id: SdeId,
-        protection: PeBpmnProtection,
-    ) {
-        let df = self.data_flow_protection.entry(df_id).or_default();
-        df.0 = sde_id;
-        df.1.insert(protection);
-        self.protection_graph
-            .entry(protection)
-            .or_default()
-            .insert(GraphElement::Edge(df_id));
     }
 }
 
@@ -328,7 +320,7 @@ fn analyse_secure_channel(
                     let node = &graph.nodes[*node_id];
                     state.set_data_node_protection(*node_id, protection);
                     for edge_id in node.incoming.iter().chain(&node.outgoing) {
-                        state.set_data_flow_protection(*edge_id, *sde_id, protection);
+                        state.set_flow_protection(*edge_id, *sde_id, protection);
                     }
                 });
             });
@@ -346,7 +338,7 @@ fn analyse_secure_channel(
                     .copied()
                     .filter(|sde_id| contains(&secure_channel.permitted_ids, sde_id))
                 {
-                    state.set_message_flow_protection(EdgeId(edge_idx), sde_id, protection);
+                    state.set_flow_protection(EdgeId(edge_idx), sde_id, protection);
                 }
             }
         }
@@ -586,39 +578,63 @@ fn compute_accessible_data(graph: &Graph, analysis_state: &mut State) -> Result<
 
             for edge_id in node.incoming.iter().chain(node.outgoing.iter()).cloned() {
                 let edge = &e!(edge_id);
-                // TODO it would make this loop easier if `data_flow_protection` and
-                // `message_flow_protection` were merged into one ...
-                if edge.is_data_flow() {
-                    if let Some((sde_id, protections)) =
-                        analysis_state.data_flow_protection.get(&edge_id)
-                    {
-                        analyse(
-                            *sde_id,
-                            protections.clone(),
-                            false,
-                            is_cross_lane_data(edge_id),
-                        );
-                    } else {
-                        analyse(
-                            edge.get_transported_data()[0],
-                            Default::default(),
-                            false,
-                            is_cross_lane_data(edge_id),
-                        );
-                    }
-                } else if edge.is_message_flow() {
-                    for sde_id in edge.get_transported_data().iter().cloned() {
-                        if let Some(protections) = analysis_state
-                            .message_flow_protection
-                            .get(&(edge_id, sde_id))
-                        {
-                            analyse(sde_id, protections.clone(), true, false);
-                        } else {
-                            analyse(sde_id, Default::default(), true, false);
-                        }
-                    }
+                for sde_id in edge.get_transported_data().iter().cloned() {
+                    let protections = analysis_state
+                        .flow_protection
+                        .get(&edge_id)
+                        .and_then(|a| a.get(&sde_id))
+                        .cloned()
+                        .unwrap_or_default();
+                    analyse(
+                        sde_id,
+                        protections,
+                        edge.is_message_flow(),
+                        edge.is_data_flow() && is_cross_lane_data(edge_id),
+                    );
                 }
             }
+        }
+    }
+
+    for pebpmn in &graph.pe_bpmn_definitions {
+        let PeBpmnType::Tee(Tee { common }) = &pebpmn.r#type else {
+            continue;
+        };
+
+        for software_operator in common.software_operators.iter().cloned() {
+            common
+                .in_protect
+                .iter()
+                .filter(|data_flow_annotation| {
+                    data_flow_annotation.rv_source.is_none()
+                        || data_flow_annotation.rv_source == Some(software_operator)
+                })
+                .flat_map(|data_flow_annotation| {
+                    graph.nodes[data_flow_annotation.node]
+                        .outgoing
+                        .iter()
+                        .cloned()
+                        .flat_map(|outgoing| {
+                            analysis_state
+                                .flow_protection
+                                .get(&outgoing)
+                                .into_iter()
+                                .flat_map(|hm| hm.iter())
+                                .map(|(sde_id, protections)| {
+                                    let mut protections = protections.clone();
+                                    protections.remove(&pebpmn.r#type.protection());
+                                    (*sde_id, protections)
+                                })
+                        })
+                })
+                .for_each(|(sde_id, protections)| {
+                    analysis_state
+                        .result
+                        .tee_vulnerable_rv
+                        .entry((software_operator, sde_id))
+                        .or_default()
+                        .insert(protections);
+                });
         }
     }
 
@@ -631,25 +647,6 @@ fn compute_visibility_tee_or_mpc(
     computation: &ComputationCommon,
     protection: PeBpmnProtection,
 ) -> Result<(), ParseError> {
-    for software_operator in computation.software_operators.iter().cloned() {
-        analysis_state.result.tee_vulnerable_rv.extend(
-            computation
-                .in_protect
-                .iter()
-                .filter(|data_flow_annotation| {
-                    data_flow_annotation.rv_source.is_none()
-                        || data_flow_annotation.rv_source == Some(software_operator)
-                })
-                .flat_map(|data_flow_annotation| {
-                    graph.nodes[data_flow_annotation.node]
-                        .get_node_transported_data()
-                        .iter()
-                        .copied()
-                })
-                .map(|sde_id| (software_operator, sde_id, protection)),
-        );
-    }
-
     analysis_state.result.software_operator.extend(
         computation
             .software_operators
@@ -816,11 +813,7 @@ fn protection_channel(
     }
 
     state.visited_edges.insert(edge_id);
-    if is_data {
-        analysis_state.set_data_flow_protection(edge_id, state.cur_sde, state.protection);
-    } else {
-        analysis_state.set_message_flow_protection(edge_id, state.cur_sde, state.protection);
-    }
+    analysis_state.set_flow_protection(edge_id, state.cur_sde, state.protection);
 
     // XXX: First augment/check `visited`, and *only then* check `end`, as the caller checks what
     // end nodes were visited, for error reporting.
@@ -915,7 +908,7 @@ fn check_protection_paths(
         // This will likely run multiple times for `ends` if the function is run multiple times. But
         // overall this is in the range of O(3 x 3) per protection I'd say (which is O(1) but you
         // get the point).
-        // TODO is this check present in the pe-bpmn parser?
+        // TODO is this check present in the pe-bpmn parser? Hasn't been the last time.
         assert!(!n!(node_id).is_data());
         analysis_state.set_nondata_node_protection(node_id, protection);
     }
@@ -927,12 +920,7 @@ fn check_protection_paths(
             .cloned()
             .filter(&filter)
         {
-            if e!(edge_id).is_message_flow() {
-                analysis_state.set_message_flow_protection(edge_id, sde_id, protection);
-            } else {
-                assert!(e!(edge_id).is_data_flow());
-                analysis_state.set_data_flow_protection(edge_id, sde_id, protection);
-            }
+            analysis_state.set_flow_protection(edge_id, sde_id, protection);
 
             let mut state = ProtectionPathTraversalState {
                 visited_nodes: HashSet::from([node_id]),

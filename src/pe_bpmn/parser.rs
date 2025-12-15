@@ -331,12 +331,13 @@ impl Parser {
                 let automatically_derived_software_operator =
                     self.graph.nodes[first_node_id.0].pool;
 
-                let software_operators = lexer
+                let mut software_operators = lexer
                     .software_operators
                     .into_iter()
                     .map(|(id, _)| self.find_pool_id_or_error(&id))
                     .collect::<Result<Vec<_>, _>>()?;
                 if software_operators.is_empty() {
+                    software_operators.push(automatically_derived_software_operator);
                 } else if !software_operators.contains(&automatically_derived_software_operator) {
                     let mut errors = vec![
                         (
@@ -360,17 +361,14 @@ impl Parser {
                 }
                 // TODO should spot duplicates in the list? In all lists?
 
-                let hardware_operators = lexer
+                let mut hardware_operators = lexer
                     .hardware_operators
                     .into_iter()
-                    .map(|(id, tc)| {
-                        if id == "on-premises" && tc.end - tc.start == "on-premises".len() {
-                            Ok(automatically_derived_software_operator)
-                        } else {
-                            self.find_pool_id_or_error(&id)
-                        }
-                    })
+                    .map(|(id, _)| self.find_pool_id_or_error(&id))
                     .collect::<Result<Vec<_>, _>>()?;
+                if hardware_operators.is_empty() && tee_or_mpc == "tee" {
+                    hardware_operators.push(automatically_derived_software_operator);
+                }
                 (
                     PeBpmnSubType::Tasks(task_ids),
                     software_operators,

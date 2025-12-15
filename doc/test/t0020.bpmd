@@ -32,6 +32,7 @@ MF <-sending ->tee-unprotect-inner
   (tee-tasks @process)
   (tee-in-protect @tee-protect-outer @better-client)
   (tee-external-root-access blocked)
+  (tee-hardware-operators on-premises)
   (stroke-color #7a7)
 ]
 
@@ -40,6 +41,7 @@ MF <-sending ->tee-unprotect-inner
   (tee-in-protect @tee-protect-inner no-rv)
   (tee-out-unprotect @tee-unprotect-inner no-rv)
   (tee-external-root-access blocked)
+  (tee-hardware-operators on-premises)
   (stroke-color #a55)
 ]
 

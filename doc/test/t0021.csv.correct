@@ -1,6 +1,6 @@
 Pool,Input Data 1,Input Data 2,Result 1,Result 2
 Client 1,V,,V,
-Service Provider,A,A,H,H
+Service Provider,A,A,P,P
 Client 2,,V,,V
 Ext,A,A,A,A
 Network,H,H,H,H

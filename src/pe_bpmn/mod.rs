@@ -38,7 +38,8 @@ pub struct VisibilityTableInput {
     /// for the TEE and then not actually send it (or add another secure channel and give that to
     /// the TEE), but I am not sure whether someone would actually want to do that. So until then we
     /// *only* look at the protections of SdeId at the tee-in-protect node.
-    pub tee_vulnerable_rv: HashMap<(/*attacker*/ PoolId, SdeId), BTreeSet<PeBpmnProtection>>,
+    pub tee_vulnerable_rv:
+        HashMap<(/*attacker*/ PoolId, SdeId), HashSet<BTreeSet<PeBpmnProtection>>>,
     /// That PoolId gets all the data, which is part of that TEE or MPC, with an additional H.
     /// Since protections can be nested, they also happen to get an `H`.
     /// (Conceptually a HashSet<PoolOrProtection, HashSet<PeBpmnProtection>> but just one

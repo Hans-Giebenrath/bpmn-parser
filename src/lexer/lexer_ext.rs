@@ -377,6 +377,12 @@ fn assemble_tee_or_mpc(
             tc,
         )]);
     }
+    if !seen_hardware_operators {
+        return Err(vec![(
+            "Missing required 'tee-hardware-operators' statement (e.g. `(tee-hardware-operators on-premises)` or `(tee-hardware-operators @pool-id1 @pool-id2)`)".to_string(),
+            tc,
+        )]);
+    }
 
     let computation_common = ComputationCommon {
         pebpmn_type: pe_bpmn_subtype,

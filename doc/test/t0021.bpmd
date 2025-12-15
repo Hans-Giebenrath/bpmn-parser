@@ -63,6 +63,7 @@ OD Result 2 <-process ->sp-send-c2
   (tee-out-unprotect @c1-decrypt no-rv)
   (tee-out-unprotect @c2-decrypt no-rv)
   (tee-external-root-access @ext)
+  (tee-hardware-operators on-premises)
   (stroke-color #0063B2)
   (fill-color #9CC3D5)
 ]

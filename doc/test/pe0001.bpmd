@@ -4,7 +4,7 @@
 == L1
 
 # Start
-- Protect
+- Protect @protect
 . Send
 
 = P2
@@ -16,7 +16,7 @@
 . End
 
 OD Data ->protect
- & Data <-protect ->send
+ & Protected Data <-protect ->send
  & Protected Data <-receive ->tee
 
 MF <-send ->receive
@@ -24,7 +24,8 @@ MF <-send ->receive
 [pe-bpmn
   (tee-tasks @tee)
   (tee-external-root-access blocked)
-  (tee-in-protect @send @p1)
+  (tee-in-protect @protect @p1)
+  (tee-hardware-operators on-premises)
   (stroke-color #a9d31e)
   (fill-color #eef7d0)
 ]

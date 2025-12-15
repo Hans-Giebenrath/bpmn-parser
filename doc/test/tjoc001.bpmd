@@ -66,6 +66,7 @@ MF ->p5.1 <-p5.2
   (tee-external-root-access blocked)
   (tee-in-protect @p3.3 @input-party)
   (tee-out-unprotect @p5.4 @output-party)
+  (tee-hardware-operators on-premises)
   (stroke-color #a9d31e)
   (fill-color #eef7d0)
 ]
