@@ -13,3 +13,9 @@ max_line_length = 100
 
 [TODO]
 max_line_length = 1000
+
+[**.adoc]
+max_line_length = unset
+
+[**.md]
+max_line_length = unset

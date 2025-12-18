@@ -1,4 +1,6 @@
 * PE-BPMN tee-external-root-access should not point to itself for tee-pool
+* pe0001 end events are not drawn as end events
+* PE-BPMN the selectors (e.g. secure-channel begin and end) should better filter their node types. Right now one can accidentally select data nodes which doesn't make sense and results in a non-helpful assertion error.
 * error in pe bpmd tool should result in error of test suite.
 * D1.1, page 53 figure 12 subprocess P5, is a good diagram that should be layoutable now.
 * Documentation.

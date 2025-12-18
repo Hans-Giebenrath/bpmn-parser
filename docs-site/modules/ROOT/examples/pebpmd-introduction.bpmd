@@ -1,0 +1,30 @@
+= Alice
+
+# Start
+- Generate Data
+. Send
+
+= Eve
+
+# Receive Data
+. Forward Data
+
+= Bob
+
+# Receive Data
+- Process Data
+. Done
+
+// Only the first name, "A Plaintext Message", is used in the visibility table header.
+OD A Plaintext Message <-alice-generate ->alice-send
+ & An Encrypted Message <-eve-receive ->eve-forward
+ & A Plaintext Message <-bob-receive ->bob-process
+
+MF <-alice-send ->eve-receive
+MF <-eve-forward ->bob-receive
+
+// This is the extension.
+[pe-bpmn
+  (secure-channel @alice-send @bob-receive)
+  (stroke-color #18bc4c)
+]

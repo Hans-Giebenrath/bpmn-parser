@@ -67,6 +67,7 @@ impl Timer {
     where
         F: FnOnce() -> R,
     {
+        println!("{label}");
         let t = std::time::Instant::now();
         let r = f();
         self.measurements.push((label, t.elapsed()));

@@ -1,0 +1,59 @@
+// GENERATE VISIBILITY TABLE
+= Happy Human
+
+# Start
+- Produce Data
+# Upload
+# Do Other Things
+- Request Data
+. Receive Data
+
+
+= Rented Confidential VM
+
+# Receive Uploaded Data
+- Encrypt For External Storage
+- Store in Blob Storage
+# Receive Download Request
+- Retrieve
+- Decrypt
+. Return to Happy Human
+
+= Cloud Service Provider
+
+== Blob Storage
+
+# Receive Data
+. Return Data
+
+OD Secret <-human-produce ->human-upload
+ & Secret <-cvm-receive-uploaded-data ->cvm-encrypt
+ & Secret [Encrypted] <-cvm-encrypt ->cvm-store
+ & Secret [Encrypted] <-storage-receive ->storage-return
+ & Secret [Encrypted] <-cvm-retrieve ->cvm-decrypt
+ & Secret <-cvm-decrypt ->cvm-return
+ & Secret <-human-receive-data
+
+MF <-human-request-data ->cvm-receive-download-request
+MF <-human-upload ->cvm-receive-uploaded-data
+MF <-cvm-store ->storage-receive
+MF <-storage-return ->cvm-retrieve
+MF <-cvm-return-to-happy-human ->human-receive-data
+
+[pe-bpmn
+  (tee-pool @cvm)
+  (tee-external-root-access blocked)
+  (tee-in-protect @human-upload @human)
+  (tee-in-unprotect @cvm-receive-uploaded-data)
+  (tee-out-protect @cvm-return-to-happy-human)
+  (tee-out-unprotect @human-receive @human)
+  (tee-hardware-operators @csp)
+  (tee-software-operators @csp)
+  (stroke-color #a9d31e)
+  (fill-color #eef7d0)
+]
+
+[pe-bpmn
+  (secure-channel @cvm-encrypt @cvm-decrypt)
+  (stroke-color #77a)
+]

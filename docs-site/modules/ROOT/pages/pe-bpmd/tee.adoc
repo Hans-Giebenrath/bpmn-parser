@@ -1,3 +1,7 @@
 = Trusted Execution Environments
 
-TBD
+I welcome you on this page about modeling TEEs within PE-BPMD! At this location it would be logical to write a lengthy explanation about what TEEs are. A short description is already in the PE-BPMD xref:pe-bpmd/introduction.adoc[introductory page]. But a lengthy overview, which doesn't go too much into implementation details, exists already, and I am sure that I cannot create a better version here. I was the main author of Chapter 3 of _D2.1 - Technology Survey and Analysis_ for the link:https://cros.ec.europa.eu/joconde[JOCONDE project]. My goal with that text was exactly to not go too much into technical details, but still cover many topics. There is also a lecture where I talked about TEEs: https://courses.cs.ut.ee/2025/secprog/spring/Main/Lectures 9. Sandboxing.
+
+
+
+Refer to both the joconde document and the lecture.

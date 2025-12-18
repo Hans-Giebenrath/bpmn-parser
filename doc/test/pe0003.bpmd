@@ -1,0 +1,39 @@
+// GENERATE VISIBILITY TABLE
+= End User
+
+# Start
+# Send Request
+# Receive Response
+. Finished
+
+= Cloud Service Provider
+
+== Rented Confidential VM
+
+# Receive Request
+- Update Local State
+- Create Response
+. Send
+
+
+OD Request ->user-send
+ & Secret <-cvm-receive ->cvm-update
+OD Local State <-cvm-update ->cvm-create-reponse
+OD Response <-cvm-create-response ->cvm-send
+ & Response <-user-receive
+
+MF <-user-send ->cvm-receive
+MF <-cvm-send ->user-receive
+
+[pe-bpmn
+  (tee-lane @cvm)
+  (tee-external-root-access blocked)
+  (tee-in-protect @user-send @user)
+  (tee-in-unprotect @cvm-receive)
+  (tee-out-protect @cvm-send)
+  (tee-out-unprotect @user-receive @user)
+  (tee-hardware-operators @csp)
+  (tee-software-operators @csp)
+  (stroke-color #a9d31e)
+  (fill-color #eef7d0)
+]
