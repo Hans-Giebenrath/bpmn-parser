@@ -1,5 +1,5 @@
 use crate::common::node::NodePhaseAuxData;
-use proc_macros::n;
+use proc_macros::{e, n};
 
 use crate::common::graph::Graph;
 use crate::common::node::Node;
@@ -28,7 +28,7 @@ fn solve_layers(graph: &mut Graph) {
     let num_nodes = graph.nodes.len();
     for node in graph.nodes.iter_mut().filter(|node| !node.is_data()) {
         node.aux = NodePhaseAuxData::LayerAssignmentData(LayerAssignmentData(
-            vars.add(variable().integer().min(0).max(num_nodes as f64)),
+            vars.add(dbg!(variable().integer().min(0).max(num_nodes as f64))),
         ));
     }
 
@@ -45,12 +45,19 @@ fn solve_layers(graph: &mut Graph) {
         objective += to_var - from_var;
         // Try to pull start nodes to the left. But only starts, let the rest be placed however the
         // algorithm thinks. Not sure yet whether this is good.
-        if n!(edge.from).incoming.is_empty() {
-            objective += 0.1 * from_var;
+    }
+    for node in graph.nodes.iter().filter(|node| !node.is_data()) {
+        if node
+            .incoming
+            .iter()
+            .all(|edge_id| e!(*edge_id).is_message_flow())
+        {
+            objective += 0.1 * aux(node);
         }
     }
 
     let mut problem = vars.minimise(objective).using(default_solver);
+    //let mut problem = problem.set_verbose(true);
     //problem.set_parameter("loglevel", "0");
 
     for edge in graph
@@ -60,11 +67,13 @@ fn solve_layers(graph: &mut Graph) {
     {
         let from_var = aux(&n!(edge.from));
         let to_var = aux(&n!(edge.to));
-        problem = problem.with((to_var - from_var).geq(1));
+        problem.add_constraint(dbg!((to_var - from_var).geq(1)));
     }
+    dbg!();
 
     let solution = problem.solve().unwrap();
     graph.num_layers = usize::MIN;
+    dbg!();
 
     for node in graph.nodes.iter_mut().filter(|node| !node.is_data()) {
         node.layer_id.0 = solution.value(aux(node)) as usize;

@@ -8,8 +8,8 @@ edition = "2024"
 [dependencies]
 clap = { version = "4", features = ["derive"] }
 good_lp = { version = "1", features = [
-    #"microlp",
-    "scip",
+    "microlp",
+    #"scip",
 ], default-features = false }
 svg = "0.18"
 annotate-snippets = "0.12"
