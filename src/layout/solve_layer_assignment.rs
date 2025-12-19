@@ -1,5 +1,5 @@
 use crate::common::node::NodePhaseAuxData;
-use proc_macros::n;
+use proc_macros::{e, n};
 
 use crate::common::graph::Graph;
 use crate::common::node::Node;
@@ -45,12 +45,19 @@ fn solve_layers(graph: &mut Graph) {
         objective += to_var - from_var;
         // Try to pull start nodes to the left. But only starts, let the rest be placed however the
         // algorithm thinks. Not sure yet whether this is good.
-        if n!(edge.from).incoming.is_empty() {
-            objective += 0.1 * from_var;
+    }
+    for node in graph.nodes.iter().filter(|node| !node.is_data()) {
+        if node
+            .incoming
+            .iter()
+            .all(|edge_id| e!(*edge_id).is_message_flow())
+        {
+            objective += 0.1 * aux(node);
         }
     }
 
     let mut problem = vars.minimise(objective).using(default_solver);
+    //let mut problem = problem.set_verbose(true);
     //problem.set_parameter("loglevel", "0");
 
     for edge in graph
