@@ -816,7 +816,7 @@ fn parse_ids_or_placeholder(
                         tc,
                     )]);
                 }
-                if let [.., last] = arguments_ids.as_slice() {
+                if let (Some(first), Some(last)) = (arguments_ids.first(), arguments_ids.last()) {
                     return Err(vec![
                         (
                             format!(
@@ -826,7 +826,11 @@ fn parse_ids_or_placeholder(
                         ),
                         (
                             format!("Remove this one if you want to use \"{placeholder}\""),
-                            last.1,
+                            TokenCoordinate {
+                                source_file_idx: first.1.source_file_idx,
+                                start: first.1.start,
+                                end: last.1.end,
+                            },
                         ),
                     ]);
                 }

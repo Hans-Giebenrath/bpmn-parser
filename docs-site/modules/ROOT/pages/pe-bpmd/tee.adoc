@@ -1,7 +1,55 @@
 = Trusted Execution Environments
 
-I welcome you on this page about modeling TEEs within PE-BPMD! At this location it would be logical to write a lengthy explanation about what TEEs are. A short description is already in the PE-BPMD xref:pe-bpmd/introduction.adoc[introductory page]. But a lengthy overview, which doesn't go too much into implementation details, exists already, and I am sure that I cannot create a better version here. I was the main author of Chapter 3 of _D2.1 - Technology Survey and Analysis_ for the link:https://cros.ec.europa.eu/joconde[JOCONDE project]. My goal with that text was exactly to not go too much into technical details, but still cover many topics. There is also a lecture where I talked about TEEs: https://courses.cs.ut.ee/2025/secprog/spring/Main/Lectures 9. Sandboxing.
+I welcome you on this page about modeling TEEs within PE-BPMD! At this location it would be logical to write a lengthy explanation about what TEEs are. A short description is already in the PE-BPMD xref:pe-bpmd/introduction.adoc[introductory page]. But a lengthy overview, which doesn't go too much into implementation details, exists already, and I am sure that I cannot create a better version here. I was the main author of Chapter 3 of _D2.1 - Technology Survey and Analysis_ for the link:https://cros.ec.europa.eu/joconde[JOCONDE project]. My goal with that text was exactly to not go too much into technical details, but still cover many topics. There is also a lecture where I talked about TEEs: https://courses.cs.ut.ee/2025/secprog/spring/Main/Lectures 9. Sandboxing. In the following text I assume that you read the referenced texts.
+
+The following sections explain the various attributes and pitfalls through examples.
+
+== Outsourcing Computations to the Cloud
+
+This is a typical use case of confidential computing. You want to process sensitive data in the cloud.
+Hence you rent a confidential VM (e.g. using Intel TDX or AMD SEV-SNP), and then use that to process you business secrets.
+You send the business secrets directly to the VM and receive the processing results directly from the VM, and the cloud service provider should not see the data.
+
+image::generated/pebpmd-tee-outsourcing-computation.png[]
+
+[%header,format=csv]
+|===
+include::example$generated/pebpmd-tee-outsourcing-computation.csv[]
+|===
+
+[,bpmd]
+----
+include::example$pebpmd-tee-outsourcing-computation.bpmd[]
+----
+
+`tee-lane`:: This example uses the _lane_ variant of the TEE extension.
+This means that all of the tasks within this lane are part of the TEE and thus protected.
+The physical operator of the TEE instance is clearly designated by the enclosing pool.
++
+You can also use the _pool_ or _tasks_ variant, as shown in later examples. In this case, modeling the TEE as a lane makes the most sense, since we want to explicitly see what is happening inside of the TEE. What is happening inside of the TEE is in a way the "meat" of the process. In other situations it is less relevant, and there are more non-TEE things happening which are more important, in which case a _tasks_ variant makes more sense. Additionally, with the _lane_ variant we
+`tee-external-root-access`:: This attribute must always be present and either takes a `@pool-id` or the fixed string `blocked` when there is no root user.
+It says whether someone can use `ssh` to become a root user on the target machine (or something conceptually similar).
+That user then has access to all files which the TEE sees.
+The external root access is primarily meant to cover e.g. an administrator which manages the confidential VM in a Kubernetes cluster
+Such an administrator (very likely) has root access to that machine and in principle can access all the data.
++
+That said, this doesn't cover the situation where someone can `ssh` into the machine with a less privileged user an access only a subset of data.
+In that case this data is usually actually meant to be accessed by that user, so the data transport should be modelled explicitly within the diagram.
+`tee-in-protect` and `tee-in-unprotect`:: Both can appear multiple times.
+These are the starts and ends of the incoming protection channels.
+`tee-in-protect @node-id @rv-creator` designates that data is protected at `@node-id`, where `@node-id` shall not point to a node within the TEE.
+`@rv-creator` (or alternatively the fixed string `no-rv`) references the pool which created the reference value.
+This is explained in more detail in <<rv,a separate section>>.
+The data to protect is detected automatically by analysing which semantic data element visually enters and leaves the given node, or visually moves across a message flow.
+For all the data that is protected via `tee-in-protect` nodes, their protection is removed when graph traversal reaches a `tee-in-unprotect` node.
+In the given example, `Request` is protected and then unprotected by the send and receive events, and it is visually explicitly modeled that it enters the send event and leaves the receive event.
+One can follow the flow of data with a finger across message flows and data associations.
+`tee-out-protect` and `tee-out-unprotect`:: Similar to the `in` variants, but this is the out direction. Hence for `tee-out-protect @node-id @pool-id`, the `@node-id` must reference a node within the TEE, and `for `tee-out-unprotect @node-id` the `@nodeid` must reference a node outside of the TEE.
+`tee-hardware-operators`:: TODO continue here.
 
 
 
-Refer to both the joconde document and the lecture.
+[#rv]
+== Importance of the Reference Value
+
+TODO

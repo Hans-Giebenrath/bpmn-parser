@@ -239,22 +239,18 @@ impl Parser {
                     .collect::<Result<Vec<_>, _>>()?;
 
                 let hardware_operators = lexer
-                .hardware_operators
-                .into_iter()
-                .map(|(id, tc)| {
-                    if id == "on-premises" && tc.end - tc.start == "on-premises".len() {
-                        Err(vec![
-                            (
-                                format!(
-                                    "{tee_or_mpc}-hardware-operator cannot use 'on-premises' with {tee_or_mpc}-pool"
-                                ),
-                                tc,
-                            )])
-                    } else {
-                        self.find_pool_id_or_error_restricted(&id, pool_id, tc, tee_or_mpc, "hardware-operators")
-                    }
-                })
-                .collect::<Result<Vec<_>, _>>()?;
+                    .hardware_operators
+                    .into_iter()
+                    .map(|(id, tc)| {
+                        self.find_pool_id_or_error_restricted(
+                            &id,
+                            pool_id,
+                            tc,
+                            tee_or_mpc,
+                            "hardware-operators",
+                        )
+                    })
+                    .collect::<Result<Vec<_>, _>>()?;
                 (
                     PeBpmnSubType::Pool(pool_id),
                     software_operators,
@@ -296,17 +292,14 @@ impl Parser {
                 }
                 // TODO should spot duplicates in the list? In all lists?
 
-                let hardware_operators = lexer
+                let mut hardware_operators = lexer
                     .hardware_operators
                     .into_iter()
-                    .map(|(id, tc)| {
-                        if id == "on-premises" && tc.end - tc.start == "on-premises".len() {
-                            Ok(pool_id)
-                        } else {
-                            self.find_pool_id_or_error(&id)
-                        }
-                    })
+                    .map(|(id, _)| self.find_pool_id_or_error(&id))
                     .collect::<Result<Vec<_>, _>>()?;
+                if hardware_operators.is_empty() && tee_or_mpc == "tee" {
+                    hardware_operators.push(pool_id);
+                }
                 (
                     PeBpmnSubType::Lane { pool_id, lane_id },
                     software_operators,

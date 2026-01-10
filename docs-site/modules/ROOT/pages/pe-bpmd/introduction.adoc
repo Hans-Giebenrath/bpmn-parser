@@ -36,19 +36,20 @@ then PE-BPMD could help.
 
 == Visibility Table
 
-The primary result of the PE-BPMN analysis is the color coding in the diagram, and the
+The primary result of the PE-BPMD analysis is the color coding in the diagram, and the
 _visibility table_. This explains who can see what data. PE-BPMN originally has four visibility
 categories: _visible_, _accessible_, _hidden_, and _inaccessible_ (I believe). I extended it with a
 fifth one, _physically compromisable_ which is due to peculiarities of the TEE technologies (TODO
-reference the respective paragraph on the TEE page when it exists). I am not fully happy with it
-since _accessible_ has a very wide range which depends on specific implementation details as well,
-but I haven't had a better idea, yet.
+reference the respective paragraph on the TEE page when it exists).
 
 Visible (V):: The pool creates or receives the plaintext form of the data.
 Accessible (A):: The pool does not see the plaintext form of the data, but they can do _something_ which
 gives them access to the plaintext form of the data. For example, they might receive at one point
 the encrypted data, and at another point the key to decrypt the data. So they are technically
-capable of decrypting the data and see the plaintext.
+capable of decrypting the data and see the plaintext. In my interpretation of these categories,
+if one would use a weak implementation of an algorithm, say RSA with keys of 512 bit length, then this
+would technically also be "A" since you just need to throw enough dollars at the problem and the
+protection is surmounted within a relatively short time frame (less than 3 years).
 Physically Compromisable (P):: Used for TEEs which protect against software attacks but not so much
 against physical attacks against the hardware. From the viewpoint of the pool this is identical to
 _Accessible_. However, I added this distinction because oftentimes a pool is not by itself untrusted
