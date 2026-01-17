@@ -34,6 +34,7 @@ addressing your needs. But if you want to communicate, on a high level, to lay p
 business process is leaking data, and how you plan to enhance the process to fix the data leakage,
 then PE-BPMD could help.
 
+[#vt]
 == Visibility Table
 
 The primary result of the PE-BPMD analysis is the color coding in the diagram, and the
@@ -99,19 +100,19 @@ to you, then you are still welcome to have a look at the more detailed pages whi
 them and show them in action (within the scope of BPMN).
 (_The introductory texts are obviously simplified and full of caveats, so please excuse the brevity._)
 
-xref:pe-bpmd/secure-channel.adoc[Secure Channel]:: You say where data is protected and where the
+[[sc]]xref:pe-bpmd/secure-channel.adoc[Secure Channel]:: You say where data is protected and where the
 protection is undone. In the simplest form, that's about it.
 +
 I think about adding an extended version where the encryption key can be explicitly modeled for more
 complicated situations which is not just a TLS connection.
-xref:pe-bpmd/tee.adoc[Trusted Execution Environments]:: CPU extensions which allow to execute code
+[[tee]]xref:pe-bpmd/tee.adoc[Trusted Execution Environments]:: CPU extensions which allow to execute code
 in a protected environment. The host (operating system, hypervisor, a root user) cannot look into
 that environment, i.e. it ideally(TM) becomes impossible for an attacker to extract encryption keys or
 other secrets from a running program, while the program uses that data. At the same time, a remote
 user can cryptographically verify that the correct (trustworthy) program is running in the protected
 environment. Since this was once my area of expertise, I experimented with new additions that have
 not been part in PE-BPMN.
-xref:pe-bpmd/mpc.adoc[Multi-Party Computation (Work In Progress)]:: I am no expert in MPC technology, so read this with
+[[mpc]]xref:pe-bpmd/mpc.adoc[Multi-Party Computation (Work In Progress)]:: I am no expert in MPC technology, so read this with
 a grain of salt. I primarily had tangential familiarity with the secret-sharing kind of MPC. In this
 model, data is not processed on a single CPU, but it is split into shares and then sent to let's say
 three different machines. They do some fancy math, and in the end someone can bring the results of

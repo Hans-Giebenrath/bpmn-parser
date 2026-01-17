@@ -25,14 +25,21 @@ MF <-user-send ->cvm-receive
 MF <-cvm-send ->user-receive
 
 [pe-bpmn
+  // TEE type (lane, pool or tasks)
   (tee-lane @cvm)
-  (tee-external-root-access @user)
+
+  // Protection channel starts and ends
   (tee-in-protect @user-send @user)
   (tee-in-unprotect @cvm-receive)
   (tee-out-protect @cvm-send)
   (tee-out-unprotect @user-receive @user)
+
+  // Additional access characteristics.
+  (tee-external-root-access @user)
   (tee-hardware-operators on-premises)
   (tee-software-operators @csp)
+
+  // Generic attributes
   (stroke-color #a9d31e)
   (fill-color #eef7d0)
 ]

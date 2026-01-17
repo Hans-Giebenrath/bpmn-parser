@@ -1,0 +1,37 @@
+= Remote User
+
+# Start
+. Send Request
+
+= Cloud Service Provider
+
+# Receive Request
+- Process
+. Done
+
+OD Request ->user-send
+ & Protected Request <-csp-receive ->csp-process
+
+MF <-user-send ->csp-receive
+
+= Third Party Auditor // Relevant in subsequent examples.
+
+= Some Other Software Operator // Primarily for showing what changes in the visibility table
+
+[pe-bpmn
+  // For conciseness, the TEE is represented by just that one activity.
+  (tee-tasks @process)
+
+  // In this simple example, data only flows into the TEE.
+  // Note that there is no tee-in-unprotect, as tee-tasks are implicitly unprotection nodes.
+  (tee-in-protect @user-send @csp) // <1>
+
+  // Additional access characteristics.
+  (tee-external-root-access blocked)
+  (tee-hardware-operators on-premises)
+  (tee-software-operators @user @csp @some-other-so)
+
+  // Generic attributes
+  (stroke-color #a9d31e)
+  (fill-color #eef7d0)
+]

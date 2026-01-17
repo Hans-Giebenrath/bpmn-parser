@@ -1,6 +1,6 @@
 = Trusted Execution Environments
 
-I welcome you on this page about modeling TEEs within PE-BPMD! At this location it would be logical to write a lengthy explanation about what TEEs are. A short description is already in the PE-BPMD xref:pe-bpmd/introduction.adoc[introductory page]. But a lengthy overview, which doesn't go too much into implementation details, exists already, and I am sure that I cannot create a better version here. I was the main author of Chapter 3 of _D2.1 - Technology Survey and Analysis_ for the link:https://cros.ec.europa.eu/joconde[JOCONDE project]. My goal with that text was exactly to not go too much into technical details, but still cover many topics. There is also a lecture where I talked about TEEs: https://courses.cs.ut.ee/2025/secprog/spring/Main/Lectures 9. Sandboxing. In the following text I assume that you read the referenced texts.
+I welcome you on this page about modeling TEEs within PE-BPMD! At this location it would be logical to write a lengthy explanation about what TEEs are. A short description is already in the PE-BPMD xref:pe-bpmd/introduction.adoc#tee[introductory page]. But a lengthy overview, which doesn't go too much into implementation details, exists already, and I am sure that I cannot create a better version here. I was the main author of Chapter 3 of _D2.1 - Technology Survey and Analysis_ for the link:https://cros.ec.europa.eu/joconde[JOCONDE project]. My goal with that text was exactly to not go too much into technical details, but still cover many topics. There is also a lecture where I talked about TEEs: https://courses.cs.ut.ee/2025/secprog/spring/Main/Lectures 9. Sandboxing. In the following text I assume that you read the referenced texts.
 
 The following sections explain the various attributes and pitfalls through examples.
 
@@ -12,30 +12,32 @@ You send the business secrets directly to the VM and receive the processing resu
 
 image::generated/pebpmd-tee-outsourcing-computation.png[]
 
+The coloring of the lane and the edges can be configured.
+Since the primary purpose of PE-BPMD is to communicate the impact of planned technologies to readers of the diagram, these changes should stand out visually, like with a git diff.
+But this is just my take, and you are free to omit the coloring attributes to have no coloring applied.
+
 [%header,format=csv]
 |===
 include::example$generated/pebpmd-tee-outsourcing-computation.csv[]
 |===
+
+This visibility table is the other output of the PE-BPMD analysis, meant to succinctly summarize to what level a given piece of data is protected.
+This visibility table has xref:pe-bpmd/introduction.adoc#vt[all categories] present.
+The later sections explain why the `A` and `P` entries are created (the `V`, `H` and `{nbsp}` entries are not TEE specific).
+
+But as you can see, the request and response data is only directly visible to the end user (and the TEE which itself is not listed in the visibility table). Other pools either need to do extra work to access the data (`P`) or realistically don't have access to the plaintext (`H` and `{nbsp}`).
 
 [,bpmd]
 ----
 include::example$pebpmd-tee-outsourcing-computation.bpmd[]
 ----
 
-`tee-lane`:: This example uses the _lane_ variant of the TEE extension.
+`(tee-lane @lane-id)`:: This example uses the _lane_ variant of the TEE extension.
 This means that all of the tasks within this lane are part of the TEE and thus protected.
 The physical operator of the TEE instance is clearly designated by the enclosing pool.
 +
 You can also use the _pool_ or _tasks_ variant, as shown in later examples. In this case, modeling the TEE as a lane makes the most sense, since we want to explicitly see what is happening inside of the TEE. What is happening inside of the TEE is in a way the "meat" of the process. In other situations it is less relevant, and there are more non-TEE things happening which are more important, in which case a _tasks_ variant makes more sense. Additionally, with the _lane_ variant we
-`tee-external-root-access`:: This attribute must always be present and either takes a `@pool-id` or the fixed string `blocked` when there is no root user.
-It says whether someone can use `ssh` to become a root user on the target machine (or something conceptually similar).
-That user then has access to all files which the TEE sees.
-The external root access is primarily meant to cover e.g. an administrator which manages the confidential VM in a Kubernetes cluster
-Such an administrator (very likely) has root access to that machine and in principle can access all the data.
-+
-That said, this doesn't cover the situation where someone can `ssh` into the machine with a less privileged user an access only a subset of data.
-In that case this data is usually actually meant to be accessed by that user, so the data transport should be modelled explicitly within the diagram.
-`tee-in-protect` and `tee-in-unprotect`:: Both can appear multiple times.
+`(tee-in-protect @node-id @pool-id|no-rv)` and `(tee-in-unprotect @node-id)`:: Both can appear multiple times.
 These are the starts and ends of the incoming protection channels.
 `tee-in-protect @node-id @rv-creator` designates that data is protected at `@node-id`, where `@node-id` shall not point to a node within the TEE.
 `@rv-creator` (or alternatively the fixed string `no-rv`) references the pool which created the reference value.
@@ -44,12 +46,135 @@ The data to protect is detected automatically by analysing which semantic data e
 For all the data that is protected via `tee-in-protect` nodes, their protection is removed when graph traversal reaches a `tee-in-unprotect` node.
 In the given example, `Request` is protected and then unprotected by the send and receive events, and it is visually explicitly modeled that it enters the send event and leaves the receive event.
 One can follow the flow of data with a finger across message flows and data associations.
-`tee-out-protect` and `tee-out-unprotect`:: Similar to the `in` variants, but this is the out direction. Hence for `tee-out-protect @node-id @pool-id`, the `@node-id` must reference a node within the TEE, and `for `tee-out-unprotect @node-id` the `@nodeid` must reference a node outside of the TEE.
-`tee-hardware-operators`:: TODO continue here.
+`(tee-out-protect @node-id)` and `(tee-out-unprotect @node-id @pool-id|no-rv)`:: Similar to the `in` variants, but this is the out direction. Hence for `tee-out-protect`, the `@node-id` must reference a node within the TEE, and `for `tee-out-unprotect @node-id` the `@nodeid` must reference a node outside of the TEE.
+`(tee-external-root-access @pool-id)`:: This attribute must always be present and either takes a `@pool-id` or the fixed string `blocked` when there is no root user.
+It says whether someone can use `ssh` to become a root user on the target machine (or something conceptually similar).
+That user then has access to all files which the TEE sees.
+More in <<root,this section>>.
+`(tee-hardware-operators on-premises|@pool-id-1 @pool-id-2 ...)`:: The TEE is running on some physical server (at least this is what I last learned about TEE technology). And this physical server is operated by someone, some pool. This could in principle also be some joint operation (or at least access), if you rent a physical rack space in a data center and visit it yourself physically from time to time. Anyway, implications of the hardware operator are detailed in <<ho,another section>>.
+`(tee-software-operators @pool-id-1 @pool-id-2)`:: Those are usually system administrators: Those who have virtual access to the hosting environment of the TEE. Could be the administrator who accesses the remote VM via `ssh` to start, restart, stop, etc., the VM, or the one who runs the Kubernetes commands to do the same. Explained in more detail <<so,here>>.
 
-
+TODO
+* Mention that only `tee-pool` appears in the visibility table (is that so, actually?).
 
 [#rv]
 == Importance of the Reference Value
 
+A user which _sends data to a service within a TEE by performing remote attestation, deriving a session key during that process, and encrypting the data with the session key or a further data encryption key that is in one way or another securely connected with aforementioned session key_ (further this is abbreviated as just _sending data to the TEE_ as the full sentence is quite a mouthful) can use the mechanisms of remote attestation to verify that the service within the TEE is trustworthy.
+TEEs provide some means of hashing the software which they run (the specifics are different for every TEE technology, but the purpose is the same).
+A user could calculate the hash of and audit the software which they expect to run in the TEE (this is further referred to as _deriving the reference values_), and then compare their version of the hash against what they are presented with during remote attestation.
+In practice, this task of deriving the reference values is very involved and requires profound competences in the fields of cybersecurity and related fields.
+However, most users usually have competences in other areas (how about you, or your neighbour, or your doctor?) and hence cannot perform this task.
+So auditing the software and calculating the hash is in the best case outsourced to some trusted third party, or just omitted in the worst case.
+All of these variants can be modelled with the PE-BPMD extension.
+
+=== User-Generated Reference Values
+
+.This image is the same for all subsequent reference value examples, hence it is not repeated.
+image::generated/pebpmd-tee-rv-client.png[]
+
+[%header,format=csv]
+|===
+include::example$generated/pebpmd-tee-rv-client.csv[]
+|===
+
+[,bpmd]
+----
+include::example$pebpmd-tee-rv-client.bpmd[]
+----
+<1> `@user` says that the user themselves calculated the reference values. This is the only value that is changed in the subsequent examples.
+
+If the client has the required competence to undertake this process, then this is _in general_ the most secure way to go. This does not exclude that the user could upload their calculated reference value to a public data store, where other users can crosscheck it, which could further improve the security, depending on the context.
+
+However, users usually have competences in areas other than cybersecurity and white hacking, hence this is likely not what you will use in your modeling.
+
+=== Trusted Third Party
+
+[%header,format=csv]
+|===
+include::example$generated/pebpmd-tee-rv-ttp.csv[]
+|===
+
+[,bpmd]
+----
+include::example$pebpmd-tee-rv-ttp.bpmd[lines=27]
+----
+<1> `@tpa` refers to an organization which is neither a software operator nor a hardware operator of the TEE.
+
+The visibility table is the same as for the _User-Generated Reference Value_ case.
+This is in a way misleading, as this leaves out the threat that e.g. an attacker could bribe the trusted third party to report a wrong reference value to the end user that performs remote attestation.
+Obviously this would make the trusted third party an _untrusted_ third party if the bribe would be uncovered, and thus might be considered unplausible, but having the potential threat visible in a table would at least present the possibility to explicitly discuss and exclude this threat (afterall, this is meant as a communication tool).
+
+This could be solved by a hypothetical _collusion table_ which would say, for each piece of data, whether something could be accessed if two or more pools would work together.
+This is not present and not currently in the pipeline, but I might come around some day implementing it if people like the PE-BPMD stuff.
+
+=== Software Operator
+
+[%header,format=csv]
+|===
+include::example$generated/pebpmd-tee-rv-so.csv[]
+|===
+
+[,bpmd]
+----
+include::example$pebpmd-tee-rv-so.bpmd[lines=27]
+----
+<1> `@other-software-operator` refers to a pool which is a software operator for the given TEE.
+
+The visibility table now displays an `A` for the other software operator.
+This is the case because they could in principle put malicious software into the TEE and use _that_ as the basis for the reverence value calculation. I.e. they would tell the end user to trust the malicious software. Since they are the software operator for the TEE, they can just forward network requests of the remote user under attack to the malicious TEE software, which the user will then happily communicate with (afterall, they use the reference value of that malicious software within the TEE).
+
+You might have an urge to comment that this can easily be detected by having audit logs for all kinds of actions, and other great protections.
+If you implement those protections to prevent, or at least uncover, this attack (especially thanks to the table reminding you that there is a problem), then that is good!
+You can communicate this with the table: "We see an `A` here, and to protect against this, we do this and that, which is, for the protection level we target, a sufficient countermeasure."
+
+=== Hardware Operator
+
+[%header,format=csv]
+|===
+include::example$generated/pebpmd-tee-rv-ho.csv[]
+|===
+
+[,bpmd]
+----
+include::example$pebpmd-tee-rv-ho.bpmd[lines=27]
+----
+<1> `@csp` refers to a pool which is a hardware operator for the given TEE.
+
+This elevates the former `P` to an `A`, with the same resoning as for the previous software operator example.
+The hardware operator likely controls the network traffic and could just route the user traffic to another machine with the malicious software in a TEE, or likely do many other clever things.
+And again, for the context you operate in, you can then communicate your planned countermeasures.
+
+=== No Reference Value
+
+[%header,format=csv]
+|===
+include::example$generated/pebpmd-tee-rv-none.csv[]
+|===
+
+[,bpmd]
+----
+include::example$pebpmd-tee-rv-none.bpmd[lines=27]
+----
+<1> `no-rv` says that the user ignores the hashes received from the TEE. It blindly trusts that it talks to the correct software.
+
+This gives all of the hardware operators and software operators the chance to mount an attack.
+
+[#root]
+== External Root Access
+
+The external root access is primarily meant to cover e.g. an administrator which manages the confidential VM in a Kubernetes cluster
+Such an administrator (very likely) has root access to that machine and in principle can access all the data.
+ +
+That said, this doesn't cover the situation where someone can `ssh` into the machine with a less privileged user and access only a subset of data.
+In that case this data is usually actually meant to be accessed by that user, so the data transport should be modelled explicitly within the diagram.
+
+Mention a case where this goes recursively. The TEE has `A` to another TEE due to root access? Then the user here gets access to that one as well!
+
 TODO
+
+[#ho]
+== Hardware Operators
+
+[#so]
+== Software Operators
