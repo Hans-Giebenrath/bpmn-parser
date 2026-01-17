@@ -58,10 +58,11 @@ pub fn assign_xy_ilp(graph: &mut Graph) {
             min_y_value = lane_y + lane_height;
         }
         assert!(min_y_value >= pool_y);
-        graph.pools[pool_idx].height = if min_y_value == pool_y {
-            graph.config.height_of_empty_pool
+        if min_y_value == pool_y {
+            min_y_value += graph.config.height_of_empty_pool;
+            graph.pools[pool_idx].height = graph.config.height_of_empty_pool;
         } else {
-            min_y_value - pool_y
+            graph.pools[pool_idx].height = min_y_value - pool_y;
         };
         min_y_value += graph.config.vertical_space_between_pools;
     }

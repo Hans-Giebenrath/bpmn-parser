@@ -67,7 +67,7 @@ define_config!(
 
     /// For empty lanes so that they don't collapse to a vertical line.
     height_of_empty_lane: usize = 40,
-    height_of_empty_pool: usize = 40,
+    height_of_empty_pool: usize = 100,
     dummy_node_y_padding: usize = 20,
     regular_node_y_padding: usize = 30,
     /// Spanning only zero or one layer.
