@@ -160,6 +160,39 @@ include::example$pebpmd-tee-rv-none.bpmd[lines=27]
 
 This gives all of the hardware operators and software operators the chance to mount an attack.
 
+=== Wrong Analysis Table With Unrealistic Protection
+
+The reference value analysis is performed directly on the node where the protection is applied.
+Let's look at a slight modification of the previous examples which results in a wrong visibility table to understand what that means:
+
+image::generated/pebpmd-tee-rv-wrong.png[]
+
+[,bpmd]
+----
+include::example$pebpmd-tee-rv-wrong.bpmd[]
+----
+
+We see that after encrypting the request for the TEE, we encrypt the encrypted request again via a secure channel.
+However, the secure channel is modelled in a way that it does not end in the TEE, i.e. the TEE cannot decrypt the request (due to the additional protection layer).
+Based only on this model we must assume that the Cloud Service Provider will also be presented with this additional protection layer and should have `AH` (or `HA`, order doesn't matter).
+However, in the following table we see that it just says `A`:
+
+[%header,format=csv]
+|===
+include::example$generated/pebpmd-tee-rv-wrong.csv[]
+|===
+
+The reason is that the analysis around the reference value _only_ looks at the current protections at the node where data was protected for the TEE.
+The reason is that the ultimate goal is that PE-BPMD supports a modelling approach where the whole business process is modelled in smaller sub diagrams.
+This could then result in the situation that the encryption happens in one diagram, and the decryption within the TEE in another diagram.
+That second diagram however would not have the `(tee-in-protect @node @crucial-piece-of-info)` statement present, since this is not part of this diagram.
+Hence in a split-diagram situation, an analysis that would look at the full way from `tee-in-protect` to `tee-in-unprotect` would not work at all.
+Therefor, we just look at the `tee-in-protect` side.
+The assumption is, that a practical process _will not add further protection_ in order to prevent the TEE from accessing data that it was precisely encrypted for that TEE.
+I can imagine that someone could come up with a use case for that (some private anonymised IDs maybe, if deterministic encryption is used), but this seems like a situation where PE-BPMD is too high-level anyway.
+Anyway, in other words, the assumption is that if something is encrypted for a TEE, then it will reach the TEE through the controlled perimeter of the hardware and software operator in the given form as it was present when TEE encryption was applied.
+If this doesn't work for you, and you think it should work with PE-BPMD, then let me know.
+
 [#root]
 == External Root Access
 

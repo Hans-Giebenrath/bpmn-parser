@@ -1,0 +1,41 @@
+= Remote User
+
+# Start
+- Encrypt for TEE
+- Add additional encryption layer
+. Send Request
+
+= Cloud Service Provider
+
+# Receive Request
+- Process
+. Done
+
+OD Request ->encrypt-for-tee
+ & Request [Prot: TEE] <-encrypt-for-tee ->add-additional
+ & Request [Prot: TEE & SC] <-add-additional ->user-send
+ & Request [Prot: TEE & SC] <-csp-receive ->csp-process
+
+MF <-user-send ->csp-receive
+
+[pe-bpmn
+  // For conciseness, the TEE is represented by just that one activity.
+  (tee-tasks @process)
+
+  (tee-in-protect @user-encrypt-for-tee no-rv)
+
+  // Additional access characteristics.
+  (tee-external-root-access blocked)
+  (tee-hardware-operators on-premises)
+  (tee-software-operators @user @csp)
+
+  // Generic attributes
+  (stroke-color #a9d31e)
+  (fill-color #eef7d0)
+]
+
+[pe-bpmn
+  (secure-channel @add-additional post-received)
+  (stroke-color #1d3cd4)
+  (fill-color #a2b0f2)
+]
