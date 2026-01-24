@@ -18,7 +18,7 @@ OD Cat Image ->send
 MF <-send ->receive
 
 
-[pe-bpmn
+[pe-bpmd
   (secure-channel @send @receive @data) // <1>
 
   (stroke-color #1ed3b8)

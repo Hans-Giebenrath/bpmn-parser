@@ -15,7 +15,7 @@
 OD Dummy Data <-create-dummy-data
 
 
-[pe-bpmn
+[pe-bpmd
   (tee-pool @tee-recursive-root-access)
 
   (tee-external-root-access blocked)
@@ -27,7 +27,7 @@ OD Dummy Data <-create-dummy-data
   (fill-color #eef7d0)
 ]
 
-[pe-bpmn
+[pe-bpmd
   (tee-pool @tee-data-processor)
 
   (tee-external-root-access @tee-recursive-root-access)

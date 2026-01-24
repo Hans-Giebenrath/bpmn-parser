@@ -13,7 +13,7 @@ OD Data <-receive
 
 MF <-send ->receive
 
-[pe-bpmn
+[pe-bpmd
   (secure-channel @send post-received) // <1>
 
   (stroke-color #1ed3b8)

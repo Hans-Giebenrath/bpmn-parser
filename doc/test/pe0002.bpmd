@@ -40,7 +40,7 @@ MF <-cvm-store ->storage-receive
 MF <-storage-return ->cvm-retrieve
 MF <-cvm-return-to-happy-human ->human-receive-data
 
-[pe-bpmn
+[pe-bpmd
   (tee-pool @cvm)
   (tee-external-root-access blocked)
   (tee-in-protect @human-upload @human)
@@ -53,7 +53,7 @@ MF <-cvm-return-to-happy-human ->human-receive-data
   (fill-color #eef7d0)
 ]
 
-[pe-bpmn
+[pe-bpmd
   (secure-channel @cvm-encrypt @cvm-decrypt)
   (stroke-color #77a)
 ]

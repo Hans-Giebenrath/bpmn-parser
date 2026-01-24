@@ -18,7 +18,7 @@ MF <-user-send ->csp-receive
 
 = Some Other Software Operator // Primarily for showing what changes in the visibility table
 
-[pe-bpmn
+[pe-bpmd
   // For conciseness, the TEE is represented by just that one activity.
   (tee-tasks @process)
 

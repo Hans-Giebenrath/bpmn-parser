@@ -306,7 +306,7 @@ fn analyse_secure_channel(
         (None, None) => {
             if secure_channel.permitted_ids.is_empty() {
                 return Err(vec![(
-                    "You need to define IDs when you use pre-sent and post-received simultaneously to identify data which should be marked as protected (or omit the `[pe-bpmn ...]` statement if there is nothing to protect). Example: `(secure-channel pre-sent post-received @data-obj1 @data-obj2)`"
+                    "You need to define IDs when you use pre-sent and post-received simultaneously to identify data which should be marked as protected (or omit the `[pe-bpmd ...]` statement if there is nothing to protect). Example: `(secure-channel pre-sent post-received @data-obj1 @data-obj2)`"
                         .to_string(),
                     secure_channel.tc,
 
@@ -434,7 +434,7 @@ fn compute_accessible_data(graph: &Graph, analysis_state: &mut State) -> Result<
                     // that there is a TEE which could conditionally execute one MPC algorithm or
                     // another algorithm. But I believe this is a headache to implement, so just
                     // forbid it for the moment. Maybe no-one will ever ask.
-                    Ok(ProtectionGraphCmp::Disjoint) => todo!("Write a good error message, pe-bpmns covering the same node shall not be disjoint"),
+                    Ok(ProtectionGraphCmp::Disjoint) => todo!("Write a good error message, pe-bpmds covering the same node shall not be disjoint"),
                 }
             });
 
@@ -908,7 +908,7 @@ fn check_protection_paths(
         // This will likely run multiple times for `ends` if the function is run multiple times. But
         // overall this is in the range of O(3 x 3) per protection I'd say (which is O(1) but you
         // get the point).
-        // TODO is this check present in the pe-bpmn parser? Hasn't been the last time.
+        // TODO is this check present in the pe-bpmd parser? Hasn't been the last time.
         assert!(!n!(node_id).is_data());
         analysis_state.set_nondata_node_protection(node_id, protection);
     }

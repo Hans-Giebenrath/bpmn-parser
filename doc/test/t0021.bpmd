@@ -56,7 +56,7 @@ OD Result 2 <-process ->sp-send-c2
  & Result 2 [Protected] <-c2-receive ->c2-decrypt
  & Result 2 <-c2-decrypt
 
-[pe-bpmn
+[pe-bpmd
   (tee-tasks @process-data)
   (tee-in-protect @c1-encrypt no-rv)
   (tee-in-protect @c2-encrypt no-rv)

@@ -397,7 +397,7 @@ impl Parser {
             for (node_id, tc) in &all_node_ids {
                 if let Some(old_duplicate_tc) = set.remove(node_id) {
                     return Err(vec![(
-                        "Each ID may only be used once within the entire [pe-bpmn] block, but this one has been used twice".to_string(),
+                        "Each ID may only be used once within the entire [pe-bpmd] block, but this one has been used twice".to_string(),
                         *tc,
 
                     ), (
@@ -748,7 +748,7 @@ impl Parser {
 // & <-task2 ->forward2
 // & <-receive3 ->task3
 //
-//[pe-bpmn (secure-channel @forward1 @receive3)]
+//[pe-bpmd (secure-channel @forward1 @receive3)]
 //    "#;
 //
 //        let graph = parse(input.to_string(), &mut Vec::new())?;
@@ -862,7 +862,7 @@ impl Parser {
 //& <-task2 ->forward2
 //& <-receive3 ->task3
 //
-//[pe-bpmn (secure-channel @forward1 @receive3 @data-element1)]
+//[pe-bpmd (secure-channel @forward1 @receive3 @data-element1)]
 //    "#;
 //
 //        let graph = parse(input.to_string(), &mut Vec::new())?;

@@ -34,12 +34,12 @@ MF <-tee-protect ->receiving
 MF <-sending ->tee-unprotect
 MF <-sending ->steal
 
-[pe-bpmn
+[pe-bpmd
   (secure-channel @sc-sender @sc-receiver)
   (stroke-color #77a)
 ]
 
-[pe-bpmn
+[pe-bpmd
   (tee-tasks @echo)
   (tee-in-protect @tee-protect no-rv)
   (tee-out-unprotect @tee-unprotect no-rv)

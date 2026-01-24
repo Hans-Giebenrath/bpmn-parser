@@ -83,7 +83,7 @@ impl ProtectionPaths {
         let mut some_smaller = false;
         let mut some_larger = false;
         let mut some_equal = false;
-        let error_message = "This pe-bpmn block has both subset and superset subgraphs of another pe-bpmn block. But they must be either nested properly or not intersecting at all.";
+        let error_message = "This pe-bpmd block has both subset and superset subgraphs of another pe-bpmd block. But they must be either nested properly or not intersecting at all.";
         for ours in &self.subgraphs {
             for theirs in &other.subgraphs {
                 if ours.eq(theirs) {
@@ -104,7 +104,7 @@ impl ProtectionPaths {
         } else if some_smaller {
             Ok(ProtectionGraphCmp::Sub)
         } else if some_equal {
-            Err("This pe-bpmn block has some equal subgraphs, but it is not clear which of them is overlapping. This ambiguous situation would result in an incorrect analysis and is thus forbidden.".to_string())
+            Err("This pe-bpmd block has some equal subgraphs, but it is not clear which of them is overlapping. This ambiguous situation would result in an incorrect analysis and is thus forbidden.".to_string())
         } else {
             Ok(ProtectionGraphCmp::Disjoint)
         }

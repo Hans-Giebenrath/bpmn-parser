@@ -56,7 +56,7 @@ OD Result 1 <-process ->sp-send-c1
 OD Result 2 <-process ->sp-send-c2
  & Result 2 <-c2-receive2
 
-[pe-bpmn
+[pe-bpmd
   (tee-pool @sp)
   (tee-in-protect @tee-in-protect @admin)
   (tee-in-protect @send2 no-rv)

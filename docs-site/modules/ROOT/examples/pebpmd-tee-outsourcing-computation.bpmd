@@ -24,7 +24,7 @@ OD Response <-cvm-create-response ->cvm-send
 MF <-user-send ->cvm-receive
 MF <-cvm-send ->user-receive
 
-[pe-bpmn
+[pe-bpmd
   // TEE type (lane, pool or tasks)
   (tee-lane @cvm)
 

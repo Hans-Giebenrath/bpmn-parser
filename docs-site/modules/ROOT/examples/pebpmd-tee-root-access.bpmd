@@ -16,7 +16,7 @@ MF <-user-send ->csp-receive
 
 = Someone With Root Access
 
-[pe-bpmn
+[pe-bpmd
   (tee-tasks @process)
 
   (tee-in-protect @user-send @user)

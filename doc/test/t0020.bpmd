@@ -28,7 +28,7 @@ OD Input <-incoming-data ->tee-protect-outer
 MF <-tee-protect-inner ->receiving
 MF <-sending ->tee-unprotect-inner
 
-[pe-bpmn
+[pe-bpmd
   (tee-tasks @process)
   (tee-in-protect @tee-protect-outer @better-client)
   (tee-external-root-access blocked)
@@ -36,7 +36,7 @@ MF <-sending ->tee-unprotect-inner
   (stroke-color #7a7)
 ]
 
-[pe-bpmn
+[pe-bpmd
   (tee-tasks @echo)
   (tee-in-protect @tee-protect-inner no-rv)
   (tee-out-unprotect @tee-unprotect-inner no-rv)

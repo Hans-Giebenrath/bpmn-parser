@@ -154,7 +154,7 @@ fn assemble_tee_or_mpc(
         PeBpmnType::Mpc(_) => "mpc",
         _ => {
             return Err(vec![(
-                "Invalid pe-bpmn type for tee or mpc".to_string(),
+                "Invalid pe-bpmd type for tee or mpc".to_string(),
                 tc,
             )]);
         }
@@ -412,7 +412,7 @@ fn assemble_tee_or_mpc(
             meta: pe_bpmn_meta,
         })),
         _ => Err(vec![(
-            "Invalid pe-bpmn type for tee or mpc".to_string(),
+            "Invalid pe-bpmd type for tee or mpc".to_string(),
             tc,
         )]),
     }
@@ -462,7 +462,7 @@ pub fn to_pe_bpmn(mut tokens: Tokens, _backup_tc: TokenCoordinate) -> AResult {
                 PeBpmnType::Mpc(Mpc::default()),
                 PeBpmnSubType::Tasks(Vec::new()),
             ),
-            _ => Err(vec![("Unknown pe-bpmn extension type".to_string(), tc)]),
+            _ => Err(vec![("Unknown pe-bpmd extension type".to_string(), tc)]),
         }
     } else if let Some((tc, Token::Text(text))) = first_token {
         Err(vec![(
@@ -509,7 +509,7 @@ impl<'a> Lexer<'a> {
                     let mut tc = self.current_coord();
                     let (tc_end, extension_type) = self.read_label()?;
                     // Check extension type
-                    if extension_type == "pe-bpmn" {
+                    if extension_type == "pe-bpmd" {
                         self.sas.next_statement(tc, self.position, to_pe_bpmn)?;
                         tc = TokenCoordinate {
                             start: tc.start,
@@ -517,9 +517,9 @@ impl<'a> Lexer<'a> {
                             source_file_idx: tc.source_file_idx,
                         };
                         self.run_pe_bpmn(tc)?;
-                        // Empty [pe-bpmn]
+                        // Empty [pe-bpmd]
                         if self.sas.fragments.is_empty() {
-                            return Err(vec![("Empty extension block. Make sure you complete the full \"[pe-bpmn...]\" statement".to_string(), tc, )]);
+                            return Err(vec![("Empty extension block. Make sure you complete the full \"[pe-bpmd...]\" statement".to_string(), tc, )]);
                         }
                         break;
                     }

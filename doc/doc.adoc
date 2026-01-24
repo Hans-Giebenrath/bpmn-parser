@@ -169,8 +169,8 @@ data-output <-p2.2
 [id-map pool-1#(data-output:last) @C] // <1>
 [color paths #red p2.2-input-data rec p end, #blue start p] // <2>
 [color nodes #67a2f3 rec p2.2-] // <2>
-[pe-bpmn PrivateKey in A, SharedSymmKey in B] // <3> <1>
+[pe-bpmd PrivateKey in A, SharedSymmKey in B] // <3> <1>
 ----
 <1> Some fancy ideas for ID mapping, if the input file is missing some crucial IDs. Could be XPath like. Not sure if this is necessary/useful.
 <2> One could express coloring paths between nodes, or nodes itself.
-<3> This could also be used for a plugin system where `pe-bpmn` (a plugin for integrating with PLEAK) would be registered on the CLI when running the tool. This plugin could arbitrarily modify the graph.
+<3> This could also be used for a plugin system where `pe-bpmd` (a plugin for integrating with PLEAK) would be registered on the CLI when running the tool. This plugin could arbitrarily modify the graph.

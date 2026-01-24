@@ -21,7 +21,7 @@ OD Data ->protect
 
 MF <-send ->receive
 
-[pe-bpmn
+[pe-bpmd
   (tee-tasks @tee)
   (tee-external-root-access blocked)
   (tee-in-protect @protect @p1)

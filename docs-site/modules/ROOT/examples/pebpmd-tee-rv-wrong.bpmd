@@ -18,7 +18,7 @@ OD Request ->encrypt-for-tee
 
 MF <-user-send ->csp-receive
 
-[pe-bpmn
+[pe-bpmd
   // For conciseness, the TEE is represented by just that one activity.
   (tee-tasks @process)
 
@@ -34,7 +34,7 @@ MF <-user-send ->csp-receive
   (fill-color #eef7d0)
 ]
 
-[pe-bpmn
+[pe-bpmd
   (secure-channel @add-additional post-received) // <1>
   (stroke-color #1d3cd4)
   (fill-color #a2b0f2)

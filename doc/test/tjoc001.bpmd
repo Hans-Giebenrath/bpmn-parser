@@ -61,7 +61,7 @@ MF Request for Protected Output Data <-p5.1 ->tee-wait-download-req
 MF ->p5.1 <-p5.2
 
 
-[pe-bpmn
+[pe-bpmd
   (tee-tasks @p3.5.1 @p4.1)
   (tee-external-root-access blocked)
   (tee-in-protect @p3.3 @input-party)
@@ -71,7 +71,7 @@ MF ->p5.1 <-p5.2
   (fill-color #eef7d0)
 ]
 
-[pe-bpmn
+[pe-bpmd
   (mpc-tasks @p3.5.1 @p4.1)
   (mpc-external-root-access blocked)
   (mpc-in-protect @p3.3 @input-party)
