@@ -4,11 +4,10 @@ Create BPMN diagrams from text files. Similar to Mermaid/PlantUML/... but for BP
 
 *This project is in an early development stage and is missing features which are required for serious usage.*
 
-BPMD is a tool which takes as input a text file in the BPMD format (`.bpmd`) and outputs a layouted
-BPMN. The goal is to enable the author of a diagram to focus on the semantics of a diagram. However,
-when creating a diagram by moving boxes and arrows, the author needs to focus at the same time on
-the presentation. Simply put, this tool determines the `x`, `y`, `width` and `height` values of all
-the elements in your diagram, you just describe your process.
+BPMD is a tool which takes as input a text file in the BPMD format (`.bpmd`) and outputs a layouted BPMN (`.xml`).
+The goal is to enable the author of a diagram to focus on the semantics of a diagram.
+However, when creating a diagram by moving boxes and arrows, the author needs to focus at the same time on the presentation.
+Simply put, this tool determines the `x`, `y`, `width` and `height` values of all the elements in your diagram, you just describe your process.
 
 The *hope* is that this allows for:
 
@@ -21,20 +20,16 @@ The *hope* is that this allows for:
 * An overall pleasant diagram creation experience for fans of Mermaid/PlantUML/...
 * Simple enough language that can be mastered also by non-programmers.
 
-```
+```bpmd
 = This is a Pool
 == This is a Lane
 
 # Start Event
 X I am an exclusive Gateway ->one-branch"Let's Go here" ->the-other-branch"No, here!"
 
-G <-one-branch
-- Wonderful Task
-G ->we-are-done
+- Wonderful Task <-one-branch ->we-are-done
 
-G <-the-other-branch
-- Inspiring Task
-G ->we-are-done
+- Inspiring Task <-the-other-branch ->we-are-done
 
 X <-we-are-done
 . Have Some Rest
@@ -59,8 +54,8 @@ Layout (probably not a good first issue):
   now the gateway nodes are balanced between outgoing edges. But sometimes one outgoing edge is the
   *happy path* and this should go straight out. Non-happy path edges lead to tasks to handle
   exceptional situations, so they should branch out off sight (harshly spoken).
-* Marking a pool as black box
-* Cycles
+* Marking a pool as black box (or hiding them altogether)
+* Handling sequence flow cycles
 * Nested states
 * Separate Interrupt States
 * Make data nodes in half-layers more integrated (force message flow endpoint nodes into other
@@ -69,15 +64,17 @@ Layout (probably not a good first issue):
   for that)
 * Layout-Instructions (`@a above @b` etc)
 * Labels could be positioned a tidbit more intelligently to not cross outgoing/incoming edges
-  (probably an easy issue)
+  (probably an easy issue). Currently no coordinates for labels are generated at all, they are
+  positioned automatically by the external `bpmn-to-image` tool.
 
 Non-Layout (good for contributors):
 
 * SVG Export (in addition to XML export)
 * SVG-Based Image Export (in addition to XML export)
-* Interactive SVG Export
+* Interactive SVG Export (hovering over a data object highlights the full data traversal path, etc)
 * LSP/treesitter/...
 * `import` statement (this is a bit tricky actually)
+* Parsing of config values from the `.bpmd` files
 * A collaborative online editor (ideally with WASM compiled BPMD tool, using `microlp`).
 
 ## Goals
@@ -96,17 +93,54 @@ Non-Layout (good for contributors):
   So I think that, unless someone points me to a fun algorithm to make it work for non-trivial cases
   (multiple nodes, across lanes and pools), grouping will not happen.
 
+## Project State
+
+The BPMD tool is in an alpha stage.
+Lot's of stuff is working already to make some useful diagrams, but many must-have features [are missing](#missing-pieces) or are a little bit broken.
+
+At the moment, this is my personal hobby project (but refer to the [history](#project-history) section for the more vivid project beginnings).
+I enjoy working on the project since it seems like a similar tool does not exist, yet (i.e. I can make an actual impact with this tool, to the best of my knowledge is not just another toaster), and since it is nostalgic for me (applying the Sugiyama framework was my bachelor's thesis, good old university days).
+But I do have other things to work on, especially in the warmer months, and this will very likely result in a slower pace.
+That said, there are no guarantees for any non-implemented features to ever land, nor for any present bugs to ever be fixed.
+It is purely my hobby at this moment, and I try to not get burned out on it as I really do like it.
+This means to sometimes take a break and read a book instead for a couple of days or weeks.
+
+## AI Usage Within This Project
+
+I can only speak for the code I wrote myself:
+This project is not vibe coded.
+For the layout algorithm, I scribbled tens (not yet hundreds) of papers with examples and edge cases to work out algorithms.
+Really, a lot of thinking was done for this project by all contributors.
+
+That said, I use ChatGPT Plus from time to time (the bog standard web interface). Some examples of usages:
+* Helping with Rust iterator puzzles
+* Give ideas to simplify unreadable functions
+* Create me an ILP for the global edge crossing minimization (I ended up reading the existing literature instead)
+
 ## DSL Syntax Overview
 
 The syntax is explained in [doc/doc.html](doc/doc.html).
 
 ## Dependencies
 
-* TODO: Write about the cbc solver dependency. Also try to replace this with a pure Rust solver at some point.
-* `bpmn-to-image`: The compiler within this repository only creates the `.xml` representation. If you want a `.png` file, you can use `bpmn-to-image` for that. In the `./doc` directory, run `npm install` and look into the `doc/build.sh` script to see how to use it.
+* [`bpmn-to-image`](https://github.com/bpmn-io/bpmn-to-image): The compiler within this repository only creates the `.xml` representation. If you want a `.png` file, you can use `bpmn-to-image` for that (or import the `.xml` files into your BPMN editing tool of choice). In the `./doc` directory, run `npm install` and look into the `doc/build.sh` script to see how to use it.
 
 ## Usage
 
 Use `cargo run --release -- --help` to see how to use the tool.
 
 Basic usage: `cargo run --release -- -i file.bpmd -o file.bpmn`
+
+## Project History
+
+I wrote my bachelor's thesis back in 2015/2016 on the topic of implementing (and enhancing) a layout algorithm for Matlab/Simulink diagrams.
+There I learned about and applied the Sugiyama framework for hierarchical graph drawing.
+Fast forward many years, and at my then-$dayjob at Cybernetica we were creating BPMN diagrams.
+That said, I did not because whenever I tried to create one, I was reminded of my bachelor's thesis and thinking that this must be layoutable by a computer, given some custom DSL similar to how Plantuml/Mermaid/... are working.
+Finally, the University of Tartu looked for real world projects for students, and I supplied this project idea.
+Four students came (you will see them in the beginnings of the git history) and laid the groundwork for the project.
+After the university project ended I started to tinker on the BPMD tool as my hobby project whenever I have had free time.
+Additionally, one student continued on the project and wrote his [bachelor's thesis](https://dspace.ut.ee/items/15c8d161-f7b3-469f-95a8-6ffff2db8a0d) on the topic of layouting data objects, as I was out of ideas how to handle their placement in _half-layers_.
+Another student continued on the project as a summer intern within Cybernetica to implement the groundwork for the PE-BPMD analysis.
+
+After this great kickstart help by Cybernetica, I currently continue to tinker on the BPMD tool during my hobby time, and right now I still enjoy doing so.

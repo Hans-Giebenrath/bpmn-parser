@@ -4,7 +4,7 @@ I welcome you on this page about modeling TEEs within PE-BPMD! At this location 
 
 The following sections explain the various attributes and pitfalls through examples.
 
-== Outsourcing Computations to the Cloud
+== An Example
 
 This is a typical use case of confidential computing. You want to process sensitive data in the cloud.
 Hence you rent a confidential VM (e.g. using Intel TDX or AMD SEV-SNP), and then use that to process you business secrets.
@@ -36,7 +36,9 @@ include::example$pebpmd-tee-outsourcing-computation.bpmd[]
 This means that all of the tasks within this lane are part of the TEE and thus protected.
 The physical operator of the TEE instance is clearly designated by the enclosing pool.
 +
-You can also use the _pool_ or _tasks_ variant, as shown in later examples. In this case, modeling the TEE as a lane makes the most sense, since we want to explicitly see what is happening inside of the TEE. What is happening inside of the TEE is in a way the "meat" of the process. In other situations it is less relevant, and there are more non-TEE things happening which are more important, in which case a _tasks_ variant makes more sense. Additionally, with the _lane_ variant we
+You can also use the _pool_ (`(tee-pool @pool-id)`) or _tasks_ (`(tee-tasks @task-1 @task-2 ...)`) variant, as shown in later examples. In the example at hand, modeling the TEE as a lane makes the most sense, since we want to explicitly see what is happening inside of the TEE. What is happening inside of the TEE is in a way the "meat" of the process.
+If the internal workings of the TEE are less relevant in the larger business process, the _tasks_ variant makes more sense. +
+Note: Within the visibility table only names of pools are listed. A `tee-pool` will also be part of the visibility table, whereas the `tee-lane` and `tee-tasks` variants will not.
 `(tee-in-protect @node-id @pool-id|no-rv)` and `(tee-in-unprotect @node-id)`:: Both can appear multiple times.
 These are the starts and ends of the incoming protection channels.
 `tee-in-protect @node-id @rv-creator` designates that data is protected at `@node-id`, where `@node-id` shall not point to a node within the TEE.
@@ -51,11 +53,10 @@ One can follow the flow of data with a finger across message flows and data asso
 It says whether someone can use `ssh` to become a root user on the target machine (or something conceptually similar).
 That user then has access to all files which the TEE sees.
 More in <<root,this section>>.
-`(tee-hardware-operators on-premises|@pool-id-1 @pool-id-2 ...)`:: The TEE is running on some physical server (at least this is what I last learned about TEE technology). And this physical server is operated by someone, some pool. This could in principle also be some joint operation (or at least access), if you rent a physical rack space in a data center and visit it yourself physically from time to time.
-`(tee-software-operators @pool-id-1 @pool-id-2)`:: Those are usually system administrators: Those who have virtual access to the hosting environment of the TEE. Could be the administrator who accesses the remote VM via `ssh` to start, restart, stop, etc., the VM, or the one who runs the Kubernetes commands to do the same.
+`(tee-hardware-operators on-premises|@pool-id-1 @pool-id-2 ...)`:: The TEE is running on some physical server (at least this is what I last learned about TEE technology). And this physical server is operated by someone, some pool. This could in principle also be some joint operation (or at least access), if you rent a physical rack space in a data center and visit it yourself physically from time to time. For `tee-tasks` and `tee-lane` you can use the `on-premises` keyword to use the containing pool as the hardware operator. For `tee-pool` you must specify at least one ID.
+`(tee-software-operators @pool-id-1 @pool-id-2)`:: Those are usually system administrators: Those who have virtual access to the hosting environment of the TEE. Could be the administrator who accesses the remote VM via `ssh` to start, restart, stop, etc., the VM, or the one who runs the Kubernetes commands to do the same. +
+Someone who acts as a system administrator _within_ the TEE should be listed within the `tee-external-root-access` property.
 
-TODO
-* Mention that only `tee-pool` appears in the visibility table (is that so, actually?).
 
 [#rv]
 == Importance of the Reference Value
