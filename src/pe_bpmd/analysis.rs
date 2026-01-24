@@ -1,9 +1,9 @@
 use crate::lexer::TokenCoordinate;
-use crate::pe_bpmn::PoolOrProtection;
-use crate::pe_bpmn::parser::{
+use crate::pe_bpmd::PoolOrProtection;
+use crate::pe_bpmd::parser::{
     ComputationCommon, Mpc, PeBpmn, PeBpmnSubType, PeBpmnType, Protection, SecureChannel, Tee,
 };
-use crate::pe_bpmn::{ProtectionPaths, VisibilityTableInput};
+use crate::pe_bpmd::{ProtectionPaths, VisibilityTableInput};
 use crate::{
     common::graph::{EdgeId, NodeId, SdeId},
     lexer::PeBpmnProtection,
@@ -14,7 +14,7 @@ use crate::{
         graph::{Graph, LaneId, PoolId},
         node::NodeType,
     },
-    pe_bpmn::ProtectionGraphCmp,
+    pe_bpmd::ProtectionGraphCmp,
 };
 use itertools::Itertools;
 use proc_macros::{e, from, n, to};

@@ -8,7 +8,7 @@ mod layout;
 mod lexer;
 mod node_id_matcher;
 mod parser;
-mod pe_bpmn;
+mod pe_bpmd;
 mod pool_id_matcher;
 mod to_xml;
 use crate::lexer::TokenCoordinate;
@@ -165,10 +165,10 @@ pub fn pebpmn_analysis(
     timer: &mut Timer,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let analysis_result = timer
-        .time_it("PE-BPMD analyse", || pe_bpmn::analysis::analyse(graph))
+        .time_it("PE-BPMD analyse", || pe_bpmd::analysis::analyse(graph))
         .bpmd_format_err(bpmd_source_files)?;
     let visibility_data = timer.time_it("PE-BPMD generate_visibility_table", || {
-        pe_bpmn::visibility_table::generate_visibility_table(graph, &analysis_result)
+        pe_bpmd::visibility_table::generate_visibility_table(graph, &analysis_result)
     })?;
     std::fs::write(visibility_path, visibility_data)?;
     Ok(())

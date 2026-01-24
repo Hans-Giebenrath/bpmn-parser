@@ -1,6 +1,6 @@
-use crate::pe_bpmn::PoolOrProtection;
-use crate::pe_bpmn::VisibilityTableInput;
-use crate::pe_bpmn::parser::{ComputationCommon, Mpc, PeBpmnSubType, PeBpmnType, Tee};
+use crate::pe_bpmd::PoolOrProtection;
+use crate::pe_bpmd::VisibilityTableInput;
+use crate::pe_bpmd::parser::{ComputationCommon, Mpc, PeBpmnSubType, PeBpmnType, Tee};
 use itertools::chain;
 use std::collections::BTreeSet;
 use std::collections::HashSet;
@@ -9,7 +9,7 @@ use std::fmt::Display;
 use crate::{
     common::graph::{Graph, PoolId, SdeId},
     lexer::PeBpmnProtection,
-    pe_bpmn::parser::PeBpmn,
+    pe_bpmd::parser::PeBpmn,
 };
 use std::collections::HashMap;
 

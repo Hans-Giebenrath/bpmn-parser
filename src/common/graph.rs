@@ -8,7 +8,7 @@ use crate::common::node::{Node, NodeType};
 use crate::common::pool::Pool;
 use crate::lexer::{DataType, EventType, PeBpmnProtection, TokenCoordinate};
 use crate::parser::ParseError;
-use crate::pe_bpmn::parser::PeBpmn;
+use crate::pe_bpmd::parser::PeBpmn;
 use proc_macros::{from, n, to};
 use std::fmt::{self, Debug};
 use std::iter::from_fn;
