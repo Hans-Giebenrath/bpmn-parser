@@ -172,7 +172,7 @@ impl Parser {
                 Statement::Gateway(meta) => self.parse_gateway(meta)?,
                 Statement::MessageFlow(meta) => self.parse_message_flow(meta)?,
                 Statement::Data(meta) => self.parse_data(meta)?,
-                Statement::PeBpmn(pe_bpmn) => self.parse_pe_bpmn(pe_bpmn)?,
+                Statement::PeBpmn(pe_bpmd) => self.parse_pe_bpmd(pe_bpmd)?,
                 Statement::Layout(_) => {
                     eprintln!("Warning: layout instructions are currently ignored.")
                 }
@@ -387,7 +387,7 @@ impl Parser {
                 display_text: meta.node_meta.display_text,
                 tc: self.context.current_token_coordinate,
                 transported_data: vec![],
-                pe_bpmn_hides_protection_operations: false,
+                pe_bpmd_hides_protection_operations: false,
             },
             pool_and_lane,
             None,
@@ -519,7 +519,7 @@ impl Parser {
                 display_text: meta.node_meta.display_text,
                 tc: self.context.current_token_coordinate,
                 transported_data: vec![],
-                pe_bpmn_hides_protection_operations: false,
+                pe_bpmd_hides_protection_operations: false,
             },
             pool_and_lane,
             None,
@@ -551,7 +551,7 @@ impl Parser {
                 display_text: meta.node_meta.display_text,
                 tc: self.context.current_token_coordinate,
                 transported_data: vec![],
-                pe_bpmn_hides_protection_operations: false,
+                pe_bpmd_hides_protection_operations: false,
             },
             pool_and_lane,
             None,
@@ -759,7 +759,7 @@ impl Parser {
                 display_text: meta.node_meta.display_text,
                 tc: self.context.current_token_coordinate,
                 transported_data: vec![],
-                pe_bpmn_hides_protection_operations: false,
+                pe_bpmd_hides_protection_operations: false,
             },
             PoolAndLane {
                 pool: pool_id.unwrap(),

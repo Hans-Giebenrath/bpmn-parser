@@ -23,11 +23,11 @@ use std::iter::Extend;
 
 pub fn analyse(graph: &mut Graph) -> Result<VisibilityTableInput, ParseError> {
     let mut state = State::default();
-    let pebpmn_definitions = std::mem::take(&mut graph.pe_bpmn_definitions);
+    let pebpmn_definitions = std::mem::take(&mut graph.pe_bpmd_definitions);
     for pebpmn_definition in &pebpmn_definitions {
         analyse_single(pebpmn_definition, graph, &mut state)?;
     }
-    graph.pe_bpmn_definitions = pebpmn_definitions;
+    graph.pe_bpmd_definitions = pebpmn_definitions;
     apply_colors(graph, &state);
 
     compute_accessible_data(graph, &mut state)?;
@@ -80,9 +80,9 @@ struct State {
     protection_graph: HashMap<PeBpmnProtection, HashSet<GraphElement>>,
     // Like `protection_graph` but more fine-grained. Just contains edges to realise whether
     // different protections are either correctly nested or disjoint (if some protection path of
-    // pe_bpmn_protection_1 is strictly smaller than some protection path of pe_bpmn_protection_2,
-    // then no protection path of pe_bpmn_protection_2 shall be strictly smaller than some
-    // protection path of pe_bpmn_protection_1).
+    // pe_bpmd_protection_1 is strictly smaller than some protection path of pe_bpmd_protection_2,
+    // then no protection path of pe_bpmd_protection_2 shall be strictly smaller than some
+    // protection path of pe_bpmd_protection_1).
     protection_paths_graphs: HashMap<PeBpmnProtection, ProtectionPaths>,
     result: VisibilityTableInput,
 }
@@ -125,12 +125,12 @@ impl State {
 }
 
 fn analyse_single(
-    pe_bpmn: &PeBpmn,
+    pe_bpmd: &PeBpmn,
     graph: &mut Graph,
     state: &mut State,
 ) -> Result<(), ParseError> {
     let enforce_reach_end = true;
-    match &pe_bpmn.r#type {
+    match &pe_bpmd.r#type {
         PeBpmnType::SecureChannel(secure_channel) => {
             analyse_secure_channel(secure_channel, graph, state)?;
         }
@@ -159,11 +159,11 @@ fn analyse_single(
                 PeBpmnSubType::Tasks(tasks) => {
                     for (node_id, _) in tasks {
                         if let NodeType::RealNode {
-                            pe_bpmn_hides_protection_operations,
+                            pe_bpmd_hides_protection_operations,
                             ..
                         } = &mut graph.nodes[*node_id].node_type
                         {
-                            *pe_bpmn_hides_protection_operations = true;
+                            *pe_bpmd_hides_protection_operations = true;
                         }
                     }
                     parse_pebpmn_tasks(
@@ -202,11 +202,11 @@ fn analyse_single(
                 PeBpmnSubType::Tasks(tasks) => {
                     for (node_id, _) in tasks {
                         if let NodeType::RealNode {
-                            pe_bpmn_hides_protection_operations,
+                            pe_bpmd_hides_protection_operations,
                             ..
                         } = &mut graph.nodes[*node_id].node_type
                         {
-                            *pe_bpmn_hides_protection_operations = true;
+                            *pe_bpmd_hides_protection_operations = true;
                         }
                     }
                     parse_pebpmn_tasks(
@@ -362,7 +362,7 @@ fn compute_accessible_data(graph: &Graph, analysis_state: &mut State) -> Result<
         task_protections.clear();
 
         {
-            for pebpmn in &graph.pe_bpmn_definitions {
+            for pebpmn in &graph.pe_bpmd_definitions {
                 match &pebpmn.r#type {
                     PeBpmnType::Tee(Tee { common }) | PeBpmnType::Mpc(Mpc { common }) => {
                         match &common.pebpmn_type {
@@ -596,7 +596,7 @@ fn compute_accessible_data(graph: &Graph, analysis_state: &mut State) -> Result<
         }
     }
 
-    for pebpmn in &graph.pe_bpmn_definitions {
+    for pebpmn in &graph.pe_bpmd_definitions {
         let PeBpmnType::Tee(Tee { common }) = &pebpmn.r#type else {
             continue;
         };
@@ -1001,9 +1001,9 @@ fn check_that_protection_is_visually_applied(
 ) -> Result<(), ParseError> {
     assert!(
         matches!(&graph.nodes[node_id].node_type, NodeType::RealNode {
-        pe_bpmn_hides_protection_operations,
+        pe_bpmd_hides_protection_operations,
         ..
-    } if !pe_bpmn_hides_protection_operations),
+    } if !pe_bpmd_hides_protection_operations),
         "got node: {:?}\n{:?}",
         &graph.nodes[node_id],
         &graph
@@ -1165,7 +1165,7 @@ fn computation_filter(computation: &ComputationCommon) -> impl Fn(&SdeId) -> boo
 }
 
 fn apply_colors(graph: &mut Graph, state: &State) {
-    for definition in &graph.pe_bpmn_definitions {
+    for definition in &graph.pe_bpmd_definitions {
         let protection = definition.r#type.protection();
         for graph_element in state.protection_graph[&protection].iter().cloned() {
             match graph_element {

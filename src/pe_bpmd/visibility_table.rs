@@ -277,7 +277,7 @@ impl OnDemandVisibilityTableCell {
         let pool_or_protection = match pool_or_protection {
             PoolOrProtection::Pool(pool_id) => args
                 .graph
-                .pe_bpmn_definitions
+                .pe_bpmd_definitions
                 .iter()
                 .find(|pebpmn| is_pool_pebpmn(pebpmn, pool_id))
                 .map(|pebpmn| PoolOrProtection::Protection(pebpmn.r#type.protection()))
@@ -338,7 +338,7 @@ impl OnDemandVisibilityTableCell {
         if let PoolOrProtection::Pool(pool_id) = pool_or_protection {
             for pebpmn in args
                 .graph
-                .pe_bpmn_definitions
+                .pe_bpmd_definitions
                 .iter()
                 .map(|pebpmn| pebpmn.r#type.protection())
             {
@@ -356,7 +356,7 @@ impl OnDemandVisibilityTableCell {
 
         for pebpmn in args
             .graph
-            .pe_bpmn_definitions
+            .pe_bpmd_definitions
             .iter()
             .map(|pebpmn| pebpmn.r#type.protection())
         {

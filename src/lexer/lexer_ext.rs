@@ -89,7 +89,7 @@ fn assemble_secure_channel(mut tokens: Tokens, tc: TokenCoordinate) -> AResult {
         tc,
         ..Default::default()
     };
-    let mut pe_bpmn_meta = PeBpmnMeta {
+    let mut pe_bpmd_meta = PeBpmnMeta {
         stroke_color: None,
         fill_color: None,
     };
@@ -114,21 +114,21 @@ fn assemble_secure_channel(mut tokens: Tokens, tc: TokenCoordinate) -> AResult {
                     return Err(vec![("There is already a secure-channel defined".to_string(), it.0, )]);
                 }
                 "stroke-color" => {
-                    if pe_bpmn_meta.stroke_color.is_some() {
+                    if pe_bpmd_meta.stroke_color.is_some() {
                         return Err(vec![("There is already a stroke-color defined".to_string(),it.0, )]);
                     }
                     let nt = tokens.next();
                     let color = check_color_format(&it, nt)?;
-                    pe_bpmn_meta.stroke_color = Some(color);
+                    pe_bpmd_meta.stroke_color = Some(color);
                     check_end_block(tokens.next())?;
                 }
                 "fill-color" => {
-                    if pe_bpmn_meta.fill_color.is_some() {
+                    if pe_bpmd_meta.fill_color.is_some() {
                         return Err(vec![("There is already a fill-color defined".to_string(),it.0, )]);
                     }
                     let nt = tokens.next();
                     let color = check_color_format(&it, nt)?;
-                    pe_bpmn_meta.fill_color = Some(color);
+                    pe_bpmd_meta.fill_color = Some(color);
                     check_end_block(tokens.next())?;
                 }
                 _ => return Err(vec![("secure-channel does not allow this extension argument type. Allowed are stroke-color and fill-color.".to_string(),it.0, )]),
@@ -139,17 +139,17 @@ fn assemble_secure_channel(mut tokens: Tokens, tc: TokenCoordinate) -> AResult {
 
     Ok(Statement::PeBpmn(PeBpmn {
         r#type: PeBpmnType::SecureChannel(secure_channel),
-        meta: pe_bpmn_meta,
+        meta: pe_bpmd_meta,
     }))
 }
 
 fn assemble_tee_or_mpc(
     mut tokens: Tokens,
     mut tc: TokenCoordinate,
-    pe_bpmn_type: PeBpmnType,
-    mut pe_bpmn_subtype: PeBpmnSubType,
+    pe_bpmd_type: PeBpmnType,
+    mut pe_bpmd_subtype: PeBpmnSubType,
 ) -> AResult {
-    let tee_or_mpc = match pe_bpmn_type {
+    let tee_or_mpc = match pe_bpmd_type {
         PeBpmnType::Tee(_) => "tee",
         PeBpmnType::Mpc(_) => "mpc",
         _ => {
@@ -160,7 +160,7 @@ fn assemble_tee_or_mpc(
         }
     };
     let mut ids = parse_optional_ids(&mut tokens, &mut tc)?;
-    match &mut pe_bpmn_subtype {
+    match &mut pe_bpmd_subtype {
         PeBpmnSubType::Lane(name, out_tc) | PeBpmnSubType::Pool(name, out_tc) => match &mut ids[..]
         {
             [(_, _good_tc), (_, bad_tc), rest @ ..] => {
@@ -193,7 +193,7 @@ fn assemble_tee_or_mpc(
         }
     }
 
-    let mut pe_bpmn_meta = PeBpmnMeta {
+    let mut pe_bpmd_meta = PeBpmnMeta {
         stroke_color: None,
         fill_color: None,
     };
@@ -234,7 +234,7 @@ fn assemble_tee_or_mpc(
                         continue;
                     }
                     "in-unprotect" => {
-                        if matches!(pe_bpmn_subtype, PeBpmnSubType::Tasks(_)) {
+                        if matches!(pe_bpmd_subtype, PeBpmnSubType::Tasks(_)) {
                             return Err(vec![(
                                 format!(
                                     "{tee_or_mpc}-tasks doesn't allow {tee_or_mpc}-in-unprotect statements. Allowed are {tee_or_mpc}-in-protect and {tee_or_mpc}-out-unprotect."
@@ -251,7 +251,7 @@ fn assemble_tee_or_mpc(
                         continue;
                     }
                     "out-protect" => {
-                        if matches!(pe_bpmn_subtype, PeBpmnSubType::Tasks(_)) {
+                        if matches!(pe_bpmd_subtype, PeBpmnSubType::Tasks(_)) {
                             return Err(vec![(
                                 format!(
                                     "{tee_or_mpc}-tasks doesn't allow {tee_or_mpc}-out-protect statements. Allowed are {tee_or_mpc}-in-protect and {tee_or_mpc}-out-unprotect."
@@ -334,7 +334,7 @@ fn assemble_tee_or_mpc(
                 // Check the rest
                 match val.as_str() {
                     "stroke-color" => {
-                        if pe_bpmn_meta.stroke_color.is_some() {
+                        if pe_bpmd_meta.stroke_color.is_some() {
                             return Err(vec![(
                                 "There is already a stroke-color defined".to_string(),
                                 it.0,
@@ -342,12 +342,12 @@ fn assemble_tee_or_mpc(
                         }
                         let nt = tokens.next();
                         let color = check_color_format(&it, nt)?;
-                        pe_bpmn_meta.stroke_color = Some(color);
+                        pe_bpmd_meta.stroke_color = Some(color);
                         check_end_block(tokens.next())?;
                         continue;
                     }
                     "fill-color" => {
-                        if pe_bpmn_meta.fill_color.is_some() {
+                        if pe_bpmd_meta.fill_color.is_some() {
                             return Err(vec![(
                                 "There is already a fill-color defined".to_string(),
                                 it.0,
@@ -355,7 +355,7 @@ fn assemble_tee_or_mpc(
                         }
                         let nt = tokens.next();
                         let color = check_color_format(&it, nt)?;
-                        pe_bpmn_meta.fill_color = Some(color);
+                        pe_bpmd_meta.fill_color = Some(color);
                         check_end_block(tokens.next())?;
                         continue;
                     }
@@ -385,7 +385,7 @@ fn assemble_tee_or_mpc(
     }
 
     let computation_common = ComputationCommon {
-        pebpmn_type: pe_bpmn_subtype,
+        pebpmn_type: pe_bpmd_subtype,
         in_protect,
         in_unprotect,
         out_protect,
@@ -398,18 +398,18 @@ fn assemble_tee_or_mpc(
         tc,
     };
 
-    match pe_bpmn_type {
+    match pe_bpmd_type {
         PeBpmnType::Tee(_) => Ok(Statement::PeBpmn(PeBpmn {
             r#type: PeBpmnType::Tee(Tee {
                 common: computation_common,
             }),
-            meta: pe_bpmn_meta,
+            meta: pe_bpmd_meta,
         })),
         PeBpmnType::Mpc(_) => Ok(Statement::PeBpmn(PeBpmn {
             r#type: PeBpmnType::Mpc(Mpc {
                 common: computation_common,
             }),
-            meta: pe_bpmn_meta,
+            meta: pe_bpmd_meta,
         })),
         _ => Err(vec![(
             "Invalid pe-bpmd type for tee or mpc".to_string(),
@@ -418,7 +418,7 @@ fn assemble_tee_or_mpc(
     }
 }
 
-pub fn to_pe_bpmn(mut tokens: Tokens, _backup_tc: TokenCoordinate) -> AResult {
+pub fn to_pe_bpmd(mut tokens: Tokens, _backup_tc: TokenCoordinate) -> AResult {
     // Use first token is determine extension type
     let first_token = tokens.next();
 
@@ -501,7 +501,7 @@ impl<'a> Lexer<'a> {
                 // Empty []
                 Some(']') => {
                     let tc = self.current_coord();
-                    self.sas.next_statement(tc, self.position, to_pe_bpmn)?;
+                    self.sas.next_statement(tc, self.position, to_pe_bpmd)?;
                     return Err(vec![("Empty extension block. Make sure you complete the full \"[...]\" statement".to_string(), tc, )]);
                 }
                 Some(_) => {
@@ -510,13 +510,13 @@ impl<'a> Lexer<'a> {
                     let (tc_end, extension_type) = self.read_label()?;
                     // Check extension type
                     if extension_type == "pe-bpmd" {
-                        self.sas.next_statement(tc, self.position, to_pe_bpmn)?;
+                        self.sas.next_statement(tc, self.position, to_pe_bpmd)?;
                         tc = TokenCoordinate {
                             start: tc.start,
                             end: tc_end.end,
                             source_file_idx: tc.source_file_idx,
                         };
-                        self.run_pe_bpmn(tc)?;
+                        self.run_pe_bpmd(tc)?;
                         // Empty [pe-bpmd]
                         if self.sas.fragments.is_empty() {
                             return Err(vec![("Empty extension block. Make sure you complete the full \"[pe-bpmd...]\" statement".to_string(), tc, )]);
@@ -540,7 +540,7 @@ impl<'a> Lexer<'a> {
         Ok(())
     }
 
-    fn run_pe_bpmn(&mut self, mut tc: TokenCoordinate) -> Result<(), ParseError> {
+    fn run_pe_bpmd(&mut self, mut tc: TokenCoordinate) -> Result<(), ParseError> {
         self.skip_whitespace();
 
         let mut block_state = BlockState::Closed;

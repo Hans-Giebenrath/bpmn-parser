@@ -91,8 +91,8 @@ pub struct Protection {
 }
 
 impl Parser {
-    pub fn parse_pe_bpmn(&mut self, pe_bpmn: lexer::PeBpmn) -> Result<(), ParseError> {
-        let r#type = match pe_bpmn.r#type {
+    pub fn parse_pe_bpmd(&mut self, pe_bpmd: lexer::PeBpmn) -> Result<(), ParseError> {
+        let r#type = match pe_bpmd.r#type {
             lexer::PeBpmnType::SecureChannel(secure_channel) => {
                 let sender_id = secure_channel
                     .sender
@@ -165,9 +165,9 @@ impl Parser {
             }),
         };
 
-        self.graph.pe_bpmn_definitions.push(PeBpmn {
+        self.graph.pe_bpmd_definitions.push(PeBpmn {
             r#type,
-            meta: pe_bpmn.meta,
+            meta: pe_bpmd.meta,
         });
 
         Ok(())
@@ -650,11 +650,11 @@ impl Parser {
         };
         for (task, _) in tasks {
             if let NodeType::RealNode {
-                pe_bpmn_hides_protection_operations,
+                pe_bpmd_hides_protection_operations,
                 ..
             } = &mut self.graph.nodes[*task].node_type
             {
-                *pe_bpmn_hides_protection_operations = true;
+                *pe_bpmd_hides_protection_operations = true;
             }
         }
 

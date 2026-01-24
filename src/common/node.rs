@@ -31,7 +31,7 @@ pub enum NodeType {
         /// (activity), and so there is no dedicated "tee-in-unprotect"/"tee-out-protect" (and the
         /// same for MPC), hence some checks need to be omitted because we simply must assume that
         /// they will be done correctly within these abstracted away black boxes.
-        pe_bpmn_hides_protection_operations: bool,
+        pe_bpmd_hides_protection_operations: bool,
     },
     // Dummy nodes are inserted in three stages:
     //  1. After the layer assignment phase, to break long edges into uniformly short edges (those

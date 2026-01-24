@@ -74,7 +74,7 @@ pub struct Graph {
 
     pub num_layers: usize,
 
-    pub pe_bpmn_definitions: Vec<PeBpmn>,
+    pub pe_bpmd_definitions: Vec<PeBpmn>,
 }
 
 #[derive(Debug, Eq, PartialEq, Hash, Clone)]
@@ -686,7 +686,7 @@ impl Index<PeBpmnProtection> for Graph {
     type Output = PeBpmn;
 
     fn index(&self, index: PeBpmnProtection) -> &Self::Output {
-        self.pe_bpmn_definitions
+        self.pe_bpmd_definitions
             .iter()
             .find(|pe| pe.r#type.protection() == index)
             .unwrap()
