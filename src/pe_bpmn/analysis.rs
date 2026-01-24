@@ -930,9 +930,13 @@ fn check_protection_paths(
             };
 
             protection_channel(graph, analysis_state, edge_id, ends, &mut state, is_reverse)?;
-            if enforce_reach_end && ends.iter().all(|end| !state.visited_nodes.contains(end)) {
-                assert_ne!(ends.len(), 0); // If `enforce_reach_end` is `true` but no `end` was
-                // provided by the caller, then this is a programming error on the caller side.
+            // If ends is empty, then this means that the user did not specify any unprotect
+            // statements. This *very likely* indicates that this is just describing part of the
+            // diagram, hence overwrite `enforce_reach_end` in that case.
+            if enforce_reach_end
+                && !ends.is_empty()
+                && ends.iter().all(|end| !state.visited_nodes.contains(end))
+            {
                 return Err(create_protection_error_message(
                     graph,
                     node_id,

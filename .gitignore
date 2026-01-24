@@ -5,4 +5,7 @@ Cargo.lock
 input.txt
 generated_bpmn*
 *.xml
+doc/test/*.csv
+doc/test/compiled.adoc
 /input
+*.drawio.bkp

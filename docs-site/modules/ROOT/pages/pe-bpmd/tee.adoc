@@ -51,8 +51,8 @@ One can follow the flow of data with a finger across message flows and data asso
 It says whether someone can use `ssh` to become a root user on the target machine (or something conceptually similar).
 That user then has access to all files which the TEE sees.
 More in <<root,this section>>.
-`(tee-hardware-operators on-premises|@pool-id-1 @pool-id-2 ...)`:: The TEE is running on some physical server (at least this is what I last learned about TEE technology). And this physical server is operated by someone, some pool. This could in principle also be some joint operation (or at least access), if you rent a physical rack space in a data center and visit it yourself physically from time to time. Anyway, implications of the hardware operator are detailed in <<ho,another section>>.
-`(tee-software-operators @pool-id-1 @pool-id-2)`:: Those are usually system administrators: Those who have virtual access to the hosting environment of the TEE. Could be the administrator who accesses the remote VM via `ssh` to start, restart, stop, etc., the VM, or the one who runs the Kubernetes commands to do the same. Explained in more detail <<so,here>>.
+`(tee-hardware-operators on-premises|@pool-id-1 @pool-id-2 ...)`:: The TEE is running on some physical server (at least this is what I last learned about TEE technology). And this physical server is operated by someone, some pool. This could in principle also be some joint operation (or at least access), if you rent a physical rack space in a data center and visit it yourself physically from time to time.
+`(tee-software-operators @pool-id-1 @pool-id-2)`:: Those are usually system administrators: Those who have virtual access to the hosting environment of the TEE. Could be the administrator who accesses the remote VM via `ssh` to start, restart, stop, etc., the VM, or the one who runs the Kubernetes commands to do the same.
 
 TODO
 * Mention that only `tee-pool` appears in the visibility table (is that so, actually?).
@@ -87,6 +87,10 @@ include::example$pebpmd-tee-rv-client.bpmd[]
 If the client has the required competence to undertake this process, then this is _in general_ the most secure way to go. This does not exclude that the user could upload their calculated reference value to a public data store, where other users can crosscheck it, which could further improve the security, depending on the context.
 
 However, users usually have competences in areas other than cybersecurity and white hacking, hence this is likely not what you will use in your modeling.
+
+Sidenote: This example uses the `tee-tasks` statement. For this, there do not exist `tee-in-unprotect` nor `tee-out-protect` statements, as this is all hidden within the TEE tasks.
+These TEE tasks form black boxes and we just assume that data with TEE protection is unprotected in there (and vice versa for the output).
+This also means that only in this case it is not necessary to visually model the unprotected data within the TEE.
 
 === Trusted Third Party
 
@@ -171,9 +175,10 @@ image::generated/pebpmd-tee-rv-wrong.png[]
 ----
 include::example$pebpmd-tee-rv-wrong.bpmd[]
 ----
+<1> `post-received` means that the end of the secure channel is not present within this diagram, i.e. the TEE only sees the ciphertext.
 
 We see that after encrypting the request for the TEE, we encrypt the encrypted request again via a secure channel.
-However, the secure channel is modelled in a way that it does not end in the TEE, i.e. the TEE cannot decrypt the request (due to the additional protection layer).
+However, the secure channel is modelled in a way that it does not end in the TEE, i.e. the TEE cannot decrypt the _inner_ request (due to the _outer_ additional protection layer).
 Based only on this model we must assume that the Cloud Service Provider will also be presented with this additional protection layer and should have `AH` (or `HA`, order doesn't matter).
 However, in the following table we see that it just says `A`:
 
@@ -188,26 +193,61 @@ This could then result in the situation that the encryption happens in one diagr
 That second diagram however would not have the `(tee-in-protect @node @crucial-piece-of-info)` statement present, since this is not part of this diagram.
 Hence in a split-diagram situation, an analysis that would look at the full way from `tee-in-protect` to `tee-in-unprotect` would not work at all.
 Therefor, we just look at the `tee-in-protect` side.
-The assumption is, that a practical process _will not add further protection_ in order to prevent the TEE from accessing data that it was precisely encrypted for that TEE.
+The assumption is, that a practical process _will not add further protection_ in order to prevent the TEE from accessing data that was precisely encrypted for that TEE.
 I can imagine that someone could come up with a use case for that (some private anonymised IDs maybe, if deterministic encryption is used), but this seems like a situation where PE-BPMD is too high-level anyway.
 Anyway, in other words, the assumption is that if something is encrypted for a TEE, then it will reach the TEE through the controlled perimeter of the hardware and software operator in the given form as it was present when TEE encryption was applied.
-If this doesn't work for you, and you think it should work with PE-BPMD, then let me know.
+If you have a situation where you think this wrong result is inappropriate and should be fixed, then let me know.
 
 [#root]
 == External Root Access
 
-The external root access is primarily meant to cover e.g. an administrator which manages the confidential VM in a Kubernetes cluster
+The external root access is primarily meant to cover e.g. an administrator which manages the confidential VM in a Kubernetes cluster.
 Such an administrator (very likely) has root access to that machine and in principle can access all the data.
  +
 That said, this doesn't cover the situation where someone can `ssh` into the machine with a less privileged user and access only a subset of data.
 In that case this data is usually actually meant to be accessed by that user, so the data transport should be modelled explicitly within the diagram.
 
-Mention a case where this goes recursively. The TEE has `A` to another TEE due to root access? Then the user here gets access to that one as well!
+This access is marked with an `A` and not with a `V`.
+Actually accessing the data from within the TEE might be an additional step.
+In the Kubernetes example, you would have your deployment rules to control the software inside and outside of the TEE, but you would probably need to do some extra work to actually access the data.
+This _could_ be trivial, but it could also trigger some additional monitoring systems and so might not go unnoticed.
+The plaintext does not simply move to the user as a logical result of following the process.
+Hence an `A` instead of a `V`, even if the effort to access the plaintext data might be miniscule.
 
-TODO
+=== Basic Example
 
-[#ho]
-== Hardware Operators
+In this example there is a pool _Someone With Root Access_ which does not visually interact with the TEE tasks, but it is marked as having root access within the PE-BPMD annotation and thus has access to the request.
 
-[#so]
-== Software Operators
+image::generated/pebpmd-tee-root-access.png[]
+
+[%header,format=csv]
+|===
+include::example$generated/pebpmd-tee-root-access.csv[]
+|===
+
+[,bpmd]
+----
+include::example$pebpmd-tee-root-access.bpmd[]
+----
+<1> Here we declare the root access.
+
+=== Recursive Example
+
+Root access works recursively. In the following example we see two examples of this:
+
+. Pool _Someone With Root Access_ has access to TEE 1. TEE 1 itself has root access to TEE 2. As a result, the pool _Someone With Root Access_ has recursively also access to the data within TEE 2.
+. Pool _Cloud Service Provider 1_ can physically compromise the secrets within TEE 1. This means for example, that it can extract the communication channel secrets from TEE 1 after TEE 1 legitimately created the communication channel. Then they can access the data within TEE 2.
+
+image::generated/pebpmd-tee-root-access-recursive.png[]
+
+[%header,format=csv]
+|===
+include::example$generated/pebpmd-tee-root-access-recursive.csv[]
+|===
+
+[,bpmd]
+----
+include::example$pebpmd-tee-root-access-recursive.bpmd[]
+----
+<1> TEE 1 can be accessed by "Someone with root access".
+<2> TEE 2 can be accessed by the TEE 1.

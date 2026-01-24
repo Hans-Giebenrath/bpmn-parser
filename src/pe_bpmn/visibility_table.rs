@@ -146,11 +146,10 @@ impl Display for ProtectionString {
                     // It actually doesn't matter much if there is one `P` or a thousand `P`. The
                     // data can be physically compromised.
                     write!(f, "P")?;
-                }
-
-                if *a_count > 0 {
-                    // It actually doesn't matter much if there is one `A` or a thousand `A`. The data can
-                    // be accessed.
+                    // Don't output `A`s if there was already a `P`. `P` is stronger than `A`.
+                } else if *a_count > 0 {
+                    // It actually doesn't matter much if there is one `A` or a thousand `A`. The
+                    // data can be accessed.
                     write!(f, "A")?;
                 }
 

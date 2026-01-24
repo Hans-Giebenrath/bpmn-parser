@@ -1,5 +1,5 @@
-* PE-BPMN tee-external-root-access should not point to itself for tee-pool
 * rename pe-bpmn to pe-bpmd
+* PE-BPMN tee-external-root-access in a tee-pool should not name itself (@tee-pool)
 * is `on-premises` for hardware-access doing the wrong thing?
 * pe0001 end events are not drawn as end events
 * PE-BPMN the selectors (e.g. secure-channel begin and end) should better filter their node types. Right now one can accidentally select data nodes which doesn't make sense and results in a non-helpful assertion error.
@@ -21,3 +21,5 @@
 * pe-bpmn data_already_protected is not used anywhere, yet.
 * pe-bpmn TEEs could be in a cyclic dependency of being each other's admin. This is currently reported as an error but in principle is solvable.
 * Use a more performance hasher for all the hash maps.
+* docsite, secure channel prot and unprot data associations are quite funky.
+* Expand the secure-channel shorthand

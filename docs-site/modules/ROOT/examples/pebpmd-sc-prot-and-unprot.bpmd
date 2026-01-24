@@ -1,0 +1,27 @@
+= Alice
+
+# Start
+. Send
+
+= Bob
+
+# Receive
+. Done
+
+
+OD Data ->send
+ & Data <-receive
+
+OD Cat Image ->send
+ & Cat Image <-receive
+
+MF <-send ->receive
+
+
+[pe-bpmn
+  (secure-channel @send @receive @data) // <1>
+
+  (stroke-color #1ed3b8)
+  (fill-color #b4f4eb)
+]
+

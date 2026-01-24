@@ -1,0 +1,42 @@
+= Software Operator
+
+= Cloud Service Provider 1
+
+= TEE 1 - Recursive Root Access
+
+= Cloud Service Provider 2
+
+= TEE 2 - Data Processor
+
+# Create Dummy Data
+. Don't do anything
+
+= Someone With Root Access
+
+
+OD Dummy Data <-create-dummy-data
+
+
+[pe-bpmn
+  (tee-pool @tee-recursive-root-access)
+
+  (tee-external-root-access @someone-with-root-access) // <1>
+  (tee-hardware-operators @csp1)
+  (tee-software-operators @software-operator)
+
+  // Generic attributes
+  (stroke-color #a9d31e)
+  (fill-color #eef7d0)
+]
+
+[pe-bpmn
+  (tee-pool @tee-data-processor)
+
+  (tee-external-root-access @tee-recursive-root-access) // <2>
+  (tee-hardware-operators @csp2)
+  (tee-software-operators @software-operator)
+
+  // Generic attributes
+  (stroke-color #1ed3b8)
+  (fill-color #b4f4eb)
+]

@@ -1,3 +1,98 @@
 = Secure Channel
 
-TBD
+When Alice sends a message to Bob in plaintext, then every message carrier on the way can read the message.
+With a secure channel, the message will be protected from eavesdropping.
+Depending on the specific kind of secure channel they have even more security features, but for PE-BPMD only the eavesdropping / data leakage part is relevant.
+
+== Simple Example
+
+image::generated/pebpmd-sc-simple.png[]
+
+[%header,format=csv]
+|===
+include::example$generated/pebpmd-sc-simple.csv[]
+|===
+
+Alice and Bob can see the data, but the network, i.e. whoever transports the data (be it a series of ISPs, or a pigeon), only sees the ciphertext.
+
+[,bpmd]
+----
+include::example$pebpmd-sc-simple.bpmd[]
+----
+
+`(secure-channel @start @end)`:: At the moment, a secure channel can only start at one task, and can only finish at one task.
+Dedicated syntax to specify multiple entry points or ends of a secure channel may be added at a later point.
+
+== Only Decryption
+
+You might want to model only a subprocess where the encryption is omitted and only the decryption part is present.
+In this case you can specify via the `pre-sent` key word that sending happened in advance to the start of this process.
+
+image::generated/pebpmd-sc-pre-sent.png[]
+
+[%header,format=csv]
+|===
+include::example$generated/pebpmd-sc-pre-sent.csv[]
+|===
+
+[,bpmd]
+----
+include::example$pebpmd-sc-pre-sent.bpmd[]
+----
+<1> Here the `pre-sent` key word replaces the ID of the node which otherwise applies the protection.
+
+== Only Encryption
+
+As in the previous example, you can model only the encryption part and omit the decryption part.
+The respective key word is `post-received`.
+
+image::generated/pebpmd-sc-post-received.png[]
+
+[%header,format=csv]
+|===
+include::example$generated/pebpmd-sc-post-received.csv[]
+|===
+
+[,bpmd]
+----
+include::example$pebpmd-sc-post-received.bpmd[]
+----
+<1> Here the `post-received` key word replaces the ID of the node which otherwise undoes the protection.
+
+== Just Ciphertext
+
+You can use `pre-sent` and `post-received` at the same time for cases where you show how the protected data travels.
+Now, in that case the algorithm has no task to look for which data to protect.
+Hence, you must manually specify the list of data objects that shall be protected via this secure channel.
+
+image::generated/pebpmd-sc-both.png[]
+
+[%header,format=csv]
+|===
+include::example$generated/pebpmd-sc-both.csv[]
+|===
+
+[,bpmd]
+----
+include::example$pebpmd-sc-both.bpmd[]
+----
+<1> Both `pre-sent` and `post-received` key words are used.
+
+== Protected and Unprotected Data
+
+The additional list of optional data IDs, as seen in the previous section, can usually be used to apply protection only to a subset of data which moved over the same message flow.
+(Whether it is good style to transport multiple data objects at the same time is a question of style, probably?)
+
+.The data associations (dotted edges) here look quite funky. This is on the TODO list.
+image::generated/pebpmd-sc-prot-and-unprot.png[]
+
+[%header,format=csv]
+|===
+include::example$generated/pebpmd-sc-prot-and-unprot.csv[]
+|===
+
+[,bpmd]
+----
+include::example$pebpmd-sc-prot-and-unprot.bpmd[]
+----
+<1> Only _Data_ is protected. The _Cat Image_ moves across the same `@send` and `@receive` nodes, but it is explicitly omitted from the protection.
