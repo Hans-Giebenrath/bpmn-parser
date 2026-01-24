@@ -119,7 +119,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     });
 
     if let Some(visibility_path) = &cli.visibility_table {
-        pebpmn_analysis(&mut graph, visibility_path, &bpmd_source_files, &mut timer)?;
+        pebpmd_analysis(&mut graph, visibility_path, &bpmd_source_files, &mut timer)?;
     };
 
     layout_graph(&mut graph, &mut timer);
@@ -158,7 +158,7 @@ fn layout_graph(graph: &mut Graph, timer: &mut Timer) {
     timer.time_it("replace_dummy_nodes", || replace_dummy_nodes(graph));
 }
 
-pub fn pebpmn_analysis(
+pub fn pebpmd_analysis(
     graph: &mut Graph,
     visibility_path: &PathBuf,
     bpmd_source_files: &[BpmdSourceFile],

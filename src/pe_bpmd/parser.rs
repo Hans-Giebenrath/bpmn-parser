@@ -56,7 +56,7 @@ pub struct Mpc {
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct ComputationCommon {
-    pub pebpmn_type: PeBpmdSubType,
+    pub pebpmd_type: PeBpmdSubType,
 
     pub in_protect: Vec<Protection>,
     pub in_unprotect: Vec<Protection>,
@@ -180,10 +180,10 @@ impl Parser {
     ) -> Result<ComputationCommon, ParseError> {
         let computation_common = self.parse_tee_or_mpc_inner(common, tee_or_mpc)?;
 
-        match &computation_common.pebpmn_type {
-            &PeBpmdSubType::Pool(..) => self.verify_pebpmn_pool(&computation_common, tee_or_mpc),
-            &PeBpmdSubType::Lane { .. } => self.verify_pebpmn_lane(&computation_common, tee_or_mpc),
-            PeBpmdSubType::Tasks(..) => self.verify_pebpmn_tasks(&computation_common, tee_or_mpc),
+        match &computation_common.pebpmd_type {
+            &PeBpmdSubType::Pool(..) => self.verify_pebpmd_pool(&computation_common, tee_or_mpc),
+            &PeBpmdSubType::Lane { .. } => self.verify_pebpmd_lane(&computation_common, tee_or_mpc),
+            PeBpmdSubType::Tasks(..) => self.verify_pebpmd_tasks(&computation_common, tee_or_mpc),
         };
         Ok(computation_common)
     }
@@ -193,10 +193,10 @@ impl Parser {
         lexer: lexer::ComputationCommon,
         tee_or_mpc: &str,
     ) -> Result<ComputationCommon, ParseError> {
-        let in_protect = self.parse_pebpmn_nodes(&lexer.in_protect, "incoming")?;
-        let in_unprotect = self.parse_pebpmn_nodes(&lexer.in_unprotect, "incoming")?;
-        let out_protect = self.parse_pebpmn_nodes(&lexer.out_protect, "outgoing")?;
-        let out_unprotect = self.parse_pebpmn_nodes(&lexer.out_unprotect, "outgoing")?;
+        let in_protect = self.parse_pebpmd_nodes(&lexer.in_protect, "incoming")?;
+        let in_unprotect = self.parse_pebpmd_nodes(&lexer.in_unprotect, "incoming")?;
+        let out_protect = self.parse_pebpmd_nodes(&lexer.out_protect, "outgoing")?;
+        let out_unprotect = self.parse_pebpmd_nodes(&lexer.out_unprotect, "outgoing")?;
         let software_operators_tc = TokenCoordinate {
             source_file_idx: lexer
                 .software_operators
@@ -215,7 +215,7 @@ impl Parser {
                 .unwrap_or(0),
         };
 
-        let (pebpmn_type, software_operators, hardware_operators) = match lexer.pebpmn_type {
+        let (pebpmd_type, software_operators, hardware_operators) = match lexer.pebpmd_type {
             lexer::PeBpmdSubType::Pool(pool_str, _tc) => {
                 let pool_id = self.find_pool_id_or_error(&pool_str)?;
                 if lexer.software_operators.is_empty() {
@@ -410,7 +410,7 @@ impl Parser {
         }
 
         Ok(ComputationCommon {
-            pebpmn_type,
+            pebpmd_type,
             in_protect,
             in_unprotect,
             out_protect,
@@ -424,7 +424,7 @@ impl Parser {
         })
     }
 
-    fn parse_pebpmn_nodes(
+    fn parse_pebpmd_nodes(
         &mut self,
         entries: &[lexer::Protection],
         label: &str,
@@ -571,12 +571,12 @@ impl Parser {
             .collect()
     }
 
-    fn verify_pebpmn_pool(
+    fn verify_pebpmd_pool(
         &mut self,
         common: &ComputationCommon,
         tee_or_mpc: &str,
     ) -> Result<(), ParseError> {
-        let &PeBpmdSubType::Pool(pool_id) = &common.pebpmn_type else {
+        let &PeBpmdSubType::Pool(pool_id) = &common.pebpmd_type else {
             // Guaranteed by the caller.
             unreachable!();
         };
@@ -606,12 +606,12 @@ impl Parser {
         Ok(())
     }
 
-    fn verify_pebpmn_lane(
+    fn verify_pebpmd_lane(
         &mut self,
         common: &ComputationCommon,
         tee_or_mpc: &str,
     ) -> Result<(), ParseError> {
-        let &PeBpmdSubType::Lane { pool_id, lane_id } = &common.pebpmn_type else {
+        let &PeBpmdSubType::Lane { pool_id, lane_id } = &common.pebpmd_type else {
             // Guaranteed by the caller.
             unreachable!();
         };
@@ -639,12 +639,12 @@ impl Parser {
         Ok(())
     }
 
-    fn verify_pebpmn_tasks(
+    fn verify_pebpmd_tasks(
         &mut self,
         common: &ComputationCommon,
         tee_or_mpc: &str,
     ) -> Result<(), ParseError> {
-        let PeBpmdSubType::Tasks(tasks) = &common.pebpmn_type else {
+        let PeBpmdSubType::Tasks(tasks) = &common.pebpmd_type else {
             // Guaranteed by the caller.
             unreachable!();
         };
@@ -770,7 +770,7 @@ impl Parser {
 //                let protection = &node
 //                    .get_data_aux()
 //                    .expect("Expected data_aux")
-//                    .pebpmn_protection;
+//                    .pebpmd_protection;
 //
 //                assert!(
 //                    protection.contains(&PeBpmdProtection::SecureChannel(TokenCoordinate {
@@ -791,7 +791,7 @@ impl Parser {
 //                    let protection = &node
 //                        .get_data_aux()
 //                        .expect("Expected data_aux")
-//                        .pebpmn_protection;
+//                        .pebpmd_protection;
 //
 //                    assert!(
 //                        protection.is_empty(),
@@ -810,11 +810,11 @@ impl Parser {
 //                .collect_vec();
 //            for edge in edges {
 //                if let FlowType::MessageFlow(MessageFlowAux {
-//                    pebpmn_protection, ..
+//                    pebpmd_protection, ..
 //                }) = &edge.flow_type
 //                {
 //                    assert!(
-//                        pebpmn_protection
+//                        pebpmd_protection
 //                            .iter()
 //                            .find(|e| e.0 == SdeId(i))
 //                            .unwrap()
@@ -879,7 +879,7 @@ impl Parser {
 //                let protection = &node
 //                    .get_data_aux()
 //                    .expect("Expected data_aux")
-//                    .pebpmn_protection;
+//                    .pebpmd_protection;
 //
 //                let should_have_protection =
 //                    sde_index == 0 && (node_position == 1 || node_position == 2);

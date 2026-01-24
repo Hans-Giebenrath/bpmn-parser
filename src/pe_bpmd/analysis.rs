@@ -23,11 +23,11 @@ use std::iter::Extend;
 
 pub fn analyse(graph: &mut Graph) -> Result<VisibilityTableInput, ParseError> {
     let mut state = State::default();
-    let pebpmn_definitions = std::mem::take(&mut graph.pe_bpmd_definitions);
-    for pebpmn_definition in &pebpmn_definitions {
-        analyse_single(pebpmn_definition, graph, &mut state)?;
+    let pebpmd_definitions = std::mem::take(&mut graph.pe_bpmd_definitions);
+    for pebpmd_definition in &pebpmd_definitions {
+        analyse_single(pebpmd_definition, graph, &mut state)?;
     }
-    graph.pe_bpmd_definitions = pebpmn_definitions;
+    graph.pe_bpmd_definitions = pebpmd_definitions;
     apply_colors(graph, &state);
 
     compute_accessible_data(graph, &mut state)?;
@@ -137,8 +137,8 @@ fn analyse_single(
         PeBpmdType::Tee(Tee { common }) => {
             compute_visibility_tee_or_mpc(graph, state, common, PeBpmdProtection::Tee(common.tc))?;
             check_that_protection_is_visually_applied_tee_or_mpc(graph, common)?;
-            match &common.pebpmn_type {
-                &PeBpmdSubType::Pool(pool_id) => parse_pebpmn_pool_or_lane(
+            match &common.pebpmd_type {
+                &PeBpmdSubType::Pool(pool_id) => parse_pebpmd_pool_or_lane(
                     graph,
                     state,
                     common,
@@ -147,7 +147,7 @@ fn analyse_single(
                     pool_id,
                     None,
                 )?,
-                &PeBpmdSubType::Lane { pool_id, lane_id } => parse_pebpmn_pool_or_lane(
+                &PeBpmdSubType::Lane { pool_id, lane_id } => parse_pebpmd_pool_or_lane(
                     graph,
                     state,
                     common,
@@ -166,7 +166,7 @@ fn analyse_single(
                             *pe_bpmd_hides_protection_operations = true;
                         }
                     }
-                    parse_pebpmn_tasks(
+                    parse_pebpmd_tasks(
                         graph,
                         state,
                         tasks,
@@ -180,8 +180,8 @@ fn analyse_single(
         PeBpmdType::Mpc(Mpc { common }) => {
             compute_visibility_tee_or_mpc(graph, state, common, PeBpmdProtection::Mpc(common.tc))?;
             check_that_protection_is_visually_applied_tee_or_mpc(graph, common)?;
-            match &common.pebpmn_type {
-                &PeBpmdSubType::Pool(pool_id) => parse_pebpmn_pool_or_lane(
+            match &common.pebpmd_type {
+                &PeBpmdSubType::Pool(pool_id) => parse_pebpmd_pool_or_lane(
                     graph,
                     state,
                     common,
@@ -190,7 +190,7 @@ fn analyse_single(
                     pool_id,
                     None,
                 )?,
-                &PeBpmdSubType::Lane { pool_id, lane_id } => parse_pebpmn_pool_or_lane(
+                &PeBpmdSubType::Lane { pool_id, lane_id } => parse_pebpmd_pool_or_lane(
                     graph,
                     state,
                     common,
@@ -209,7 +209,7 @@ fn analyse_single(
                             *pe_bpmd_hides_protection_operations = true;
                         }
                     }
-                    parse_pebpmn_tasks(
+                    parse_pebpmd_tasks(
                         graph,
                         state,
                         tasks,
@@ -362,22 +362,22 @@ fn compute_accessible_data(graph: &Graph, analysis_state: &mut State) -> Result<
         task_protections.clear();
 
         {
-            for pebpmn in &graph.pe_bpmd_definitions {
-                match &pebpmn.r#type {
+            for pebpmd in &graph.pe_bpmd_definitions {
+                match &pebpmd.r#type {
                     PeBpmdType::Tee(Tee { common }) | PeBpmdType::Mpc(Mpc { common }) => {
-                        match &common.pebpmn_type {
+                        match &common.pebpmd_type {
                             PeBpmdSubType::Pool(pool_id) if *pool_id == node.pool => {
                                 assert!(pool_protection.is_none());
-                                pool_protection = Some(pebpmn.r#type.protection());
+                                pool_protection = Some(pebpmd.r#type.protection());
                             }
                             PeBpmdSubType::Lane { pool_id, lane_id }
                                 if *pool_id == node.pool && *lane_id == node.lane =>
                             {
                                 assert!(lane_protection.is_none());
-                                lane_protection = Some(pebpmn.r#type.protection());
+                                lane_protection = Some(pebpmd.r#type.protection());
                             }
                             PeBpmdSubType::Tasks(tasks) if contains(tasks, &node.id) => {
-                                task_protections.push(pebpmn.r#type.protection());
+                                task_protections.push(pebpmd.r#type.protection());
                             }
                             _ => continue,
                         }
@@ -389,7 +389,7 @@ fn compute_accessible_data(graph: &Graph, analysis_state: &mut State) -> Result<
                             .chain(sc.receiver.iter())
                             .any(|(node_id, _)| *node_id == node.id)
                         {
-                            task_protections.push(pebpmn.r#type.protection());
+                            task_protections.push(pebpmd.r#type.protection());
                         }
                     }
                 };
@@ -596,8 +596,8 @@ fn compute_accessible_data(graph: &Graph, analysis_state: &mut State) -> Result<
         }
     }
 
-    for pebpmn in &graph.pe_bpmd_definitions {
-        let PeBpmdType::Tee(Tee { common }) = &pebpmn.r#type else {
+    for pebpmd in &graph.pe_bpmd_definitions {
+        let PeBpmdType::Tee(Tee { common }) = &pebpmd.r#type else {
             continue;
         };
 
@@ -622,7 +622,7 @@ fn compute_accessible_data(graph: &Graph, analysis_state: &mut State) -> Result<
                                 .flat_map(|hm| hm.iter())
                                 .map(|(sde_id, protections)| {
                                     let mut protections = protections.clone();
-                                    protections.remove(&pebpmn.r#type.protection());
+                                    protections.remove(&pebpmd.r#type.protection());
                                     (*sde_id, protections)
                                 })
                         })
@@ -676,7 +676,7 @@ fn compute_visibility_tee_or_mpc(
     let mut all_sdes = HashSet::<SdeId>::new();
     // Consider all data which is transported to/within/out of the TEE/MPC.
     for node in &graph.nodes {
-        let consider = match &computation.pebpmn_type {
+        let consider = match &computation.pebpmd_type {
             &PeBpmdSubType::Pool(pool_id) => node.pool == pool_id,
             &PeBpmdSubType::Lane { pool_id, lane_id } => {
                 node.pool == pool_id && node.lane == lane_id
@@ -696,7 +696,7 @@ fn compute_visibility_tee_or_mpc(
     Ok(())
 }
 
-fn parse_pebpmn_pool_or_lane(
+fn parse_pebpmd_pool_or_lane(
     graph: &Graph,
     analysis_state: &mut State,
     computation: &ComputationCommon,
@@ -746,7 +746,7 @@ fn parse_pebpmn_pool_or_lane(
     Ok(())
 }
 
-fn parse_pebpmn_tasks(
+fn parse_pebpmd_tasks(
     graph: &Graph,
     analysis_state: &mut State,
     tasks: &[(NodeId, TokenCoordinate)],
@@ -891,7 +891,7 @@ fn check_protection_paths(
     graph: &Graph,
     analysis_state: &mut State,
     node_id: NodeId,
-    node_pebpmn_tc: TokenCoordinate,
+    node_pebpmd_tc: TokenCoordinate,
     is_reverse: bool,
     ends: &[NodeId],
     protection: PeBpmdProtection,
@@ -940,7 +940,7 @@ fn check_protection_paths(
                 return Err(create_protection_error_message(
                     graph,
                     node_id,
-                    node_pebpmn_tc,
+                    node_pebpmd_tc,
                     sde_id,
                     is_reverse,
                     protection,
@@ -1112,7 +1112,7 @@ fn check_secure_channel_permitted_sdes_are_valid(
 fn create_protection_error_message(
     graph: &Graph,
     node_id: NodeId,
-    node_pebpmn_tc: TokenCoordinate,
+    node_pebpmd_tc: TokenCoordinate,
     sde_id: SdeId,
     is_reverse: bool,
     protection: PeBpmdProtection,
@@ -1133,7 +1133,7 @@ fn create_protection_error_message(
                 },
                 if is_reverse { "protect" } else { "un-protect" }
             ),
-            node_pebpmn_tc,
+            node_pebpmd_tc,
         ),
         (
             "This node was matched by the node selector".to_string(),

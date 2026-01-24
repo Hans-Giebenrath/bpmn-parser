@@ -34,7 +34,7 @@ pub struct Mpc {
 
 #[derive(Debug, Clone, PartialEq, Default)]
 pub struct ComputationCommon {
-    pub pebpmn_type: PeBpmdSubType,
+    pub pebpmd_type: PeBpmdSubType,
     pub in_protect: Vec<Protection>,
     pub in_unprotect: Vec<Protection>,
     pub out_protect: Vec<Protection>,
@@ -385,7 +385,7 @@ fn assemble_tee_or_mpc(
     }
 
     let computation_common = ComputationCommon {
-        pebpmn_type: pe_bpmd_subtype,
+        pebpmd_type: pe_bpmd_subtype,
         in_protect,
         in_unprotect,
         out_protect,
@@ -795,14 +795,14 @@ fn parse_optional_ids(
 fn parse_ids_or_placeholder(
     tokens: &mut impl Iterator<Item = (TokenCoordinate, Token)>,
     prev_tc: TokenCoordinate,
-    full_pebpmn_tc: &mut TokenCoordinate,
+    full_pebpmd_tc: &mut TokenCoordinate,
     placeholder: &str,
     actor: &str,
 ) -> Result<Vec<(String, TokenCoordinate)>, ParseError> {
     let mut arguments_ids = Vec::<(String, TokenCoordinate)>::new();
     let mut placeholder_found = false;
     for (tc, t) in tokens.by_ref() {
-        full_pebpmn_tc.end = tc.end;
+        full_pebpmd_tc.end = tc.end;
         match t {
             Token::Separator => {
                 break;

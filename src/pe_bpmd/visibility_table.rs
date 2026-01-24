@@ -236,19 +236,19 @@ pub fn generate_visibility_table(
     Ok(String::from_utf8(bytes).unwrap_or("".to_string()))
 }
 
-fn is_pool_pebpmn(pebpmn: &PeBpmd, pool_id: PoolId) -> bool {
-    match &pebpmn.r#type {
+fn is_pool_pebpmd(pebpmd: &PeBpmd, pool_id: PoolId) -> bool {
+    match &pebpmd.r#type {
         PeBpmdType::Mpc(Mpc {
             common:
                 ComputationCommon {
-                    pebpmn_type: PeBpmdSubType::Pool(pool),
+                    pebpmd_type: PeBpmdSubType::Pool(pool),
                     ..
                 },
         })
         | PeBpmdType::Tee(Tee {
             common:
                 ComputationCommon {
-                    pebpmn_type: PeBpmdSubType::Pool(pool),
+                    pebpmd_type: PeBpmdSubType::Pool(pool),
                     ..
                 },
         }) => *pool == pool_id,
@@ -257,7 +257,7 @@ fn is_pool_pebpmn(pebpmn: &PeBpmd, pool_id: PoolId) -> bool {
 }
 
 /// Due to the external root access and admin for TEEs, one needs to query the visibility cell of
-/// other pools / pebpmns. It could be that the other cell is not computed yet, because the admin
+/// other pools / pebpmds. It could be that the other cell is not computed yet, because the admin
 /// pool comes before the TEE pool. Also, for TEE tasks/lanes one needs to compute it as well and
 /// they are not pools. And further, if TEE `A` is admin of TEE `B`, then admin of TEE `A` becomes
 /// transitively the admin of TEE `B`. So this is an on-demand data structure where cells are
@@ -279,8 +279,8 @@ impl OnDemandVisibilityTableCell {
                 .graph
                 .pe_bpmd_definitions
                 .iter()
-                .find(|pebpmn| is_pool_pebpmn(pebpmn, pool_id))
-                .map(|pebpmn| PoolOrProtection::Protection(pebpmn.r#type.protection()))
+                .find(|pebpmd| is_pool_pebpmd(pebpmd, pool_id))
+                .map(|pebpmd| PoolOrProtection::Protection(pebpmd.r#type.protection()))
                 .unwrap_or(pool_or_protection),
             _ => pool_or_protection,
         };
@@ -325,8 +325,8 @@ impl OnDemandVisibilityTableCell {
                 .tee_external_root_access
                 .get(&pool_id)
                 .iter()
-                .flat_map(|pebpmn| pebpmn.iter())
-                .map(|pebpmn| self.get(args, PoolOrProtection::Protection(*pebpmn), sde_id))
+                .flat_map(|pebpmd| pebpmd.iter())
+                .map(|pebpmd| self.get(args, PoolOrProtection::Protection(*pebpmd), sde_id))
             {
                 protections_result.become_min(external_protection?.mark_with_a());
             }
@@ -336,37 +336,37 @@ impl OnDemandVisibilityTableCell {
         }
 
         if let PoolOrProtection::Pool(pool_id) = pool_or_protection {
-            for pebpmn in args
+            for pebpmd in args
                 .graph
                 .pe_bpmd_definitions
                 .iter()
-                .map(|pebpmn| pebpmn.r#type.protection())
+                .map(|pebpmd| pebpmd.r#type.protection())
             {
                 if args
                     .input
                     .tee_hardware_operator
-                    .contains(&(pool_id, pebpmn))
+                    .contains(&(pool_id, pebpmd))
                 {
                     let external_protection =
-                        self.get(args, PoolOrProtection::Protection(pebpmn), sde_id)?;
+                        self.get(args, PoolOrProtection::Protection(pebpmd), sde_id)?;
                     protections_result.become_min(external_protection.mark_with_p());
                 }
             }
         }
 
-        for pebpmn in args
+        for pebpmd in args
             .graph
             .pe_bpmd_definitions
             .iter()
-            .map(|pebpmn| pebpmn.r#type.protection())
+            .map(|pebpmd| pebpmd.r#type.protection())
         {
             if args
                 .input
                 .software_operator
-                .contains(&(pool_or_protection, pebpmn))
+                .contains(&(pool_or_protection, pebpmd))
             {
                 let external_protection =
-                    self.get(args, PoolOrProtection::Protection(pebpmn), sde_id)?;
+                    self.get(args, PoolOrProtection::Protection(pebpmd), sde_id)?;
                 protections_result.become_min(external_protection.mark_with_h());
             }
         }
@@ -378,18 +378,18 @@ impl OnDemandVisibilityTableCell {
 fn pool_if_pool(args: &Args<'_>, pool_or_protection: PoolOrProtection) -> Option<PoolId> {
     match pool_or_protection {
         PoolOrProtection::Pool(pool_id) => Some(pool_id),
-        PoolOrProtection::Protection(pebpmn) => match &args.graph[pebpmn].r#type {
+        PoolOrProtection::Protection(pebpmd) => match &args.graph[pebpmd].r#type {
             PeBpmdType::Mpc(Mpc {
                 common:
                     ComputationCommon {
-                        pebpmn_type: PeBpmdSubType::Pool(pool_id),
+                        pebpmd_type: PeBpmdSubType::Pool(pool_id),
                         ..
                     },
             })
             | PeBpmdType::Tee(Tee {
                 common:
                     ComputationCommon {
-                        pebpmn_type: PeBpmdSubType::Pool(pool_id),
+                        pebpmd_type: PeBpmdSubType::Pool(pool_id),
                         ..
                     },
             }) => Some(*pool_id),
