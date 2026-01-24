@@ -6,9 +6,9 @@ use crate::common::edge::{Edge, EdgeType};
 use crate::common::node::LayerId;
 use crate::common::node::{Node, NodeType};
 use crate::common::pool::Pool;
-use crate::lexer::{DataType, EventType, PeBpmnProtection, TokenCoordinate};
+use crate::lexer::{DataType, EventType, PeBpmdProtection, TokenCoordinate};
 use crate::parser::ParseError;
-use crate::pe_bpmd::parser::PeBpmn;
+use crate::pe_bpmd::parser::PeBpmd;
 use proc_macros::{from, n, to};
 use std::fmt::{self, Debug};
 use std::iter::from_fn;
@@ -74,7 +74,7 @@ pub struct Graph {
 
     pub num_layers: usize,
 
-    pub pe_bpmd_definitions: Vec<PeBpmn>,
+    pub pe_bpmd_definitions: Vec<PeBpmd>,
 }
 
 #[derive(Debug, Eq, PartialEq, Hash, Clone)]
@@ -682,10 +682,10 @@ impl Debug for Graph {
     }
 }
 
-impl Index<PeBpmnProtection> for Graph {
-    type Output = PeBpmn;
+impl Index<PeBpmdProtection> for Graph {
+    type Output = PeBpmd;
 
-    fn index(&self, index: PeBpmnProtection) -> &Self::Output {
+    fn index(&self, index: PeBpmdProtection) -> &Self::Output {
         self.pe_bpmd_definitions
             .iter()
             .find(|pe| pe.r#type.protection() == index)

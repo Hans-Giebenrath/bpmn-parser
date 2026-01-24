@@ -1,7 +1,7 @@
 use crate::common::bpmn_node::BoundaryEvent;
 use crate::common::graph::{EdgeId, NodeId, SdeId};
 use crate::common::macros::impl_index;
-use crate::lexer::{PeBpmnProtection, TokenCoordinate};
+use crate::lexer::{PeBpmdProtection, TokenCoordinate};
 
 /// TODO better name.
 #[derive(Debug, Clone, PartialEq)]

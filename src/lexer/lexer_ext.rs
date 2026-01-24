@@ -1,13 +1,13 @@
 use crate::{lexer::*, parser::ParseError};
 
 #[derive(Debug, Clone, PartialEq)]
-pub struct PeBpmn {
-    pub r#type: PeBpmnType,
-    pub meta: PeBpmnMeta, // stroke color, etc
+pub struct PeBpmd {
+    pub r#type: PeBpmdType,
+    pub meta: PeBpmdMeta, // stroke color, etc
 }
 
 #[derive(Debug, Clone, PartialEq)]
-pub enum PeBpmnType {
+pub enum PeBpmdType {
     SecureChannel(SecureChannel),
     //SecureChannelWithExplicitSecret(SecureChannelWithExplicitSecret),
     Tee(Tee),
@@ -34,7 +34,7 @@ pub struct Mpc {
 
 #[derive(Debug, Clone, PartialEq, Default)]
 pub struct ComputationCommon {
-    pub pebpmn_type: PeBpmnSubType,
+    pub pebpmn_type: PeBpmdSubType,
     pub in_protect: Vec<Protection>,
     pub in_unprotect: Vec<Protection>,
     pub out_protect: Vec<Protection>,
@@ -52,15 +52,15 @@ pub struct ComputationCommon {
 }
 
 #[derive(Debug, Clone, PartialEq)]
-pub enum PeBpmnSubType {
+pub enum PeBpmdSubType {
     Pool(String, TokenCoordinate),
     Lane(String, TokenCoordinate),
     Tasks(Vec<(String, TokenCoordinate)>),
 }
 
-impl Default for PeBpmnSubType {
+impl Default for PeBpmdSubType {
     fn default() -> Self {
-        PeBpmnSubType::Pool(String::new(), TokenCoordinate::default())
+        PeBpmdSubType::Pool(String::new(), TokenCoordinate::default())
     }
 }
 
@@ -74,7 +74,7 @@ pub struct Protection {
 }
 
 #[derive(Debug, Clone, PartialEq, Default)]
-pub struct PeBpmnMeta {
+pub struct PeBpmdMeta {
     pub stroke_color: Option<String>,
     pub fill_color: Option<String>,
 }
@@ -89,7 +89,7 @@ fn assemble_secure_channel(mut tokens: Tokens, tc: TokenCoordinate) -> AResult {
         tc,
         ..Default::default()
     };
-    let mut pe_bpmd_meta = PeBpmnMeta {
+    let mut pe_bpmd_meta = PeBpmdMeta {
         stroke_color: None,
         fill_color: None,
     };
@@ -137,8 +137,8 @@ fn assemble_secure_channel(mut tokens: Tokens, tc: TokenCoordinate) -> AResult {
         }
     }
 
-    Ok(Statement::PeBpmn(PeBpmn {
-        r#type: PeBpmnType::SecureChannel(secure_channel),
+    Ok(Statement::PeBpmd(PeBpmd {
+        r#type: PeBpmdType::SecureChannel(secure_channel),
         meta: pe_bpmd_meta,
     }))
 }
@@ -146,12 +146,12 @@ fn assemble_secure_channel(mut tokens: Tokens, tc: TokenCoordinate) -> AResult {
 fn assemble_tee_or_mpc(
     mut tokens: Tokens,
     mut tc: TokenCoordinate,
-    pe_bpmd_type: PeBpmnType,
-    mut pe_bpmd_subtype: PeBpmnSubType,
+    pe_bpmd_type: PeBpmdType,
+    mut pe_bpmd_subtype: PeBpmdSubType,
 ) -> AResult {
     let tee_or_mpc = match pe_bpmd_type {
-        PeBpmnType::Tee(_) => "tee",
-        PeBpmnType::Mpc(_) => "mpc",
+        PeBpmdType::Tee(_) => "tee",
+        PeBpmdType::Mpc(_) => "mpc",
         _ => {
             return Err(vec![(
                 "Invalid pe-bpmd type for tee or mpc".to_string(),
@@ -161,7 +161,7 @@ fn assemble_tee_or_mpc(
     };
     let mut ids = parse_optional_ids(&mut tokens, &mut tc)?;
     match &mut pe_bpmd_subtype {
-        PeBpmnSubType::Lane(name, out_tc) | PeBpmnSubType::Pool(name, out_tc) => match &mut ids[..]
+        PeBpmdSubType::Lane(name, out_tc) | PeBpmdSubType::Pool(name, out_tc) => match &mut ids[..]
         {
             [(_, _good_tc), (_, bad_tc), rest @ ..] => {
                 bad_tc.end = rest.last().map(|id| id.1.end).unwrap_or(bad_tc.end);
@@ -185,7 +185,7 @@ fn assemble_tee_or_mpc(
                 return Err(vec![("Missing an ID. Please add it.".to_string(), tc)]);
             }
         },
-        PeBpmnSubType::Tasks(out_ids) => {
+        PeBpmdSubType::Tasks(out_ids) => {
             if ids.is_empty() {
                 return Err(vec![("Missing an ID. Please add it.".to_string(), tc)]);
             }
@@ -193,7 +193,7 @@ fn assemble_tee_or_mpc(
         }
     }
 
-    let mut pe_bpmd_meta = PeBpmnMeta {
+    let mut pe_bpmd_meta = PeBpmdMeta {
         stroke_color: None,
         fill_color: None,
     };
@@ -234,7 +234,7 @@ fn assemble_tee_or_mpc(
                         continue;
                     }
                     "in-unprotect" => {
-                        if matches!(pe_bpmd_subtype, PeBpmnSubType::Tasks(_)) {
+                        if matches!(pe_bpmd_subtype, PeBpmdSubType::Tasks(_)) {
                             return Err(vec![(
                                 format!(
                                     "{tee_or_mpc}-tasks doesn't allow {tee_or_mpc}-in-unprotect statements. Allowed are {tee_or_mpc}-in-protect and {tee_or_mpc}-out-unprotect."
@@ -251,7 +251,7 @@ fn assemble_tee_or_mpc(
                         continue;
                     }
                     "out-protect" => {
-                        if matches!(pe_bpmd_subtype, PeBpmnSubType::Tasks(_)) {
+                        if matches!(pe_bpmd_subtype, PeBpmdSubType::Tasks(_)) {
                             return Err(vec![(
                                 format!(
                                     "{tee_or_mpc}-tasks doesn't allow {tee_or_mpc}-out-protect statements. Allowed are {tee_or_mpc}-in-protect and {tee_or_mpc}-out-unprotect."
@@ -399,14 +399,14 @@ fn assemble_tee_or_mpc(
     };
 
     match pe_bpmd_type {
-        PeBpmnType::Tee(_) => Ok(Statement::PeBpmn(PeBpmn {
-            r#type: PeBpmnType::Tee(Tee {
+        PeBpmdType::Tee(_) => Ok(Statement::PeBpmd(PeBpmd {
+            r#type: PeBpmdType::Tee(Tee {
                 common: computation_common,
             }),
             meta: pe_bpmd_meta,
         })),
-        PeBpmnType::Mpc(_) => Ok(Statement::PeBpmn(PeBpmn {
-            r#type: PeBpmnType::Mpc(Mpc {
+        PeBpmdType::Mpc(_) => Ok(Statement::PeBpmd(PeBpmd {
+            r#type: PeBpmdType::Mpc(Mpc {
                 common: computation_common,
             }),
             meta: pe_bpmd_meta,
@@ -429,38 +429,38 @@ pub fn to_pe_bpmd(mut tokens: Tokens, _backup_tc: TokenCoordinate) -> AResult {
             "tee-pool" => assemble_tee_or_mpc(
                 tokens,
                 tc,
-                PeBpmnType::Tee(Tee::default()),
-                PeBpmnSubType::Pool(String::new(), TokenCoordinate::default()),
+                PeBpmdType::Tee(Tee::default()),
+                PeBpmdSubType::Pool(String::new(), TokenCoordinate::default()),
             ),
             "tee-lane" => assemble_tee_or_mpc(
                 tokens,
                 tc,
-                PeBpmnType::Tee(Tee::default()),
-                PeBpmnSubType::Lane(String::new(), TokenCoordinate::default()),
+                PeBpmdType::Tee(Tee::default()),
+                PeBpmdSubType::Lane(String::new(), TokenCoordinate::default()),
             ),
             "tee-tasks" => assemble_tee_or_mpc(
                 tokens,
                 tc,
-                PeBpmnType::Tee(Tee::default()),
-                PeBpmnSubType::Tasks(Vec::new()),
+                PeBpmdType::Tee(Tee::default()),
+                PeBpmdSubType::Tasks(Vec::new()),
             ),
             "mpc-pool" => assemble_tee_or_mpc(
                 tokens,
                 tc,
-                PeBpmnType::Mpc(Mpc::default()),
-                PeBpmnSubType::Pool(String::new(), TokenCoordinate::default()),
+                PeBpmdType::Mpc(Mpc::default()),
+                PeBpmdSubType::Pool(String::new(), TokenCoordinate::default()),
             ),
             "mpc-lane" => assemble_tee_or_mpc(
                 tokens,
                 tc,
-                PeBpmnType::Mpc(Mpc::default()),
-                PeBpmnSubType::Lane(String::new(), TokenCoordinate::default()),
+                PeBpmdType::Mpc(Mpc::default()),
+                PeBpmdSubType::Lane(String::new(), TokenCoordinate::default()),
             ),
             "mpc-tasks" => assemble_tee_or_mpc(
                 tokens,
                 tc,
-                PeBpmnType::Mpc(Mpc::default()),
-                PeBpmnSubType::Tasks(Vec::new()),
+                PeBpmdType::Mpc(Mpc::default()),
+                PeBpmdSubType::Tasks(Vec::new()),
             ),
             _ => Err(vec![("Unknown pe-bpmd extension type".to_string(), tc)]),
         }

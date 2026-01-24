@@ -1,6 +1,6 @@
 use crate::pe_bpmd::PoolOrProtection;
 use crate::pe_bpmd::VisibilityTableInput;
-use crate::pe_bpmd::parser::{ComputationCommon, Mpc, PeBpmnSubType, PeBpmnType, Tee};
+use crate::pe_bpmd::parser::{ComputationCommon, Mpc, PeBpmdSubType, PeBpmdType, Tee};
 use itertools::chain;
 use std::collections::BTreeSet;
 use std::collections::HashSet;
@@ -8,8 +8,8 @@ use std::fmt::Display;
 
 use crate::{
     common::graph::{Graph, PoolId, SdeId},
-    lexer::PeBpmnProtection,
-    pe_bpmd::parser::PeBpmn,
+    lexer::PeBpmdProtection,
+    pe_bpmd::parser::PeBpmd,
 };
 use std::collections::HashMap;
 
@@ -40,7 +40,7 @@ enum ProtectionString {
 }
 
 impl ProtectionString {
-    fn from(protections: &HashSet<BTreeSet<PeBpmnProtection>>) -> Self {
+    fn from(protections: &HashSet<BTreeSet<PeBpmdProtection>>) -> Self {
         if let Some(min) = protections.iter().map(BTreeSet::len).min() {
             if min == 0 {
                 // Nothing to rethink here, worst scenario possible, can just return.
@@ -207,7 +207,7 @@ pub fn generate_visibility_table(
         )?;
     }
 
-    let min_protections_len = |protection_groups: &HashSet<BTreeSet<PeBpmnProtection>>| -> usize {
+    let min_protections_len = |protection_groups: &HashSet<BTreeSet<PeBpmdProtection>>| -> usize {
         protection_groups
             .iter()
             .map(BTreeSet::len)
@@ -236,19 +236,19 @@ pub fn generate_visibility_table(
     Ok(String::from_utf8(bytes).unwrap_or("".to_string()))
 }
 
-fn is_pool_pebpmn(pebpmn: &PeBpmn, pool_id: PoolId) -> bool {
+fn is_pool_pebpmn(pebpmn: &PeBpmd, pool_id: PoolId) -> bool {
     match &pebpmn.r#type {
-        PeBpmnType::Mpc(Mpc {
+        PeBpmdType::Mpc(Mpc {
             common:
                 ComputationCommon {
-                    pebpmn_type: PeBpmnSubType::Pool(pool),
+                    pebpmn_type: PeBpmdSubType::Pool(pool),
                     ..
                 },
         })
-        | PeBpmnType::Tee(Tee {
+        | PeBpmdType::Tee(Tee {
             common:
                 ComputationCommon {
-                    pebpmn_type: PeBpmnSubType::Pool(pool),
+                    pebpmn_type: PeBpmdSubType::Pool(pool),
                     ..
                 },
         }) => *pool == pool_id,
@@ -379,17 +379,17 @@ fn pool_if_pool(args: &Args<'_>, pool_or_protection: PoolOrProtection) -> Option
     match pool_or_protection {
         PoolOrProtection::Pool(pool_id) => Some(pool_id),
         PoolOrProtection::Protection(pebpmn) => match &args.graph[pebpmn].r#type {
-            PeBpmnType::Mpc(Mpc {
+            PeBpmdType::Mpc(Mpc {
                 common:
                     ComputationCommon {
-                        pebpmn_type: PeBpmnSubType::Pool(pool_id),
+                        pebpmn_type: PeBpmdSubType::Pool(pool_id),
                         ..
                     },
             })
-            | PeBpmnType::Tee(Tee {
+            | PeBpmdType::Tee(Tee {
                 common:
                     ComputationCommon {
-                        pebpmn_type: PeBpmnSubType::Pool(pool_id),
+                        pebpmn_type: PeBpmdSubType::Pool(pool_id),
                         ..
                     },
             }) => Some(*pool_id),

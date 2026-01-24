@@ -1,7 +1,7 @@
 use crate::common::graph::EdgeId;
 use crate::common::graph::PoolId;
 use crate::common::graph::SdeId;
-use crate::lexer::PeBpmnProtection;
+use crate::lexer::PeBpmdProtection;
 use std::collections::BTreeSet;
 use std::collections::HashMap;
 use std::collections::HashSet;
@@ -13,10 +13,10 @@ pub mod visibility_table;
 #[derive(Debug, Eq, Hash, PartialEq, Clone, Copy)]
 pub enum PoolOrProtection {
     Pool(PoolId),
-    Protection(PeBpmnProtection),
+    Protection(PeBpmdProtection),
 }
 
-/// This is just a slightly different form of the PeBpmn type, but more digestible for the creation
+/// This is just a slightly different form of the PeBpmd type, but more digestible for the creation
 /// of the visibility table. All necessary information is assembled in one place.
 #[derive(Default, Debug)]
 pub struct VisibilityTableInput {
@@ -24,7 +24,7 @@ pub struct VisibilityTableInput {
     /// as then the software operator could replace the TEE with something they control (the remote
     /// user doesn't do correct RA, so they won't notice) and hence decrypt what they should not
     /// have seen.
-    /// The `BTreeSet<PeBpmnProtection>` is the set of protections which already have been present
+    /// The `BTreeSet<PeBpmdProtection>` is the set of protections which already have been present
     /// on the object. An additional `A` must be appiled hereto.
     /// Note: This does *not* look at the directly accessible data of the attacker, but only looks
     /// at the tee-in-protect node which does the encryption. This cannot be deferred to the moment
@@ -39,12 +39,12 @@ pub struct VisibilityTableInput {
     /// the TEE), but I am not sure whether someone would actually want to do that. So until then we
     /// *only* look at the protections of SdeId at the tee-in-protect node.
     pub tee_vulnerable_rv:
-        HashMap<(/*attacker*/ PoolId, SdeId), HashSet<BTreeSet<PeBpmnProtection>>>,
+        HashMap<(/*attacker*/ PoolId, SdeId), HashSet<BTreeSet<PeBpmdProtection>>>,
     /// That PoolId gets all the data, which is part of that TEE or MPC, with an additional H.
     /// Since protections can be nested, they also happen to get an `H`.
-    /// (Conceptually a HashSet<PoolOrProtection, HashSet<PeBpmnProtection>> but just one
+    /// (Conceptually a HashSet<PoolOrProtection, HashSet<PeBpmdProtection>> but just one
     /// allocation)
-    pub software_operator: HashSet<(PoolOrProtection, PeBpmnProtection)>,
+    pub software_operator: HashSet<(PoolOrProtection, PeBpmdProtection)>,
     /// That PoolId gets all the data, which is part of that TEE or MPC, with an additional A.
     /// Why an `A`? TEE technologies usually exclude the hardware operator from the threat model, or
     /// at least only protect against a small handful of easyish hardware attacks (cold boot). But
@@ -54,16 +54,16 @@ pub struct VisibilityTableInput {
     /// just makes an attack more expensive and/or time consuming. The only silver bullet is to not
     /// gather any data in the first place.
     /// TODO verify that a hardware operator is not a `(tee|mpc)-pool`.
-    pub tee_hardware_operator: HashSet<(PoolId, PeBpmnProtection)>,
+    pub tee_hardware_operator: HashSet<(PoolId, PeBpmdProtection)>,
     /// A pool could have root access to multiple TEEs, hence a `Vec`.
-    pub tee_external_root_access: HashMap<PoolId, HashSet<PeBpmnProtection>>,
+    pub tee_external_root_access: HashMap<PoolId, HashSet<PeBpmdProtection>>,
     /// For generating the network operator visibility row.
-    pub network_message_protections: HashMap<SdeId, HashSet<BTreeSet<PeBpmnProtection>>>,
+    pub network_message_protections: HashMap<SdeId, HashSet<BTreeSet<PeBpmdProtection>>>,
     // Contains both the `data` nodes and data which moves via message flows.
     //
     // TODO this comment is not totally adequate and should move to `tee_vulnerable_rv`.
     pub directly_accessible_data:
-        HashMap<PoolOrProtection, HashMap<SdeId, HashSet<BTreeSet<PeBpmnProtection>>>>,
+        HashMap<PoolOrProtection, HashMap<SdeId, HashSet<BTreeSet<PeBpmdProtection>>>>,
 }
 
 #[derive(Default)]

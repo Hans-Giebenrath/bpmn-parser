@@ -4,34 +4,34 @@ use std::collections::HashMap;
 use crate::common::graph::{LaneId, PoolId};
 use crate::common::node::NodeType;
 use crate::lexer::TokenCoordinate;
-use crate::lexer::{self, PeBpmnProtection};
+use crate::lexer::{self, PeBpmdProtection};
 use crate::parser::Parser;
 use crate::{
     common::graph::{NodeId, SdeId},
-    lexer::PeBpmnMeta,
+    lexer::PeBpmdMeta,
     parser::ParseError,
 };
 
 #[derive(Debug, Clone, PartialEq)]
-pub struct PeBpmn {
-    pub r#type: PeBpmnType,
-    pub meta: PeBpmnMeta, // stroke color, etc
+pub struct PeBpmd {
+    pub r#type: PeBpmdType,
+    pub meta: PeBpmdMeta, // stroke color, etc
 }
 
 #[derive(Debug, Clone, PartialEq)]
-pub enum PeBpmnType {
+pub enum PeBpmdType {
     SecureChannel(SecureChannel),
     //SecureChannelWithExplicitSecret(SecureChannelWithExplicitSecret),
     Tee(Tee),
     Mpc(Mpc),
 }
 
-impl PeBpmnType {
-    pub fn protection(&self) -> PeBpmnProtection {
+impl PeBpmdType {
+    pub fn protection(&self) -> PeBpmdProtection {
         match self {
-            Self::SecureChannel(inner) => PeBpmnProtection::SecureChannel(inner.tc),
-            Self::Tee(inner) => PeBpmnProtection::Tee(inner.common.tc),
-            Self::Mpc(inner) => PeBpmnProtection::Mpc(inner.common.tc),
+            Self::SecureChannel(inner) => PeBpmdProtection::SecureChannel(inner.tc),
+            Self::Tee(inner) => PeBpmdProtection::Tee(inner.common.tc),
+            Self::Mpc(inner) => PeBpmdProtection::Mpc(inner.common.tc),
         }
     }
 }
@@ -56,7 +56,7 @@ pub struct Mpc {
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct ComputationCommon {
-    pub pebpmn_type: PeBpmnSubType,
+    pub pebpmn_type: PeBpmdSubType,
 
     pub in_protect: Vec<Protection>,
     pub in_unprotect: Vec<Protection>,
@@ -74,7 +74,7 @@ pub struct ComputationCommon {
 }
 
 #[derive(Debug, Clone, PartialEq)]
-pub enum PeBpmnSubType {
+pub enum PeBpmdSubType {
     // TODO Pool and Lane need to be Vecs because MPC is on multiple pools and lanes.
     Pool(PoolId),
     Lane { pool_id: PoolId, lane_id: LaneId },
@@ -91,9 +91,9 @@ pub struct Protection {
 }
 
 impl Parser {
-    pub fn parse_pe_bpmd(&mut self, pe_bpmd: lexer::PeBpmn) -> Result<(), ParseError> {
+    pub fn parse_pe_bpmd(&mut self, pe_bpmd: lexer::PeBpmd) -> Result<(), ParseError> {
         let r#type = match pe_bpmd.r#type {
-            lexer::PeBpmnType::SecureChannel(secure_channel) => {
+            lexer::PeBpmdType::SecureChannel(secure_channel) => {
                 let sender_id = secure_channel
                     .sender
                     .as_ref()
@@ -150,22 +150,22 @@ impl Parser {
                                 ]
                             );
                 }
-                PeBpmnType::SecureChannel(SecureChannel {
+                PeBpmdType::SecureChannel(SecureChannel {
                     sender: sender_id,
                     receiver: receiver_id,
                     permitted_ids: permitted_sdes.into_iter().collect(),
                     tc: secure_channel.tc,
                 })
             }
-            lexer::PeBpmnType::Tee(lexer::Tee { common }) => PeBpmnType::Tee(Tee {
+            lexer::PeBpmdType::Tee(lexer::Tee { common }) => PeBpmdType::Tee(Tee {
                 common: self.parse_tee_or_mpc(common, "tee")?,
             }),
-            lexer::PeBpmnType::Mpc(lexer::Mpc { common }) => PeBpmnType::Mpc(Mpc {
+            lexer::PeBpmdType::Mpc(lexer::Mpc { common }) => PeBpmdType::Mpc(Mpc {
                 common: self.parse_tee_or_mpc(common, "mpc")?,
             }),
         };
 
-        self.graph.pe_bpmd_definitions.push(PeBpmn {
+        self.graph.pe_bpmd_definitions.push(PeBpmd {
             r#type,
             meta: pe_bpmd.meta,
         });
@@ -181,9 +181,9 @@ impl Parser {
         let computation_common = self.parse_tee_or_mpc_inner(common, tee_or_mpc)?;
 
         match &computation_common.pebpmn_type {
-            &PeBpmnSubType::Pool(..) => self.verify_pebpmn_pool(&computation_common, tee_or_mpc),
-            &PeBpmnSubType::Lane { .. } => self.verify_pebpmn_lane(&computation_common, tee_or_mpc),
-            PeBpmnSubType::Tasks(..) => self.verify_pebpmn_tasks(&computation_common, tee_or_mpc),
+            &PeBpmdSubType::Pool(..) => self.verify_pebpmn_pool(&computation_common, tee_or_mpc),
+            &PeBpmdSubType::Lane { .. } => self.verify_pebpmn_lane(&computation_common, tee_or_mpc),
+            PeBpmdSubType::Tasks(..) => self.verify_pebpmn_tasks(&computation_common, tee_or_mpc),
         };
         Ok(computation_common)
     }
@@ -216,7 +216,7 @@ impl Parser {
         };
 
         let (pebpmn_type, software_operators, hardware_operators) = match lexer.pebpmn_type {
-            lexer::PeBpmnSubType::Pool(pool_str, _tc) => {
+            lexer::PeBpmdSubType::Pool(pool_str, _tc) => {
                 let pool_id = self.find_pool_id_or_error(&pool_str)?;
                 if lexer.software_operators.is_empty() {
                     return Err(self.smthng_missing_error(tee_or_mpc, "software-operators", ""));
@@ -252,12 +252,12 @@ impl Parser {
                     })
                     .collect::<Result<Vec<_>, _>>()?;
                 (
-                    PeBpmnSubType::Pool(pool_id),
+                    PeBpmdSubType::Pool(pool_id),
                     software_operators,
                     hardware_operators,
                 )
             }
-            lexer::PeBpmnSubType::Lane(lane_str, lane_tc) => {
+            lexer::PeBpmdSubType::Lane(lane_str, lane_tc) => {
                 let (pool_id, lane_id) = self.context.pool_id_matcher.find_pool_and_lane_id_by_lane_name_fuzzy(&self.graph, &lane_str).ok_or_else(|| vec![(
                     format!("Lane with name {lane_str} was not found in any pool. Have you defined it?"),
                     lane_tc,
@@ -301,12 +301,12 @@ impl Parser {
                     hardware_operators.push(pool_id);
                 }
                 (
-                    PeBpmnSubType::Lane { pool_id, lane_id },
+                    PeBpmdSubType::Lane { pool_id, lane_id },
                     software_operators,
                     hardware_operators,
                 )
             }
-            lexer::PeBpmnSubType::Tasks(tasks) => {
+            lexer::PeBpmdSubType::Tasks(tasks) => {
                 let task_ids: Vec<(NodeId, TokenCoordinate)> = tasks
                     .iter()
                     .map(|(task_str, tc)| {
@@ -363,7 +363,7 @@ impl Parser {
                     hardware_operators.push(automatically_derived_software_operator);
                 }
                 (
-                    PeBpmnSubType::Tasks(task_ids),
+                    PeBpmdSubType::Tasks(task_ids),
                     software_operators,
                     hardware_operators,
                 )
@@ -576,7 +576,7 @@ impl Parser {
         common: &ComputationCommon,
         tee_or_mpc: &str,
     ) -> Result<(), ParseError> {
-        let &PeBpmnSubType::Pool(pool_id) = &common.pebpmn_type else {
+        let &PeBpmdSubType::Pool(pool_id) = &common.pebpmn_type else {
             // Guaranteed by the caller.
             unreachable!();
         };
@@ -611,7 +611,7 @@ impl Parser {
         common: &ComputationCommon,
         tee_or_mpc: &str,
     ) -> Result<(), ParseError> {
-        let &PeBpmnSubType::Lane { pool_id, lane_id } = &common.pebpmn_type else {
+        let &PeBpmdSubType::Lane { pool_id, lane_id } = &common.pebpmn_type else {
             // Guaranteed by the caller.
             unreachable!();
         };
@@ -644,7 +644,7 @@ impl Parser {
         common: &ComputationCommon,
         tee_or_mpc: &str,
     ) -> Result<(), ParseError> {
-        let PeBpmnSubType::Tasks(tasks) = &common.pebpmn_type else {
+        let PeBpmdSubType::Tasks(tasks) = &common.pebpmn_type else {
             // Guaranteed by the caller.
             unreachable!();
         };
@@ -713,7 +713,7 @@ impl Parser {
 //            edge::{FlowType, MessageFlowAux},
 //            graph::SdeId,
 //        },
-//        lexer::{PeBpmnProtection, TokenCoordinate},
+//        lexer::{PeBpmdProtection, TokenCoordinate},
 //        parser::{ParseError, parse},
 //    };
 //
@@ -773,7 +773,7 @@ impl Parser {
 //                    .pebpmn_protection;
 //
 //                assert!(
-//                    protection.contains(&PeBpmnProtection::SecureChannel(TokenCoordinate {
+//                    protection.contains(&PeBpmdProtection::SecureChannel(TokenCoordinate {
 //                        /* TODO */ start: 0,
 //                        /* TODO */ end: 0,
 //                        source_file_idx: 0
@@ -819,7 +819,7 @@ impl Parser {
 //                            .find(|e| e.0 == SdeId(i))
 //                            .unwrap()
 //                            .1
-//                            .contains(&PeBpmnProtection::SecureChannel(TokenCoordinate {
+//                            .contains(&PeBpmdProtection::SecureChannel(TokenCoordinate {
 //                                start: 0,
 //                                end: 0,
 //                                source_file_idx: 0
@@ -886,7 +886,7 @@ impl Parser {
 //
 //                if should_have_protection {
 //                    assert!(
-//                        protection.contains(&PeBpmnProtection::SecureChannel(TokenCoordinate {
+//                        protection.contains(&PeBpmdProtection::SecureChannel(TokenCoordinate {
 //                            start: 0,
 //                            end: 0,
 //                            source_file_idx: 0

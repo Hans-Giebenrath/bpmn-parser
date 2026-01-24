@@ -33,7 +33,7 @@ pub enum Statement {
     MessageFlow(MessageFlowMeta),
     Data(DataMeta), // 'SD' for datastore 'OD' for dataobject '&' for continuation
     Layout(LayoutStatement),
-    PeBpmn(PeBpmn),
+    PeBpmd(PeBpmd),
     BoundaryEvent(BoundaryEventMeta),
 }
 
@@ -86,32 +86,32 @@ pub enum DataType {
 // Copy: 32 Bytes are actually large, but whatever, I don't want to deal with the references all the
 // time. If need arises, this can be changed.
 #[derive(Debug, Clone, Copy, Eq, PartialEq, PartialOrd, Ord, Hash)]
-pub enum PeBpmnProtection {
+pub enum PeBpmdProtection {
     SecureChannel(TokenCoordinate),
     Tee(TokenCoordinate),
     Mpc(TokenCoordinate),
 }
 
-impl PeBpmnProtection {
+impl PeBpmdProtection {
     pub fn is_secure_channel(&self) -> bool {
-        matches!(self, PeBpmnProtection::SecureChannel(..))
+        matches!(self, PeBpmdProtection::SecureChannel(..))
     }
 
     pub fn tc(&self) -> TokenCoordinate {
         match self {
-            &PeBpmnProtection::SecureChannel(tc)
-            | &PeBpmnProtection::Tee(tc)
-            | &PeBpmnProtection::Mpc(tc) => tc,
+            &PeBpmdProtection::SecureChannel(tc)
+            | &PeBpmdProtection::Tee(tc)
+            | &PeBpmdProtection::Mpc(tc) => tc,
         }
     }
 }
 
-impl Display for PeBpmnProtection {
+impl Display for PeBpmdProtection {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         match self {
-            PeBpmnProtection::Mpc(..) => write!(f, "mpc"),
-            PeBpmnProtection::Tee(..) => write!(f, "tee"),
-            PeBpmnProtection::SecureChannel(..) => write!(f, "secure-channel"),
+            PeBpmdProtection::Mpc(..) => write!(f, "mpc"),
+            PeBpmdProtection::Tee(..) => write!(f, "tee"),
+            PeBpmdProtection::SecureChannel(..) => write!(f, "secure-channel"),
         }
     }
 }

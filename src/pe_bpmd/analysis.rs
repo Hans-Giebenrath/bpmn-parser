@@ -1,12 +1,12 @@
 use crate::lexer::TokenCoordinate;
 use crate::pe_bpmd::PoolOrProtection;
 use crate::pe_bpmd::parser::{
-    ComputationCommon, Mpc, PeBpmn, PeBpmnSubType, PeBpmnType, Protection, SecureChannel, Tee,
+    ComputationCommon, Mpc, PeBpmd, PeBpmdSubType, PeBpmdType, Protection, SecureChannel, Tee,
 };
 use crate::pe_bpmd::{ProtectionPaths, VisibilityTableInput};
 use crate::{
     common::graph::{EdgeId, NodeId, SdeId},
-    lexer::PeBpmnProtection,
+    lexer::PeBpmdProtection,
     parser::ParseError,
 };
 use crate::{
@@ -73,22 +73,22 @@ enum GraphElement {
 struct State {
     // A `data` node represents just one piece of data, but it can be protected simultaneously by
     // multiple protections (both secure channel and TEE).
-    data_node_protection: HashMap<NodeId, HashSet<PeBpmnProtection>>,
-    flow_protection: HashMap<EdgeId, HashMap<SdeId, BTreeSet<PeBpmnProtection>>>,
+    data_node_protection: HashMap<NodeId, HashSet<PeBpmdProtection>>,
+    flow_protection: HashMap<EdgeId, HashMap<SdeId, BTreeSet<PeBpmdProtection>>>,
     // The reverse of `data_node_protection` and `message_flow_protection`. To apply coloring after
     // the graph is analysed (enables to traverse over `&Graph` instead of `&mut Graph`).
-    protection_graph: HashMap<PeBpmnProtection, HashSet<GraphElement>>,
+    protection_graph: HashMap<PeBpmdProtection, HashSet<GraphElement>>,
     // Like `protection_graph` but more fine-grained. Just contains edges to realise whether
     // different protections are either correctly nested or disjoint (if some protection path of
     // pe_bpmd_protection_1 is strictly smaller than some protection path of pe_bpmd_protection_2,
     // then no protection path of pe_bpmd_protection_2 shall be strictly smaller than some
     // protection path of pe_bpmd_protection_1).
-    protection_paths_graphs: HashMap<PeBpmnProtection, ProtectionPaths>,
+    protection_paths_graphs: HashMap<PeBpmdProtection, ProtectionPaths>,
     result: VisibilityTableInput,
 }
 
 impl State {
-    fn set_data_node_protection(&mut self, data_node_id: NodeId, protection: PeBpmnProtection) {
+    fn set_data_node_protection(&mut self, data_node_id: NodeId, protection: PeBpmdProtection) {
         self.data_node_protection
             .entry(data_node_id)
             .or_default()
@@ -102,7 +102,7 @@ impl State {
     fn set_nondata_node_protection(
         &mut self,
         nondata_node_id: NodeId,
-        protection: PeBpmnProtection,
+        protection: PeBpmdProtection,
     ) {
         self.protection_graph
             .entry(protection)
@@ -110,7 +110,7 @@ impl State {
             .insert(GraphElement::NonData(nondata_node_id));
     }
 
-    fn set_flow_protection(&mut self, mf_id: EdgeId, sde_id: SdeId, protection: PeBpmnProtection) {
+    fn set_flow_protection(&mut self, mf_id: EdgeId, sde_id: SdeId, protection: PeBpmdProtection) {
         self.flow_protection
             .entry(mf_id)
             .or_default()
@@ -125,38 +125,38 @@ impl State {
 }
 
 fn analyse_single(
-    pe_bpmd: &PeBpmn,
+    pe_bpmd: &PeBpmd,
     graph: &mut Graph,
     state: &mut State,
 ) -> Result<(), ParseError> {
     let enforce_reach_end = true;
     match &pe_bpmd.r#type {
-        PeBpmnType::SecureChannel(secure_channel) => {
+        PeBpmdType::SecureChannel(secure_channel) => {
             analyse_secure_channel(secure_channel, graph, state)?;
         }
-        PeBpmnType::Tee(Tee { common }) => {
-            compute_visibility_tee_or_mpc(graph, state, common, PeBpmnProtection::Tee(common.tc))?;
+        PeBpmdType::Tee(Tee { common }) => {
+            compute_visibility_tee_or_mpc(graph, state, common, PeBpmdProtection::Tee(common.tc))?;
             check_that_protection_is_visually_applied_tee_or_mpc(graph, common)?;
             match &common.pebpmn_type {
-                &PeBpmnSubType::Pool(pool_id) => parse_pebpmn_pool_or_lane(
+                &PeBpmdSubType::Pool(pool_id) => parse_pebpmn_pool_or_lane(
                     graph,
                     state,
                     common,
                     enforce_reach_end,
-                    PeBpmnProtection::Tee(common.tc),
+                    PeBpmdProtection::Tee(common.tc),
                     pool_id,
                     None,
                 )?,
-                &PeBpmnSubType::Lane { pool_id, lane_id } => parse_pebpmn_pool_or_lane(
+                &PeBpmdSubType::Lane { pool_id, lane_id } => parse_pebpmn_pool_or_lane(
                     graph,
                     state,
                     common,
                     enforce_reach_end,
-                    PeBpmnProtection::Tee(common.tc),
+                    PeBpmdProtection::Tee(common.tc),
                     pool_id,
                     Some(lane_id),
                 )?,
-                PeBpmnSubType::Tasks(tasks) => {
+                PeBpmdSubType::Tasks(tasks) => {
                     for (node_id, _) in tasks {
                         if let NodeType::RealNode {
                             pe_bpmd_hides_protection_operations,
@@ -172,34 +172,34 @@ fn analyse_single(
                         tasks,
                         common,
                         enforce_reach_end,
-                        PeBpmnProtection::Tee(common.tc),
+                        PeBpmdProtection::Tee(common.tc),
                     )?
                 }
             }
         }
-        PeBpmnType::Mpc(Mpc { common }) => {
-            compute_visibility_tee_or_mpc(graph, state, common, PeBpmnProtection::Mpc(common.tc))?;
+        PeBpmdType::Mpc(Mpc { common }) => {
+            compute_visibility_tee_or_mpc(graph, state, common, PeBpmdProtection::Mpc(common.tc))?;
             check_that_protection_is_visually_applied_tee_or_mpc(graph, common)?;
             match &common.pebpmn_type {
-                &PeBpmnSubType::Pool(pool_id) => parse_pebpmn_pool_or_lane(
+                &PeBpmdSubType::Pool(pool_id) => parse_pebpmn_pool_or_lane(
                     graph,
                     state,
                     common,
                     enforce_reach_end,
-                    PeBpmnProtection::Mpc(common.tc),
+                    PeBpmdProtection::Mpc(common.tc),
                     pool_id,
                     None,
                 )?,
-                &PeBpmnSubType::Lane { pool_id, lane_id } => parse_pebpmn_pool_or_lane(
+                &PeBpmdSubType::Lane { pool_id, lane_id } => parse_pebpmn_pool_or_lane(
                     graph,
                     state,
                     common,
                     enforce_reach_end,
-                    PeBpmnProtection::Mpc(common.tc),
+                    PeBpmdProtection::Mpc(common.tc),
                     pool_id,
                     Some(lane_id),
                 )?,
-                PeBpmnSubType::Tasks(tasks) => {
+                PeBpmdSubType::Tasks(tasks) => {
                     for (node_id, _) in tasks {
                         if let NodeType::RealNode {
                             pe_bpmd_hides_protection_operations,
@@ -215,7 +215,7 @@ fn analyse_single(
                         tasks,
                         common,
                         enforce_reach_end,
-                        PeBpmnProtection::Mpc(common.tc),
+                        PeBpmdProtection::Mpc(common.tc),
                     )?;
                 }
             }
@@ -231,7 +231,7 @@ fn analyse_secure_channel(
 ) -> Result<(), ParseError> {
     let enforce_reach_end = true;
     let is_reverse = true;
-    let protection = PeBpmnProtection::SecureChannel(secure_channel.tc);
+    let protection = PeBpmdProtection::SecureChannel(secure_channel.tc);
     let filter = |sde_id: &SdeId| {
         secure_channel.permitted_ids.is_empty() || contains(&secure_channel.permitted_ids, sde_id)
     };
@@ -364,25 +364,25 @@ fn compute_accessible_data(graph: &Graph, analysis_state: &mut State) -> Result<
         {
             for pebpmn in &graph.pe_bpmd_definitions {
                 match &pebpmn.r#type {
-                    PeBpmnType::Tee(Tee { common }) | PeBpmnType::Mpc(Mpc { common }) => {
+                    PeBpmdType::Tee(Tee { common }) | PeBpmdType::Mpc(Mpc { common }) => {
                         match &common.pebpmn_type {
-                            PeBpmnSubType::Pool(pool_id) if *pool_id == node.pool => {
+                            PeBpmdSubType::Pool(pool_id) if *pool_id == node.pool => {
                                 assert!(pool_protection.is_none());
                                 pool_protection = Some(pebpmn.r#type.protection());
                             }
-                            PeBpmnSubType::Lane { pool_id, lane_id }
+                            PeBpmdSubType::Lane { pool_id, lane_id }
                                 if *pool_id == node.pool && *lane_id == node.lane =>
                             {
                                 assert!(lane_protection.is_none());
                                 lane_protection = Some(pebpmn.r#type.protection());
                             }
-                            PeBpmnSubType::Tasks(tasks) if contains(tasks, &node.id) => {
+                            PeBpmdSubType::Tasks(tasks) if contains(tasks, &node.id) => {
                                 task_protections.push(pebpmn.r#type.protection());
                             }
                             _ => continue,
                         }
                     }
-                    PeBpmnType::SecureChannel(sc) => {
+                    PeBpmdType::SecureChannel(sc) => {
                         if sc
                             .sender
                             .iter()
@@ -466,7 +466,7 @@ fn compute_accessible_data(graph: &Graph, analysis_state: &mut State) -> Result<
                 && first.is_secure_channel()
                 && let Some(non_sc) = task_protections
                     .iter()
-                    .find(|arg0| !PeBpmnProtection::is_secure_channel(*arg0))
+                    .find(|arg0| !PeBpmdProtection::is_secure_channel(*arg0))
             {
                 return Err(vec![
                     (
@@ -485,7 +485,7 @@ fn compute_accessible_data(graph: &Graph, analysis_state: &mut State) -> Result<
             }
 
             let mut analyse = |sde_id: SdeId,
-                               mut protections: BTreeSet<PeBpmnProtection>,
+                               mut protections: BTreeSet<PeBpmdProtection>,
                                is_message_flow: bool,
                                is_cross_lane_flow: bool| {
                 if let Some(lane_protection) = lane_protection {
@@ -519,7 +519,7 @@ fn compute_accessible_data(graph: &Graph, analysis_state: &mut State) -> Result<
                 // The nested protections are all just secure channels, so there is no "owner".
                 if task_protections
                     .first()
-                    .map(PeBpmnProtection::is_secure_channel)
+                    .map(PeBpmdProtection::is_secure_channel)
                     .unwrap_or(true)
                 {
                     return;
@@ -597,7 +597,7 @@ fn compute_accessible_data(graph: &Graph, analysis_state: &mut State) -> Result<
     }
 
     for pebpmn in &graph.pe_bpmd_definitions {
-        let PeBpmnType::Tee(Tee { common }) = &pebpmn.r#type else {
+        let PeBpmdType::Tee(Tee { common }) = &pebpmn.r#type else {
             continue;
         };
 
@@ -645,7 +645,7 @@ fn compute_visibility_tee_or_mpc(
     graph: &Graph,
     analysis_state: &mut State,
     computation: &ComputationCommon,
-    protection: PeBpmnProtection,
+    protection: PeBpmdProtection,
 ) -> Result<(), ParseError> {
     analysis_state.result.software_operator.extend(
         computation
@@ -677,11 +677,11 @@ fn compute_visibility_tee_or_mpc(
     // Consider all data which is transported to/within/out of the TEE/MPC.
     for node in &graph.nodes {
         let consider = match &computation.pebpmn_type {
-            &PeBpmnSubType::Pool(pool_id) => node.pool == pool_id,
-            &PeBpmnSubType::Lane { pool_id, lane_id } => {
+            &PeBpmdSubType::Pool(pool_id) => node.pool == pool_id,
+            &PeBpmdSubType::Lane { pool_id, lane_id } => {
                 node.pool == pool_id && node.lane == lane_id
             }
-            PeBpmnSubType::Tasks(tasks) => tasks.iter().any(|(node_id, _)| *node_id == node.id),
+            PeBpmdSubType::Tasks(tasks) => tasks.iter().any(|(node_id, _)| *node_id == node.id),
         };
         if consider {
             all_sdes.extend(
@@ -701,7 +701,7 @@ fn parse_pebpmn_pool_or_lane(
     analysis_state: &mut State,
     computation: &ComputationCommon,
     enforce_reach_end: bool,
-    protection: PeBpmnProtection,
+    protection: PeBpmdProtection,
     pool_id: PoolId,
     lane_id: Option<LaneId>,
 ) -> Result<(), ParseError> {
@@ -752,7 +752,7 @@ fn parse_pebpmn_tasks(
     tasks: &[(NodeId, TokenCoordinate)],
     computation: &ComputationCommon,
     enforce_reach_end: bool,
-    protection: PeBpmnProtection,
+    protection: PeBpmdProtection,
 ) -> Result<(), ParseError> {
     let filter = computation_filter(computation);
     let end_out = computation
@@ -880,7 +880,7 @@ fn protection_channel(
 /// traversal (circumvents the borrow checker).
 struct ProtectionPathTraversalState {
     visited_nodes: HashSet<NodeId>,
-    protection: PeBpmnProtection,
+    protection: PeBpmdProtection,
     cur_sde: SdeId,
     visited_edges: BTreeSet<EdgeId>,
 }
@@ -894,7 +894,7 @@ fn check_protection_paths(
     node_pebpmn_tc: TokenCoordinate,
     is_reverse: bool,
     ends: &[NodeId],
-    protection: PeBpmnProtection,
+    protection: PeBpmdProtection,
     filter: impl Fn(&SdeId) -> bool,
     enforce_reach_end: bool,
 ) -> Result<(), ParseError> {
@@ -1115,12 +1115,12 @@ fn create_protection_error_message(
     node_pebpmn_tc: TokenCoordinate,
     sde_id: SdeId,
     is_reverse: bool,
-    protection: PeBpmnProtection,
+    protection: PeBpmdProtection,
     ends: &[NodeId],
 ) -> ParseError {
     let what_to_do_instead = match protection {
-        PeBpmnProtection::SecureChannel(..) => "If this data element should not be protected at all, you can specify a list of protected data like (secure-channel @sender @receiver @protected-data1 @protected-data2) where you omit this data element.".to_string(),
-        PeBpmnProtection::Mpc(..) | PeBpmnProtection::Tee(..) => format!("If this data element should not be protected at all, you can specify an explicit list of excluded data via ({protection}-data-without-protection @data-id1 @data-id2)"),
+        PeBpmdProtection::SecureChannel(..) => "If this data element should not be protected at all, you can specify a list of protected data like (secure-channel @sender @receiver @protected-data1 @protected-data2) where you omit this data element.".to_string(),
+        PeBpmdProtection::Mpc(..) | PeBpmdProtection::Tee(..) => format!("If this data element should not be protected at all, you can specify an explicit list of excluded data via ({protection}-data-without-protection @data-id1 @data-id2)"),
     };
     let mut result = vec![
         (

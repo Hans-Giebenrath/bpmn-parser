@@ -172,7 +172,7 @@ impl Parser {
                 Statement::Gateway(meta) => self.parse_gateway(meta)?,
                 Statement::MessageFlow(meta) => self.parse_message_flow(meta)?,
                 Statement::Data(meta) => self.parse_data(meta)?,
-                Statement::PeBpmn(pe_bpmd) => self.parse_pe_bpmd(pe_bpmd)?,
+                Statement::PeBpmd(pe_bpmd) => self.parse_pe_bpmd(pe_bpmd)?,
                 Statement::Layout(_) => {
                     eprintln!("Warning: layout instructions are currently ignored.")
                 }
