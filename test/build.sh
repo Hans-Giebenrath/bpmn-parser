@@ -10,14 +10,14 @@ pushd "$dir"
 # contains the fragments in the correct order (glob order .. maybe improve),
 # the fragments are first written in parallel into smaller files, and then
 # in the end all those files are combined sequentially.
-TMPDIR=$(mktemp -d -t 'bpmn-parser-doc_test_build.sh.XXXXXXXX')
+TMPDIR=$(mktemp -d -t 'bpmn-parser-test_build.sh.XXXXXXXX')
 
 cleanup() {
     rm -rf "$TMPDIR"
 }
 trap cleanup EXIT
 
-pushd "../.."
+pushd ".."
 release="${release:-false}"
 if [ "$release" = "true" ]; then
     cargo build --release
@@ -32,14 +32,14 @@ run() {
     fi
 }
 file_stem=compiled
-adoc_file="doc/test/$file_stem.adoc"
+adoc_file="test/$file_stem.adoc"
 
 # Environment variable BDT can be used to select just one file for compilation.
 # Usually one wants to test all files at once, or one composes a new file or
 # debugs on one file. Hence no `many` selection at the moment, either one or all.
-all=(doc/test/*.bpmd)
+all=(test/*.bpmd)
 if [ -n "${BDT:-}" ]; then
-    all=("doc/test/${BDT}")
+    all=("test/${BDT}")
 fi
 for f in "${all[@]}"; do
     {

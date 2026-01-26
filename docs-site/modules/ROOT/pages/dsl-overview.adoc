@@ -64,9 +64,8 @@ include::example$overview-gateway.bpmd[]
 <2> The edge label `Edge Text` is not yet rendered.
 
 Gateways break up the natural sequence flow from line to line. Instead, a gateway finishes it and
-sends the sequence flow elsewhere via `->one` and `->two` "jumps". The "landing" counterparts are `F
-<-label` meta statements. These `F` statements don't correlate to a node in the resulting diagram,
-they are purely for connecting loose ends of a detached sequence flow.
+sends the sequence flow elsewhere via `->one` and `->two` "jumps". The "landing" counterparts are
+marked via the `<-label` attributes.
 
 In principle, you can add a display text to an edge via `<-label"Display Text"` but the actual
 rendering is still waiting on the roadmap.
@@ -128,7 +127,7 @@ pass:[<del>]A pool can be marked as multiple with the `~multiple` attribute.{emp
 
 == Sequence Flow across Lanes
 
-You can reuse the `F` statement to transition from one lane to another lane.
+You can use the `->label` and `<-label` on non-gateways to transition from one lane to another lane (but this can of course also be done when gateways are involved).
 
 image::generated/overview-lane-crossing.png[]
 
@@ -136,13 +135,6 @@ image::generated/overview-lane-crossing.png[]
 ----
 include::example$overview-lane-crossing.bpmd[]
 ----
-
-IMPORTANT:: The syntax will likely get rid of `F` meta statements and just use `<-` and `->` on the task and
-event statements. The dedicated statement does better highlight that there is a break in the
-sequence flow, but it also adds quite a lot of length to the text file for otherwise small diagram.
-To avoid situations where some people prefer one way and some people prefer the other way, only one
-syntax will stay valid (think of the wasted hours when these differently opinionated people mix and
-start bike-shedding). Maybe an empty newline will become mandatory to enforce clear visuals.
 
 As you can see, `Lane 2` does not start with a start event. Instead it starts off with an incoming
 sequence flow landing.
@@ -167,7 +159,7 @@ A message flow statement is special in that it does not represent a node, but on
 Hence it must have exactly one incoming arrow `<-from` which designates the source, and `->to` which
 designates the target.
 
-While with gateways you had to match the labels of the `X ->lbl` and `F <-lbl` statements, the `from` and `to`
+While with gateways you had to match the labels of the `X ->lbl` and `- activity <-lbl` statements, the `from` and `to`
 labels can use _fuzzy matching_. That is, you can specify some shortened version of the source /
 target node display text as
 the label, and that shortened version then looks through all previously defined nodes for the best

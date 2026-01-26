@@ -60,5 +60,5 @@ run() {
 echo "generating "
 run -i "$bpmd_file" -o "$xml_file" -v "$csv_file"
 echo "finished generating $xml_file, now generating the png"
-doc/node_modules/.bin/bpmn-to-image "$xml_file":"$png_file"
+test/node_modules/.bin/bpmn-to-image "$xml_file":"$png_file"
 rm "$xml_file"

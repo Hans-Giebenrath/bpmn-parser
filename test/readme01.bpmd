@@ -1,0 +1,26 @@
+= This is a Pool
+== This is a Lane
+
+# Start Event
+X I am an exclusive Gateway
+  ->one-branch"Let's Go here"
+  ->the-other-branch"No, here!"
+
+- Wonderful Task <-one-branch ->we-are-done
+
+- Share a Message <-the-other-branch ->we-are-done
+
+X <-we-are-done
+. Context Switch
+
+= Another Pool Begins
+
+# We got an Inspiration
+- Think
+ T! ->later
+. Epiphany
+
+. No Epiphany Today <-later
+
+// Message Flow
+MF <-share ->inspiration

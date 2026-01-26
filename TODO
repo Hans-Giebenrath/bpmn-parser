@@ -23,3 +23,4 @@
 * docsite, secure channel prot and unprot data associations are quite funky. Maybe the ad-hoc solution is to tackle the problem of distributing data objects better (or, at all) across layers?
 * Expand the secure-channel shorthand
 * Parse config values from the .bpmd file (see common/config.rs which is already macro-ified for this purpose).
+* Try to help the crossing reduction phase by solving some variables, if the order can be answered for some nodes trivially (just one node in a given pool/lane/layer coordinate). Some larger diagrams with mostly trivial ordering have rather high ILP solving times. The solver is not very optimized, hence we better help it.
