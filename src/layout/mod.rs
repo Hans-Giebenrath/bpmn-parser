@@ -1,4 +1,6 @@
 pub mod all_crossing_minimization;
+pub mod back_edge_removal;
+pub mod constraint;
 pub mod dummy_node_generation;
 pub mod edge_routing;
 pub mod port_assignment;

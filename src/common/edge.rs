@@ -80,6 +80,7 @@ pub struct Edge {
     pub from: NodeId,
     pub to: NodeId,
     pub edge_type: EdgeType,
+    /// This is only used for data flows.
     pub is_reversed: bool,
     pub flow_type: FlowType,
     pub stays_within_lane: bool,

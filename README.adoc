@@ -117,11 +117,11 @@ The BPMD tool is in an alpha stage.
 Lot's of stuff is working already to make some useful diagrams, but many must-have features <<missing-pieces,are missing>> or are a little bit broken.
 
 At the moment, this is my personal hobby project (but refer to the <<project-history,history>> section for the more vivid project beginnings).
-I enjoy working on the project since it seems like a similar tool does not exist, yet (i.e. I can make an actual impact with this tool, to the best of my knowledge is not just another toaster), and since it is nostalgic for me (applying the Sugiyama framework was my bachelor's thesis, good old university days).
-But I do have other things to work on, especially in the warmer months, and this will very likely result in a slower pace.
+I enjoy working on the project since it seems like a similar tool does not exist, yet (i.e. I can make an actual impact with this tool. To the best of my knowledge this project is "not just another toaster"), and since it is nostalgic for me (applying the Sugiyama framework was my bachelor's thesis, good old university days).
+But I do have other things to work on, especially during the warmer months there is wood working to do, and this will very likely result in a slower pace.
 That said, there are no guarantees for any non-implemented features to ever land, nor for any present bugs to ever be fixed.
 It is purely my hobby at this moment, and I try to not get burned out on it as I really do like it.
-This means to sometimes take a break and read a book instead for a couple of days or weeks.
+This means that sometimes I need to take a break and read a book instead for a couple of days or weeks, to return with fresh energy.
 
 == AI Usage Within This Project
 
@@ -134,6 +134,7 @@ That said, I use ChatGPT Plus from time to time (the bog standard web interface)
 
 * Helping with Rust iterator puzzles
 * Give ideas to simplify unreadable functions
+* Help with naming stuff (e.g. double checking that `LayoutConstraint` is a good name)
 * Create me an ILP for the global edge crossing minimization (I ended up reading the existing literature instead)
 
 == Installation

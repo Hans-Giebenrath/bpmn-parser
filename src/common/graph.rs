@@ -6,6 +6,7 @@ use crate::common::edge::{Edge, EdgeType};
 use crate::common::node::LayerId;
 use crate::common::node::{Node, NodeType};
 use crate::common::pool::Pool;
+use crate::layout::constraint::LayoutConstraints;
 use crate::lexer::{DataType, EventType, PeBpmdProtection, TokenCoordinate};
 use crate::parser::ParseError;
 use crate::pe_bpmd::parser::PeBpmd;
@@ -75,6 +76,8 @@ pub struct Graph {
     pub num_layers: usize,
 
     pub pe_bpmd_definitions: Vec<PeBpmd>,
+
+    pub layout_instructions: LayoutConstraints,
 }
 
 #[derive(Debug, Eq, PartialEq, Hash, Clone)]
@@ -218,6 +221,8 @@ impl Graph {
     }
 
     /// Only allowed before the bend points are added.
+    /// This is only ever called for data associations. Sequence flows are disected into pieces
+    /// and they keep the correct direction.
     pub fn reverse_edge(&mut self, edge_id: EdgeId) {
         // Modifies the edge in place (instead of marking it as deleted and creating a new one), so
         // no unnecessary hole is created within graph.edges.
