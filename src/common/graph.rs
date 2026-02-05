@@ -77,7 +77,13 @@ pub struct Graph {
 
     pub pe_bpmd_definitions: Vec<PeBpmd>,
 
-    pub layout_instructions: LayoutConstraints,
+    pub layout_constraints: LayoutConstraints,
+
+    /// These edges are omitted from the forward facing constraint in the layer assignment phase.
+    /// But whether they actually turn out to be back edges will be seen after layers have actually
+    /// been assigned. If some of the computed back edges happens to not be required to be a back
+    /// edge, then those are removed from this list (maybe?).
+    pub computed_back_edges: Vec<EdgeId>,
 }
 
 #[derive(Debug, Eq, PartialEq, Hash, Clone)]

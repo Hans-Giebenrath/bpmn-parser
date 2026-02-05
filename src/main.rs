@@ -11,6 +11,7 @@ mod parser;
 mod pe_bpmd;
 mod pool_id_matcher;
 mod to_xml;
+use crate::layout::back_edge_removal::back_edge_removal;
 use crate::lexer::TokenCoordinate;
 use annotate_snippets::AnnotationKind;
 use annotate_snippets::Level;
@@ -134,6 +135,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 }
 
 fn layout_graph(graph: &mut Graph, timer: &mut Timer) {
+    // Phase 1
+    timer.time_it("back_edge_removal", || back_edge_removal(graph));
+
     // Phase 2
     timer.time_it("solve_layer_assignment", || solve_layer_assignment(graph));
     timer.time_it("generate_dummy_nodes", || generate_dummy_nodes(graph));

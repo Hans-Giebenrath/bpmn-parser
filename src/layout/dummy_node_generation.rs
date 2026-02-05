@@ -10,7 +10,7 @@ pub fn generate_dummy_nodes(graph: &mut Graph) {
     // After this function we will have a bunch of new temporary edges which make some of the
     // real edges "obsolete" - they will be marked as "replaced_by_dummies" but still kept.
     // New edges are added to graph.edges, so we can't iterate over it at the same time.
-    // Hence we store the number.
+    // Hence, we store the number.
     let num_real_edges = graph.edges.len();
     for edge_id in (0..num_real_edges).map(EdgeId) {
         let current_num_edges = graph.edges.len();
@@ -27,9 +27,18 @@ pub fn generate_dummy_nodes(graph: &mut Graph) {
         }
 
         if from.layer_id == to.layer_id {
-            // This is handled in the crossing minimization phase. The respective
-            // transformation is only useful for the ILP, but afterwards having direct connections
-            // is actually simpler, compared to the decomposed version.
+            // This is handled in the crossing minimization phase.
+            // In the literature these blocks are in fact decomposed, but we do and directly undo
+            // that transformation only within the crossing reduction phase.
+            //
+            // ```
+            // a                a ↘
+            // ↓    becomes  x  →  y
+            // b              ↘ b
+            // ```
+            //
+            // Having direct connections (the left-hand side) is actually simpler in the rest of the
+            // layout phase, compared to the decomposed version (the right-hand side).
             continue;
         }
 
@@ -41,6 +50,8 @@ pub fn generate_dummy_nodes(graph: &mut Graph) {
 
         // Use strict_sub to catch problems with wrong arrow directions. They should always be
         // pointing right.
+        // TODO at this point I expect a panic, need to handle back edges now (exactly what happened
+        // with cc0001.bpmd, yay!).
         let total_edge_count = to.layer_id.0.strict_sub(from.layer_id.0);
         let total_node_count = total_edge_count.strict_sub(1);
 

@@ -1,3 +1,4 @@
+use crate::common::graph::EdgeId;
 use crate::common::node::NodePhaseAuxData;
 use proc_macros::{e, n};
 
@@ -43,14 +44,19 @@ fn solve_layers(graph: &mut Graph) {
 
         // Favor short edges
         objective += to_var - from_var;
-        // Try to pull start nodes to the left. But only starts, let the rest be placed however the
-        // algorithm thinks. Not sure yet whether this is good.
     }
+
+    // Try to pull start nodes to the left. But only starts, let the rest be placed however the
+    // algorithm thinks. Not sure yet whether this is good.
     for node in graph.nodes.iter().filter(|node| !node.is_data()) {
         if node
             .incoming
             .iter()
-            .all(|edge_id| e!(*edge_id).is_message_flow())
+            // A start node has no incoming sequence flows, or its only incoming sequence flows are
+            // back edges.
+            .all(|edge_id| {
+                !e!(*edge_id).is_sequence_flow() || graph.computed_back_edges.contains(edge_id)
+            })
         {
             objective += 0.1 * aux(node);
         }
@@ -60,10 +66,13 @@ fn solve_layers(graph: &mut Graph) {
     //let mut problem = problem.set_verbose(true);
     //problem.set_parameter("loglevel", "0");
 
-    for edge in graph
+    for (_, edge) in graph
         .edges
         .iter_mut()
-        .filter(|edge| edge.is_sequence_flow())
+        .enumerate()
+        .filter(|(edge_idx, edge)| {
+            edge.is_sequence_flow() && !graph.computed_back_edges.contains(&EdgeId(*edge_idx))
+        })
     {
         let from_var = aux(&n!(edge.from));
         let to_var = aux(&n!(edge.to));
