@@ -77,7 +77,9 @@ pub fn back_edge_removal(graph: &mut Graph) -> Result<(), String> {
                 cycle
                     .iter()
                     .filter_map(|segment| {
-                        if let EdgeType::SequenceFlow(edge_id) = &segment.etype {
+                        if let EdgeType::SequenceFlow(edge_id) = &segment.etype
+                            && back_edges.contains(edge_id)
+                        {
                             Some(*edge_id)
                         } else {
                             None
@@ -183,6 +185,7 @@ fn iterate_all_cycles(callback: &mut dyn FnMut(&[PathSegment]), graph: &Graph) {
 }
 
 /// Message flows and data flows are not considered as back edges.
+#[derive(Debug)]
 enum EdgeType {
     SequenceFlow(EdgeId),
     LeftOfConstraint,
@@ -191,6 +194,7 @@ enum EdgeType {
 }
 
 /// Name `Edge` is already used.
+#[derive(Debug)]
 struct PathSegment {
     etype: EdgeType,
     from: NodeId,

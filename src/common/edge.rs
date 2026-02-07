@@ -80,12 +80,14 @@ pub struct Edge {
     pub from: NodeId,
     pub to: NodeId,
     pub edge_type: EdgeType,
-    /// This is only used for data flows.
+    /// This is *only* used for data flows.
+    /// TODO move this into the `DataFlowAux` type to ensure this on a type level.
     pub is_reversed: bool,
     pub flow_type: FlowType,
     pub stays_within_lane: bool,
-    /// If `! is_reversed` then attached via `from`, otherwise via `to`.
-    /// TODO did I keep in mind to copy this property to replacement dummy nodes?
+    /// Only applied to sequence flows (TODO maybe move it to SequenceFlowAux, then?), and since
+    /// those are never `reversed` (see how back edge handling is done in dummy_node_generation),
+    /// it always applies to the `from` node.
     pub attached_to_boundary_event: Option<BoundaryEvent>,
 
     // For vertical edges or edge segments, primarily sequence flows and data flows. E.g. the part

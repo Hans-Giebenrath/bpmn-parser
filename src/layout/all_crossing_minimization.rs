@@ -753,7 +753,7 @@ fn sort_incoming_and_outgoing(graph: &mut Graph) {
                         -(from_rank_within_lane as isize),
                     )
                 } else {
-                    unreachable!();
+                    unreachable!("from_node: {from_node:#?}\nto_node: {to_node:#?}, from_rank_within_lane: {from_rank_within_lane}, to_rank_within_lane: {to_rank_within_lane},\ngraph: {graph:#?}");
                 }
             });
             graph.nodes[node_id].incoming = incoming_cpy;
@@ -828,7 +828,7 @@ fn sort_incoming_and_outgoing(graph: &mut Graph) {
                         -(to_rank_within_lane as isize),
                     )
                 } else {
-                    unreachable!();
+                    unreachable!("from_node: {from_node:#?}\nto_node: {to_node:#?}, from_rank_within_lane: {from_rank_within_lane}, to_rank_within_lane: {to_rank_within_lane},\ngraph: {graph:#?}");
                 }
             });
             graph.nodes[node_id].outgoing = outgoing_cpy;

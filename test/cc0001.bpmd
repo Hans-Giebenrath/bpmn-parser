@@ -1,0 +1,5 @@
+# Start ->gateway
+X <-gateway
+- Continue
+X ->gateway ->end
+. End <-end
