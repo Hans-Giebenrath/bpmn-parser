@@ -52,7 +52,7 @@ for f in "${all[@]}"; do
         if grep -q '// GENERATE VISIBILITY TABLE' "$f"; then
             if run -i "$f" -o "${f%.bpmd}.xml" -v "$csv_file"; then
                 echo "finished generating ${f%.bpmd}.xml, now generating the png" &&
-                    doc/node_modules/.bin/bpmn-to-image "${f%.bpmd}.xml":"${f%.bpmd}.png" &&
+                    test/node_modules/.bin/bpmn-to-image "${f%.bpmd}.xml":"${f%.bpmd}.png" &&
                     rm "${f%.bpmd}.xml"
             else
                 failed=true
@@ -60,7 +60,7 @@ for f in "${all[@]}"; do
         else
             if run -i "$f" -o "${f%.bpmd}.xml"; then
                 echo "finished generating ${f%.bpmd}.xml, now generating the png" &&
-                    doc/node_modules/.bin/bpmn-to-image "${f%.bpmd}.xml":"${f%.bpmd}.png" &&
+                    test/node_modules/.bin/bpmn-to-image "${f%.bpmd}.xml":"${f%.bpmd}.png" &&
                     cp "${f%.bpmd}.xml" /tmp/ &&
                     rm "${f%.bpmd}.xml"
             else

@@ -850,19 +850,19 @@ enum Direction {
 fn maybe_update_best_position(
     current_best_position: &mut (bool, PoolAndLane, PlaceForBendDummy, i32),
     new_best_position_candidate: (bool, PoolAndLane, PlaceForBendDummy, i32),
-    is_above_gateway: bool,
+    has_crossed_gateway: bool,
 ) {
     // Lower is better.
     let current_crossing_number = new_best_position_candidate.3;
-    if is_above_gateway {
+    if !has_crossed_gateway {
         // If the new position is at least as good as the previous best we update. This brings us
         // closer to the gateway node.
         if current_crossing_number <= current_best_position.3 {
             *current_best_position = new_best_position_candidate;
         }
     } else {
-        // If we are below the gateway we only go farther from the gateway if the situation is
-        // strictly better.
+        // If we have advanced beyond the gateway, we only go farther from the gateway if the
+        // situation is strictly better.
         if current_crossing_number < current_best_position.3 {
             *current_best_position = new_best_position_candidate;
         }
@@ -873,7 +873,7 @@ fn maybe_update_best_position(
 // possible, i.e. until the crossing count increases. The goal is to "eat" as meany dummy nodes as
 // possible (without moving into the "wrong" lane)
 fn handle_gateway_node_one_side(this_node_id: NodeId, graph: &mut Graph, direction: Direction) {
-    // borrow-checker workaround (with undo at the end)
+    // `.clone()` is a borrow-checker workaround.
     let edges = match direction {
         Direction::Outgoing => n!(this_node_id).outgoing.clone(),
         Direction::Incoming => n!(this_node_id).incoming.clone(),
@@ -890,42 +890,96 @@ fn handle_gateway_node_one_side(this_node_id: NodeId, graph: &mut Graph, directi
     })
     .0 / 2;
     let mut has_dummy_nodes_in_same_lane = false;
+    let (top_loop_edges, regular_edges, bottom_loop_edges) = {
+        let top_loop_edges_partition_point = edges.partition_point(|edge_id| {
+            let other_node = match direction {
+                Direction::Outgoing => &to!(*edge_id),
+                Direction::Incoming => &from!(*edge_id),
+            };
+            other_node.layer_id == this_layer
+        });
+        let top_loop_edges = &edges[..top_loop_edges_partition_point];
+        let rest_edges = &edges[top_loop_edges_partition_point..];
+        let regular_edges_partition_point = rest_edges.partition_point(|edge_id| {
+            let other_node = match direction {
+                Direction::Outgoing => &to!(*edge_id),
+                Direction::Incoming => &from!(*edge_id),
+            };
+            other_node.layer_id != this_layer
+        });
+        (
+            top_loop_edges,
+            &rest_edges[..regular_edges_partition_point],
+            &rest_edges[regular_edges_partition_point..],
+        )
+    };
+    // Just a safety measure to ensure we no longer use `edges` directly, but only the partitioned
+    // ones.
+    #[allow(unused)]
+    let edges = ();
+
+    let top_loop_barrier = top_loop_edges.last().map(|edge_id| match direction {
+        Direction::Outgoing => to!(*edge_id).id,
+        Direction::Incoming => from!(*edge_id).id,
+    });
+    let bottom_loop_barrier = bottom_loop_edges.first().map(|edge_id| match direction {
+        Direction::Outgoing => to!(*edge_id).id,
+        Direction::Incoming => from!(*edge_id).id,
+    });
+
+    if regular_edges.is_empty() {
+        // This gateway is purely put together of back edges and loop edges. So no further bend
+        // dummies need to be inserted, i.e. all work is done here.
+        return;
+    }
+
     let other_topmost_node = match direction {
-        Direction::Outgoing => &to!(*edges.first().expect("caller-guaranteed this is not empty")),
-        Direction::Incoming => &from!(*edges.first().expect("caller-guaranteed this is not empty")),
+        Direction::Outgoing => &to!(*regular_edges
+            .first()
+            .expect("Just checked above in the condition")),
+        Direction::Incoming => &from!(
+            *regular_edges
+                .first()
+                .expect("Just checked above in the condition")
+        ),
     };
     let top_most_pool_lane = other_topmost_node.pool_and_lane();
     let bottom_most_pool_lane = match direction {
-        Direction::Outgoing => {
-            to!(*edges.last().expect("caller-guaranteed this is not empty")).pool_and_lane()
-        }
-        Direction::Incoming => {
-            from!(*edges.last().expect("caller-guaranteed this is not empty")).pool_and_lane()
-        }
+        Direction::Outgoing => to!(*regular_edges
+            .last()
+            .expect("Just checked above in the condition"))
+        .pool_and_lane(),
+        Direction::Incoming => from!(
+            *regular_edges
+                .last()
+                .expect("Just checked above in the condition")
+        )
+        .pool_and_lane(),
     };
 
     // First we search a regular (or dummy-(loop-connected)-to-regular) node as the top barrier.
     // Later these are our own newly inserted dummy nodes.
     let mut current_top_barrier = graph
         .iter_upwards_same_pool(StartAt::Node(this_node_id), Some(top_most_pool_lane))
-        .find(|&node| !node.is_long_edge_dummy())
+        .find(|&node| !node.is_long_edge_dummy() || Some(node.id) == top_loop_barrier)
         .map(|node| node.id);
 
     // This is always the same. We iterate always until we hit this one.
     let bottom_barrier = graph
         .iter_downwards_same_pool(StartAt::Node(this_node_id), Some(bottom_most_pool_lane))
-        .find(|node| !node.is_long_edge_dummy())
+        .find(|node| !node.is_long_edge_dummy() || Some(node.id) == bottom_loop_barrier)
         .map(|node| node.id);
 
+    // This one is used to count the number of crossings.
     let mut above_nodes_in_other_layer = HashSet::<NodeId>::from_iter(
         graph
             .iter_upwards_same_pool(StartAt::Node(other_topmost_node.id), None)
             .map(|node| node.id),
     );
 
-    let mut is_above_gateway = false;
+    let mut has_crossed_gateway = false;
     let mut previous_other_node_id = None;
-    for edge_id in edges.iter().cloned() {
+    for edge_id in regular_edges.iter().cloned() {
         let other_node = match direction {
             Direction::Outgoing => &to!(edge_id),
             Direction::Incoming => &from!(edge_id),
@@ -943,33 +997,35 @@ fn handle_gateway_node_one_side(this_node_id: NodeId, graph: &mut Graph, directi
         }
         previous_other_node_id = Some(other_node.id);
 
-        let mut local_is_above_gateway = is_above_gateway;
+        let mut local_has_crossed_gateway = has_crossed_gateway;
         // Lower is better.
         let mut crossing_number = 0i32;
-        let (mut best_position, iteration_start) = if let Some(top_barrier) = current_top_barrier {
-            let best_position = (
-                local_is_above_gateway,
-                n!(top_barrier).pool_and_lane(),
-                PlaceForBendDummy::Below(top_barrier),
-                crossing_number,
-            );
-            let iteration_start = StartAt::Node(top_barrier);
-            (best_position, iteration_start)
-        } else {
-            let best_position = (
-                local_is_above_gateway,
-                top_most_pool_lane,
-                PlaceForBendDummy::AtTheTop,
-                crossing_number,
-            );
-            let iteration_start = StartAt::PoolLane(Coord3 {
-                pool_and_lane: top_most_pool_lane,
-                layer: this_layer,
-                half_layer: false, // irrelevant
-            });
-            (best_position, iteration_start)
-        };
+        let (mut best_position, iteration_start) =
+            if let Some(current_top_barrier) = current_top_barrier {
+                let best_position = (
+                    local_has_crossed_gateway,
+                    n!(current_top_barrier).pool_and_lane(),
+                    PlaceForBendDummy::Below(current_top_barrier),
+                    crossing_number,
+                );
+                let iteration_start = StartAt::Node(current_top_barrier);
+                (best_position, iteration_start)
+            } else {
+                let best_position = (
+                    local_has_crossed_gateway,
+                    top_most_pool_lane,
+                    PlaceForBendDummy::AtTheTop,
+                    crossing_number,
+                );
+                let iteration_start = StartAt::PoolLane(Coord3 {
+                    pool_and_lane: top_most_pool_lane,
+                    layer: this_layer,
+                    half_layer: false, // irrelevant
+                });
+                (best_position, iteration_start)
+            };
 
+        // This loop finds the best location for the current to-be-added bend dummy.
         for crossable_node_or_bottom_barrier_or_none in graph
             .iter_downwards_same_pool(
                 iteration_start,
@@ -986,12 +1042,12 @@ fn handle_gateway_node_one_side(this_node_id: NodeId, graph: &mut Graph, directi
                     crossable_node_or_bottom_barrier
                 }
                 _ => {
-                    // other_node_pool_lane < crossable_node_or_bottom_barrier_or_none.pool_lane()
-                    // no more nodes, or the crossing node is in some lower lane.
+                    // No more nodes, or the crossing node is further downwards, so we can stop
+                    // searching here.
                     if best_position.1 < other_node_pool_lane {
                         // Must be moved to the new lane
                         best_position = (
-                            local_is_above_gateway,
+                            local_has_crossed_gateway,
                             other_node_pool_lane,
                             PlaceForBendDummy::AtTheTop,
                             crossing_number,
@@ -1005,7 +1061,7 @@ fn handle_gateway_node_one_side(this_node_id: NodeId, graph: &mut Graph, directi
                 // Move the best position into the current lane (which is also closer to
                 // `other_node_pool_lane`).
                 best_position = (
-                    local_is_above_gateway,
+                    local_has_crossed_gateway,
                     crossable_node_or_bottom_barrier.pool_and_lane(),
                     PlaceForBendDummy::AtTheTop,
                     crossing_number,
@@ -1021,11 +1077,14 @@ fn handle_gateway_node_one_side(this_node_id: NodeId, graph: &mut Graph, directi
                 break;
             };
             if crossable_node.id == this_node_id {
-                // Don't inspect the outgoing edges of the gateway.
-                local_is_above_gateway = false;
+                // We found the gateway node that we analyse in this function. This one will not be
+                // further analysed, so continue.
+                local_has_crossed_gateway = true;
                 continue;
             }
 
+            dbg!(&n!(this_node_id));
+            dbg!(&crossable_node);
             // TODO If we have proper handling of loops, could it be that there are more outgoing
             // edges?
             let crossable_other_node = match direction {
@@ -1045,12 +1104,12 @@ fn handle_gateway_node_one_side(this_node_id: NodeId, graph: &mut Graph, directi
             maybe_update_best_position(
                 &mut best_position,
                 (
-                    local_is_above_gateway,
+                    local_has_crossed_gateway,
                     crossable_node.pool_and_lane(),
                     PlaceForBendDummy::Below(crossable_node.id),
                     crossing_number,
                 ),
-                is_above_gateway,
+                has_crossed_gateway,
             );
         }
         let kind = if this_pool_and_lane == other_node_pool_lane {
@@ -1082,7 +1141,7 @@ fn handle_gateway_node_one_side(this_node_id: NodeId, graph: &mut Graph, directi
         if best_position.1 == this_pool_and_lane {
             has_dummy_nodes_in_same_lane = true;
         }
-        is_above_gateway = best_position.0;
+        has_crossed_gateway = best_position.0;
         // The order is already fixed, so we are not allowed to put any of the following nodes
         // above `new_dummy_node`. We insert from top to bottom.
         current_top_barrier = Some(new_dummy_node);

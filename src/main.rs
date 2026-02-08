@@ -22,10 +22,10 @@ use annotate_snippets::renderer::{DecorStyle, Renderer};
 use clap::Parser;
 use layout::all_crossing_minimization::reduce_all_crossings;
 use layout::dummy_node_generation::generate_dummy_nodes;
+use layout::dummy_node_removal::dummy_node_removal;
 use layout::edge_routing::edge_routing;
 use layout::port_assignment::port_assignment;
 use layout::postprocess_ports_and_vertical_edges::postprocess_ports_and_vertical_edges;
-use layout::replace_dummy_nodes::replace_dummy_nodes;
 use layout::solve_layer_assignment::solve_layer_assignment;
 use layout::straight_edge_routing::find_straight_edges;
 use layout::try_move_nodes_into_half_layer::try_move_nodes_into_half_layer;
@@ -140,8 +140,11 @@ fn layout_graph(graph: &mut Graph, timer: &mut Timer) {
 
     // Phase 2
     timer.time_it("solve_layer_assignment", || solve_layer_assignment(graph));
+    dbg!(&graph);
     timer.time_it("generate_dummy_nodes", || generate_dummy_nodes(graph));
+    dbg!(&graph);
     timer.time_it("sort_lanes_by_layer", || sort_lanes_by_layer(graph));
+    dbg!(&graph);
 
     // Phase 3
     timer.time_it("reduce_all_crossings", || reduce_all_crossings(graph));
@@ -159,7 +162,7 @@ fn layout_graph(graph: &mut Graph, timer: &mut Timer) {
     });
     timer.time_it("find_straight_edges", || find_straight_edges(graph));
     timer.time_it("edge_routing", || edge_routing(graph));
-    timer.time_it("replace_dummy_nodes", || replace_dummy_nodes(graph));
+    timer.time_it("dummy_node_removal", || dummy_node_removal(graph));
 }
 
 pub fn pebpmd_analysis(

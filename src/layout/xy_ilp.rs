@@ -319,6 +319,8 @@ fn assign_x(graph: &mut Graph) {
     }
 }
 
+// TODO this could be calculated once in the beginning by searching through all gateways, instead of
+// looking at it from the edges' perspective.
 fn is_gateway_edge_that_is_balanced_separately(
     edge_id: EdgeId,
     edge: &Edge,

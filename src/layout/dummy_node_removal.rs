@@ -3,10 +3,13 @@ use crate::common::edge::EdgeType;
 use crate::common::edge::RegularEdgeBendPoints;
 use crate::common::graph::EdgeId;
 use crate::common::graph::Graph;
+use crate::common::graph::MAX_NODE_WIDTH;
 use crate::common::node::AbsolutePort;
+use proc_macros::e;
 
 // Assigns bend points to the Regular edges. Afterwards, no more dummy nodes or edges are present.
-pub fn replace_dummy_nodes(graph: &mut Graph) {
+pub fn dummy_node_removal(graph: &mut Graph) {
+    dbg!(&graph);
     for edge_id in (0..graph.edges.len()).map(EdgeId) {
         let edge = &mut graph.edges[edge_id];
         let EdgeType::ReplacedByDummies {
@@ -27,9 +30,18 @@ pub fn replace_dummy_nodes(graph: &mut Graph) {
         let mut cur_dummy_edge_id = first_dummy_edge_id;
         // This is used to access to `to` port.
         let mut last_dummy_edge_id = cur_dummy_edge_id;
+        let mut next_node_id = e!(cur_dummy_edge_id).to;
+        let mut i = 0;
         // This loop hops along the edges via node.incoming/.outgoing, as dummy edges might
         // not necessarily be consecutive in `graph.edges`.
         loop {
+            i += 1;
+            assert!(
+                i <= graph.nodes.len(),
+                "bug, loop seems to cycle and cycle again, edge {}, graph: {graph:#?}",
+                edge_id.0
+            );
+
             let edge = &graph.edges[cur_dummy_edge_id];
             let dummy_bend_points = if let EdgeType::DummyEdge {
                 original_edge,
@@ -41,9 +53,14 @@ pub fn replace_dummy_nodes(graph: &mut Graph) {
             } else {
                 break;
             };
-            last_dummy_edge_id = cur_dummy_edge_id;
+            last_dummy_edge_id = dbg!(cur_dummy_edge_id);
+            let next_node = &graph.nodes[next_node_id];
             match dummy_bend_points {
                 DummyEdgeBendPoints::ToBeDeterminedOrStraight => {
+                    if next_node.incoming.len() == 2 || next_node.outgoing.len() == 2 {
+                        assert!(next_node.is_long_edge_dummy());
+                        bend_points.push((next_node.x + MAX_NODE_WIDTH / 2, next_node.y));
+                    }
                     // Nothing to do, as this is straight we don't add any bend points.
                     // So just go on jumping to the next edge.
                 }
@@ -54,12 +71,17 @@ pub fn replace_dummy_nodes(graph: &mut Graph) {
                 DummyEdgeBendPoints::VerticalBendDummy(segment) => bend_points.push(*segment),
                 DummyEdgeBendPoints::VerticalCollapsed => { /* empty */ }
             };
-            let to_node = &graph.nodes[edge.to];
-            let mut next_edge_it = to_node
+            let mut next_edge_it = next_node
                 .incoming
                 .iter()
-                .chain(to_node.outgoing.iter())
-                .filter(|e| **e != cur_dummy_edge_id);
+                .map(|&edge_id| (edge_id, e!(edge_id).from))
+                .chain(
+                    next_node
+                        .outgoing
+                        .iter()
+                        .map(|&edge_id| (edge_id, e!(edge_id).to)),
+                )
+                .filter(|&(e, _)| e != cur_dummy_edge_id);
             match (next_edge_it.next(), next_edge_it.next()) {
                 (Some(_), Some(_)) => {
                     // There are multiple other edges, which means we reached some target node
@@ -71,11 +93,12 @@ pub fn replace_dummy_nodes(graph: &mut Graph) {
                     // Done as well, probably reached an end node.
                     break;
                 }
-                (Some(e), None) => {
+                (Some((e, computed_next_node_id)), None) => {
                     // Only one success edge is present, here. This could mean that the
                     // original ReplacedByDummies edge continues, but not necessarily.
                     // This is checked in the `match` in the beginning of the loop.
-                    cur_dummy_edge_id = *e;
+                    cur_dummy_edge_id = e;
+                    next_node_id = computed_next_node_id;
                 }
             }
         }

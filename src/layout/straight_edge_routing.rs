@@ -74,7 +74,7 @@ fn sequence_edge_routing(graph: &mut Graph) {
         let edge_id = EdgeId(edge_idx);
         let edge = &e!(edge_id);
         if !edge.is_sequence_flow() || !edge.is_regular() {
-            // Straight dummy edges will be stitched together in the `replace_dummy_nodes`
+            // Straight dummy edges will be stitched together in the `dummy_node_removal`
             // phase, hence they are skipped here.
             continue;
         }
