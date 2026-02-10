@@ -57,10 +57,6 @@ pub fn dummy_node_removal(graph: &mut Graph) {
             let next_node = &graph.nodes[next_node_id];
             match dummy_bend_points {
                 DummyEdgeBendPoints::ToBeDeterminedOrStraight => {
-                    if next_node.incoming.len() == 2 || next_node.outgoing.len() == 2 {
-                        assert!(next_node.is_long_edge_dummy());
-                        bend_points.push((next_node.x + MAX_NODE_WIDTH / 2, next_node.y));
-                    }
                     // Nothing to do, as this is straight we don't add any bend points.
                     // So just go on jumping to the next edge.
                 }

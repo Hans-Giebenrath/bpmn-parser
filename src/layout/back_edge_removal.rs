@@ -102,7 +102,7 @@ pub fn back_edge_removal(graph: &mut Graph) -> Result<(), String> {
     Ok(())
 }
 
-fn solve_ilp(graph: &mut Graph, back_edge_groups: &[Vec<EdgeId>]) -> () {
+fn solve_ilp(graph: &mut Graph, back_edge_groups: &[Vec<EdgeId>]) {
     let mut vars = variables!();
     let mut edge_vars = HashMap::new();
     for edge_id in back_edge_groups.iter().flatten() {

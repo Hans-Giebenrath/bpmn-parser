@@ -123,7 +123,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         pebpmd_analysis(&mut graph, visibility_path, &bpmd_source_files, &mut timer)?;
     };
 
-    layout_graph(&mut graph, &mut timer);
+    layout_graph(&mut graph, &mut timer)?;
     let bpmn = timer.time_it("XML export", || to_xml::generate_bpmn(&graph));
 
     match cli.output {
@@ -134,9 +134,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
-fn layout_graph(graph: &mut Graph, timer: &mut Timer) {
+fn layout_graph(graph: &mut Graph, timer: &mut Timer) -> Result<(), String> {
     // Phase 1
-    timer.time_it("back_edge_removal", || back_edge_removal(graph));
+    timer.time_it("back_edge_removal", || back_edge_removal(graph))?;
 
     // Phase 2
     timer.time_it("solve_layer_assignment", || solve_layer_assignment(graph));
@@ -163,9 +163,11 @@ fn layout_graph(graph: &mut Graph, timer: &mut Timer) {
     timer.time_it("find_straight_edges", || find_straight_edges(graph));
     timer.time_it("edge_routing", || edge_routing(graph));
     timer.time_it("dummy_node_removal", || dummy_node_removal(graph));
+
+    Ok(())
 }
 
-pub fn pebpmd_analysis(
+fn pebpmd_analysis(
     graph: &mut Graph,
     visibility_path: &PathBuf,
     bpmd_source_files: &[BpmdSourceFile],

@@ -600,7 +600,10 @@ impl Graph {
 
 pub fn node_size(node_type: &NodeType) -> (usize, usize) {
     let event = match &node_type {
-        NodeType::LongEdgeDummy | NodeType::BendDummy { .. } => {
+        NodeType::LongEdgeDummy
+        | NodeType::BackEdgeCornerDummy
+        | NodeType::SnakeEdgeBisectDummy
+        | NodeType::BendDummy { .. } => {
             // Height of 0 so there is just padding between the lines.
             // Otherwise, there would be too much whitespace between lines.
             return (DUMMY_NODE_WIDTH, DUMMY_NODE_HEIGHT);
@@ -646,6 +649,8 @@ impl Debug for Graph {
             match &n.node_type {
                 NodeType::RealNode { .. } => write!(f, "real node")?,
                 NodeType::LongEdgeDummy => write!(f, "dummy node")?,
+                NodeType::SnakeEdgeBisectDummy => write!(f, "S-dummy node")?,
+                NodeType::BackEdgeCornerDummy => write!(f, "corner-dummy node")?,
                 NodeType::BendDummy {
                     originating_node,
                     kind,

@@ -103,7 +103,7 @@ pub fn generate_dummy_nodes(graph: &mut Graph) {
                 .checked_sub(to.layer_id.0 + 1)
                 .expect("`equals` case was checked already earlier");
             let dummy_from_node_id = graph.add_node(
-                NodeType::LongEdgeDummy,
+                NodeType::BackEdgeCornerDummy,
                 PoolAndLane {
                     pool,
                     // Yes, `to.lane`, as I believe it is visually clearer to directly go to the
@@ -113,13 +113,16 @@ pub fn generate_dummy_nodes(graph: &mut Graph) {
                 Some(from_coords.layer),
             );
             let dummy_to_node_id = graph.add_node(
-                NodeType::LongEdgeDummy,
+                NodeType::BackEdgeCornerDummy,
                 PoolAndLane {
                     pool,
                     lane: to_coords.pool_and_lane.lane,
                 },
                 Some(to_coords.layer),
             );
+            // XXX: Later code builds upon the assumption that at `incoming[0]`/`outgoing[0]` they
+            // will find the edge which connects to the regular edge.
+            // TODO but why was is at [1] then?
             graph.add_edge(
                 from_id,
                 dummy_from_node_id,

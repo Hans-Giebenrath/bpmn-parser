@@ -771,38 +771,39 @@ struct BarrierInfo {
 }
 
 fn top_barrier(graph: &Graph, this_node_id: NodeId) -> Option<BarrierInfo> {
-    let top_barrier = graph
+    let barrier = graph
         .iter_upwards_all_pools(StartAt::Node(this_node_id), None)
         .find(|&node| !node.is_long_edge_dummy())?;
-    match &top_barrier.node_type {
+    match &barrier.node_type {
         NodeType::BendDummy {
             originating_node, ..
         } => Some(BarrierInfo {
-            pool_and_lane: top_barrier.pool_and_lane(),
+            pool_and_lane: barrier.pool_and_lane(),
             blocking_real_node: *originating_node,
         }),
         NodeType::RealNode { .. } => Some(BarrierInfo {
-            pool_and_lane: top_barrier.pool_and_lane(),
-            blocking_real_node: top_barrier.id,
+            pool_and_lane: barrier.pool_and_lane(),
+            blocking_real_node: barrier.id,
         }),
+        // TODO this is incorrect, needs to handle `BackEdgeCornerDummy` and `SnakeEdgeBisectDummy`.
         _ => unreachable!(),
     }
 }
 
 fn bottom_barrier(graph: &Graph, this_node_id: NodeId) -> Option<BarrierInfo> {
-    let top_barrier = graph
+    let barrier = graph
         .iter_downwards_all_pools(StartAt::Node(this_node_id), None)
         .find(|&node| !node.is_long_edge_dummy())?;
-    match &top_barrier.node_type {
+    match &barrier.node_type {
         NodeType::BendDummy {
             originating_node, ..
         } => Some(BarrierInfo {
-            pool_and_lane: top_barrier.pool_and_lane(),
+            pool_and_lane: barrier.pool_and_lane(),
             blocking_real_node: *originating_node,
         }),
         NodeType::RealNode { .. } => Some(BarrierInfo {
-            pool_and_lane: top_barrier.pool_and_lane(),
-            blocking_real_node: top_barrier.id,
+            pool_and_lane: barrier.pool_and_lane(),
+            blocking_real_node: barrier.id,
         }),
         _ => unreachable!(),
     }
@@ -963,6 +964,66 @@ fn handle_gateway_node_one_side(this_node_id: NodeId, graph: &mut Graph, directi
         .iter_upwards_same_pool(StartAt::Node(this_node_id), Some(top_most_pool_lane))
         .find(|&node| !node.is_long_edge_dummy() || Some(node.id) == top_loop_barrier)
         .map(|node| node.id);
+
+    // For the back edge corner dummies, we want the connecting edges to be marked as `is_vertical`.
+    // We can do this check here (although there is nothing in particular what makes this location
+    // good)
+    // TODO actually this should be done somewhere else since this is not only relevant for gateways
+    // but for all nodes. Also this is just looking upwards, but must also look downwards.
+    // Maybe this can be done at the very first thing within this file, so no bend dummies are present, yet.
+    // Or make this a standalone file/step altogether, as this has nothing to do really with
+    // `port_assignment`.
+    'verticalisation: {
+        if (current_top_barrier.is_none() || current_top_barrier == top_loop_barrier)
+            && let Some(mut current_next_loop_barrier) = top_loop_barrier
+        {
+            dbg!();
+            if current_top_barrier.is_none() {
+                let hypothetical_next_top_barrier = graph.iter_upwards_same_pool(StartAt::Node(this_node_id), Some(n!(current_next_loop_barrier).pool_and_lane())).find(|&node| !node.is_long_edge_dummy()).expect("The back edge corner dummy exists, so we need to encounter at least that on").id;
+                if hypothetical_next_top_barrier != current_next_loop_barrier {
+                    dbg!();
+                    break 'verticalisation;
+                }
+            }
+            dbg!();
+            let mut it = top_loop_edges.iter().rev().skip(1);
+            loop {
+                // The edge to the real node is always on index [0], this is just how the construction works
+                // in the dummy node generation.
+                // TODO but why is [1] correct then? I sure must be looking at the wrong end of the
+                // edge then?
+                match direction {
+                    Direction::Outgoing => {
+                        e!(dbg!(n!(current_next_loop_barrier).incoming[1])).is_vertical = true
+                    }
+                    Direction::Incoming => {
+                        e!(dbg!(n!(current_next_loop_barrier).outgoing[1])).is_vertical = true
+                    }
+                }
+                dbg!();
+
+                if let Some(next_loop_barrier) = graph
+                    .iter_upwards_same_pool(
+                        StartAt::Node(current_next_loop_barrier),
+                        Some(n!(current_next_loop_barrier).pool_and_lane()),
+                    )
+                    .find(|&node| !node.is_long_edge_dummy())
+                    && let Some(edge_id) = it.next()
+                    && match direction {
+                        Direction::Outgoing => e!(*edge_id).to == next_loop_barrier.id,
+                        Direction::Incoming => e!(*edge_id).from == next_loop_barrier.id,
+                    }
+                {
+                    dbg!();
+                    // Wooow, what an ugly loop that is.
+                    current_next_loop_barrier = next_loop_barrier.id;
+                    continue;
+                }
+                dbg!();
+                break;
+            }
+        }
+    }
 
     // This is always the same. We iterate always until we hit this one.
     let bottom_barrier = graph

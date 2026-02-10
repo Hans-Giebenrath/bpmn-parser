@@ -33,19 +33,54 @@ pub enum NodeType {
         /// they will be done correctly within these abstracted away black boxes.
         pe_bpmd_hides_protection_operations: bool,
     },
-    // Dummy nodes are inserted in three stages:
-    //  1. After the layer assignment phase, to break long edges into uniformly short edges (those
-    //     which would otherwise span multiple layers)
-    //     These are reversed/undone in the last dummy node replacement phase.
-    //  2. During all crossing optimization when there are edges in the same layer, then they are
-    //     split into two with a dummy node in the neighboring layer (or actually on both
-    //     neighboring layers).
-    //     These are reversed/undone in the same crossing optimization phase.
-    //  3. During port assignment, to handle those edges which leave above or below a node and then
-    //     bend to the right. The bendpoint is represented by a new dummy node.
+    /// Dummy nodes are inserted in three stages:
+    ///  1. After the layer assignment phase, to break long edges into uniformly short edges (those
+    ///     which would otherwise span multiple layers)
+    ///     These are reversed/undone in the last dummy node replacement phase.
+    ///  2. During all crossing optimization when there are edges in the same layer, then they are
+    ///     split into two with a dummy node in the neighboring layer (or actually on both
+    ///     neighboring layers).
+    ///     These are reversed/undone in the same crossing optimization phase.
+    ///  3. During port assignment, to handle those edges which leave above or below a node and then
+    ///     bend to the right. The bendpoint is represented by a new dummy node.
     LongEdgeDummy,
-    // Bend dummies are inserted during the port assignment phase. They help to create vertical edge
-    // segments for edges that leave at the top or bottom side of a node.
+    /// Back edges are transformed as follow:
+    ///
+    /// ```
+    ///                         to
+    ///  to                      ┌┐
+    ///   ┌┐                     └▲
+    /// ┌─►┘                      │           corner
+    /// │                        ┌┼────►┬─────►┐
+    /// └───────────┐            └┘    └┘     └▲
+    ///          ┌┬─┘        corner            │
+    ///          └┘                           ┌┤
+    ///          from                         └┘
+    ///                                      from
+    /// ```
+    /// If there are two incoming edges (and 0 outgoing) then it is the right corner node.
+    /// If there are two outgoing edges (and 0 incoming) then it is the left corner node.
+    ///
+    /// Not 100% sure if it is really necessary to have this distinction.
+    BackEdgeCornerDummy,
+    /// When two nodes are forced into the same layer (through a layout constraint) an edge between
+    /// them would create a snake-like, or "S"-like edge. But this cannot be handled directly, since
+    /// we don't know where to put the middle horizontal part. Therefor, another dummy node needs to
+    /// be added.
+    ///
+    /// ```
+    ///   ┌─┐               ┌─┐
+    /// ┌►└─┘             ┌►└─┘
+    /// │                 │
+    /// │                 │ ┌─┐
+    /// └─────┐           └─┴─┴◄┐
+    ///       │                 │
+    ///   ┌─┬─┘             ┌─┬─┘
+    ///   └─┘               └─┘
+    /// ```
+    SnakeEdgeBisectDummy,
+    /// Bend dummies are inserted during the port assignment phase. They help to create vertical edge
+    /// segments for edges that leave at the top or bottom side of a node.
     BendDummy {
         originating_node: NodeId,
         kind: BendDummyKind,
@@ -257,7 +292,10 @@ impl Node {
     pub fn is_any_dummy(&self) -> bool {
         matches!(
             self.node_type,
-            NodeType::LongEdgeDummy | NodeType::BendDummy { .. }
+            NodeType::LongEdgeDummy
+                | NodeType::BackEdgeCornerDummy
+                | NodeType::SnakeEdgeBisectDummy
+                | NodeType::BendDummy { .. }
         )
     }
 
@@ -269,16 +307,12 @@ impl Node {
         matches!(self.node_type, NodeType::BendDummy { .. })
     }
 
-    pub fn is_from_gateway_to_same_lane(&self) -> Option<NodeId> {
-        if let NodeType::BendDummy {
-            kind: BendDummyKind::FromGatewayToSameLane { target_node, .. },
-            ..
-        } = &self.node_type
-        {
-            Some(*target_node)
-        } else {
-            None
-        }
+    pub fn is_back_edge_corner_dummy(&self) -> bool {
+        matches!(self.node_type, NodeType::BackEdgeCornerDummy { .. })
+    }
+
+    pub fn is_snake_edge_bisect_dummy(&self) -> bool {
+        matches!(self.node_type, NodeType::SnakeEdgeBisectDummy { .. })
     }
 
     pub fn is_gateway(&self) -> bool {
@@ -321,8 +355,8 @@ impl Node {
 
     pub fn port_is_left_or_right(&self, port_y: usize) -> bool {
         assert!(
-            !self.is_bend_dummy(),
-            "In this case the heuristic is incorrect and you need to do something else"
+            !self.is_any_dummy(),
+            "In this case the heuristic is incorrect and you need to do something else. {self:#?}",
         );
         ((self.y + 1)..(self.y + self.height)).contains(&port_y)
     }
