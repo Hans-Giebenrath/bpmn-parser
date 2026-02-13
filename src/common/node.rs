@@ -62,23 +62,32 @@ pub enum NodeType {
     /// If there are two outgoing edges (and 0 incoming) then it is the left corner node.
     ///
     /// Not 100% sure if it is really necessary to have this distinction.
-    BackEdgeCornerDummy,
+    BackEdgeCornerDummy {
+        same_layer_real_node_id: NodeId,
+        /// Connecting to the `same_layer_real_node_id`.
+        same_layer_edge_id: EdgeId,
+    },
     /// When two nodes are forced into the same layer (through a layout constraint) an edge between
     /// them would create a snake-like, or "S"-like edge. But this cannot be handled directly, since
     /// we don't know where to put the middle horizontal part. Therefor, another dummy node needs to
     /// be added.
     ///
+    /// Conceptually, this bisect dummy is like a merged pair of two BackEdgeCornerDummy nodes.
+    ///
     /// ```
     ///   ┌─┐               ┌─┐
     /// ┌►└─┘             ┌►└─┘
-    /// │                 │
     /// │                 │ ┌─┐
     /// └─────┐           └─┴─┴◄┐
-    ///       │                 │
     ///   ┌─┬─┘             ┌─┬─┘
     ///   └─┘               └─┘
     /// ```
-    SnakeEdgeBisectDummy,
+    SnakeEdgeBisectDummy {
+        from_real_node_id: NodeId,
+        from_edge_id: EdgeId,
+        to_real_node_id: NodeId,
+        to_edge_id: EdgeId,
+    },
     /// Bend dummies are inserted during the port assignment phase. They help to create vertical edge
     /// segments for edges that leave at the top or bottom side of a node.
     BendDummy {
@@ -293,8 +302,8 @@ impl Node {
         matches!(
             self.node_type,
             NodeType::LongEdgeDummy
-                | NodeType::BackEdgeCornerDummy
-                | NodeType::SnakeEdgeBisectDummy
+                | NodeType::BackEdgeCornerDummy { .. }
+                | NodeType::SnakeEdgeBisectDummy { .. }
                 | NodeType::BendDummy { .. }
         )
     }

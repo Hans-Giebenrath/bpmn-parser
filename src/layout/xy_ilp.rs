@@ -84,6 +84,7 @@ fn c<T: SolverModel>(problem: &mut T, constraint: Constraint) {
 }
 
 fn assign_y(graph: &mut Graph, pool: PoolId, lane: LaneId, min_y_value: usize) -> usize {
+    dbg!(&graph);
     let mut vars = variables!();
     let node_ids_iter = graph.pools[pool.0].lanes[lane.0].nodes.iter().cloned();
 
@@ -276,13 +277,14 @@ fn assign_y(graph: &mut Graph, pool: PoolId, lane: LaneId, min_y_value: usize) -
 
     let mut min_y_encountered = usize::MAX;
     let mut max_y_plus_height_encountered = usize::MIN;
-    //for node_id in node_ids_iter.clone() {
-    //    dbg!(
-    //        node_id,
-    //        aux(&n!(node_id)),
-    //        solution.value(aux(&n!(node_id))) as usize
-    //    );
-    //}
+    for node_id in node_ids_iter.clone() {
+        dbg!(
+            node_id.0,
+            //aux(&n!(node_id)),
+            solution.value(aux(&n!(node_id))) as usize,
+            "",
+        );
+    }
     for node_id in node_ids_iter.clone() {
         let node = &mut n!(node_id);
         node.y = solution.value(aux(node)) as usize;

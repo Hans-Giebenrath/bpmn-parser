@@ -1065,8 +1065,8 @@ fn debug_print_graph(v: &Vars, ig: &IlpGraph, g: &Graph) {
             NodeType::RealNode { display_text, .. } => display_text.as_str(),
             NodeType::LongEdgeDummy => "(dummy node)",
             NodeType::BendDummy { .. } => "(bend dummy - IMPOSSIBLE HERE?)",
-            NodeType::SnakeEdgeBisectDummy => "(snake edge bisect dummy - IMPOSSIBLE HERE?)",
-            NodeType::BackEdgeCornerDummy => "(back edge corner dummy - IMPOSSIBLE HERE?)",
+            NodeType::SnakeEdgeBisectDummy { .. } => "(snake edge bisect dummy - IMPOSSIBLE HERE?)",
+            NodeType::BackEdgeCornerDummy { .. } => "(back edge corner dummy - IMPOSSIBLE HERE?)",
         };
         format!("nid({}) {what} ilpn({aux}) - Lyr({layer})", n.id)
     };

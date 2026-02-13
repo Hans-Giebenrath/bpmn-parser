@@ -11,7 +11,7 @@ use crate::common::node::NodeType;
 use proc_macros::e;
 use proc_macros::n;
 
-pub fn generate_dummy_nodes(graph: &mut Graph) {
+pub fn dummy_node_generation(graph: &mut Graph) {
     // After this function we will have a bunch of new temporary edges which make some of the
     // real edges "obsolete" - they will be marked as "replaced_by_dummies" but still kept.
     // New edges are added to graph.edges, so we can't iterate over it at the same time.
@@ -31,26 +31,12 @@ pub fn generate_dummy_nodes(graph: &mut Graph) {
             continue;
         }
 
-        if from.layer_id == to.layer_id {
-            // This is handled in the crossing minimization phase.
-            // In the literature these blocks are in fact decomposed, but we do and directly undo
-            // that transformation only within the crossing reduction phase.
-            //
-            // ```
-            // a                a ↘
-            // ↓    becomes  x  →  y
-            // b              ↘ b
-            // ```
-            //
-            // Having direct connections (the left-hand side) is actually simpler in the rest of the
-            // layout phase, compared to the decomposed version (the right-hand side).
+        // The edge is a message edge that spans across pools, this is handled differently.
+        if from.pool != to.pool {
+            assert!(edge.is_message_flow());
             continue;
         }
 
-        // The edge is a message edge that spans across pools, this is handled differently.
-        if from.pool != to.pool {
-            continue;
-        }
         assert!(!edge.is_message_flow());
         let flow_type = edge.flow_type.clone();
         let boundary_event = edge.attached_to_boundary_event.clone();
@@ -78,6 +64,66 @@ pub fn generate_dummy_nodes(graph: &mut Graph) {
                 edge_id,
                 boundary_event,
             );
+        } else if from.layer_id == to.layer_id {
+            // ```
+            //   ┌─┐               ┌─┐
+            // ┌►└─┘             ┌►└─┘
+            // │                 │ ┌─┐
+            // └─────┐           └─┴─┴◄┐
+            //   ┌─┬─┘             ┌─┬─┘
+            //   └─┘               └─┘
+            // ```
+            //
+            // Creates `SnakeEdgeBisectDummy`, see documentation there.
+
+            let dummy_node_id = graph.add_node(
+                NodeType::SnakeEdgeBisectDummy {
+                    from_real_node_id: from_id,
+                    from_edge_id: EdgeId(current_num_edges),
+                    to_real_node_id: to_id,
+                    to_edge_id: EdgeId(current_num_edges + 1),
+                },
+                PoolAndLane {
+                    pool,
+                    // Yes, `to.lane`, as I believe it is visually clearer to directly go to the
+                    // target lane. But I might be wrong.
+                    lane: to_coords.pool_and_lane.lane,
+                },
+                Some(to_coords.layer),
+            );
+            graph.add_edge(
+                from_id,
+                dummy_node_id,
+                EdgeType::DummyEdge {
+                    original_edge: edge_id,
+                    bend_points: DummyEdgeBendPoints::ToBeDeterminedOrStraight,
+                },
+                flow_type.clone(),
+                boundary_event,
+            );
+            graph.add_edge(
+                dummy_node_id,
+                to_id,
+                EdgeType::DummyEdge {
+                    original_edge: edge_id,
+                    bend_points: DummyEdgeBendPoints::ToBeDeterminedOrStraight,
+                },
+                flow_type.clone(),
+                None,
+            );
+
+            // Further decomposition is handled in the crossing minimization phase, as shown in the
+            // schema below. That transofmration is solely necessary in the crossing reduction
+            // phase, so it is done and undone only there.
+            //
+            // ```
+            // a                a ↘
+            // ↓    becomes  x  →  y
+            // b              ↘ b
+            // ```
+            //
+            // Having direct connections (the left-hand side) is actually simpler in the rest of the
+            // layout phase, compared to the decomposed version (the right-hand side).
         } else {
             // Transfrom it from the left to the right.
             // ```
@@ -103,7 +149,10 @@ pub fn generate_dummy_nodes(graph: &mut Graph) {
                 .checked_sub(to.layer_id.0 + 1)
                 .expect("`equals` case was checked already earlier");
             let dummy_from_node_id = graph.add_node(
-                NodeType::BackEdgeCornerDummy,
+                NodeType::BackEdgeCornerDummy {
+                    same_layer_real_node_id: from_id,
+                    same_layer_edge_id: EdgeId(current_num_edges),
+                },
                 PoolAndLane {
                     pool,
                     // Yes, `to.lane`, as I believe it is visually clearer to directly go to the
@@ -113,7 +162,10 @@ pub fn generate_dummy_nodes(graph: &mut Graph) {
                 Some(from_coords.layer),
             );
             let dummy_to_node_id = graph.add_node(
-                NodeType::BackEdgeCornerDummy,
+                NodeType::BackEdgeCornerDummy {
+                    same_layer_real_node_id: to_id,
+                    same_layer_edge_id: EdgeId(current_num_edges + 1),
+                },
                 PoolAndLane {
                     pool,
                     lane: to_coords.pool_and_lane.lane,

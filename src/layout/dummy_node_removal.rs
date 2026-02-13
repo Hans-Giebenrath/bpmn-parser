@@ -9,7 +9,6 @@ use proc_macros::e;
 
 // Assigns bend points to the Regular edges. Afterwards, no more dummy nodes or edges are present.
 pub fn dummy_node_removal(graph: &mut Graph) {
-    dbg!(&graph);
     for edge_id in (0..graph.edges.len()).map(EdgeId) {
         let edge = &mut graph.edges[edge_id];
         let EdgeType::ReplacedByDummies {
@@ -53,7 +52,7 @@ pub fn dummy_node_removal(graph: &mut Graph) {
             } else {
                 break;
             };
-            last_dummy_edge_id = dbg!(cur_dummy_edge_id);
+            last_dummy_edge_id = cur_dummy_edge_id;
             let next_node = &graph.nodes[next_node_id];
             match dummy_bend_points {
                 DummyEdgeBendPoints::ToBeDeterminedOrStraight => {

@@ -12,6 +12,8 @@ mod pe_bpmd;
 mod pool_id_matcher;
 mod to_xml;
 use crate::layout::back_edge_removal::back_edge_removal;
+use crate::layout::introduce_snake_edge_bisect_dummies;
+use crate::layout::vertical_loop_edge_detection::vertical_loop_edge_detection;
 use crate::lexer::TokenCoordinate;
 use annotate_snippets::AnnotationKind;
 use annotate_snippets::Level;
@@ -21,7 +23,7 @@ use annotate_snippets::Snippet;
 use annotate_snippets::renderer::{DecorStyle, Renderer};
 use clap::Parser;
 use layout::all_crossing_minimization::reduce_all_crossings;
-use layout::dummy_node_generation::generate_dummy_nodes;
+use layout::dummy_node_generation::dummy_node_generation;
 use layout::dummy_node_removal::dummy_node_removal;
 use layout::edge_routing::edge_routing;
 use layout::port_assignment::port_assignment;
@@ -140,14 +142,14 @@ fn layout_graph(graph: &mut Graph, timer: &mut Timer) -> Result<(), String> {
 
     // Phase 2
     timer.time_it("solve_layer_assignment", || solve_layer_assignment(graph));
-    dbg!(&graph);
-    timer.time_it("generate_dummy_nodes", || generate_dummy_nodes(graph));
-    dbg!(&graph);
+    timer.time_it("generate_dummy_nodes", || dummy_node_generation(graph));
     timer.time_it("sort_lanes_by_layer", || sort_lanes_by_layer(graph));
-    dbg!(&graph);
 
     // Phase 3
     timer.time_it("reduce_all_crossings", || reduce_all_crossings(graph));
+    timer.time_it("vertical_loop_edge_detection", || {
+        vertical_loop_edge_detection(graph)
+    });
     timer.time_it("port_assignment", || port_assignment(graph));
 
     // Phase 4
