@@ -83,8 +83,18 @@ fn c<T: SolverModel>(problem: &mut T, constraint: Constraint) {
     problem.add_constraint(constraint);
 }
 
+const DEBUG_ILP_CONSTRUCTION: bool = true;
+
+macro_rules! d {
+    ($($tt:tt)*) => {{
+        if DEBUG_ILP_CONSTRUCTION {
+            $($tt)*
+        }
+    }};
+}
+
 fn assign_y(graph: &mut Graph, pool: PoolId, lane: LaneId, min_y_value: usize) -> usize {
-    dbg!(&graph);
+    d!(dbg!(&graph););
     let mut vars = variables!();
     let node_ids_iter = graph.pools[pool.0].lanes[lane.0].nodes.iter().cloned();
 
@@ -97,6 +107,9 @@ fn assign_y(graph: &mut Graph, pool: PoolId, lane: LaneId, min_y_value: usize) -
     const HEIGHT_MINIMIZATION_FACTOR: f64 = 0.0001;
     let height_minimization_var = vars.add(variable().integer().min(0));
     objective += HEIGHT_MINIMIZATION_FACTOR * height_minimization_var;
+    d!(eprintln!(
+        "height_minimization_var (HMV) factor: {HEIGHT_MINIMIZATION_FACTOR}"
+    ));
 
     // Must cancel out the PULL_UP_FACTOR, and then push further, but not so much as to move the
     // other nodes back down to infinity. I.e. must be smaller than Specifically. g0011.bpmd upper
@@ -117,6 +130,7 @@ fn assign_y(graph: &mut Graph, pool: PoolId, lane: LaneId, min_y_value: usize) -
         let min_y_value = min_y_value + (MAX_NODE_HEIGHT - node.height) / 2;
         let var = vars.add(variable().integer().min(min_y_value as f64));
         node.aux = NodePhaseAuxData::XyIlpNodeData(XyIlpNodeData { var });
+        d!(eprintln!("minimum y for n({}): {min_y_value}", node.id.0));
     }
 
     // Minimize the vertical length of edges. I.e. ideally as a result they go
@@ -155,6 +169,10 @@ fn assign_y(graph: &mut Graph, pool: PoolId, lane: LaneId, min_y_value: usize) -
             edge_weight *= 0.1;
         }
         objective += diff_var * edge_weight;
+        d!(eprintln!(
+            "minimize edge y height: {edge_weight} * e({} | {} -> {})",
+            edge_id.0, edge.from.0, edge.to.0
+        ));
     }
 
     // We want to balance gateway nodes between their outgoing/incoming branching nodes of the same
@@ -200,6 +218,13 @@ fn assign_y(graph: &mut Graph, pool: PoolId, lane: LaneId, min_y_value: usize) -
                     .leq(var),
             );
             objective += var;
+            d!(eprintln!(
+                "gateway balance between top node({0}) - gateway node({1}) - bottom node({2}) (and distance between {0} and {2} > {3})",
+                first.id.0,
+                gateway.id.0,
+                last.id.0,
+                graph.config.min_vertical_space_between_gateway_bendpoints
+            ));
 
             // An additional constraint to ensure that the branches are not too close to the gateway
             // node, otherwise it looks awkward.
@@ -211,7 +236,6 @@ fn assign_y(graph: &mut Graph, pool: PoolId, lane: LaneId, min_y_value: usize) -
     }
 
     let mut problem = vars.minimise(objective).using(default_solver);
-    //problem.set_parameter("loglevel", "0");
 
     fn y_padding(n: &Node, cfg: &Config) -> usize {
         if n.is_any_dummy() {
@@ -246,6 +270,10 @@ fn assign_y(graph: &mut Graph, pool: PoolId, lane: LaneId, min_y_value: usize) -
                 &mut problem,
                 (aux(below) - aux(above)).geq((above.height + padding) as f64),
             );
+            d!(eprintln!(
+                "padding above node({0}) <dist {1}> below node({2})",
+                above.id.0, padding, below.id.0
+            ));
         });
 
     node_ids_iter.clone().for_each(|node_id| {
@@ -278,12 +306,11 @@ fn assign_y(graph: &mut Graph, pool: PoolId, lane: LaneId, min_y_value: usize) -
     let mut min_y_encountered = usize::MAX;
     let mut max_y_plus_height_encountered = usize::MIN;
     for node_id in node_ids_iter.clone() {
-        dbg!(
+        d!(eprintln!(
+            "solution n({}) y: {}",
             node_id.0,
-            //aux(&n!(node_id)),
             solution.value(aux(&n!(node_id))) as usize,
-            "",
-        );
+        ));
     }
     for node_id in node_ids_iter.clone() {
         let node = &mut n!(node_id);
