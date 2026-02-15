@@ -144,24 +144,23 @@ fn assign_y(graph: &mut Graph, pool: PoolId, lane: LaneId, min_y_value: usize) -
     {
         assert!(!edge.is_replaced_by_dummies());
 
-        if is_gateway_edge_that_is_balanced_separately(edge_id, edge, graph) {
-            // The weight for gateway-connected edges is assigned through the
-            // "gateway_balancing_constraint_vars", so don't assign anything additional here.
-            // Otherwise, this interferes in weird ways.
-            // NB: Prioritizing some branch to be "straight to the right" should be done
-            // separately as well.
-            continue;
-        }
-
         let diff_var = vars.add(variable().min(0.0));
         diff_vars.push((edge.from.0, edge.to.0, diff_var));
+        // Maybe it should just check for the same layer ...
+        let is_same_layer = edge.is_dummy()
+            && (n!(edge.from).is_snake_edge_bisect_dummy()
+                || n!(edge.from).is_back_edge_corner_dummy()
+                || n!(edge.to).is_snake_edge_bisect_dummy()
+                || n!(edge.to).is_back_edge_corner_dummy())
+            && n!(edge.from).layer_id == n!(edge.to).layer_id;
 
-        let mut edge_weight = match (edge.flow_type.clone(), edge.is_dummy()) {
-            (FlowType::SequenceFlow, false) => graph.config.short_sequence_flow_weight,
-            (FlowType::SequenceFlow, true) => graph.config.long_sequence_flow_weight,
-            (FlowType::DataFlow(_), false) => graph.config.short_data_flow_weight,
-            (FlowType::DataFlow(_), true) => graph.config.long_data_edge_weight,
-            (FlowType::MessageFlow(_), _) => graph.config.message_edge_weight,
+        let mut edge_weight = match (edge.flow_type.clone(), edge.is_dummy(), is_same_layer) {
+            (FlowType::SequenceFlow, false, _) => graph.config.short_sequence_flow_weight,
+            (FlowType::SequenceFlow, true, false) => graph.config.long_sequence_flow_weight,
+            (FlowType::SequenceFlow, true, true) => graph.config.same_layer_sequence_flow_weight,
+            (FlowType::DataFlow(_), false, _) => graph.config.short_data_flow_weight,
+            (FlowType::DataFlow(_), true, _) => graph.config.long_data_edge_weight,
+            (FlowType::MessageFlow(_), _, _) => graph.config.message_edge_weight,
         };
         if edge.is_vertical && edge.is_message_flow() {
             // Vertical edges should also be kept short, but not at the expense of malaligning
@@ -186,23 +185,23 @@ fn assign_y(graph: &mut Graph, pool: PoolId, lane: LaneId, min_y_value: usize) -
         .map(|node_id| &graph.nodes[node_id])
         .filter(|n| n.is_gateway())
     {
-        fn target_node<'a>(node: &Node, graph: &'a Graph) -> Option<&'a Node> {
+        fn target_node(node: &Node) -> Option<&Node> {
             if let NodeType::BendDummy {
-                kind: BendDummyKind::FromGatewayToSameLane { target_node, .. },
+                kind: BendDummyKind::FromGatewayToSameLane { .. },
                 ..
             } = &node.node_type
             {
-                Some(&n!(*target_node))
+                Some(node)
             } else {
                 None
             }
         }
 
         let iter = find_first_last(gateway.incoming.iter(), |edge_id| {
-            target_node(&from!(*edge_id), graph)
+            target_node(&from!(*edge_id))
         })
         .chain(find_first_last(gateway.outgoing.iter(), |edge_id| {
-            target_node(&to!(*edge_id), graph)
+            target_node(&to!(*edge_id))
         }))
         .filter(|(first, last)| first.id != last.id);
         for (first, last) in iter {
@@ -346,50 +345,6 @@ fn assign_x(graph: &mut Graph) {
             lane.width = pool.width - graph.config.pool_header_width;
         }
     }
-}
-
-// TODO this could be calculated once in the beginning by searching through all gateways, instead of
-// looking at it from the edges' perspective.
-fn is_gateway_edge_that_is_balanced_separately(
-    edge_id: EdgeId,
-    edge: &Edge,
-    graph: &Graph,
-) -> bool {
-    fn is_diverging(node: &Node) -> bool {
-        matches!(
-            node.node_type,
-            NodeType::BendDummy {
-                kind: BendDummyKind::FromGatewayBlockedLaneCrossing { .. }
-                    | BendDummyKind::FromGatewayFreeLaneCrossing { .. },
-                ..
-            }
-        )
-    }
-
-    let from_is_non_branching = || {
-        let n = &graph.nodes[edge.from];
-        let mut it = n
-            .outgoing
-            .iter()
-            .cloned()
-            .filter(|e| !is_diverging(&to!(*e)));
-        // There is just one non-diverging and this is our current edge.
-        !n.is_gateway() || (it.next() == Some(edge_id) && it.next().is_none())
-    };
-    let to_is_non_joining = || {
-        let n = &graph.nodes[edge.to];
-        let mut it = n
-            .incoming
-            .iter()
-            .cloned()
-            .filter(|e| !is_diverging(&from!(*e)));
-        // There is just one non-diverging and this is our current edge.
-        !n.is_gateway() || (it.next() == Some(edge_id) && it.next().is_none())
-    };
-    // Note: We can't be connected to a branching gateway and non-branching gateway. The branching
-    // gateway would have additional bend dummies, and so we would just see the bend dummy and only
-    // one of the two gateways.
-    !(edge.is_sequence_flow() && from_is_non_branching() && to_is_non_joining())
 }
 
 /// Find the first and last elements (from the front and back, respectively)

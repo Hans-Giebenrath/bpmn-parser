@@ -271,7 +271,7 @@ fn assemble_tee_or_mpc(
                         )?);
                         continue;
                     }
-                    "software-operators" => {
+                    "software-operators" if tee_or_mpc == "tee" => {
                         if seen_software_operators {
                             return Err(vec![(
                                 format!(
@@ -281,10 +281,10 @@ fn assemble_tee_or_mpc(
                             )]);
                         }
                         seen_software_operators = true;
-                        software_operators = parse_optional_ids(&mut tokens, &mut tc)?;
+                        software_operators = parse_ids(&mut tokens, it.0, &mut tc, "pool")?;
                         continue;
                     }
-                    "hardware-operators" => {
+                    "hardware-operators" if tee_or_mpc == "tee" => {
                         if seen_hardware_operators {
                             return Err(vec![(
                                 format!(
@@ -303,7 +303,7 @@ fn assemble_tee_or_mpc(
                         )?;
                         continue;
                     }
-                    "external-root-access" => {
+                    "external-root-access" if tee_or_mpc == "tee" => {
                         if seen_external_root_access {
                             return Err(vec![(
                                 format!(
@@ -371,17 +371,25 @@ fn assemble_tee_or_mpc(
         }
     }
 
-    if !seen_external_root_access {
-        return Err(vec![(
-            "Missing required 'tee-external-root-access' statement (even if empty)".to_string(),
+    if tee_or_mpc == "tee" {
+        if !seen_external_root_access {
+            return Err(vec![(
+                "Missing required 'tee-external-root-access' statement (even if empty)".to_string(),
+                tc,
+            )]);
+        }
+        if !seen_software_operators {
+            return Err(vec![(
+            "Missing required 'tee-software-operators' statement (e.g. `(tee-hardware-operators @pool-id1 @pool-id2)`)".to_string(),
             tc,
         )]);
-    }
-    if !seen_hardware_operators {
-        return Err(vec![(
+        }
+        if !seen_hardware_operators {
+            return Err(vec![(
             "Missing required 'tee-hardware-operators' statement (e.g. `(tee-hardware-operators on-premises)` or `(tee-hardware-operators @pool-id1 @pool-id2)`)".to_string(),
             tc,
         )]);
+        }
     }
 
     let computation_common = ComputationCommon {
@@ -768,11 +776,11 @@ fn parse_id_or_placeholder(
 
 fn parse_optional_ids(
     tokens: &mut impl Iterator<Item = (TokenCoordinate, Token)>,
-    prev_tc: &mut TokenCoordinate,
+    full_pebpmd_tc: &mut TokenCoordinate,
 ) -> Result<Vec<(String, TokenCoordinate)>, ParseError> {
     let mut arguments_ids = Vec::new();
     for (tc, t) in tokens.by_ref() {
-        prev_tc.end = tc.end;
+        full_pebpmd_tc.end = tc.end;
         match t {
             Token::Separator => {
                 break;
@@ -789,6 +797,40 @@ fn parse_optional_ids(
         }
     }
 
+    Ok(arguments_ids)
+}
+
+fn parse_ids(
+    tokens: &mut impl Iterator<Item = (TokenCoordinate, Token)>,
+    prev_tc: TokenCoordinate,
+    full_pebpmd_tc: &mut TokenCoordinate,
+    actor: &str,
+) -> Result<Vec<(String, TokenCoordinate)>, ParseError> {
+    let mut arguments_ids = Vec::new();
+    for (tc, t) in tokens.by_ref() {
+        full_pebpmd_tc.end = tc.end;
+        match t {
+            Token::Separator => {
+                break;
+            }
+            Token::Id(id) => {
+                arguments_ids.push((id, tc));
+            }
+            _ => {
+                return Err(vec![(
+                    "Unexpected argument. Only accepting IDs".to_string(),
+                    tc,
+                )]);
+            }
+        }
+    }
+
+    if arguments_ids.is_empty() {
+        return Err(vec![(
+            format!("Expected arguments. Add a {actor} ID"),
+            prev_tc,
+        )]);
+    }
     Ok(arguments_ids)
 }
 

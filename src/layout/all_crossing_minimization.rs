@@ -869,6 +869,9 @@ fn temporarily_add_dummy_nodes_for_edges_within_same_layer(graph: &mut Graph) ->
         let edge = &mut graph.edges[edge_id];
         let from = &graph.nodes[edge.from];
         let to = &graph.nodes[edge.to];
+        if edge.is_replaced_by_dummies() {
+            continue;
+        }
         if from.layer_id != to.layer_id {
             continue;
         }
@@ -943,7 +946,11 @@ fn reroute_vertical_edge(
         .iter()
         .position(|i| *i == to_be_rerouted_edge_id)
     else {
-        unreachable!();
+        // TODO add some debug printing
+        unreachable!(
+            "to-be-rerouted edge: {}, from node: {}, to node: {}",
+            to_be_rerouted_edge_id.0, from_node_id.0, to_node_id.0
+        );
     };
     to_node.incoming.remove(i);
     to_node.outgoing.push(right_second_edge_id);
@@ -1006,7 +1013,8 @@ fn remove_temporarily_added_dummy_nodes_for_edges_within_same_layer(graph: &mut 
         }
     }
 
-    for (rerouted_edge_id, original_edge_value) in undo.original_edges {
+    // Undo the changes in reverse order, important! Otherwise,,, this will crash for snake nodes.
+    for (rerouted_edge_id, original_edge_value) in undo.original_edges.into_iter().rev() {
         // I have a feeling that this can be written more cleanly, need to ask an AI.
         let to_node_id = original_edge_value.to;
         let from_node_id = original_edge_value.from;

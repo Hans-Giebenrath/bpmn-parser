@@ -19,6 +19,7 @@ use crate::common::graph::adjust_above_and_below_for_new_inbetween;
 use crate::common::graph::node_size;
 use crate::common::node::BendDummyKind;
 use crate::common::node::LayerId;
+use crate::common::node::Node;
 use crate::common::node::NodeType;
 use crate::common::node::RelativePort;
 use itertools::Itertools;
@@ -766,41 +767,52 @@ struct BarrierInfo {
 }
 
 fn top_barrier(graph: &Graph, this_node_id: NodeId) -> Option<BarrierInfo> {
-    let barrier = graph
-        .iter_upwards_all_pools(StartAt::Node(this_node_id), None)
-        .find(|&node| !node.is_long_edge_dummy())?;
-    match &barrier.node_type {
-        NodeType::BendDummy {
-            originating_node, ..
-        } => Some(BarrierInfo {
-            pool_and_lane: barrier.pool_and_lane(),
-            blocking_real_node: *originating_node,
-        }),
-        NodeType::RealNode { .. } => Some(BarrierInfo {
-            pool_and_lane: barrier.pool_and_lane(),
-            blocking_real_node: barrier.id,
-        }),
-        // TODO this is incorrect, needs to handle `BackEdgeCornerDummy` and `SnakeEdgeBisectDummy`.
-        _ => unreachable!(),
+    for node in graph.iter_upwards_all_pools(StartAt::Node(this_node_id), None) {
+        match classify_barrier_node(this_node_id, node) {
+            result @ Some(_) => return result,
+            None => continue,
+        }
     }
+    None
 }
 
 fn bottom_barrier(graph: &Graph, this_node_id: NodeId) -> Option<BarrierInfo> {
-    let barrier = graph
-        .iter_downwards_all_pools(StartAt::Node(this_node_id), None)
-        .find(|&node| !node.is_long_edge_dummy())?;
-    match &barrier.node_type {
+    for node in graph.iter_downwards_all_pools(StartAt::Node(this_node_id), None) {
+        match classify_barrier_node(this_node_id, node) {
+            result @ Some(_) => return result,
+            None => continue,
+        }
+    }
+    None
+}
+
+// Note: Conceptually a duplicate to `vertical_loop_edge_detection::process_node_edge` but not sure
+// how to unify them without making it just more confusing.
+fn classify_barrier_node(this_node_id: NodeId, node: &Node) -> Option<BarrierInfo> {
+    match &node.node_type {
+        NodeType::LongEdgeDummy => None,
+        NodeType::BackEdgeCornerDummy {
+            same_layer_real_node_id,
+            ..
+        } if *same_layer_real_node_id == this_node_id => None,
+        NodeType::SnakeEdgeBisectDummy { .. } => None,
         NodeType::BendDummy {
             originating_node, ..
         } => Some(BarrierInfo {
-            pool_and_lane: barrier.pool_and_lane(),
+            pool_and_lane: node.pool_and_lane(),
             blocking_real_node: *originating_node,
         }),
         NodeType::RealNode { .. } => Some(BarrierInfo {
-            pool_and_lane: barrier.pool_and_lane(),
-            blocking_real_node: barrier.id,
+            pool_and_lane: node.pool_and_lane(),
+            blocking_real_node: node.id,
         }),
-        _ => unreachable!(),
+        NodeType::BackEdgeCornerDummy {
+            same_layer_real_node_id,
+            ..
+        } => Some(BarrierInfo {
+            pool_and_lane: node.pool_and_lane(),
+            blocking_real_node: *same_layer_real_node_id,
+        }),
     }
 }
 

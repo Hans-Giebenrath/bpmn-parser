@@ -33,6 +33,7 @@ MF <-sending ->tee-unprotect-inner
   (tee-in-protect @tee-protect-outer @better-client)
   (tee-external-root-access blocked)
   (tee-hardware-operators on-premises)
+  (tee-software-operators @better-client)
   (stroke-color #7a7)
 ]
 
@@ -42,6 +43,7 @@ MF <-sending ->tee-unprotect-inner
   (tee-out-unprotect @tee-unprotect-inner no-rv)
   (tee-external-root-access blocked)
   (tee-hardware-operators on-premises)
+  (tee-software-operators @bad-actor)
   (stroke-color #a55)
 ]
 

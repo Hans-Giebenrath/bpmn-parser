@@ -70,7 +70,9 @@ define_config!(
     height_of_empty_pool: usize = 100,
     dummy_node_y_padding: usize = 20,
     regular_node_y_padding: usize = 30,
-    /// Spanning only zero or one layer.
+    /// Spanning zero layers.
+    same_layer_sequence_flow_weight: f64 = 0.1,
+    /// Spanning one layer.
     short_sequence_flow_weight: f64 = 10.0,
     /// Spanning only zero or one layer.
     short_data_flow_weight: f64 = 0.01,

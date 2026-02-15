@@ -26,6 +26,7 @@ MF <-send ->receive
   (tee-external-root-access blocked)
   (tee-in-protect @protect @p1)
   (tee-hardware-operators on-premises)
+  (tee-software-operators @p2)
   (stroke-color #a9d31e)
   (fill-color #eef7d0)
 ]

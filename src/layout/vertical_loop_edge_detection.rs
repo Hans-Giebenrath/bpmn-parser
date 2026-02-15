@@ -100,6 +100,8 @@ enum Flow {
     FoundBlocker,
 }
 
+// Note: Conceptually a duplicate to `port_assignment::classify_barrier_node` but not sure
+// how to unify them without making it just more confusing.
 fn process_node_edge(
     graph: &Graph,
     this_node_id: NodeId,

@@ -4,7 +4,8 @@
 # Receive CTA
 - P3.1 Prepare Input Data
 - P3.2 Validate Input Data Quality
-- P3.3 Apply Protection To Input Data
+- P3.3 Apply MPC Protection To Input Data
+- P3.3 Apply TEE Protection To Input Data
 - P3.4 Submit Protected Input Data
 . Input Data Submitted
 
@@ -44,8 +45,9 @@ X <-go_to_delete
 
 
 OD E2.4 CTA ->p3.1
-OD E3.1 Input Data <-p3.1 ->p3.2 ->p3.3
- & E3.2 Protected Input Data <-p3.3 ->p3.4
+OD E3.1 Input Data <-p3.1 ->p3.2 ->p3.3-mpc
+ & E3.2 Partially Protected Input Data <-p3.3-mpc ->p3.3-tee
+ & E3.2 Protected Input Data <-p3.3-tee ->p3.4
  & E3.2 Protected Input Data <-tee-received-input-data ->p3.5.1 ->p3.5.2
  & E3.3 Protected Input Data Store <-p3.5.2 ->p4.1 ->p4.2
  & E3.3 Protected Input Data Store <-p4.2
@@ -64,17 +66,17 @@ MF ->p5.1 <-p5.2
 [pe-bpmd
   (tee-tasks @p3.5.1 @p4.1)
   (tee-external-root-access blocked)
-  (tee-in-protect @p3.3 @input-party)
+  (tee-in-protect @p3.3-tee @input-party)
   (tee-out-unprotect @p5.4 @output-party)
   (tee-hardware-operators on-premises)
+  (tee-software-operators @cp)
   (stroke-color #a9d31e)
   (fill-color #eef7d0)
 ]
 
 [pe-bpmd
   (mpc-tasks @p3.5.1 @p4.1)
-  (mpc-external-root-access blocked)
-  (mpc-in-protect @p3.3 @input-party)
+  (mpc-in-protect @p3.3-mpc @input-party)
   (mpc-out-unprotect @p5.4 @output-party)
   (stroke-color #1ed39f)
   (fill-color #d0f7ec)

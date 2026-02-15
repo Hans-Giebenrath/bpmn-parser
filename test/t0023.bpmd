@@ -45,5 +45,6 @@ MF <-sending ->steal
   (tee-out-unprotect @tee-unprotect no-rv)
   (tee-external-root-access blocked)
   (tee-hardware-operators on-premises)
+  (tee-software-operators @tee)
   (stroke-color #5a5)
 ]
