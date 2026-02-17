@@ -1,6 +1,7 @@
 * The edges which go straight up from a gateway need to be marked `is_vertical` even for those back edge dummy node cases. Right now they are not treated as vertical and thus get those funny wonks (but must check whether there *really* is no other obstacle in the way, gotta think which phase is the correct to determine that).
 
 * PE-BPMN tee-external-root-access in a tee-pool should not name itself (@tee-pool)
+* PE-BPMN tee-software-operators should have a similar `on-premises` placeholder as tee-hardware-operators. `local`? as `on-premises` seems weird. (ChatGPT recommends replacing existing 'on-premises' with 'local' as well, not sure if I agree, must sleep over that suggestion)
 * is `on-premises` for hardware-access doing the wrong thing?
 * pe0001 end events are not drawn as end events
 * PE-BPMN the selectors (e.g. secure-channel begin and end) should better filter their node types. Right now one can accidentally select data nodes which doesn't make sense and results in a non-helpful assertion error.

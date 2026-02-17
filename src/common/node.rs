@@ -4,6 +4,7 @@ use super::macros::impl_index;
 use crate::common::bpmn_node::*;
 use crate::common::graph::Coord3;
 use crate::common::graph::EdgeId;
+use crate::common::graph::Graph;
 use crate::common::graph::LaneId;
 use crate::common::graph::NodeId;
 use crate::common::graph::PoolAndLane;
@@ -13,6 +14,7 @@ use crate::layout::all_crossing_minimization::CrossingMinimizationNodeData;
 use crate::layout::solve_layer_assignment::LayerAssignmentData;
 use crate::layout::xy_ilp::XyIlpNodeData;
 use crate::lexer::TokenCoordinate;
+use proc_macros::e;
 use std::ops::Add;
 
 #[derive(Debug)]
@@ -220,6 +222,12 @@ pub enum LoneDataElement {
     IsOutput(EdgeId),
 }
 
+#[derive(Debug)]
+pub enum NodeIdOrEdgeId {
+    NodeId(NodeId),
+    EdgeId(EdgeId),
+}
+
 impl Node {
     pub fn is_data(&self) -> bool {
         matches!(
@@ -308,6 +316,36 @@ impl Node {
         )
     }
 
+    /// Sometimes dummy nodes need to be traversed. Since it varies whether there is exactly one
+    /// incoming and one outgoing edge, or maybe two incoming or two outgoing edges, it is easier to
+    /// have this hop functionality put into a dedicated function.
+    /// Panics if `!self.is_any_dummy()`
+    pub fn hop_to_next_node(&self, graph: &Graph, coming_from: NodeIdOrEdgeId) -> (EdgeId, NodeId) {
+        assert!(
+            self.is_any_dummy(),
+            "{graph:?}, {self}, original_node_id: {coming_from:?}"
+        );
+        let mut next_edge_it = self
+            .incoming
+            .iter()
+            .map(|&edge_id| (edge_id, e!(edge_id).from))
+            .chain(
+                self.outgoing
+                    .iter()
+                    .map(|&edge_id| (edge_id, e!(edge_id).to)),
+            )
+            .filter(|&(e, n)| match coming_from {
+                NodeIdOrEdgeId::NodeId(node_id) => n != node_id,
+                NodeIdOrEdgeId::EdgeId(edge_id) => e != edge_id,
+            });
+        match (next_edge_it.next(), next_edge_it.next()) {
+            (Some((edge_id, node_id)), None) => (edge_id, node_id),
+            _ => unreachable!(
+                "Should not happen for a dummy node. {graph:?}, {self}, original_node_id: {coming_from:?}"
+            ),
+        }
+    }
+
     pub fn is_long_edge_dummy(&self) -> bool {
         matches!(self.node_type, NodeType::LongEdgeDummy)
     }
@@ -375,6 +413,16 @@ impl Node {
             Some(display_text.as_str())
         } else {
             None
+        }
+    }
+
+    pub fn display_text_or_dummy_kind(&self) -> String {
+        match &self.node_type {
+            NodeType::RealNode { display_text, .. } => display_text.clone(),
+            NodeType::LongEdgeDummy => "(-)".to_string(),
+            NodeType::BackEdgeCornerDummy { .. } => "(])".to_string(),
+            NodeType::SnakeEdgeBisectDummy { .. } => "(S)".to_string(),
+            NodeType::BendDummy { .. } => "(┌)".to_string(),
         }
     }
 

@@ -23,7 +23,18 @@ fn aux(node: &Node) -> Variable {
     }
 }
 
+const DEBUG_ILP_CONSTRUCTION: bool = true;
+
+macro_rules! d {
+    ($($tt:tt)*) => {{
+        if DEBUG_ILP_CONSTRUCTION {
+            $($tt)*
+        }
+    }};
+}
+
 fn solve_layers(graph: &mut Graph) {
+    d!(dbg!(&graph););
     let mut vars = variables!();
 
     let num_nodes = graph.nodes.len();
@@ -31,6 +42,7 @@ fn solve_layers(graph: &mut Graph) {
         node.aux = NodePhaseAuxData::LayerAssignmentData(LayerAssignmentData(
             vars.add(variable().integer().min(0).max(num_nodes as f64)),
         ));
+        d!(eprintln!("0 <= n({}) <= {num_nodes}", node.id.0));
     }
 
     let mut objective = Expression::from(0.0);
@@ -44,6 +56,7 @@ fn solve_layers(graph: &mut Graph) {
 
         // Favor short edges
         objective += to_var - from_var;
+        d!(eprintln!("minimize n({}) -> n({})", edge.from.0, edge.to.0));
     }
 
     // Try to pull start nodes to the left. But only starts, let the rest be placed however the
@@ -59,6 +72,7 @@ fn solve_layers(graph: &mut Graph) {
             })
         {
             objective += 0.1 * aux(node);
+            d!(eprintln!("pull left n({})", node.id.0));
         }
     }
 
@@ -76,10 +90,17 @@ fn solve_layers(graph: &mut Graph) {
     {
         let from_var = aux(&n!(edge.from));
         let to_var = aux(&n!(edge.to));
-        problem = problem.with((to_var - from_var).geq(1));
+        d!(eprintln!(
+            "constraint n({}) leftof n({})",
+            edge.from.0, edge.to.0
+        ));
+        dbg!(from_var, to_var);
+        problem.add_constraint((to_var - from_var).geq(1));
     }
 
+    dbg!();
     let solution = problem.solve().unwrap();
+    dbg!();
     graph.num_layers = usize::MIN;
 
     for node in graph.nodes.iter_mut().filter(|node| !node.is_data()) {

@@ -283,6 +283,18 @@ impl Graph {
         (pool_id, reference_pool.y.strict_add(reference_pool.height))
     }
 
+    pub fn endless_graph_traversal_protector(&self) -> impl FnMut(&Graph) + use<> {
+        // Graph traversal should usually be in Omega(V + E). Slap on a 10 as this should usually
+        // be enough and should also be exhausted fairly quickly if there is a faulty loop.
+        let mut iterations = 10 * (self.nodes.len() + self.edges.len());
+        move |graph: &Graph| {
+            if iterations == 0 {
+                panic!("BUG!!! Endless loop detected: {graph:?}");
+            }
+            iterations -= 1;
+        }
+    }
+
     pub(crate) fn get_bottom_node(&self, pool_lane: PoolAndLane, layer: LayerId) -> Option<NodeId> {
         let PoolAndLane { pool, lane } = pool_lane;
         let mut it = self.pools[pool].lanes[lane].nodes.iter().cloned();

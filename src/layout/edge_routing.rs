@@ -892,16 +892,36 @@ fn get_layered_edges(graph: &mut Graph) -> (Vec<SegmentsOfSameLayer>, MessageFlo
 
         if !edge.is_message_flow() {
             if start_y == end_y {
+                // Straight to the right without any vertical segment.
                 continue;
             }
-            let segment_vec = &mut edge_layers[from_node.layer_id.0 + 1];
+            let (layer_idx, alignment) = if from_node.is_snake_edge_bisect_dummy()
+                || (from_node.is_back_edge_corner_dummy() && from_node.layer_id == to_node.layer_id)
+            {
+                // This edge leaves to the left, so it is part of the previous layer.
+                (from_node.layer_id.0, Alignment::Right)
+            } else {
+                let layer_idx = from_node.layer_id.0 + 1;
+                if to_node.is_snake_edge_bisect_dummy()
+                    || (to_node.is_back_edge_corner_dummy()
+                        && from_node.layer_id == to_node.layer_id)
+                {
+                    // This is a loop which leaves to the right side, and then loops directly back.
+                    (layer_idx, Alignment::Left)
+                } else {
+                    // This edge is more regular, it leaves to the right, so it is part of the next
+                    // layer.
+                    (layer_idx, Alignment::Center)
+                }
+            };
+            let segment_vec = &mut edge_layers[layer_idx];
             segment_vec.push(VerticalSegment {
                 id: edge_id,
                 start_y,
                 end_y,
                 idx: 0,
                 ixi_diagonalizer: None,
-                alignment: Alignment::Center,
+                alignment,
                 is_message_flow: false,
                 x_coordinate: Default::default(),
             });

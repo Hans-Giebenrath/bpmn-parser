@@ -2,23 +2,23 @@
 
 == Lane 1
 # Start Event
-X ->g1
+X up branch X ->g1
 
 - A-1  <-g1 ->j1
 
 - C-2  <-g2 ->j2
 
-X <-j1
+X up join X <-j1
 . Finish.
 
 == Lane 2
 
 # Start Event
-X ->g2
+X down branch X ->g2
 
 - A-2  <-g2 ->j2
 
 - C-1  <-g1 ->j1
 
-X <-j2
+X down join X <-j2
 . Finish.

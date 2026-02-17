@@ -1,23 +1,34 @@
 use crate::common::config::Config;
-use crate::common::edge::Edge;
 use crate::common::edge::FlowType;
-use crate::common::graph::EdgeId;
 use crate::common::graph::Graph;
 use crate::common::graph::LaneId;
 use crate::common::graph::MAX_NODE_HEIGHT;
+use crate::common::graph::NodeId;
 use crate::common::graph::PoolId;
+use crate::common::lane::Lane;
 use crate::common::node::BendDummyKind;
 use crate::common::node::Node;
+use crate::common::node::NodeIdOrEdgeId;
 use crate::common::node::NodePhaseAuxData;
 use crate::common::node::NodeType;
+use core::slice::Iter;
+use good_lp::solvers::microlp::MicroLpProblem;
 use good_lp::*;
 use proc_macros::from;
 use proc_macros::n;
 use proc_macros::to;
+use std::iter::Cloned;
 
 #[derive(Debug)]
 pub struct XyIlpNodeData {
     var: Variable,
+}
+
+/// See `gateway_forbidden_offset_constraints_inner` for documentation.
+struct GatewayBigMHelpers {
+    z0: Variable,
+    zp: Variable,
+    zm: Variable,
 }
 
 // TODO should solve the ILP for every lane independently.
@@ -74,7 +85,7 @@ pub fn assign_xy_ilp(graph: &mut Graph) {
 fn aux(node: &Node) -> Variable {
     match node.aux {
         NodePhaseAuxData::XyIlpNodeData(ref a) => a.var,
-        _ => panic!(""),
+        _ => panic!("{node:#?}"),
     }
 }
 
@@ -100,6 +111,7 @@ fn assign_y(graph: &mut Graph, pool: PoolId, lane: LaneId, min_y_value: usize) -
 
     // TODO the allocation could be moved out of this function.
     let mut diff_vars = Vec::new();
+    let mut gateway_big_ms = Vec::new();
 
     let mut objective = Expression::from(0.0);
     // Keep the diagram height compact. Ensures that the solver does not stretch the diagram across
@@ -147,12 +159,7 @@ fn assign_y(graph: &mut Graph, pool: PoolId, lane: LaneId, min_y_value: usize) -
         let diff_var = vars.add(variable().min(0.0));
         diff_vars.push((edge.from.0, edge.to.0, diff_var));
         // Maybe it should just check for the same layer ...
-        let is_same_layer = edge.is_dummy()
-            && (n!(edge.from).is_snake_edge_bisect_dummy()
-                || n!(edge.from).is_back_edge_corner_dummy()
-                || n!(edge.to).is_snake_edge_bisect_dummy()
-                || n!(edge.to).is_back_edge_corner_dummy())
-            && n!(edge.from).layer_id == n!(edge.to).layer_id;
+        let is_same_layer = n!(edge.from).layer_id == n!(edge.to).layer_id;
 
         let mut edge_weight = match (edge.flow_type.clone(), edge.is_dummy(), is_same_layer) {
             (FlowType::SequenceFlow, false, _) => graph.config.short_sequence_flow_weight,
@@ -169,8 +176,12 @@ fn assign_y(graph: &mut Graph, pool: PoolId, lane: LaneId, min_y_value: usize) -
         }
         objective += diff_var * edge_weight;
         d!(eprintln!(
-            "minimize edge y height: {edge_weight} * e({} | {} -> {})",
-            edge_id.0, edge.from.0, edge.to.0
+            "minimize edge y height: {edge_weight} * e({} | {} -> {} / \"{}\" -> \"{}\")",
+            edge_id.0,
+            edge.from.0,
+            edge.to.0,
+            n!(edge.from).display_text_or_dummy_kind(),
+            n!(edge.to).display_text_or_dummy_kind(),
         ));
     }
 
@@ -234,6 +245,12 @@ fn assign_y(graph: &mut Graph, pool: PoolId, lane: LaneId, min_y_value: usize) -
         }
     }
 
+    let gateway_offset_iterator = gateway_forbidden_offset_constraints_prepare_big_ms(
+        &mut vars,
+        graph,
+        node_ids_iter.clone(),
+        &mut gateway_big_ms,
+    );
     let mut problem = vars.minimise(objective).using(default_solver);
 
     fn y_padding(n: &Node, cfg: &Config) -> usize {
@@ -257,6 +274,9 @@ fn assign_y(graph: &mut Graph, pool: PoolId, lane: LaneId, min_y_value: usize) -
                     // dummies. But they must have a padding constraint with their above (and below
                     // - this is already handled) as well in case the bend dummies don't need as
                     // much of a height as the gateway node would.
+                    //
+                    // TODO this whole "detachedness" is confusing. Instead, this neighbor search
+                    // should just do an up/down traversal if necessary.
                     n.is_gateway()
                         .then_some(())
                         .and(n.node_above_in_same_lane)
@@ -274,6 +294,14 @@ fn assign_y(graph: &mut Graph, pool: PoolId, lane: LaneId, min_y_value: usize) -
                 above.id.0, padding, below.id.0
             ));
         });
+
+    gateway_forbidden_offset_constraints(
+        &mut problem,
+        graph,
+        gateway_offset_iterator,
+        &graph.pools[pool.0].lanes[lane.0],
+        &mut gateway_big_ms,
+    );
 
     node_ids_iter.clone().for_each(|node_id| {
         c(
@@ -370,4 +398,151 @@ where
     } else {
         None.into_iter()
     }
+}
+
+fn gateway_forbidden_offset_constraints_prepare_big_ms<'a>(
+    vars: &mut ProblemVariables,
+    graph: &'a Graph,
+    node_ids_iter: Cloned<Iter<'a, NodeId>>,
+    gateway_big_ms: &mut Vec<GatewayBigMHelpers>,
+) -> impl Iterator<Item = (&'a Node, &'a Node)> + 'a {
+    gateway_big_ms.clear();
+    let iter_result = node_ids_iter
+        .map(|node_id| &n!(node_id))
+        .filter(|node| node.is_gateway())
+        .flat_map(move |gateway_node| {
+            gateway_node
+                .incoming
+                .iter()
+                .map(move |incoming_edge_id| &from!(*incoming_edge_id))
+                .chain(
+                    gateway_node
+                        .outgoing
+                        .iter()
+                        .map(move |outgoing_edge_id| &to!(*outgoing_edge_id)),
+                )
+                .flat_map(move |bend_or_vertical_node| {
+                    if !bend_or_vertical_node.is_bend_dummy()
+                        || bend_or_vertical_node.lane != gateway_node.lane
+                    {
+                        // !bend_dummy: It is a real node which is directly above or below the gateway,
+                        // so they are spaced differently.
+                        // Different lanes: This means that the other_node (going further from the
+                        // bend dummy) is also on another lane, and so we don't need spacing
+                        // constraints.
+                        // Further, if only `other_node` is on another lane, then we also
+                        // don't want to connect to `incoming_node` as a backup.
+                        return None;
+                    }
+                    let other_node = &n!(bend_or_vertical_node
+                        .hop_to_next_node(graph, NodeIdOrEdgeId::NodeId(gateway_node.id))
+                        .1);
+                    if other_node.layer_id == gateway_node.layer_id {
+                        return None;
+                    }
+                    if other_node.lane == gateway_node.lane {
+                        Some((gateway_node, other_node))
+                    } else {
+                        // The other node is on another lane, but it might be that the bend dummy is
+                        // still on this lane.
+                        Some((gateway_node, bend_or_vertical_node))
+                    }
+                })
+        });
+    for _ in 0..iter_result.clone().count() {
+        gateway_big_ms.push(GatewayBigMHelpers {
+            z0: vars.add(variable().binary()),
+            zp: vars.add(variable().binary()),
+            zm: vars.add(variable().binary()),
+        });
+    }
+    // So the usage side can just `.pop()` them.
+    gateway_big_ms.reverse();
+
+    // Question is: is `collect::<Vec<_>>` cheaper or doing the iteration twice? I would bet it is
+    // the first ... But Rust is about zero copy, so let's blindly follow idioms here :rocket:
+    iter_result
+}
+fn gateway_forbidden_offset_constraints<'a>(
+    problem: &mut MicroLpProblem,
+    graph: &Graph,
+    nodes_iter: impl Iterator<Item = (&'a Node, &'a Node)> + 'a,
+    lane: &Lane,
+    gateway_big_ms: &mut Vec<GatewayBigMHelpers>,
+) {
+    let min = graph.config.min_vertical_space_between_gateway_bendpoints / 2;
+    let max = lane.nodes.len()
+        * (MAX_NODE_HEIGHT
+            + std::cmp::max(
+                graph.config.regular_node_y_padding,
+                graph.config.dummy_node_y_padding,
+            ));
+    for (gateway_node, constraint_reference_node) in nodes_iter {
+        gateway_forbidden_offset_constraints_inner(
+            problem,
+            gateway_node,
+            &gateway_big_ms.pop().unwrap(),
+            constraint_reference_node,
+            min,
+            max,
+        );
+    }
+}
+
+fn gateway_forbidden_offset_constraints_inner(
+    problem: &mut MicroLpProblem,
+    gateway: &Node,
+    helpers: &GatewayBigMHelpers,
+    other_node: &Node,
+    min: usize,
+    max: usize,
+) {
+    // Gateway neighbors: Ensure that the target node of a gateway is either exactly at the same
+    // height (so the edge is straight to the right) or sufficiently offset to the top or bottom
+    // such that the connecting edge can leave to the top or bottom of the gateway node.
+    // Otherwise, it will result in diagonal edges (which is only for gateway nodes due to the
+    // collapsing logic).
+    // How it works:
+    // First introduce helper variables:
+    //  (1) `min := (min_vertical_space_between_gateway_bendpoints/2)`
+    //  (2) `max := num_nodes * greatest distance * vertical_space`
+    //  (3) `dist := ((aux(gateway) + (gateway.height / 2) as f64) - (aux(first) + (first.height / 2) as f64))`
+    //
+    // The goal is either:
+    //  * `dist == 0` or
+    //  * `|dist| >= min`
+    //
+    // This can be achieved with the big M method (ChatGPT helped me here!) using two constraints:
+    //  (1) `d >= 0 * z0 + min * z+ +   L * z-`
+    //  (2) `d <= 0 * z0 +   U * z+ - min * z-`
+    //  (3) `z0 + z+ + z- == 1`: To choose just one of the three modes.
+    //
+    // The `z0`, `z+` and `z-` binary variables are helper variables to select the mode of the ILP.
+    // Replacing constants `L := -max`, `U := max`, and eliminating the redundant `0*z0`:
+    //  (1) `d >= min * z+ - max * z-`
+    //  (2) `d <= max * z+ - min * z-`
+    //
+    // gives us:
+    //  (1) `z0 == 1 ==> d >= 0 && d <= 0`, i.e. `d \in [0, 0]`
+    //  (1) `z+ == 1 ==> d >= min && d <= max`, i.e. `d \in [min, max]`
+    //  (1) `z- == 1 ==> d >= -max && d <= -min`, i.e. `d \in [-max, -min]`
+
+    let z0 = helpers.z0;
+    let zp = helpers.zp;
+    let zm = helpers.zm;
+
+    problem.add_constraint((z0 + zp + zm).eq(1));
+
+    //  (1) `d >= min * z+ - max * z-`
+    problem.add_constraint(
+        ((aux(gateway) + (gateway.height / 2) as f64)
+            - (aux(other_node) + (other_node.height / 2) as f64))
+            .geq((min as f64) * zp - (max as f64) * zm),
+    );
+    //  (2) `d <= max * z+ - min * z-`
+    problem.add_constraint(
+        ((aux(gateway) + (gateway.height / 2) as f64)
+            - (aux(other_node) + (other_node.height / 2) as f64))
+            .leq((max as f64) * zp - (min as f64) * zm),
+    );
 }
