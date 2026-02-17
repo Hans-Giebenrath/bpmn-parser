@@ -5,6 +5,7 @@ use crate::common::graph::EdgeId;
 use crate::common::graph::Graph;
 use crate::common::graph::MAX_NODE_WIDTH;
 use crate::common::node::AbsolutePort;
+use crate::common::node::NodeIdOrEdgeId;
 use proc_macros::e;
 
 // Assigns bend points to the Regular edges. Afterwards, no more dummy nodes or edges are present.
@@ -28,18 +29,12 @@ pub fn dummy_node_removal(graph: &mut Graph) {
         let mut bend_points = vec![(from_x, from_y)];
         let mut cur_dummy_edge_id = first_dummy_edge_id;
         // This is used to access to `to` port.
-        let mut last_dummy_edge_id = cur_dummy_edge_id;
         let mut next_node_id = e!(cur_dummy_edge_id).to;
-        let mut i = 0;
+        let mut loop_protector = graph.endless_graph_traversal_protector();
         // This loop hops along the edges via node.incoming/.outgoing, as dummy edges might
         // not necessarily be consecutive in `graph.edges`.
         loop {
-            i += 1;
-            assert!(
-                i <= graph.nodes.len(),
-                "bug, loop seems to cycle and cycle again, edge {}, graph: {graph:#?}",
-                edge_id.0
-            );
+            loop_protector(graph);
 
             let edge = &graph.edges[cur_dummy_edge_id];
             let dummy_bend_points = if let EdgeType::DummyEdge {
@@ -52,8 +47,6 @@ pub fn dummy_node_removal(graph: &mut Graph) {
             } else {
                 break;
             };
-            last_dummy_edge_id = cur_dummy_edge_id;
-            let next_node = &graph.nodes[next_node_id];
             match dummy_bend_points {
                 DummyEdgeBendPoints::ToBeDeterminedOrStraight => {
                     // Nothing to do, as this is straight we don't add any bend points.
@@ -66,39 +59,15 @@ pub fn dummy_node_removal(graph: &mut Graph) {
                 DummyEdgeBendPoints::VerticalBendDummy(segment) => bend_points.push(*segment),
                 DummyEdgeBendPoints::VerticalCollapsed => { /* empty */ }
             };
-            let mut next_edge_it = next_node
-                .incoming
-                .iter()
-                .map(|&edge_id| (edge_id, e!(edge_id).from))
-                .chain(
-                    next_node
-                        .outgoing
-                        .iter()
-                        .map(|&edge_id| (edge_id, e!(edge_id).to)),
-                )
-                .filter(|&(e, _)| e != cur_dummy_edge_id);
-            match (next_edge_it.next(), next_edge_it.next()) {
-                (Some(_), Some(_)) => {
-                    // There are multiple other edges, which means we reached some target node
-                    // which is not a dummy node (dummies only have two connected edges, one of
-                    // them being filtered out). So we are done.
-                    break;
-                }
-                (None, _) => {
-                    // Done as well, probably reached an end node.
-                    break;
-                }
-                (Some((e, computed_next_node_id)), None) => {
-                    // Only one success edge is present, here. This could mean that the
-                    // original ReplacedByDummies edge continues, but not necessarily.
-                    // This is checked in the `match` in the beginning of the loop.
-                    cur_dummy_edge_id = e;
-                    next_node_id = computed_next_node_id;
-                }
+
+            let next_node = &graph.nodes[next_node_id];
+            if !next_node.is_any_dummy() {
+                break;
             }
+            (cur_dummy_edge_id, next_node_id) =
+                next_node.hop_to_next_node(graph, NodeIdOrEdgeId::EdgeId(cur_dummy_edge_id));
         }
-        let AbsolutePort { x: to_x, y: to_y } =
-            graph.nodes[to].port_of_incoming(last_dummy_edge_id);
+        let AbsolutePort { x: to_x, y: to_y } = graph.nodes[to].port_of_incoming(cur_dummy_edge_id);
         bend_points.push((to_x, to_y));
         // Vertical lines ([Edge.is_vertical]) have their endpoints as their recorded
         // `bend_points`. This means that they will duplicate info in `from` and `to`.
