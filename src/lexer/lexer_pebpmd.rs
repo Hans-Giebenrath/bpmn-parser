@@ -491,64 +491,7 @@ pub fn to_pe_bpmd(mut tokens: Tokens, _backup_tc: TokenCoordinate) -> AResult {
 }
 
 impl<'a> Lexer<'a> {
-    pub fn start_extension(&mut self, tc: TokenCoordinate) -> Result<(), ParseError> {
-        self.skip_whitespace();
-        loop {
-            match self.current_char {
-                Some('/') if self.continues_with("/") => {
-                    while self.current_char != Some('\n') {
-                        self.advance(); // Skip the comment
-                    }
-                }
-                Some('\n') | Some('\r') => {
-                    self.advance();
-                }
-                Some(' ') => {
-                    self.advance();
-                }
-                // Empty []
-                Some(']') => {
-                    let tc = self.current_coord();
-                    self.sas.next_statement(tc, self.position, to_pe_bpmd)?;
-                    return Err(vec![("Empty extension block. Make sure you complete the full \"[...]\" statement".to_string(), tc, )]);
-                }
-                Some(_) => {
-                    // Read extension
-                    let mut tc = self.current_coord();
-                    let (tc_end, extension_type) = self.read_label()?;
-                    // Check extension type
-                    if extension_type == "pe-bpmd" {
-                        self.sas.next_statement(tc, self.position, to_pe_bpmd)?;
-                        tc = TokenCoordinate {
-                            start: tc.start,
-                            end: tc_end.end,
-                            source_file_idx: tc.source_file_idx,
-                        };
-                        self.run_pe_bpmd(tc)?;
-                        // Empty [pe-bpmd]
-                        if self.sas.fragments.is_empty() {
-                            return Err(vec![("Empty extension block. Make sure you complete the full \"[pe-bpmd...]\" statement".to_string(), tc, )]);
-                        }
-                        break;
-                    }
-                    return Err(vec![(
-                        "Invalid extension".to_string(),
-                        TokenCoordinate {
-                            start: tc.start,
-                            end: tc_end.end,
-                            source_file_idx: tc.source_file_idx,
-                        },
-                    )]);
-                }
-                None => {
-                    return Err(vec![("Unfinished extension block. Make sure you complete the full \"[...]\" statement.".to_string(),tc, )]);
-                }
-            }
-        }
-        Ok(())
-    }
-
-    fn run_pe_bpmd(&mut self, mut tc: TokenCoordinate) -> Result<(), ParseError> {
+    pub(crate) fn run_pe_bpmd(&mut self, mut tc: TokenCoordinate) -> Result<(), ParseError> {
         self.skip_whitespace();
 
         let mut block_state = BlockState::Closed;

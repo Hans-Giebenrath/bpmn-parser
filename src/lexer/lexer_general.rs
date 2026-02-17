@@ -43,6 +43,7 @@ pub enum LayoutStatement {
     Above(String, String),
     /// The diagram will only contain at most so many nodes in one row, after which it will start
     /// from the left below again, similar to a line break.
+    /// Note: This is just an idea for a future feature.
     RowWidth(usize),
 }
 
@@ -1534,6 +1535,63 @@ impl<'a> Lexer<'a> {
             end: self.position + 1,
             source_file_idx: self.source_file_idx,
         }
+    }
+
+    pub fn start_extension(&mut self, tc: TokenCoordinate) -> Result<(), ParseError> {
+        self.skip_whitespace();
+        loop {
+            match self.current_char {
+                Some('/') if self.continues_with("/") => {
+                    while self.current_char != Some('\n') {
+                        self.advance(); // Skip the comment
+                    }
+                }
+                Some('\n') | Some('\r') => {
+                    self.advance();
+                }
+                Some(' ') => {
+                    self.advance();
+                }
+                // Empty []
+                Some(']') => {
+                    let tc = self.current_coord();
+                    self.sas.next_statement(tc, self.position, to_pe_bpmd)?;
+                    return Err(vec![("Empty extension block. Make sure you complete the full \"[...]\" statement".to_string(), tc, )]);
+                }
+                Some(_) => {
+                    // Read extension
+                    let mut tc = self.current_coord();
+                    let (tc_end, extension_type) = self.read_label()?;
+                    // Check extension type
+                    if extension_type == "pe-bpmd" {
+                        self.sas.next_statement(tc, self.position, to_pe_bpmd)?;
+                        tc = TokenCoordinate {
+                            start: tc.start,
+                            end: tc_end.end,
+                            source_file_idx: tc.source_file_idx,
+                        };
+                        self.run_pe_bpmd(tc)?;
+                        // Empty [pe-bpmd]
+                        if self.sas.fragments.is_empty() {
+                            return Err(vec![("Empty extension block. Make sure you complete the full \"[pe-bpmd...]\" statement".to_string(), tc, )]);
+                        }
+                        break;
+                    }
+                    return Err(vec![(
+                        "Invalid extension".to_string(),
+                        TokenCoordinate {
+                            start: tc.start,
+                            end: tc_end.end,
+                            source_file_idx: tc.source_file_idx,
+                        },
+                    )]);
+                }
+                None => {
+                    return Err(vec![("Unfinished extension block. Make sure you complete the full \"[...]\" statement.".to_string(),tc, )]);
+                }
+            }
+        }
+        Ok(())
     }
 }
 
