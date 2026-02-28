@@ -9,6 +9,8 @@ use proc_macros::e;
 use std::collections::HashMap;
 use std::collections::HashSet;
 
+/// Sets `is_vertical := true` for those vertical loop edges (Snake- and BackEdgeCornerDummy) which
+/// don't have blocking nodes.
 pub fn vertical_loop_edge_detection(graph: &mut Graph) {
     let mut nodes_to_look_at = HashSet::new();
 

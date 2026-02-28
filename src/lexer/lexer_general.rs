@@ -1572,6 +1572,22 @@ impl<'a> Lexer<'a> {
                         };
                         self.run_pe_bpmd(tc)?;
                         // Empty [pe-bpmd]
+                        // TODO this is actually not a big deal? Could be due to code generation.
+                        if self.sas.fragments.is_empty() {
+                            return Err(vec![("Empty extension block. Make sure you complete the full \"[pe-bpmd...]\" statement".to_string(), tc, )]);
+                        }
+                        break;
+                    }
+                    if extension_type == "place" {
+                        self.sas.next_statement(tc, self.position, to_place)?;
+                        tc = TokenCoordinate {
+                            start: tc.start,
+                            end: tc_end.end,
+                            source_file_idx: tc.source_file_idx,
+                        };
+                        self.run_place(tc)?;
+                        // Empty [place]
+                        // TODO this is actually not a big deal? Could be due to code generation.
                         if self.sas.fragments.is_empty() {
                             return Err(vec![("Empty extension block. Make sure you complete the full \"[pe-bpmd...]\" statement".to_string(), tc, )]);
                         }

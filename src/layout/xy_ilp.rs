@@ -12,7 +12,7 @@ use crate::common::node::NodeIdOrEdgeId;
 use crate::common::node::NodePhaseAuxData;
 use crate::common::node::NodeType;
 use core::slice::Iter;
-use good_lp::solvers::microlp::MicroLpProblem;
+use good_lp::solvers::SolverModel;
 use good_lp::*;
 use proc_macros::from;
 use proc_macros::n;
@@ -464,7 +464,7 @@ fn gateway_forbidden_offset_constraints_prepare_big_ms<'a>(
     iter_result
 }
 fn gateway_forbidden_offset_constraints<'a>(
-    problem: &mut MicroLpProblem,
+    problem: &mut impl SolverModel,
     graph: &Graph,
     nodes_iter: impl Iterator<Item = (&'a Node, &'a Node)> + 'a,
     lane: &Lane,
@@ -490,7 +490,7 @@ fn gateway_forbidden_offset_constraints<'a>(
 }
 
 fn gateway_forbidden_offset_constraints_inner(
-    problem: &mut MicroLpProblem,
+    problem: &mut impl SolverModel,
     gateway: &Node,
     helpers: &GatewayBigMHelpers,
     other_node: &Node,

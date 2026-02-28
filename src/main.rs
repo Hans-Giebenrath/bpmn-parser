@@ -11,8 +11,9 @@ mod parser;
 mod pe_bpmd;
 mod pool_id_matcher;
 mod to_xml;
+use crate::layout::all_crossing_minimization_sweep::reduce_all_crossings_sweep;
 use crate::layout::back_edge_removal::back_edge_removal;
-use crate::layout::introduce_snake_edge_bisect_dummies;
+use crate::layout::sort_incoming_and_outgoing::sort_incoming_and_outgoing;
 use crate::layout::vertical_loop_edge_detection::vertical_loop_edge_detection;
 use crate::lexer::TokenCoordinate;
 use annotate_snippets::AnnotationKind;
@@ -22,7 +23,7 @@ use std::path::PathBuf;
 use annotate_snippets::Snippet;
 use annotate_snippets::renderer::{DecorStyle, Renderer};
 use clap::Parser;
-use layout::all_crossing_minimization::reduce_all_crossings;
+use layout::all_crossing_minimization_ilp::reduce_all_crossings_ilp;
 use layout::dummy_node_generation::dummy_node_generation;
 use layout::dummy_node_removal::dummy_node_removal;
 use layout::edge_routing::edge_routing;
@@ -98,6 +99,7 @@ impl Drop for Timer {
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
+    env_logger::init();
     let cli = Cli::parse();
     let mut timer = Timer::default();
 
@@ -146,7 +148,18 @@ fn layout_graph(graph: &mut Graph, timer: &mut Timer) -> Result<(), String> {
     timer.time_it("sort_lanes_by_layer", || sort_lanes_by_layer(graph));
 
     // Phase 3
-    timer.time_it("reduce_all_crossings", || reduce_all_crossings(graph));
+    if false {
+        timer.time_it("reduce_all_crossings_ilp", || {
+            reduce_all_crossings_ilp(graph)
+        });
+    } else {
+        timer.time_it("reduce_all_crossings_sweep", || {
+            reduce_all_crossings_sweep(graph)
+        });
+    }
+    timer.time_it("sort_incoming_and_outgoing", || {
+        sort_incoming_and_outgoing(graph);
+    });
     timer.time_it("vertical_loop_edge_detection", || {
         vertical_loop_edge_detection(graph)
     });

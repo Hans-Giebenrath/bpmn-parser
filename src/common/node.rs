@@ -10,7 +10,7 @@ use crate::common::graph::NodeId;
 use crate::common::graph::PoolAndLane;
 use crate::common::graph::PoolId;
 use crate::common::graph::SdeId;
-use crate::layout::all_crossing_minimization::CrossingMinimizationNodeData;
+use crate::layout::all_crossing_minimization_ilp::CrossingMinimizationNodeData;
 use crate::layout::solve_layer_assignment::LayerAssignmentData;
 use crate::layout::xy_ilp::XyIlpNodeData;
 use crate::lexer::TokenCoordinate;

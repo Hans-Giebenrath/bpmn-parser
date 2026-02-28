@@ -1,4 +1,3 @@
-use crate::common::edge::DummyEdgeBendPoints;
 use crate::common::edge::Edge;
 use crate::common::edge::EdgeType;
 use crate::common::graph::EdgeId;
@@ -11,11 +10,10 @@ use crate::common::node::LoneDataElement;
 use crate::common::node::Node;
 use crate::common::node::NodePhaseAuxData;
 use crate::common::node::NodeType;
+use crate::layout::all_crossing_minimization_common::*;
 use good_lp::*;
 use itertools::Itertools;
 use proc_macros::e;
-use proc_macros::from;
-use proc_macros::to;
 use rustc_hash::FxBuildHasher;
 use std::cmp::Ordering;
 use std::collections::HashMap;
@@ -289,7 +287,7 @@ impl Vars {
     }
 }
 
-pub fn reduce_all_crossings(graph: &mut Graph) {
+pub fn reduce_all_crossings_ilp(graph: &mut Graph) {
     let undo = temporarily_add_dummy_nodes_for_edges_within_same_layer(graph);
     let (vars, mut v, mut g) = Vars::new(graph);
     let v = &mut v;
@@ -363,7 +361,7 @@ pub fn reduce_all_crossings(graph: &mut Graph) {
                 .map(|i| g.all_nodes[i].score)
                 .collect();
             let hs = scores.iter().collect::<std::collections::HashSet<_>>();
-            assert!(scores.len() == hs.len());
+            assert!(scores.len() == hs.len(), "scores: {scores:?}, hs: {hs:?}");
         }
 
         // Assign the neighbor information to the nodes.
@@ -375,7 +373,7 @@ pub fn reduce_all_crossings(graph: &mut Graph) {
                     score: g.all_nodes[ilp_node_id].score,
                 });
             }
-            sort_buffer.sort_unstable_by(|a, b| a.score.cmp(&b.score));
+            sort_buffer.sort_unstable_by_key(|a| a.score);
             sort_buffer.array_windows().for_each(|[above, below]| {
                 graph.nodes[above.node_id].node_below_in_same_lane = Some(below.node_id);
                 graph.nodes[below.node_id].node_above_in_same_lane = Some(above.node_id);
@@ -385,7 +383,6 @@ pub fn reduce_all_crossings(graph: &mut Graph) {
 
     process_data_nodes_which_should_become_immediate_neighbors(graph);
     remove_temporarily_added_dummy_nodes_for_edges_within_same_layer(graph, undo);
-    sort_incoming_and_outgoing(graph);
 }
 
 fn aux(node: &Node) -> Option<IlpNodeId> {
@@ -586,256 +583,6 @@ fn handle_message_flows(graph: &Graph, v: &mut Vars, objective: &mut Expression)
     }
 }
 
-/// TODO the images are wrong, make a BPMN from this to correct it.
-/// Sort order images only show the upper part, but the lower part is equal, just mirrored.
-///   TODO this is totally flawed. The left hand nodes are also entered from the left, not from the
-///   right.
-///
-/// Sort order of incoming nodes:
-///   NB: Horizontal part is closest to the `edge.from` node's pool.
-///
-/// `             ┌────┐ `
-/// ` ┌┐          │    ┼─┐ `
-/// ` │┼──┐       └────┘ │ `
-/// ` └┘  │              │      (Pool 1)                  ┌──┐    ┌─┐ `
-/// `     │              │                            ┌───┼  │ ┌──┼ │ `
-/// `     │              │                            │   └──┘ │  └─┘ `
-/// `     │              └─────┐ ┌────────────────────┘        │ `
-/// `     └──────────────────┐ │ │ ┌───────────────────────────┘ `
-/// ` ┌┐          ┌─────┐    │ │ │ │                       ┌┐ `
-/// ` │┼─┐        │     ┼──┐ │ │ │ │   (Pool 2)         ┌──┼│   ┌┐ `
-/// ` └┘ │        └─────┘  │ │ │ │ │                    │  └┘ ┌─┼│ `
-/// `    │                 │ │ │ │ │ ┌──────────────────┘     │ └┘ `
-/// `    │                 │ │ │ │ │ │ ┌──────────────────────┘ `
-/// `    │                 │ │ │ │ │ │ │  ┌───────┐ `
-/// `    │                 │ │ │ │ │ │ └──►       │ `
-/// `    │                 │ │ │ │ │ └────►       │ `
-/// `    │                 │ │ │ │ └──────►       │ `
-/// `    │    (Pool 3)     │ │ │ └────────►       │ `
-/// `    │                 │ │ └──────────►       │ `
-/// `    │                 │ └────────────►       │ `
-/// `    │                 └──────────────►       │ `
-/// `    └────────────────────────────────►       │ `
-/// `                                     │       │ `
-/// `                                     └───────┘ `
-///
-///
-///
-/// Sort order of outgoing nodes:
-///   NB: Horizontal part is closest to the `edge.from` node's pool.
-///   TODO this is totally flawed. The left hand nodes are also entered from the left, not from the
-///   right.
-///
-/// `┌────┐   ┌────┐   ┌────┐                    ┌────┐      ┌────┐ `
-/// `│    ◄──┐│    ◄─┐ │    ◄─┐   (Pool 1)   ┌───►    │  ┌──►│    │ `
-/// `└────┘  │└────┘ │ └────┘ │              │   └────┘  │   └────┘ `
-/// `        │       │        │              │           │ `
-/// `        │       │        │              │           │ `
-/// `        │       │        │              │           │ `
-/// `┌────┐  │       │        │              │   ┌────┐  │   ┌────┐ `
-/// `│    ◄─┐        │        │   (Pool 2)   │┌──►    │  │┌──►    │ `
-/// `└────┘ ││       │        └────┐ ┌───────┘│  └────┘  ││  └────┘ `
-/// `       ││       └───────────┐ │ │ ┌──────┘          ││ `
-/// `       │└──────────────────┐│ │ │ │┌────────────────┘│ `
-/// `       └─────────────────┐ ││ │ │ ││ ┌───────────────┘ `
-/// `                  ┌────┐ │ ││ │ │ ││ │ `
-/// `                  │    │─┘ ││ │ │ ││ │ `
-/// `                  │    │───┘│ │ │ ││ │ `
-/// `                  │    │────┘ │ │ ││ │ `
-/// `                  │    │──────┘ │ ││ │ `
-/// `                  │    │────────┼►││ │   (Pool 3) `
-/// `                  │    │────────┴─┘│ │ `
-/// `                  │    │───────────┘ │ `
-/// `                  │    │─────────────┘ `
-/// `                  │    │ `
-/// `                  └────┘ `
-///
-///
-fn sort_incoming_and_outgoing(graph: &mut Graph) {
-    // Sorting is done a bit inefficiently (n^2), feel free to improve this if it becomes a
-    // bottleneck.
-    // The strategy is to count how far we can go up in the `.node_above_in_same_lane` linked list.
-    // The farther we can go up, the later it should come in the `.incoming`/`.outgoing` vec.
-    fn rank_within_lane(node: &Node, graph: &Graph) -> usize {
-        let mut rank_within_lane = 0;
-        let mut node = node; // for the borrow checker, lol
-        while let Some(above) = node.node_above_in_same_lane {
-            rank_within_lane += 1;
-            node = &graph.nodes[above];
-        }
-        rank_within_lane
-    }
-    for node_id in (0..graph.nodes.len()).map(NodeId) {
-        let node = &mut graph.nodes[node_id];
-        if node.incoming.len() > 1 {
-            let mut incoming_cpy = std::mem::take(&mut node.incoming);
-            incoming_cpy.sort_by_cached_key(|edge_id| {
-                let from_node = &from!(*edge_id);
-                let to_node = &to!(*edge_id);
-                let from_rank_within_lane = rank_within_lane(from_node, graph);
-                let to_rank_within_lane = rank_within_lane(to_node, graph);
-
-                if from_node.pool == to_node.pool
-                    && from_node.layer_id == to_node.layer_id
-                    && (from_node.lane, from_rank_within_lane) < (to_node.lane, to_rank_within_lane)
-                {
-                    // SF/`DF` Looping downwards (toward this node) in the same pool
-                    let group_order = 1;
-                    (
-                        group_order,
-                        0isize, // pool is equal so ignore
-                        0isize, // layerid is equal so ignore
-                        -(from_node.lane.0 as isize),
-                        -(from_rank_within_lane as isize),
-                    )
-                } else if from_node.pool < to_node.pool && from_node.layer_id >= to_node.layer_id {
-                    // MF coming from above/right top
-                    let group_order = 2;
-                    (
-                        group_order,
-                        -(from_node.pool.0 as isize),
-                        -(from_node.layer_id.0 as isize),
-                        (from_node.lane.0 as isize),
-                        (from_rank_within_lane as isize),
-                    )
-                } else if from_node.pool < to_node.pool && from_node.layer_id < to_node.layer_id {
-                    // MF coming from left top
-                    let group_order = 3;
-                    (
-                        group_order,
-                        (from_node.pool.0 as isize),
-                        -(from_node.layer_id.0 as isize),
-                        (from_node.lane.0 as isize),
-                        (from_rank_within_lane as isize),
-                    )
-                } else if from_node.pool == to_node.pool && from_node.layer_id < to_node.layer_id {
-                    // SF/`DF` coming from the left
-                    assert_eq!(to_node.layer_id.0, from_node.layer_id.0 + 1);
-                    let group_order = 4;
-                    (
-                        group_order,
-                        0isize, // pool is equal (+1) so ignore
-                        0isize, // layerid is equal so ignore
-                        (from_node.lane.0 as isize),
-                        (from_rank_within_lane as isize),
-                    )
-                } else if from_node.pool > to_node.pool && from_node.layer_id < to_node.layer_id {
-                    // MF coming from left bottom
-                    let group_order = 5;
-                    (
-                        group_order,
-                        (from_node.pool.0 as isize),
-                        (from_node.layer_id.0 as isize),
-                        (from_node.lane.0 as isize),
-                        (from_rank_within_lane as isize),
-                    )
-                } else if from_node.pool > to_node.pool && from_node.layer_id >= to_node.layer_id {
-                    // MF coming from below/right bottom
-                    let group_order = 6;
-                    (
-                        group_order,
-                        -(from_node.pool.0 as isize),
-                        (from_node.layer_id.0 as isize),
-                        (from_node.lane.0 as isize),
-                        (from_rank_within_lane as isize),
-                    )
-                } else if from_node.pool == to_node.pool
-                    && from_node.layer_id == to_node.layer_id
-                    && (from_node.lane, from_rank_within_lane) > (to_node.lane, to_rank_within_lane)
-                {
-                    // SF/`DF` Looping downwards (toward this node) in the same pool
-                    let group_order = 7;
-                    (
-                        group_order,
-                        0isize, // pool is equal so ignore
-                        0isize, // layerid is equal so ignore
-                        -(from_node.lane.0 as isize),
-                        -(from_rank_within_lane as isize),
-                    )
-                } else {
-                    unreachable!("from_node: {from_node:#?}\nto_node: {to_node:#?}, from_rank_within_lane: {from_rank_within_lane}, to_rank_within_lane: {to_rank_within_lane},\ngraph: {graph:#?}");
-                }
-            });
-            graph.nodes[node_id].incoming = incoming_cpy;
-        }
-
-        let node = &mut graph.nodes[node_id];
-        if node.outgoing.len() > 1 {
-            let mut outgoing_cpy = std::mem::take(&mut node.outgoing);
-            outgoing_cpy.sort_by_cached_key(|edge_id| {
-                let from_node = &from!(*edge_id);
-                let to_node = &to!(*edge_id);
-                let to_rank_within_lane = rank_within_lane(to_node, graph);
-                let from_rank_within_lane = rank_within_lane(from_node, graph);
-
-                if from_node.pool == to_node.pool
-                    && from_node.layer_id == to_node.layer_id
-                    && (to_node.lane, to_rank_within_lane) < (from_node.lane, from_rank_within_lane)
-                {
-                    // SF/`DF` Looping upwards in the same pool
-                    let group_order = 1;
-                    (
-                        group_order,
-                        0isize, // layerid is equal so ignore
-                        0isize, // pool is equal so ignore
-                        -(to_node.lane.0 as isize),
-                        -(to_rank_within_lane as isize),
-                    )
-                } else if to_node.pool < from_node.pool {
-                    // MF to upper pools (Note: The documentation also has group 2 there but that is
-                    // a mistake, there is just "above", not split in left or right).
-                    let group_order = 3;
-                    (
-                        group_order,
-                        (to_node.layer_id.0 as isize),
-                        (to_node.pool.0 as isize),
-                        (to_node.lane.0 as isize),
-                        (to_rank_within_lane as isize),
-                    )
-                } else if to_node.pool == from_node.pool && to_node.layer_id > from_node.layer_id {
-                    // SF/`DF` to the right same pool
-                    assert_eq!(to_node.layer_id.0, from_node.layer_id.0 + 1);
-                    let group_order = 4;
-                    (
-                        group_order,
-                        0isize, // layerid is equal (+1) so ignore
-                        0isize, // pool is equal so ignore
-                        (to_node.lane.0 as isize),
-                        (to_rank_within_lane as isize),
-                    )
-                } else if to_node.pool > from_node.pool {
-                    // MF to lower pools (Note: The documentation also has group 6 there but that is
-                    // a mistake, there is just "below", not split in left or right).
-                    let group_order = 5;
-                    (
-                        group_order,
-                        -(to_node.layer_id.0 as isize),
-                        (to_node.pool.0 as isize),
-                        (to_node.lane.0 as isize),
-                        (to_rank_within_lane as isize),
-                    )
-                } else if from_node.pool == to_node.pool
-                    && from_node.layer_id == to_node.layer_id
-                    && (to_node.lane, to_rank_within_lane) > (from_node.lane, from_rank_within_lane)
-                {
-                    // SF/`DF` Looping downwards in the same pool
-                    let group_order = 7;
-                    (
-                        group_order,
-                        0isize, // layerid is equal so ignore
-                        0isize, // pool is equal so ignore
-                        -(to_node.lane.0 as isize),
-                        -(to_rank_within_lane as isize),
-                    )
-                } else {
-                    unreachable!("from_node: {from_node:#?}\nto_node: {to_node:#?}, from_rank_within_lane: {from_rank_within_lane}, to_rank_within_lane: {to_rank_within_lane},\ngraph: {graph:#?}");
-                }
-            });
-            graph.nodes[node_id].outgoing = outgoing_cpy;
-        }
-    }
-}
-
 /// Process the data nodes which shall be placed as a neighbor of their sole connected node. They
 /// are treated specially to avoid adding useless nodes to the ILP (also, formulating the need to
 /// place a node exactly next to another node is a bit involved, so doing it by hand should be
@@ -851,213 +598,6 @@ fn process_data_nodes_which_should_become_immediate_neighbors(graph: &mut Graph)
 
         adjust_above_and_below_for_new_inbetween(data_node_id, place, graph);
     }
-}
-
-struct Undo {
-    original_num_nodes: usize,
-    original_edges: Vec<(EdgeId, Edge)>,
-}
-
-fn temporarily_add_dummy_nodes_for_edges_within_same_layer(graph: &mut Graph) -> Undo {
-    let original_edge_count = graph.edges.len();
-    let mut undo = Undo {
-        original_num_nodes: graph.nodes.len(),
-        original_edges: Vec::new(),
-    };
-
-    for edge_id in (0..original_edge_count).map(EdgeId) {
-        let edge = &mut graph.edges[edge_id];
-        let from = &graph.nodes[edge.from];
-        let to = &graph.nodes[edge.to];
-        if edge.is_replaced_by_dummies() {
-            continue;
-        }
-        if from.layer_id != to.layer_id {
-            continue;
-        }
-        if from.pool != to.pool {
-            dbg!(&"TODO");
-            continue;
-        }
-        if from.is_data_with_only_one_edge() || to.is_data_with_only_one_edge() {
-            // These are processed specially.
-            continue;
-        }
-        let layer_id = from.layer_id;
-        let pool_and_lane = from.pool_and_lane();
-
-        undo.original_edges.push((edge_id, edge.clone()));
-        let right_node_id = graph.add_node(
-            NodeType::LongEdgeDummy,
-            pool_and_lane,
-            Some(LayerId(layer_id.0 + 1)),
-        );
-        let left_node_id = if layer_id.0 > 0 {
-            Some(graph.add_node(
-                NodeType::LongEdgeDummy,
-                pool_and_lane,
-                Some(LayerId(layer_id.0 - 1)),
-            ))
-        } else {
-            // No room to the left. In that case we anyway don't gain anything from having
-            // additional dummy nodes there, since it wouldn't cross with anything (or at least it
-            // would not be meaningful I think).
-            None
-        };
-        reroute_vertical_edge(graph, edge_id, left_node_id, right_node_id);
-    }
-
-    undo
-}
-
-fn reroute_vertical_edge(
-    graph: &mut Graph,
-    to_be_rerouted_edge_id: EdgeId,
-    left_intermediate_node_id: Option<NodeId>,
-    right_intermediate_node_id: NodeId,
-) {
-    let edge = &mut graph.edges[to_be_rerouted_edge_id];
-    let from_node_id = edge.from;
-    let to_node_id = std::mem::replace(&mut edge.to, right_intermediate_node_id);
-    let flow_type = edge.flow_type.clone();
-    // These value are not used within this phase, so just put something random here.
-    let is_reversed = false;
-    let stays_within_lane = false;
-
-    let right_second_edge_id = EdgeId(graph.edges.len());
-    graph.edges.push(Edge {
-        from: to_node_id,
-        to: right_intermediate_node_id,
-        edge_type: EdgeType::DummyEdge {
-            original_edge: to_be_rerouted_edge_id,
-            bend_points: DummyEdgeBendPoints::ToBeDeterminedOrStraight,
-        },
-        flow_type: flow_type.clone(),
-        is_reversed,
-        stays_within_lane,
-        stroke_color: None,
-        is_vertical: false,
-        attached_to_boundary_event: None,
-    });
-
-    let to_node = &mut graph.nodes[to_node_id];
-    let Some(i) = to_node
-        .incoming
-        .iter()
-        .position(|i| *i == to_be_rerouted_edge_id)
-    else {
-        // TODO add some debug printing
-        unreachable!(
-            "to-be-rerouted edge: {}, from node: {}, to node: {}",
-            to_be_rerouted_edge_id.0, from_node_id.0, to_node_id.0
-        );
-    };
-    to_node.incoming.remove(i);
-    to_node.outgoing.push(right_second_edge_id);
-
-    let right_intermediate_node = &mut graph.nodes[right_intermediate_node_id];
-    right_intermediate_node
-        .incoming
-        .push(to_be_rerouted_edge_id);
-    right_intermediate_node.incoming.push(right_second_edge_id);
-
-    if let Some(left_intermediate_node_id) = left_intermediate_node_id {
-        let left_first_edge_id = EdgeId(graph.edges.len());
-        graph.edges.push(Edge {
-            from: left_intermediate_node_id,
-            to: from_node_id,
-            edge_type: EdgeType::DummyEdge {
-                original_edge: to_be_rerouted_edge_id,
-                bend_points: DummyEdgeBendPoints::ToBeDeterminedOrStraight,
-            },
-            flow_type: flow_type.clone(),
-            is_reversed,
-            stays_within_lane,
-            stroke_color: None,
-            is_vertical: false,
-            attached_to_boundary_event: None,
-        });
-
-        let left_second_edge_id = EdgeId(graph.edges.len());
-        graph.edges.push(Edge {
-            from: left_intermediate_node_id,
-            to: to_node_id,
-            edge_type: EdgeType::DummyEdge {
-                original_edge: to_be_rerouted_edge_id,
-                bend_points: DummyEdgeBendPoints::ToBeDeterminedOrStraight,
-            },
-            flow_type,
-            is_reversed,
-            stays_within_lane,
-            stroke_color: None,
-            is_vertical: false,
-            attached_to_boundary_event: None,
-        });
-
-        let left_intermediate_node = &mut graph.nodes[left_intermediate_node_id];
-        left_intermediate_node.outgoing.push(left_first_edge_id);
-        left_intermediate_node.outgoing.push(left_second_edge_id);
-
-        graph.nodes[from_node_id].incoming.push(left_first_edge_id);
-        graph.nodes[to_node_id].incoming.push(left_second_edge_id);
-    }
-}
-
-fn remove_temporarily_added_dummy_nodes_for_edges_within_same_layer(graph: &mut Graph, undo: Undo) {
-    // also fix the `node_below_in_same_lane` etc properties
-    let mut num_edges_to_retain: usize = graph.edges.len() - undo.original_edges.len();
-    let num_nodes_to_retain: usize = undo.original_num_nodes;
-    for pool in &mut graph.pools {
-        for lane in &mut pool.lanes {
-            lane.nodes.retain(|node_id| node_id.0 < num_nodes_to_retain);
-        }
-    }
-
-    // Undo the changes in reverse order, important! Otherwise,,, this will crash for snake nodes.
-    for (rerouted_edge_id, original_edge_value) in undo.original_edges.into_iter().rev() {
-        // I have a feeling that this can be written more cleanly, need to ask an AI.
-        let to_node_id = original_edge_value.to;
-        let from_node_id = original_edge_value.from;
-        graph.edges[rerouted_edge_id] = original_edge_value;
-        // XXX don't move this down, as there is a `to_node.incoming.push(.)`.
-        if graph.nodes[to_node_id].layer_id.0 > 0 {
-            graph.nodes[to_node_id].incoming.pop();
-            graph.nodes[from_node_id].incoming.pop();
-            num_edges_to_retain -= 2;
-        }
-        let to_node = &mut graph.nodes[to_node_id];
-        to_node.outgoing.pop();
-        to_node.incoming.push(rerouted_edge_id);
-    }
-
-    for node_id in (num_nodes_to_retain..graph.nodes.len()).map(NodeId) {
-        let intermediate_node = &graph.nodes[node_id];
-        let node_above_in_same_lane = intermediate_node.node_above_in_same_lane;
-        let node_below_in_same_lane = intermediate_node.node_below_in_same_lane;
-        match (node_above_in_same_lane, node_below_in_same_lane) {
-            (Some(above), Some(below)) => {
-                let node_above = &graph.nodes[above];
-                let node_below = &graph.nodes[below];
-                if node_above.pool == node_below.pool && node_above.lane == node_below.lane {
-                    graph.nodes[above].node_below_in_same_lane = node_below_in_same_lane;
-                    graph.nodes[below].node_above_in_same_lane = node_above_in_same_lane;
-                } else {
-                    graph.nodes[above].node_below_in_same_lane = None;
-                    graph.nodes[below].node_above_in_same_lane = None;
-                }
-            }
-            (Some(above), None) => {
-                graph.nodes[above].node_below_in_same_lane = None;
-            }
-            (None, Some(below)) => {
-                graph.nodes[below].node_above_in_same_lane = None;
-            }
-            (None, None) => (),
-        }
-    }
-
-    graph.nodes.truncate(num_nodes_to_retain);
-    graph.edges.truncate(num_edges_to_retain);
 }
 
 // Only necessary for debugging.
