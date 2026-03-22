@@ -70,4 +70,4 @@ impl Pool {
     }
 }
 
-impl_index!(PoolId, Pool, pool_idx);
+impl_index!(PoolId, Pool);

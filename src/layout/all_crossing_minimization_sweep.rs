@@ -10,13 +10,31 @@
 //!
 //! Naaa. New idea: Lane per lane. Then store multiple results, depending on the order. Then stitch
 //! lanes together, by checking all combinations for their global crossing counts, take the best one.
-use std::collections::HashSet;
+use crate::common::edge::Edge;
+use crate::common::edge::EdgeType;
+use crate::common::edge::FlowType;
 use crate::common::graph::{EdgeId, Graph, NodeId, PoolAndLane};
+use crate::common::lane::Lane;
+use crate::common::macros::impl_index;
+use crate::common::node::Node;
+use crate::common::node::NodePhaseAuxData;
+use itertools::Itertools;
+use proc_macros::{e, from, n};
 use rustc_hash::FxBuildHasher;
+use std::cmp::Ordering;
 use std::collections::HashMap;
+use std::collections::HashSet;
+use std::hash::Hash;
+use std::hash::Hasher;
 
+#[derive(Clone)]
 enum Pull {
-    UpSf, UpMf, UpDf, DownSf, DownMf,DownDf,
+    TopWardsSf,
+    TopWardsMf,
+    TopWardsDf,
+    BottomWardsSf,
+    BottomWardsMf,
+    BottomWardsDf,
 }
 
 // This one could actually be used within NodeId as well. Reduces memory usage significantly, and
@@ -25,22 +43,26 @@ enum Pull {
 // nodes. This is quite a lot, but within the boundary of BPMD.
 type GeneralIndexType = u16;
 
+#[derive(Clone)]
 struct Slice {
     start: GeneralIndexType,
     end: GeneralIndexType,
 }
 
+#[derive(Debug, Copy, Clone)]
 struct SweepNodeId(usize);
+impl_index!(SweepNodeId, SweepNode);
 
 const INCOMING: usize = 0;
 const OUTGOING: usize = 1;
 
+#[derive(Default, Clone)]
 struct SweepNode {
     /// To avoid using NodeId (which is 8 bytes), instead index into the respective `Lane::nodes` to
     /// then get the NodeId. Easy :) Goal is to keep the size of `SweepNode` super small.
     in_lane_idx: GeneralIndexType,
     pull: Option<Pull>,
-    /// Indexing `EdgeTargets`. Indexed by `INCOMING` or `OUTGOING`.
+    /// Indexing `edge_targets`. Indexed by `INCOMING` or `OUTGOING`.
     ports_start: [GeneralIndexType; 2],
     /// No node will have more than 255 incoming or outgoing edges ...
     /// I really want to keep this
@@ -50,55 +72,717 @@ struct SweepNode {
     layer_position: u8,
 }
 
+#[derive(Debug)]
+pub(crate) struct CrossingMinimizationSweepNodeData {
+    sweep_node_id: SweepNodeId,
+}
+
+#[track_caller]
+fn aux(node: &Node) -> SweepNodeId {
+    match node.aux {
+        NodePhaseAuxData::CrossingMinimizationSweep(ref a) => a.sweep_node_id,
+        _ => panic!("{node:#?}"),
+    }
+}
+
+#[derive(Default, Clone, Hash)]
+struct CrossingCount {
+    df_df_crossings: u16,
+    mf_df_crossings: u16,
+    mf_mf_crossings: u16,
+    sf_df_crossings: u16,
+    sf_mf_crossings: u16,
+    sf_sf_crossings: u16,
+}
+
+impl PartialEq for CrossingCount {
+    fn eq(&self, other: &Self) -> bool {
+        self.weighted_count() == other.weighted_count()
+    }
+}
+
+impl Eq for CrossingCount {}
+
+impl PartialOrd for CrossingCount {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(self.weighted_count().cmp(&other.weighted_count()))
+    }
+}
+
+impl Ord for CrossingCount {
+    fn cmp(&self, other: &Self) -> Ordering {
+        self.weighted_count().cmp(&other.weighted_count())
+    }
+}
+
+impl CrossingCount {
+    fn count(&mut self, edge1: &Edge, edge2: &Edge) {
+        match (&edge1.flow_type, &edge2.flow_type) {
+            (FlowType::DataFlow(..), FlowType::DataFlow(..)) => self.df_df_crossings += 1,
+            (FlowType::DataFlow(..), FlowType::MessageFlow(..)) => self.mf_df_crossings += 1,
+            (FlowType::MessageFlow(..), FlowType::DataFlow(..)) => self.mf_df_crossings += 1,
+            (FlowType::MessageFlow(..), FlowType::MessageFlow(..)) => self.mf_mf_crossings += 1,
+            (FlowType::SequenceFlow, FlowType::DataFlow(..)) => self.sf_df_crossings += 1,
+            (FlowType::SequenceFlow, FlowType::MessageFlow(..)) => self.sf_mf_crossings += 1,
+            (FlowType::DataFlow(..), FlowType::SequenceFlow) => self.sf_df_crossings += 1,
+            (FlowType::MessageFlow(..), FlowType::SequenceFlow) => self.sf_mf_crossings += 1,
+            (FlowType::SequenceFlow, FlowType::SequenceFlow) => self.sf_sf_crossings += 1,
+        }
+    }
+
+    fn weighted_count(&self) -> usize {
+        // XXX If you update these numbers, then
+        0 // formatting
+            + self.sf_sf_crossings as usize * 100
+            + self.sf_mf_crossings as usize * 95
+            + self.sf_df_crossings as usize * 40
+            + self.mf_mf_crossings as usize * 90
+            + self.mf_df_crossings as usize * 35
+            + self.df_df_crossings as usize * 30
+    }
+}
+
+impl<'a> std::iter::Sum<&'a CrossingCount> for CrossingCount {
+    fn sum<I: Iterator<Item = &'a CrossingCount>>(iter: I) -> Self {
+        iter.fold(Self::default(), |acc, x| Self {
+            df_df_crossings: acc
+                .df_df_crossings
+                .checked_add(x.df_df_crossings)
+                .expect("overflow in df_df_crossings"),
+            mf_df_crossings: acc
+                .mf_df_crossings
+                .checked_add(x.mf_df_crossings)
+                .expect("overflow in mf_df_crossings"),
+            mf_mf_crossings: acc
+                .mf_mf_crossings
+                .checked_add(x.mf_mf_crossings)
+                .expect("overflow in mf_mf_crossings"),
+            sf_df_crossings: acc
+                .sf_df_crossings
+                .checked_add(x.sf_df_crossings)
+                .expect("overflow in sf_df_crossings"),
+            sf_mf_crossings: acc
+                .sf_mf_crossings
+                .checked_add(x.sf_mf_crossings)
+                .expect("overflow in sf_mf_crossings"),
+            sf_sf_crossings: acc
+                .sf_sf_crossings
+                .checked_add(x.sf_sf_crossings)
+                .expect("overflow in sf_sf_crossings"),
+        })
+    }
+}
+
+#[derive(Clone)]
+enum EdgeConnection {
+    /// Left loop or a flow which leaves the lane.
+    LeftConnected,
+    /// A straight edge from left to right, staying within the lane.
+    BothConnected,
+    /// Right loop or a flow which enters the lane.
+    RightConnected,
+}
+
+#[derive(Clone)]
 struct SweepGraph {
     nodes: Vec<SweepNode>,
     /// Indexing `nodes`.
     layers: Vec<Slice>,
-    edge_targets : Vec<SweepNodeId>,
+
+    // All edges which are connected to nodes within the lane, so also those which cross lanes.
+    // This is used to count the edge crossings between two layers.
+    edges: Vec<(EdgeId, EdgeConnection)>,
+    /// Indexing `edges`.
+    /// `0` are loop edges left of the first layer.
+    /// `1` are all edges between first and second layer.
+    /// etc
+    edge_layers: Vec<Slice>,
+
+    /// `0` are loop edges left of the first layer.
+    /// `1` is between first and second layer.
+    /// etc
+    layers_crossing_count: Vec<CrossingCount>,
+    /// Points into `nodes`. Indexed by `SweepNode::ports_start`. Says where edges are going to.
+    /// Note: This only includes edges which stay within the lane.
+    /// This is used to calculate the ordering number when reordering the non-fixed layer during the
+    /// sweep.
+    edge_targets: Vec<SweepNodeId>,
 }
 
 impl SweepGraph {
-    fn new(lane: &Lane, graph: &Graph) -> Self {
-let mut result = SweepGraph {
-    nodes: Vec::new(),
-    layers: Vec::new(),
-    edge_targets : Vec::new(),
-};
+    fn new(lane: &Lane, graph: &mut Graph) -> Self {
+        for (idx, node_id) in lane.nodes.iter().enumerate() {
+            n!(*node_id).aux =
+                NodePhaseAuxData::CrossingMinimizationSweep(CrossingMinimizationSweepNodeData {
+                    sweep_node_id: SweepNodeId(idx),
+                });
+        }
 
+        let mut result = SweepGraph {
+            nodes: Vec::new(),
+            layers: Vec::new(),
+            edge_targets: Vec::new(),
+            edges: Vec::new(),
+            edge_layers: Vec::new(),
+            layers_crossing_count: Vec::new(),
+        };
+        let mut layer_it = lane
+            .nodes
+            .chunk_by(|left_node_id, right_node_id| {
+                n!(*left_node_id).layer_id == n!(*right_node_id).layer_id
+            })
+            .peekable();
+
+        let mut edge_collection = HashSet::new();
+
+        'a: {
+            // Go through the left loops.
+            let Some(next_layer_nodes) = layer_it.peek() else {
+                break 'a;
+            };
+
+            for node_id in next_layer_nodes.iter() {
+                let node = &n!(*node_id);
+                if node.is_snake_edge_bisect_dummy() {
+                    continue;
+                }
+                for incoming in node.incoming.iter() {
+                    edge_collection.insert(*incoming);
+                }
+            }
+            result.edges.extend(edge_collection.drain());
+            result.edge_layers.push(Slice {
+                start: 0,
+                end: result.edges.len() as u16,
+            });
+        }
+        let mut i = 0;
+        while let Some(chunk) = layer_it.next() {
+            result.layers.push(Slice {
+                start: result.nodes.len().try_into().expect("too many nodes, oops"),
+                end: (result.nodes.len() + chunk.len())
+                    .try_into()
+                    .expect("too many nodes, oops"),
+            });
+            // Nodes are first ordered by their location in the file. This kinda brings in the
+            // situation that users would expect the same gateway branch order as they have declared
+            // it in the `.bpmd` file, if otherwise crossing counts are equal.
+            let mut initial_position = 0;
+            for node_id in chunk.iter() {
+                let node = &n!(*node_id);
+                let mut sweep_node = SweepNode {
+                    in_lane_idx: i,
+                    layer_position: initial_position,
+                    ..Default::default()
+                };
+                i += 1;
+                initial_position += 1;
+
+                // Keep track whether pull is top-wards (<0) or bottom-wards (>0).
+                let mut sf_balance = 0i8;
+                let mut mf_balance = 0i8;
+                let mut df_balance = 0i8;
+                {
+                    // Do the port traversal once for incoming, ...
+                    let ports_start = result.edge_targets.len();
+                    for incoming in node.incoming.iter().cloned() {
+                        let edge = &e!(incoming);
+                        let from = &n!(edge.from);
+                        let balance_correction =
+                            match from.pool_and_lane().cmp(&node.pool_and_lane()) {
+                                Ordering::Equal => {
+                                    result.edge_targets.push(aux(from));
+                                    continue;
+                                }
+                                Ordering::Less => -1,
+                                Ordering::Greater => 1,
+                            };
+                        match &edge.flow_type {
+                            FlowType::MessageFlow(..) => mf_balance += balance_correction,
+                            FlowType::DataFlow(..) => df_balance += balance_correction,
+                            FlowType::SequenceFlow => sf_balance += balance_correction,
+                        }
+                    }
+                    let ports_end = result.edge_targets.len();
+                    sweep_node.ports_start[INCOMING] = ports_start.try_into().expect("");
+                    sweep_node.ports_len[INCOMING] =
+                        (ports_end - ports_start).try_into().expect("");
+                }
+                {
+                    // ... and once for outgoing.
+                    let ports_start = result.edge_targets.len();
+                    for outgoing in node.outgoing.iter().cloned() {
+                        let edge = &e!(outgoing);
+                        let to = &n!(edge.to);
+                        let balance_correction = match to.pool_and_lane().cmp(&node.pool_and_lane())
+                        {
+                            Ordering::Equal => {
+                                result.edge_targets.push(aux(to));
+                                continue;
+                            }
+                            Ordering::Less => -1,
+                            Ordering::Greater => 1,
+                        };
+                        match &edge.flow_type {
+                            FlowType::MessageFlow(..) => mf_balance += balance_correction,
+                            FlowType::DataFlow(..) => df_balance += balance_correction,
+                            FlowType::SequenceFlow => sf_balance += balance_correction,
+                        }
+
+                        // Additionally, record all the edges.
+                        if !node.is_snake_edge_bisect_dummy() {
+                            edge_collection.insert(outgoing);
+                        }
+                    }
+                    let ports_end = result.edge_targets.len();
+                    sweep_node.ports_start[OUTGOING] = ports_start.try_into().expect("");
+                    sweep_node.ports_len[OUTGOING] =
+                        (ports_end - ports_start).try_into().expect("");
+                }
+                // DFs have the least priority, SFs the most.
+                sweep_node.pull = match (sf_balance, mf_balance, df_balance) {
+                    (0, 0, 0) => None,
+                    (0, 0, _) if df_balance > 0 => Some(Pull::BottomWardsDf),
+                    (0, 0, _) => Some(Pull::TopWardsDf),
+                    (0, _, _) if mf_balance > 0 => Some(Pull::BottomWardsMf),
+                    (0, _, _) => Some(Pull::TopWardsMf),
+                    (_, _, _) if sf_balance > 0 => Some(Pull::BottomWardsSf),
+                    (_, _, _) => Some(Pull::TopWardsSf),
+                };
+                result.nodes.push(sweep_node);
+            }
+            if let Some(next_layer) = layer_it.peek() {
+                for node_id in next_layer.iter() {
+                    let node = &n!(*node_id);
+                    for incoming in node.incoming.iter().cloned() {
+                        if !node.is_snake_edge_bisect_dummy() {
+                            edge_collection.insert(incoming);
+                        }
+                    }
+                }
+            }
+            let start = result.edges.len();
+            let layer_edges_count = edge_collection.len();
+            result.edges.extend(edge_collection.drain());
+            result.edge_layers.push(Slice {
+                start: start as u16,
+                end: (start + layer_edges_count) as u16,
+            });
+        }
+
+        "TODO calculate crossing count";
+        "Now I just need to go through the `edges` with for (i) for (j = i + 1), and thats all.";
+        todo!("calculate crossing count");
         result
     }
 }
 
-#[derive(Hash)]
+#[derive(PartialEq, Eq, Hash)]
 struct SweepSolutionNode {
     in_lane_idx: GeneralIndexType,
     layer_position: u8,
 }
 
-#[derive(Hash)]
+#[derive(PartialEq, Eq)]
 struct SingleLaneSweepSolution {
-    layers: Vec<SweepSolutionNode>,
+    layers: Vec<Vec<SweepSolutionNode>>,
+    /// TODO is this useful at all?
+    layers_crossing_count: Vec<CrossingCount>,
+    /// Sum over `layers_crossing_count`.
+    total_crossing_count: CrossingCount,
 }
 
+impl SingleLaneSweepSolution {
+    fn new(sweep_graph: &SweepGraph, layers_crossing_count: &[CrossingCount]) -> Self {
+        Self {
+            layers: sweep_graph
+                .layers
+                .iter()
+                .map(|layer| {
+                    sweep_graph.nodes[layer.start as usize..layer.end as usize]
+                        .iter()
+                        .map(|sweep_node| SweepSolutionNode {
+                            in_lane_idx: sweep_node.in_lane_idx,
+                            layer_position: sweep_node.layer_position,
+                        })
+                        .collect::<Vec<_>>()
+                })
+                .collect::<Vec<_>>(),
+            layers_crossing_count: layers_crossing_count.to_owned(),
+            total_crossing_count: layers_crossing_count.iter().sum(),
+        }
+    }
+}
+
+/// Manually implement Hash, since only `layers` is required. The crossing count is an optimization,
+/// a cache variable.
+impl Hash for SingleLaneSweepSolution {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        self.layers.hash(state);
+    }
+}
+
+#[derive(Default)]
 struct SingleLaneSweepSolutions {
     solutions: HashSet<SingleLaneSweepSolution>,
 }
 
-pub fn reduce_all_crossings_sweep(graph: &mut Graph) {
-    let mut layers = Layers::new();
-    for pool in graph.pools.iter() {
-    for lane in pool.lanes.iter() {
-
+impl SingleLaneSweepSolutions {
+    /// Pre: All solutions have the same weighted_count.
+    /// If `sweep_graph` has a better weighted_count, then all previous solutions are removed.
+    /// If `sweep_graph` has an equal weighted_count, then it is added to the solutions (since it
+    /// is a hash-map, a duplicate solution will not change anything)
+    /// If `sweep_graph` has a worse weighted_count, then it is ignored.
+    fn maybe_add(&mut self, layers_crossing_count: &[CrossingCount], sweep_graph: &SweepGraph) {
+        let Some(a_solution) = self.solutions.iter().next() else {
+            self.solutions.insert(SingleLaneSweepSolution::new(
+                sweep_graph,
+                layers_crossing_count,
+            ));
+            return;
+        };
+        let new_total_crossing_count = layers_crossing_count.iter().sum();
+        match a_solution
+            .total_crossing_count
+            .cmp(&new_total_crossing_count)
+        {
+            Ordering::Less => {
+                return;
+            }
+            Ordering::Equal => {
+                self.solutions.insert(SingleLaneSweepSolution::new(
+                    sweep_graph,
+                    layers_crossing_count,
+                ));
+                return;
+            }
+            Ordering::Greater => {
+                self.solutions.clear();
+                self.solutions.insert(SingleLaneSweepSolution::new(
+                    sweep_graph,
+                    layers_crossing_count,
+                ));
+                return;
+            }
+        }
     }
+}
+
+pub fn reduce_all_crossings_sweep(graph: &mut Graph) {
+    for pool in graph.pools.iter() {
+        for lane in pool.lanes.iter() {
+            let sweep_graph = SweepGraph::new(lane, graph);
+            left_right_sweeps(graph, &mut sweep_graph);
+        }
     }
     for node in &graph.nodes {
         if node.layer_id.0 + 1 > layers.len() {
             layers.resize(node.layer_id.0 + 1, Layer::new());
         }
         layers[node.layer_id.0].push(node.id);
-        for
     }
 }
 
+fn left_right_sweeps(graph: &Graph, sweep_graph: &mut SweepGraph) {
+    let mut best_versions = SingleLaneSweepSolutions::default();
+    let mut
+    right_sweep(graph, sweep_graph, &mut best_versions);
+    //
+}
+
 /// Classical left-right sweep.
-fn process_sf_and_mf(graph: &mut Graph) {}
+fn right_sweep(
+    graph: &Graph,
+    sweep_graph: &mut SweepGraph,
+    best_versions: &mut SingleLaneSweepSolutions,
+) {
+    //
+}
+
+// Pre: `sort_buffer_1` holds the ordering of `left`.
+// Post: `sort_buffer_1` holds the ordering of `middle`.
+fn count_crossings_three_layers(
+    graph: &Graph,
+    lane: &Lane,
+    left: &[SweepNode],
+    middle: &[SweepNode],
+    right: &[SweepNode],
+    edges: &[(EdgeId, EdgeConnection)],
+    positions_buffer: &mut Vec<Positions>,
+    sort_buffer_1: &mut Vec<(NodeId, usize)>,
+    sort_buffer_2: &mut Vec<(NodeId, usize)>,
+) -> (CrossingCount, CrossingCount) {
+    let left_crossing_count = count_all_crossings_between_two_layers(
+        graph,
+        lane,
+        left,
+        middle,
+        edges,
+        positions_buffer,
+        sort_buffer_1,
+        sort_buffer_2,
+        true,
+    );
+    let right_crossing_count = count_all_crossings_between_two_layers(
+        graph,
+        lane,
+        middle,
+        right,
+        edges,
+        positions_buffer,
+        // This already holds the ordering of `middle`.
+        sort_buffer_2,
+        sort_buffer_1,
+        true,
+    );
+    // Ensure that the post-condition holds.
+    std::mem::swap(sort_buffer_1, sort_buffer_2);
+    (left_crossing_count, right_crossing_count)
+}
+
+fn count_all_crossings_between_two_layers(
+    graph: &Graph,
+    lane: &Lane,
+    prev: &[SweepNode],
+    current: &[SweepNode],
+    edges: &[(EdgeId, EdgeConnection)],
+    positions_buffer: &mut Vec<Positions>,
+    sort_buffer_1: &mut Vec<(NodeId, usize)>,
+    sort_buffer_2: &mut Vec<(NodeId, usize)>,
+    keep_left_else_right: bool,
+) -> CrossingCount {
+    // Thing is, in a sweep we look at overlapping windows of three layers (where the middle one
+    // is shuffled). Hence, we can usually reuse the reordering. Should save roughly half of the
+    // re-orderings.
+    if !keep_left_else_right {
+        sort_buffer_1.clear();
+        for (idx, nprev) in prev.iter().enumerate() {
+            sort_buffer_1.push((lane.nodes[nprev.in_lane_idx as usize], idx));
+        }
+        sort_buffer_1.sort_by_key(|(_, idx)| prev[*idx].layer_position);
+    } else {
+        sort_buffer_2.clear();
+        for (idx, ncurrent) in current.iter().enumerate() {
+            sort_buffer_2.push((lane.nodes[ncurrent.in_lane_idx as usize], idx));
+        }
+        sort_buffer_2.sort_by_key(|(_, idx)| current[*idx].layer_position);
+    }
+
+    count_all_crossings_between_two_layers_inner(
+        edges,
+        positions_buffer,
+        graph,
+        sort_buffer_1,
+        sort_buffer_2,
+    )
+}
+#[derive(Clone, Copy)]
+enum Leaving {
+    Upwards,
+    Downwards,
+}
+
+#[derive(Clone, Copy, PartialEq)]
+enum StartOrEnd {
+    Start,
+    End,
+}
+
+struct Positions {
+    start: isize,
+    end: isize,
+
+    /// `start.min(end)`
+    above: isize,
+    /// `start.max(end)`
+    below: isize,
+
+    // If one end of the edge leaves.
+    leaving: Option<(Leaving, StartOrEnd)>,
+}
+
+impl Positions {
+    // Two loop on the same side. Either both left opened or both right opened.
+    fn loop_loop_crossing(left: &Positions, right: &Positions) -> bool {
+        let leave_to_same_direction = match (left.leaving, right.leaving) {
+            (Some((Leaving::Upwards, _)), Some((Leaving::Upwards, _)))
+            | (Some((Leaving::Downwards, _)), Some((Leaving::Downwards, _))) => true,
+            _ => false,
+        };
+        !leave_to_same_direction
+            && ((left.above < right.above && right.above < left.below && left.below < right.below)
+                || (right.above < left.above
+                    && left.above < right.below
+                    && right.below < left.below))
+    }
+
+    // A loop in `layer` and an edge going from `layer` to `layer + 1`.
+    fn loop_non_loop_crossing(left_opened_loop: &Positions, right_straight: &Positions) -> bool {
+        let leave_to_same_direction = match (left_opened_loop.leaving, right_straight.leaving) {
+            (Some((Leaving::Upwards, _)), Some((Leaving::Upwards, StartOrEnd::Start)))
+            | (Some((Leaving::Downwards, _)), Some((Leaving::Downwards, StartOrEnd::Start))) => {
+                true
+            }
+            _ => false,
+        };
+        !leave_to_same_direction
+            && (left_opened_loop.above < right_straight.start
+                && right_straight.start < left_opened_loop.below)
+    }
+
+    // An edge going from `layer` to `layer + 1`, and a loop in `layer + 1` (on the left side).
+    fn non_loop_loop_crossing(left_straight: &Positions, right_opened_loop: &Positions) -> bool {
+        let leave_to_same_direction = match (left_straight.leaving, right_opened_loop.leaving) {
+            (Some((Leaving::Upwards, StartOrEnd::End)), Some((Leaving::Upwards, _)))
+            | (Some((Leaving::Downwards, StartOrEnd::End)), Some((Leaving::Downwards, _))) => true,
+            _ => false,
+        };
+        !leave_to_same_direction
+            && (right_opened_loop.above < left_straight.end
+                && left_straight.end < right_opened_loop.below)
+    }
+
+    // Two straight edges between `layer` and `layer + 1`.
+    fn non_loop_non_loop_crossing(left: &Positions, right: &Positions) -> bool {
+        let some_stays_inside = left.leaving.is_none() || right.leaving.is_none();
+        some_stays_inside
+            && ((left.start < right.start && left.end > right.end)
+                || (left.start > right.start && left.end < right.end))
+    }
+}
+
+fn get_positions(
+    ordering_1: &[(NodeId, usize)],
+    ordering_2: &[(NodeId, usize)],
+    edge: &Edge,
+    graph: &Graph,
+) -> Positions {
+    let from_node = &n!(edge.from);
+    let to_node = &n!(edge.to);
+    let mut leaving = None;
+    let start = ordering_1
+        .iter()
+        .find_position(|(node_id, _)| from_node.id == *node_id)
+        .map(|tuple| tuple.0 as isize)
+        .unwrap_or_else(|| {
+            if from_node.pool_and_lane() < to_node.pool_and_lane() {
+                leaving = Some((Leaving::Upwards, StartOrEnd::Start));
+                isize::MIN
+            } else {
+                leaving = Some((Leaving::Downwards, StartOrEnd::Start));
+                isize::MAX
+            }
+        });
+    let end = ordering_2
+        .iter()
+        .find_position(|(node_id, _)| to_node.id == *node_id)
+        .map(|tuple| tuple.0 as isize)
+        .unwrap_or_else(|| {
+            // assert: If both sides are leaving, then why is this edge processed in the current
+            // lane?
+            assert!(leaving.is_none());
+            if from_node.pool_and_lane() < to_node.pool_and_lane() {
+                leaving = Some((Leaving::Downwards, StartOrEnd::End));
+                isize::MAX
+            } else {
+                leaving = Some((Leaving::Upwards, StartOrEnd::End));
+                isize::MIN
+            }
+        });
+    Positions {
+        start,
+        end,
+        above: start.min(end),
+        below: start.max(end),
+        leaving,
+    }
+}
+
+fn count_all_crossings_between_two_layers_inner(
+    edges: &[(EdgeId, EdgeConnection)],
+    positions_buffer: &mut Vec<Positions>,
+    graph: &Graph,
+    left_ordering: &[(NodeId, /* ignore: */ usize)],
+    right_ordering: &[(NodeId, /* ignore: */ usize)],
+) -> CrossingCount {
+    let mut crossing_count = CrossingCount::default();
+
+    positions_buffer.clear();
+    positions_buffer.extend(edges.iter().clone().map(|(edge_id, edge_connection)| {
+        match edge_connection {
+            EdgeConnection::LeftConnected => {
+                get_positions(left_ordering, left_ordering, &e!(*edge_id), graph)
+            }
+            EdgeConnection::BothConnected => {
+                get_positions(left_ordering, right_ordering, &e!(*edge_id), graph)
+            }
+            EdgeConnection::RightConnected => {
+                get_positions(right_ordering, right_ordering, &e!(*edge_id), graph)
+            }
+        }
+    }));
+    assert_eq!(positions_buffer.len(), edges.len());
+
+    for i in 0..edges.len() {
+        for j in (i + 1)..edges.len() {
+            count_crossing_one_edge_pair(
+                &mut crossing_count,
+                edges[i].clone(),
+                edges[j].clone(),
+                &positions_buffer[i],
+                &positions_buffer[j],
+                graph,
+            );
+        }
+    }
+    crossing_count
+}
+
+fn count_crossing_one_edge_pair(
+    crossing_count: &mut CrossingCount,
+    edge_1: (EdgeId, EdgeConnection),
+    edge_2: (EdgeId, EdgeConnection),
+    positions_1: &Positions,
+    positions_2: &Positions,
+    graph: &Graph,
+) {
+    // TODO this positions_1 and _2 query should be moved one level up and cached. This is itself a
+    // linear search.
+    let is_crossing = match (edge_1.1, edge_2.1) {
+        (EdgeConnection::LeftConnected, EdgeConnection::LeftConnected) => {
+            Positions::loop_loop_crossing(&positions_1, &positions_2)
+        }
+        (EdgeConnection::LeftConnected, EdgeConnection::BothConnected) => {
+            Positions::loop_non_loop_crossing(&positions_1, &positions_2)
+        }
+        (EdgeConnection::LeftConnected, EdgeConnection::RightConnected) => {
+            // Cannot cross
+            return;
+        }
+
+        (EdgeConnection::BothConnected, EdgeConnection::LeftConnected) => {
+            Positions::loop_non_loop_crossing(&positions_2, &positions_1)
+        }
+        (EdgeConnection::BothConnected, EdgeConnection::BothConnected) => {
+            Positions::non_loop_non_loop_crossing(&positions_1, &positions_2)
+        }
+        (EdgeConnection::BothConnected, EdgeConnection::RightConnected) => {
+            Positions::non_loop_loop_crossing(&positions_1, &positions_2)
+        }
+
+        (EdgeConnection::RightConnected, EdgeConnection::LeftConnected) => {
+            // Cannot cross
+            return;
+        }
+        (EdgeConnection::RightConnected, EdgeConnection::BothConnected) => {
+            Positions::non_loop_loop_crossing(&positions_2, &positions_1)
+        }
+        (EdgeConnection::RightConnected, EdgeConnection::RightConnected) => {
+            Positions::loop_loop_crossing(&positions_1, &positions_2)
+        }
+    };
+
+    if is_crossing {
+        crossing_count.count(&e!(edge_1.0), &e!(edge_2.0));
+    }
+}

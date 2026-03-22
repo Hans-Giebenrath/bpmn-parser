@@ -36,4 +36,4 @@ impl Lane {
     }
 }
 
-impl_index!(LaneId, Lane, lane_idx);
+impl_index!(LaneId, Lane);

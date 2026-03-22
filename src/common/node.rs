@@ -11,6 +11,7 @@ use crate::common::graph::PoolAndLane;
 use crate::common::graph::PoolId;
 use crate::common::graph::SdeId;
 use crate::layout::all_crossing_minimization_ilp::CrossingMinimizationNodeData;
+use crate::layout::all_crossing_minimization_sweep::CrossingMinimizationSweepNodeData;
 use crate::layout::solve_layer_assignment::LayerAssignmentData;
 use crate::layout::xy_ilp::XyIlpNodeData;
 use crate::lexer::TokenCoordinate;
@@ -135,6 +136,7 @@ pub enum NodePhaseAuxData {
     None,
     LayerAssignmentData(LayerAssignmentData),
     CrossingMinimizationNodeData(CrossingMinimizationNodeData),
+    CrossingMinimizationSweep(CrossingMinimizationSweepNodeData),
     XyIlpNodeData(XyIlpNodeData),
 }
 
@@ -170,6 +172,8 @@ pub struct Node {
     //   from: Vec<EdgeId>
     //   to:   Vec<struct{EdgeId, FlowType, stays_within_lane}>
     /// Invariant: After global crossing minimization, this is sorted.
+    /// TODO make `incoming` and `outgoing` a `ports: [Vec<EdgeId>; 2]` with INCOMING=0 and
+    /// OUTGOING=1. Same for edge.from and to.
     pub incoming: Vec<EdgeId>,
     pub outgoing: Vec<EdgeId>,
 
@@ -459,4 +463,4 @@ impl std::fmt::Display for Node {
     }
 }
 
-impl_index!(NodeId, Node, node_idx);
+impl_index!(NodeId, Node);

@@ -1,20 +1,20 @@
 // Macro to generate all four Index implementations
 
 macro_rules! impl_index {
-    ($index_type:ty, $element_type:ty, $argument:ident) => {
+    ($index_type:ty, $element_type:ty) => {
         // Index for Vec
         impl std::ops::Index<$index_type> for Vec<$element_type> {
             type Output = $element_type;
 
-            fn index(&self, $argument: $index_type) -> &Self::Output {
-                &self[$argument.0]
+            fn index(&self, arg: $index_type) -> &Self::Output {
+                &self[arg.0]
             }
         }
 
         // IndexMut for Vec
         impl std::ops::IndexMut<$index_type> for Vec<$element_type> {
-            fn index_mut(&mut self, $argument: $index_type) -> &mut Self::Output {
-                &mut self[$argument.0]
+            fn index_mut(&mut self, arg: $index_type) -> &mut Self::Output {
+                &mut self[arg.0]
             }
         }
 
@@ -22,15 +22,15 @@ macro_rules! impl_index {
         impl std::ops::Index<$index_type> for [$element_type] {
             type Output = $element_type;
 
-            fn index(&self, $argument: $index_type) -> &Self::Output {
-                &self[$argument.0]
+            fn index(&self, arg: $index_type) -> &Self::Output {
+                &self[arg.0]
             }
         }
 
         // IndexMut for slice
         impl std::ops::IndexMut<$index_type> for [$element_type] {
-            fn index_mut(&mut self, $argument: $index_type) -> &mut Self::Output {
-                &mut self[$argument.0]
+            fn index_mut(&mut self, arg: $index_type) -> &mut Self::Output {
+                &mut self[arg.0]
             }
         }
     };

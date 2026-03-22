@@ -164,4 +164,4 @@ impl Edge {
     }
 }
 
-impl_index!(EdgeId, Edge, edge_idx);
+impl_index!(EdgeId, Edge);

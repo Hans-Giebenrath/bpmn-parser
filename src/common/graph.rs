@@ -110,7 +110,7 @@ impl SemanticDataElement {
 
 #[derive(Default, Debug, Clone, Eq, PartialEq, Copy, Hash, PartialOrd, Ord)]
 pub struct SdeId(pub usize);
-impl_index!(SdeId, SemanticDataElement, sde_idx);
+impl_index!(SdeId, SemanticDataElement);
 
 /// A Newtype to make sure that code outside of the module does not modify its value.
 /// The invariant is that every created NodeId does point to some existing node.
