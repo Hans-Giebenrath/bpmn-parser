@@ -1,9 +1,10 @@
 pub mod bpmn_node;
 pub mod config;
+pub(crate) mod direction;
 pub mod edge;
 pub mod graph;
+pub mod iter_ext;
 pub mod lane;
 pub mod macros;
 pub mod node;
 pub mod pool;
-pub mod iter_ext;

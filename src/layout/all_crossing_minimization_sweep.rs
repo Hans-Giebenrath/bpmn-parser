@@ -27,6 +27,8 @@ use std::collections::HashSet;
 use std::hash::Hash;
 use std::hash::Hasher;
 
+mod one_layer;
+
 #[derive(Clone)]
 enum Pull {
     TopWardsSf,
@@ -35,6 +37,22 @@ enum Pull {
     BottomWardsSf,
     BottomWardsMf,
     BottomWardsDf,
+}
+
+impl Pull {
+    // The bias is so large that it effectively creates a guaranteed layering:
+    // Topwards SF pull creates a layer, topwards MF a second one, etc. Within
+    // the layer, the nodes are then regularly ordered by their xyz-center.
+    fn to_xyz_center_bias(&self, node_count: usize) -> f32 {
+        match self {
+            Self::TopWardsSf => -3000f32,
+            Self::TopWardsMf => -2000f32,
+            Self::TopWardsDf => -1000f32,
+            Self::BottomWardsDf => node_count as f32 + 1000f32,
+            Self::BottomWardsMf => node_count as f32 + 2000f32,
+            Self::BottomWardsSf => node_count as f32 + 3000f32,
+        }
+    }
 }
 
 // This one could actually be used within NodeId as well. Reduces memory usage significantly, and
@@ -49,15 +67,21 @@ struct Slice {
     end: GeneralIndexType,
 }
 
+impl Slice {
+    fn as_range(&self) -> std::ops::Range<usize> {
+        self.start as usize..self.end as usize
+    }
+}
+
 #[derive(Debug, Copy, Clone)]
-struct SweepNodeId(usize);
+pub(crate) struct SweepNodeId(usize);
 impl_index!(SweepNodeId, SweepNode);
 
 const INCOMING: usize = 0;
 const OUTGOING: usize = 1;
 
 #[derive(Default, Clone)]
-struct SweepNode {
+pub(crate) struct SweepNode {
     /// To avoid using NodeId (which is 8 bytes), instead index into the respective `Lane::nodes` to
     /// then get the NodeId. Easy :) Goal is to keep the size of `SweepNode` super small.
     in_lane_idx: GeneralIndexType,
@@ -385,10 +409,7 @@ impl SweepGraph {
             });
         }
 
-        let mut sort_buffer_1 = Vec::new();
-        let mut sort_buffer_2 = Vec::new();
-        let mut positions_buffer = Vec::new();
-
+        let mut sweep_buffers = SweepBuffers::default();
         assert!(result.edge_layers.len() >= 2);
         for i in 0..(result.layers.len() + 1) {
             let ccount = count_all_crossings_between_two_layers(
@@ -407,12 +428,13 @@ impl SweepGraph {
                     .unwrap_or(&[]),
                 &result.edges
                     [result.edge_layers[i].start as usize..result.edge_layers[i].end as usize],
-                &mut positions_buffer,
-                &mut sort_buffer_1,
-                &mut sort_buffer_2,
+                &mut sweep_buffers,
                 true,
             );
-            std::mem::swap(&mut sort_buffer_1, &mut sort_buffer_2);
+            std::mem::swap(
+                &mut sweep_buffers.sort_buffer_1,
+                &mut sweep_buffers.sort_buffer_2,
+            );
             result.layers_crossing_count.push(ccount);
         }
         result
@@ -435,7 +457,7 @@ struct SingleLaneSweepSolution {
 }
 
 impl SingleLaneSweepSolution {
-    fn new(sweep_graph: &SweepGraph, layers_crossing_count: &[CrossingCount]) -> Self {
+    fn new(sweep_graph: &SweepGraph) -> Self {
         Self {
             layers: sweep_graph
                 .layers
@@ -450,8 +472,8 @@ impl SingleLaneSweepSolution {
                         .collect::<Vec<_>>()
                 })
                 .collect::<Vec<_>>(),
-            layers_crossing_count: layers_crossing_count.to_owned(),
-            total_crossing_count: layers_crossing_count.iter().sum(),
+            layers_crossing_count: sweep_graph.layers_crossing_count.to_owned(),
+            total_crossing_count: sweep_graph.layers_crossing_count.iter().sum(),
         }
     }
 }
@@ -475,15 +497,13 @@ impl SingleLaneSweepSolutions {
     /// If `sweep_graph` has an equal weighted_count, then it is added to the solutions (since it
     /// is a hash-map, a duplicate solution will not change anything)
     /// If `sweep_graph` has a worse weighted_count, then it is ignored.
-    fn maybe_add(&mut self, layers_crossing_count: &[CrossingCount], sweep_graph: &SweepGraph) {
+    fn maybe_add(&mut self, sweep_graph: &SweepGraph) {
         let Some(a_solution) = self.solutions.iter().next() else {
-            self.solutions.insert(SingleLaneSweepSolution::new(
-                sweep_graph,
-                layers_crossing_count,
-            ));
+            self.solutions
+                .insert(SingleLaneSweepSolution::new(sweep_graph));
             return;
         };
-        let new_total_crossing_count = layers_crossing_count.iter().sum();
+        let new_total_crossing_count = sweep_graph.layers_crossing_count.iter().sum();
         match a_solution
             .total_crossing_count
             .cmp(&new_total_crossing_count)
@@ -492,18 +512,14 @@ impl SingleLaneSweepSolutions {
                 return;
             }
             Ordering::Equal => {
-                self.solutions.insert(SingleLaneSweepSolution::new(
-                    sweep_graph,
-                    layers_crossing_count,
-                ));
+                self.solutions
+                    .insert(SingleLaneSweepSolution::new(sweep_graph));
                 return;
             }
             Ordering::Greater => {
                 self.solutions.clear();
-                self.solutions.insert(SingleLaneSweepSolution::new(
-                    sweep_graph,
-                    layers_crossing_count,
-                ));
+                self.solutions
+                    .insert(SingleLaneSweepSolution::new(sweep_graph));
                 return;
             }
         }
@@ -531,50 +547,109 @@ fn left_right_sweeps(graph: &Graph, lane: &Lane, mut sweep_graph: SweepGraph) {
     //
 }
 
+#[derive(Default)]
+struct SweepBuffers {
+    positions_buffer: Vec<Positions>,
+    sort_buffer_1: Vec<(NodeId, /* idx within &[SweepNode] */ usize)>,
+    sort_buffer_2: Vec<(NodeId, /* idx within &[SweepNode] */ usize)>,
+    /// In the simple case we could just update the `SweepNode::layer_position` as we go through
+    /// the nodes in a layer (set to average of incoming). But since we have same-layer edges,
+    /// we need to keep the old position value around (for when we encounter the other end of the
+    /// edge).
+    /// `xyz` since I don't remember whether its barycenter or some averagecenter or mediancenter
+    /// or byzantinecenter or divcenter or a shoppingcenter or ... I got lost, sorry.
+    xyz_center_buffer: Vec<(f32, /* idx within &[SweepNode] */ usize)>,
+}
+
+impl SweepBuffers {
+    fn new_sweep_direction(&mut self) {
+        self.sort_buffer_1.clear();
+        self.sort_buffer_2.clear();
+        self.xyz_center_buffer.clear();
+    }
+}
+
 /// Classical left-right sweep.
 fn right_sweep(
     graph: &Graph,
     lane: &Lane,
     sweep_graph: &mut SweepGraph,
     best_versions: &mut SingleLaneSweepSolutions,
+    sweep_buffers: &mut SweepBuffers,
+    mind_the_pull: bool,
 ) {
-    let mut sort_buffer_1 = Vec::new();
-    let mut sort_buffer_2 = Vec::new();
-    let mut positions_buffer = Vec::new();
+    sweep_buffers.new_sweep_direction();
+    for i in 0..sweep_graph.layers.len() {
+        sweep_buffers.xyz_center_buffer.clear();
+        let current_layer = sweep_graph.layers[i].clone();
+        for (idx, sweep_node) in sweep_graph.nodes[current_layer.as_range()]
+            .iter()
+            .enumerate()
+        {
+            let sweep_node_idx = idx + current_layer.start as usize;
+            let bias = if mind_the_pull && let Some(pull) = sweep_node.pull.clone() {
+                pull.to_xyz_center_bias(current_layer.end as usize - current_layer.start as usize)
+            } else {
+                0f32
+            };
+            let center: f32 = sweep_graph.edges[sweep_node.ports_start[INCOMING] as usize
+                ..(sweep_node.ports_start[INCOMING] as usize
+                    + sweep_node.ports_len[INCOMING] as usize)]
+                .iter()
+                .map(|(edge_id, edge_connection)| {
+                    if matches!(edge_connection, EdgeConnection::BothConnected) {
+                        sweep_graph.nodes[aux(&from!(*edge_id))].layer_position as f32
+                    } else {
+                        // Lane-crossing edges are not added here, those are incorporated via
+                        // `Pull`.
+                        let edge = &e!(*edge_id);
+                        assert!(edge.stays_within_lane);
+                        (sweep_graph.nodes[aux(&n!(edge.from))].layer_position as f32
+                            + sweep_graph.nodes[aux(&n!(edge.to))].layer_position as f32)
+                            / 2f32
+                    }
+                })
+                .sum::<f32>()
+                / (sweep_node.ports_len[INCOMING] as f32);
+            sweep_buffers
+                .xyz_center_buffer
+                .push((center + bias, sweep_node_idx));
+        }
 
-    // We start from 1, since we won't reorder the left-most layer.
-    for i in 1..sweep_graph.layers.len() {
-        // TODO do the actual order change here.
+        // Now order xyz_center_buffer, then based on that reassign the layer_position value.
+        sweep_buffers
+            .xyz_center_buffer
+            .sort_by(|(center1, _), (center2, _)| center1.total_cmp(center2));
+        sweep_buffers.xyz_center_buffer.iter().enumerate().for_each(
+            |(layer_position, (_, sweep_node_idx))| {
+                sweep_graph.nodes[*sweep_node_idx].layer_position =
+                    layer_position.try_into().unwrap();
+            },
+        );
 
         let (ccount1, ccount2) = count_crossings_three_layers(
             graph,
             lane,
             i.checked_sub(1)
-                .map(|idx| {
-                    &sweep_graph.nodes[sweep_graph.layers[idx].start as usize
-                        ..sweep_graph.layers[idx].end as usize]
-                })
+                .map(|idx| &sweep_graph.nodes[sweep_graph.layers[idx].as_range()])
                 .unwrap_or(&[]),
-            &sweep_graph.nodes
-                [sweep_graph.layers[i].start as usize..sweep_graph.layers[i].end as usize],
+            &sweep_graph.nodes[sweep_graph.layers[i].as_range()],
             sweep_graph
                 .layers
                 .get(i + 1)
-                .map(|range| &sweep_graph.nodes[range.start as usize..range.end as usize])
+                .map(|range| &sweep_graph.nodes[range.as_range()])
                 .unwrap_or(&[]),
-            &sweep_graph.edges[sweep_graph.edge_layers[i].start as usize
-                ..sweep_graph.edge_layers[i].end as usize],
+            &sweep_graph.edges[sweep_graph.edge_layers[i].as_range()],
             sweep_graph
                 .edge_layers
                 .get(i + 1)
-                .map(|range| &sweep_graph.edges[range.start as usize..range.end as usize])
+                .map(|range| &sweep_graph.edges[range.as_range()])
                 .unwrap_or(&[]),
-            &mut positions_buffer,
-            &mut sort_buffer_1,
-            &mut sort_buffer_2,
+            sweep_buffers,
         );
         sweep_graph.layers_crossing_count[i] = ccount1;
         sweep_graph.layers_crossing_count[i + 1] = ccount2;
+        best_versions.maybe_add(sweep_graph);
     }
 }
 
@@ -589,9 +664,7 @@ fn count_crossings_three_layers(
     right: &[SweepNode],
     edges_1: &[(EdgeId, EdgeConnection)],
     edges_2: &[(EdgeId, EdgeConnection)],
-    positions_buffer: &mut Vec<Positions>,
-    sort_buffer_1: &mut Vec<(NodeId, usize)>,
-    sort_buffer_2: &mut Vec<(NodeId, usize)>,
+    sweep_buffers: &mut SweepBuffers,
 ) -> (CrossingCount, CrossingCount) {
     let left_crossing_count = count_all_crossings_between_two_layers(
         graph,
@@ -599,10 +672,13 @@ fn count_crossings_three_layers(
         left,
         middle,
         edges_1,
-        positions_buffer,
-        sort_buffer_1,
-        sort_buffer_2,
+        sweep_buffers,
         true,
+    );
+    std::mem::swap(
+        // `2` is sorted already (`middle`). Move that into `1`.
+        &mut sweep_buffers.sort_buffer_2,
+        &mut sweep_buffers.sort_buffer_1,
     );
     let right_crossing_count = count_all_crossings_between_two_layers(
         graph,
@@ -610,14 +686,14 @@ fn count_crossings_three_layers(
         middle,
         right,
         edges_2,
-        positions_buffer,
-        // This already holds the ordering of `middle`.
-        sort_buffer_2,
-        sort_buffer_1,
+        sweep_buffers,
         true,
     );
     // Ensure that the post-condition holds.
-    std::mem::swap(sort_buffer_1, sort_buffer_2);
+    std::mem::swap(
+        &mut sweep_buffers.sort_buffer_2,
+        &mut sweep_buffers.sort_buffer_1,
+    );
     (left_crossing_count, right_crossing_count)
 }
 
@@ -627,34 +703,40 @@ fn count_all_crossings_between_two_layers(
     prev: &[SweepNode],
     current: &[SweepNode],
     edges: &[(EdgeId, EdgeConnection)],
-    positions_buffer: &mut Vec<Positions>,
-    sort_buffer_1: &mut Vec<(NodeId, usize)>,
-    sort_buffer_2: &mut Vec<(NodeId, usize)>,
+    sweep_buffers: &mut SweepBuffers,
     keep_left_else_right: bool,
 ) -> CrossingCount {
     // Thing is, in a sweep we look at overlapping windows of three layers (where the middle one
     // is shuffled). Hence, we can usually reuse the reordering. Should save roughly half of the
     // re-orderings.
     if !keep_left_else_right {
-        sort_buffer_1.clear();
+        sweep_buffers.sort_buffer_1.clear();
         for (idx, nprev) in prev.iter().enumerate() {
-            sort_buffer_1.push((lane.nodes[nprev.in_lane_idx as usize], idx));
+            sweep_buffers
+                .sort_buffer_1
+                .push((lane.nodes[nprev.in_lane_idx as usize], idx));
         }
-        sort_buffer_1.sort_by_key(|(_, idx)| prev[*idx].layer_position);
+        sweep_buffers
+            .sort_buffer_1
+            .sort_by_key(|(_, idx)| prev[*idx].layer_position);
     } else {
-        sort_buffer_2.clear();
+        sweep_buffers.sort_buffer_2.clear();
         for (idx, ncurrent) in current.iter().enumerate() {
-            sort_buffer_2.push((lane.nodes[ncurrent.in_lane_idx as usize], idx));
+            sweep_buffers
+                .sort_buffer_2
+                .push((lane.nodes[ncurrent.in_lane_idx as usize], idx));
         }
-        sort_buffer_2.sort_by_key(|(_, idx)| current[*idx].layer_position);
+        sweep_buffers
+            .sort_buffer_2
+            .sort_by_key(|(_, idx)| current[*idx].layer_position);
     }
 
     count_all_crossings_between_two_layers_inner(
         edges,
-        positions_buffer,
+        &mut sweep_buffers.positions_buffer,
         graph,
-        sort_buffer_1,
-        sort_buffer_2,
+        &mut sweep_buffers.sort_buffer_1,
+        &mut sweep_buffers.sort_buffer_2,
     )
 }
 #[derive(Clone, Copy)]

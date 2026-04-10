@@ -2,6 +2,7 @@
 
 use super::macros::impl_index;
 use crate::common::bpmn_node::*;
+use crate::common::direction::Direction;
 use crate::common::graph::Coord3;
 use crate::common::graph::EdgeId;
 use crate::common::graph::Graph;

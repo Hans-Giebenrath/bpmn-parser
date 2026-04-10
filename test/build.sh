@@ -26,9 +26,11 @@ else
 fi
 run() {
     if $release; then
-        time timeout 8s "${CARGO_TARGET_DIR:-./target}"/release/bpmn-parser "$@"
+        echo time timeout 3s "${CARGO_TARGET_DIR:-./target}"/release/bpmn-parser "$@"
+        time timeout 3s "${CARGO_TARGET_DIR:-./target}"/release/bpmn-parser "$@"
     else
-        time timeout 8s "${CARGO_TARGET_DIR:-./target}"/debug/bpmn-parser "$@"
+        echo time timeout 3s "${CARGO_TARGET_DIR:-./target}"/debug/bpmn-parser "$@"
+        time timeout 3s "${CARGO_TARGET_DIR:-./target}"/debug/bpmn-parser "$@"
     fi
 }
 file_stem=compiled
