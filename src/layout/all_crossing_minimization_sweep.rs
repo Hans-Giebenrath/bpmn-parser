@@ -29,7 +29,7 @@ use std::hash::Hasher;
 
 mod one_layer;
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 enum Pull {
     TopWardsSf,
     TopWardsMf,

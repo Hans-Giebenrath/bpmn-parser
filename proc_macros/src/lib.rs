@@ -87,7 +87,7 @@ pub fn edges(input: TokenStream) -> TokenStream {
     TokenStream::from(expanded)
 }
 
-/// Usage: `follow!(node_expr)`
+/// Usage: `follow!(edge_expr)`
 /// Expands to: `match direction { Direction::Forward => edge_expr.to, Direction::Backward
 /// => edge_expr.from}`
 /// XXX: Requires `direction` to be available at the caller side.
@@ -100,6 +100,26 @@ pub fn follow(input: TokenStream) -> TokenStream {
         match direction {
             Direction::Forward => (#edge_expr).to,
             Direction::Backward => (#edge_expr).from,
+        }
+    };
+
+    TokenStream::from(expanded)
+}
+
+/// Usage: `target_nodes!(node_expr)`
+/// Expands to: `*{match direction { Direction::Forward => &node_expr.outgoing, Direction::Backward
+/// => &node_expr.incoming}}`
+/// XXX: Requires `direction` to be available at the caller side.
+#[proc_macro]
+pub fn target_nodes(input: TokenStream) -> TokenStream {
+    let node_expr: Expr = parse_macro_input!(input as Expr);
+
+    // Note: Not sure if the brackets `()` are required.
+    // Use *{..&incoming} to allow on the caller side to use `&mut edges(node)`.
+    let expanded = quote! {
+        match direction {
+            Direction::Forward => #node_expr.outgoing.iter().map(|edge_id| graph.nodes[graph.edges[edge_id].to]),
+            Direction::Backward => #node_expr.incoming.iter().map(|edge_id| graph.nodes[graph.edges[edge_id].from]),
         }
     };
 

@@ -1,25 +1,25 @@
-use proc_macros::edges;
+use proc_macros::{e, edges, follow, n};
 use std::cmp::Ordering;
 use std::collections::{HashMap, HashSet, VecDeque};
 
 use crate::common::direction::Direction;
-use crate::common::graph::NodeId;
+use crate::common::graph::{Graph, NodeId};
 use crate::common::node::Node;
-use crate::layout::all_crossing_minimization_sweep::SweepGraph;
+use crate::layout::all_crossing_minimization_sweep::{
+    EdgeConnection, INCOMING, OUTGOING, Pull, Slice, SweepGraph, SweepNode, SweepNodeId, aux,
+};
 
+#[derive(Default)]
 pub struct P3Layer {
-    constrained_list: Vec<usize>, // indices into `merge_nodes`
-    merge_nodes: Vec<MergeNode>,
-    map: HashMap<NodeId, usize>, // original node -> merge node index
+    constrained_list: Vec<usize>, // V, indices into `merge_nodes`
+    merge_nodes: Vec<MergeNode>,  // L(.)
 }
 
-pub fn run(&mut self, layer: &mut Layer, direction: Direction) {
-    self.constrained_list.clear();
-    self.merge_nodes.clear();
-    self.map.clear();
+pub fn run(graph: &Graph, sweep_graph: &mut SweepGraph, layer: usize, direction: Direction) {
+    let state = P3Layer::default();
 
     let mut rest: Vec<usize> = Vec::new(); // V'
-    self.create_merge_nodes(layer, port_side, &mut rest);
+    state.create_merge_nodes(graph, sweep_graph, layer, direction, &mut rest);
 
     while let Some((above_idx, below_idx)) = self.find_violated_constraint() {
         self.absorb(above_idx, below_idx);
@@ -50,14 +50,6 @@ pub fn run(&mut self, layer: &mut Layer, direction: Direction) {
 }
 
 impl P3Layer {
-    pub fn new() -> Self {
-        Self {
-            constrained_list: Vec::new(), // V
-            merge_nodes: Vec::new(),      // L(.)
-            map: HashMap::new(),
-        }
-    }
-
     fn reorder_nodes(&self, layer: &mut Layer, ordered_merge_nodes: &[usize]) {
         let mut i = 0usize;
         let mut p_in = 0usize;
@@ -97,20 +89,33 @@ impl P3Layer {
 
     fn create_merge_nodes(
         &mut self,
+        graph: &Graph,
         sweep_graph: &SweepGraph,
-        layer: &Layer,
-        port_side: PortSide,
+        layer: usize,
+        is_right_sweep: bool,
+        mind_the_pull: bool,
         rest: &mut Vec<usize>,
-    ) -> (Vec<MergeNode>, HashMap<NodeId, usize>) {
-        let mut merge_nodes = Vec::new();
+    ) {
         let mut map = HashMap::new();
         let mut all: Vec<usize> = Vec::new();
 
-        for n in &layer.nodes {
-            let mn = MergeNode::new(n, port_side);
+        let current_layer = sweep_graph.layers[layer].clone();
+        for (idx, sweep_node) in sweep_graph.nodes[current_layer.as_range()]
+            .iter()
+            .enumerate()
+        {
+            let sweep_node_idx = idx + current_layer.start as usize;
+            let mn = MergeNode::new(
+                graph,
+                sweep_graph,
+                sweep_node,
+                SweepNodeId(sweep_node_idx),
+                is_right_sweep,
+                mind_the_pull,
+            );
             let idx = self.merge_nodes.len();
             self.merge_nodes.push(mn);
-            self.map.insert(n.id, idx);
+            map.insert(n.id, idx);
             all.push(idx);
         }
 
@@ -121,13 +126,13 @@ impl P3Layer {
 
             for a in &node.in_uc_above {
                 debug_assert_eq!(node.id, a.lower);
-                let higher_idx = self.map[&a.higher];
+                let higher_idx = map[&a.higher];
                 self.merge_nodes[mn_idx].above_of_this.insert(higher_idx);
             }
 
             for a in &node.out_uc_above {
                 debug_assert_eq!(node.id, a.higher);
-                let lower_idx = self.map[&a.lower];
+                let lower_idx = map[&a.lower];
                 self.merge_nodes[mn_idx].below_of_this.insert(lower_idx);
             }
 
@@ -256,45 +261,71 @@ impl P3Layer {
 
 #[derive(Debug, Clone)]
 struct MergeNode {
-    ordered_nodes: Vec<NodeId>,
+    ordered_nodes: Vec<SweepNodeId>,
     barycenter: f32,
     degree: f32,
     above_of_this: HashSet<usize>,
     below_of_this: HashSet<usize>,
     i: Vec<usize>,
     alive: bool,
+    // Should be the sum from the previous analysis (which generated Pull) instead.
+    pull: Vec<Pull>,
 }
 
 impl MergeNode {
-    fn new(sweep_graph: &SweepGraph, node: &Node, direction: Direction) -> Self {
-        let mut accum: usize = 0;
-        let mut degree: usize = 0;
-
-        for p in &edges!(node) {
-            for e in &p.edges {
-                let order = match port_side {
-                    PortSide::Out => e.to_port_layer_order,
-                    PortSide::In => e.from_port_layer_order,
-                };
-                accum += order;
-                degree += 1;
-            }
+    fn new(
+        graph: &Graph,
+        sweep_graph: &SweepGraph,
+        sweep_node: &SweepNode,
+        sweep_node_id: SweepNodeId,
+        is_right_sweep: bool,
+        mind_the_pull: bool,
+    ) -> Self {
+        let direction = if is_right_sweep { INCOMING } else { OUTGOING };
+        let pull = if mind_the_pull && let Some(pull) = sweep_node.pull.clone() {
+            vec![pull]
+        } else {
+            Vec::new()
+        };
+        let mut accum: f32 = 0.0;
+        let it = sweep_graph.edges[sweep_node.ports_start[direction] as usize
+            ..(sweep_node.ports_start[direction] as usize
+                + sweep_node.ports_len[direction] as usize)]
+            .iter()
+            .flat_map(|(edge_id, edge_connection)| {
+                if matches!(edge_connection, EdgeConnection::BothConnected) {
+                    let node_id = if is_right_sweep {
+                        e!(*edge_id).from
+                    } else {
+                        e!(*edge_id).to
+                    };
+                    Some(sweep_graph.nodes[aux(&n!(node_id))].layer_position as f32)
+                } else {
+                    // Lane-crossing edges are not added here, those are incorporated via
+                    // `Pull`.
+                    // Non-lane-crossing edges should be handled by being merged immediately in the
+                    // first few sweep rounds and afterwards ignored, so
+                    // ignore them here as well.
+                    None
+                }
+            });
+        let mut degree: f32 = 0.0;
+        for layer_position in it {
+            accum += layer_position;
+            degree += 1.0;
         }
 
-        let barycenter = if degree == 0 {
-            0.0
-        } else {
-            accum as f32 / degree as f32
-        };
+        let barycenter = if degree == 0.0 { 0.0 } else { accum / degree };
 
         Self {
-            ordered_nodes: vec![node.id],
+            ordered_nodes: vec![sweep_node_id],
             barycenter,
             degree: degree as f32,
             above_of_this: HashSet::new(),
             below_of_this: HashSet::new(),
             i: Vec::new(),
             alive: true,
+            pull,
         }
     }
 
