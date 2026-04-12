@@ -139,10 +139,10 @@ impl PoolAndLane {
     };
 }
 
+#[derive(PartialEq, Eq, Hash)]
 pub struct Coord3 {
     pub pool_and_lane: PoolAndLane,
     pub layer: LayerId,
-    pub half_layer: bool,
 }
 
 pub(crate) enum StartAt {
@@ -354,7 +354,6 @@ impl Graph {
             StartAt::PoolLane(Coord3 {
                 pool_and_lane,
                 layer,
-                ..
             }) => (None, pool_and_lane, layer),
         };
         let final_pool_lane_to_consider = final_pool_lane_to_consider.unwrap_or(PoolAndLane::MIN);
@@ -413,7 +412,6 @@ impl Graph {
             StartAt::PoolLane(Coord3 {
                 pool_and_lane,
                 layer,
-                ..
             }) => (pool_and_lane.pool, *layer),
         };
         self.iter_upwards_same_pool(start, final_pool_lane_to_consider)
@@ -440,7 +438,6 @@ impl Graph {
                                     lane: LaneId(pool.lanes.len().strict_sub(1)),
                                 },
                                 layer,
-                                half_layer: false,
                             }),
                             final_pool_lane_to_consider,
                         )
@@ -508,7 +505,6 @@ impl Graph {
             StartAt::PoolLane(Coord3 {
                 pool_and_lane,
                 layer,
-                ..
             }) => (None, pool_and_lane, layer),
         };
         let final_pool_lane_to_consider =
@@ -575,7 +571,6 @@ impl Graph {
             StartAt::PoolLane(Coord3 {
                 pool_and_lane,
                 layer,
-                ..
             }) => (pool_and_lane.pool, *layer),
         };
         self.iter_downwards_same_pool(start, final_pool_lane_to_consider)
@@ -601,7 +596,6 @@ impl Graph {
                                     lane: LaneId(0),
                                 },
                                 layer,
-                                half_layer: false,
                             }),
                             final_pool_lane_to_consider,
                         )

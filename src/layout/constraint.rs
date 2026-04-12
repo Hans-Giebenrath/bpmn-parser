@@ -16,6 +16,7 @@ pub struct LeftOf {
     pub right: NodeId,
 }
 
+#[derive(Clone)]
 pub struct Above {
     pub above: NodeId,
     pub below: NodeId,

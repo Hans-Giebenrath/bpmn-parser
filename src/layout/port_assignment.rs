@@ -156,7 +156,6 @@ fn handle_nongateway_node(this_node_id: NodeId, graph: &mut Graph) {
             let Coord3 {
                 pool_and_lane: other_pool_lane,
                 layer: other_layer,
-                ..
             } = from!(edge_id).coord3();
             let flow_type = match edge.flow_type {
                 FlowType::SequenceFlow => PortFlowType::Sequence,
@@ -226,7 +225,6 @@ fn handle_nongateway_node(this_node_id: NodeId, graph: &mut Graph) {
             let Coord3 {
                 pool_and_lane: other_pool_lane,
                 layer: other_layer,
-                ..
             } = to!(edge_id).coord3();
             let flow_type = match edge.flow_type {
                 FlowType::SequenceFlow => PortFlowType::Sequence,
@@ -429,7 +427,6 @@ fn handle_nongateway_node(this_node_id: NodeId, graph: &mut Graph) {
     let Coord3 {
         pool_and_lane: from_pool_and_lane,
         layer: from_layer,
-        ..
     } = this_node.coord3();
 
     let bend_dummy_order_split_point_position = |port_info: &&mut PortInfo| {
@@ -889,7 +886,6 @@ fn handle_gateway_node_one_side(this_node_id: NodeId, graph: &mut Graph, directi
     let Coord3 {
         pool_and_lane: this_pool_and_lane,
         layer: this_layer,
-        ..
     } = n!(this_node_id).coord3();
     // The x is relative to the created bend dummies.
     let relative_port_x = node_size(&NodeType::BendDummy {
@@ -1028,7 +1024,6 @@ fn handle_gateway_node_one_side(this_node_id: NodeId, graph: &mut Graph, directi
                 let iteration_start = StartAt::PoolLane(Coord3 {
                     pool_and_lane: top_most_pool_lane,
                     layer: this_layer,
-                    half_layer: false, // irrelevant
                 });
                 (best_position, iteration_start)
             };

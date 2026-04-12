@@ -442,7 +442,6 @@ impl Node {
         Coord3 {
             pool_and_lane: self.pool_and_lane(),
             layer: self.layer_id,
-            half_layer: self.uses_half_layer,
         }
     }
 
