@@ -1,6 +1,7 @@
-use crate::common::graph::{Coord3, Graph};
+use crate::common::graph::{Coord3, Graph, PoolAndLane};
+use crate::common::lane::Lane;
 use crate::layout::all_crossing_minimization_sweep::{
-    EdgeConnection, INCOMING, OUTGOING, Pull, SweepGraph, SweepNode, SweepNodeId, aux,
+    EdgeConnection, INCOMING, OUTGOING, PullBalance, SweepGraph, SweepNode, SweepNodeId, aux,
 };
 use crate::layout::constraint::Above;
 use proc_macros::{e, n};
@@ -52,10 +53,20 @@ pub fn run(
     state.constrained_list.clear();
 
     unconstrained.sort_by(|&a, &b| {
-        TODO convert the .pull member;
-        state.merge_nodes[a]
-            .barycenter
-            .partial_cmp(&state.merge_nodes[b].barycenter)
+        // DFs have the least priority, SFs the most.
+        let (a, b) = (&state.merge_nodes[a], &state.merge_nodes[b]);
+        (
+            a.pull_balance.sf_balance,
+            a.pull_balance.mf_balance,
+            a.pull_balance.df_balance,
+            a.barycenter,
+        )
+            .partial_cmp(&(
+                b.pull_balance.sf_balance,
+                b.pull_balance.mf_balance,
+                b.pull_balance.df_balance,
+                b.barycenter,
+            ))
             .unwrap()
     });
 
@@ -84,12 +95,14 @@ impl P3Layer {
         unconstrained: &mut Vec<usize>,
     ) {
         let current_layer = sweep_graph.layers[current_location.layer.0].clone();
+        let current_lane = &graph.pools[current_location.pool_and_lane.pool].lanes
+            [current_location.pool_and_lane.lane]
+            .nodes;
         for (idx, sweep_node) in sweep_graph.nodes[current_layer.as_range()]
             .iter()
             .enumerate()
         {
             let mn = MergeNode::new(
-                graph,
                 sweep_graph,
                 sweep_node,
                 SweepNodeId(idx + current_layer.start as usize),
@@ -102,10 +115,6 @@ impl P3Layer {
         // Second pass: wire constraints. Since those should be *very* few, then doing it suboptimal
         // is probably OK (BUT! the partitioning per Coord3 should ideally be done outside.)
         for above_constraint in constraints {
-            // A bit inefficient, but it is run very infrequently.
-            let current_lane = &graph.pools[current_location.pool_and_lane.pool].lanes
-                [current_location.pool_and_lane.lane]
-                .nodes;
             // `above` and `below` are indices into both sweep_graph.nodes[current_layer.as_range()]
             // and `self.merge_nodes`.
             let above = sweep_graph.nodes[current_layer.as_range()]
@@ -222,8 +231,9 @@ impl P3Layer {
 
         mns[winner_idx].barycenter = new_barycenter;
         mns[winner_idx].degree = new_degree;
-        let victim_pull = std::mem::take(&mut mns[victim_idx].pull);
-        mns[winner_idx].pull.extend_from_slice(&victim_pull);
+        mns[winner_idx].pull_balance.sf_balance += mns[victim_idx].pull_balance.sf_balance;
+        mns[winner_idx].pull_balance.mf_balance += mns[victim_idx].pull_balance.mf_balance;
+        mns[winner_idx].pull_balance.df_balance += mns[victim_idx].pull_balance.df_balance;
 
         mns[victim_idx].deactivate();
     }
@@ -238,13 +248,12 @@ struct MergeNode {
     below_of_this: HashSet</* merge node idx */ usize>,
     incoming_constraints: Vec</* merge node idx */ usize>,
     alive: bool,
-    // Should be the sum from the previous analysis (which generated Pull) instead.
-    pull: Vec<Pull>,
+    /// Should be the sum from the previous analysis (which generated Pull) instead.
+    pull_balance: PullBalance,
 }
 
 impl MergeNode {
     fn new(
-        graph: &Graph,
         sweep_graph: &SweepGraph,
         sweep_node: &SweepNode,
         sweep_node_id: SweepNodeId,
@@ -252,24 +261,14 @@ impl MergeNode {
         mind_the_pull: bool,
     ) -> Self {
         let direction = if is_right_sweep { INCOMING } else { OUTGOING };
-        let pull = if mind_the_pull && let Some(pull) = sweep_node.pull.clone() {
-            vec![pull]
-        } else {
-            Vec::new()
-        };
         let mut accum: f32 = 0.0;
-        let it = sweep_graph.edges[sweep_node.ports_start[direction] as usize
+        let it = sweep_graph.edge_targets[sweep_node.ports_start[direction] as usize
             ..(sweep_node.ports_start[direction] as usize
                 + sweep_node.ports_len[direction] as usize)]
             .iter()
-            .flat_map(|(edge_id, edge_connection)| {
+            .flat_map(|(target_node, edge_connection)| {
                 if matches!(edge_connection, EdgeConnection::Both) {
-                    let node_id = if is_right_sweep {
-                        e!(*edge_id).from
-                    } else {
-                        e!(*edge_id).to
-                    };
-                    Some(sweep_graph.nodes[aux(&n!(node_id))].layer_position as f32)
+                    Some(sweep_graph.nodes[*target_node].layer_position as f32)
                 } else {
                     // Lane-crossing edges are not added here, those are incorporated via
                     // `Pull`.
@@ -295,7 +294,11 @@ impl MergeNode {
             below_of_this: HashSet::new(),
             incoming_constraints: Vec::new(),
             alive: true,
-            pull,
+            pull_balance: if mind_the_pull {
+                sweep_node.pull_balance.clone()
+            } else {
+                Default::default()
+            },
         }
     }
 
@@ -308,6 +311,5 @@ impl MergeNode {
         self.above_of_this.clear();
         self.below_of_this.clear();
         self.incoming_constraints.clear();
-        self.pull.clear();
     }
 }

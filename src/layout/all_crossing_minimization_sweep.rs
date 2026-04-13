@@ -22,8 +22,9 @@ use crate::common::node::LayerId;
 use crate::common::node::Node;
 use crate::common::node::NodePhaseAuxData;
 use crate::layout::constraint::Above;
+use itertools::Either;
 use itertools::Itertools;
-use proc_macros::{e, n};
+use proc_macros::{e, lane, n};
 use std::cmp::Ordering;
 use std::collections::HashMap;
 use std::collections::HashSet;
@@ -31,32 +32,6 @@ use std::hash::Hash;
 use std::hash::Hasher;
 
 mod one_layer;
-
-#[derive(Clone, Debug)]
-enum Pull {
-    TopWardsSf,
-    TopWardsMf,
-    TopWardsDf,
-    BottomWardsSf,
-    BottomWardsMf,
-    BottomWardsDf,
-}
-
-impl Pull {
-    // The bias is so large that it effectively creates a guaranteed layering:
-    // Topwards SF pull creates a layer, topwards MF a second one, etc. Within
-    // the layer, the nodes are then regularly ordered by their xyz-center.
-    fn to_xyz_center_bias(&self, node_count: usize) -> f32 {
-        match self {
-            Self::TopWardsSf => -3000f32,
-            Self::TopWardsMf => -2000f32,
-            Self::TopWardsDf => -1000f32,
-            Self::BottomWardsDf => node_count as f32 + 1000f32,
-            Self::BottomWardsMf => node_count as f32 + 2000f32,
-            Self::BottomWardsSf => node_count as f32 + 3000f32,
-        }
-    }
-}
 
 // This one could actually be used within NodeId as well. Reduces memory usage significantly, and
 // we just won't have 65000 nodes in the diagram. 255 might be a bit small, given that a single
@@ -83,12 +58,19 @@ impl_index!(SweepNodeId, SweepNode);
 const INCOMING: usize = 0;
 const OUTGOING: usize = 1;
 
+#[derive(Debug, Default, Clone)]
+pub(crate) struct PullBalance {
+    sf_balance: i8,
+    mf_balance: i8,
+    df_balance: i8,
+}
+
 #[derive(Default, Clone)]
 pub(crate) struct SweepNode {
     /// To avoid using NodeId (which is 8 bytes), instead index into the respective `Lane::nodes` to
     /// then get the NodeId. Easy :) Goal is to keep the size of `SweepNode` super small.
     in_lane_idx: GeneralIndexType,
-    pull: Option<Pull>,
+    pull_balance: PullBalance,
     /// Indexing `edge_targets`. Indexed by `INCOMING` or `OUTGOING`.
     ports_start: [GeneralIndexType; 2],
     /// No node will have more than 255 incoming or outgoing edges ...
@@ -214,7 +196,7 @@ struct SweepGraph {
     /// Note: This only includes edges which stay within the lane.
     /// This is used to calculate the ordering number when reordering the non-fixed layer during the
     /// sweep.
-    edge_targets: Vec<SweepNodeId>,
+    edge_targets: Vec<(SweepNodeId, EdgeConnection)>,
 }
 
 impl SweepGraph {
@@ -291,9 +273,6 @@ impl SweepGraph {
                 i += 1;
 
                 // Keep track whether pull is top-wards (<0) or bottom-wards (>0).
-                let mut sf_balance = 0i8;
-                let mut mf_balance = 0i8;
-                let mut df_balance = 0i8;
                 {
                     // Do the port traversal once for incoming, ...
                     let ports_start = result.edge_targets.len();
@@ -303,16 +282,27 @@ impl SweepGraph {
                         let balance_correction =
                             match from.pool_and_lane().cmp(&node.pool_and_lane()) {
                                 Ordering::Equal => {
-                                    result.edge_targets.push(aux(from));
+                                    let edge_connection = if from.layer_id == node.layer_id {
+                                        EdgeConnection::Right
+                                    } else {
+                                        EdgeConnection::Both
+                                    };
+                                    result.edge_targets.push((aux(from), edge_connection));
                                     continue;
                                 }
                                 Ordering::Less => -1,
                                 Ordering::Greater => 1,
                             };
                         match &edge.flow_type {
-                            FlowType::MessageFlow(..) => mf_balance += balance_correction,
-                            FlowType::DataFlow(..) => df_balance += balance_correction,
-                            FlowType::SequenceFlow => sf_balance += balance_correction,
+                            FlowType::MessageFlow(..) => {
+                                sweep_node.pull_balance.mf_balance += balance_correction
+                            }
+                            FlowType::DataFlow(..) => {
+                                sweep_node.pull_balance.df_balance += balance_correction
+                            }
+                            FlowType::SequenceFlow => {
+                                sweep_node.pull_balance.sf_balance += balance_correction
+                            }
                         }
                     }
                     let ports_end = result.edge_targets.len();
@@ -326,29 +316,42 @@ impl SweepGraph {
                     for outgoing in node.outgoing.iter().cloned() {
                         let edge = &e!(outgoing);
                         let to = &n!(edge.to);
+
+                        // Record all the edges.
+                        if !node.is_snake_edge_bisect_dummy() {
+                            let edge_connection =
+                                if edge.stays_within_lane && node.layer_id != to.layer_id {
+                                    EdgeConnection::Both
+                                } else {
+                                    EdgeConnection::Left
+                                };
+                            edge_collection.insert((outgoing, edge_connection));
+                        }
+
                         let balance_correction = match to.pool_and_lane().cmp(&node.pool_and_lane())
                         {
                             Ordering::Equal => {
-                                result.edge_targets.push(aux(to));
+                                let edge_connection = if to.layer_id == node.layer_id {
+                                    EdgeConnection::Left
+                                } else {
+                                    EdgeConnection::Both
+                                };
+                                result.edge_targets.push((aux(to), edge_connection));
                                 continue;
                             }
                             Ordering::Less => -1,
                             Ordering::Greater => 1,
                         };
                         match &edge.flow_type {
-                            FlowType::MessageFlow(..) => mf_balance += balance_correction,
-                            FlowType::DataFlow(..) => df_balance += balance_correction,
-                            FlowType::SequenceFlow => sf_balance += balance_correction,
-                        }
-
-                        // Additionally, record all the edges.
-                        if !node.is_snake_edge_bisect_dummy() {
-                            let edge_connection = if e!(outgoing).stays_within_lane {
-                                EdgeConnection::Both
-                            } else {
-                                EdgeConnection::Left
-                            };
-                            edge_collection.insert((outgoing, edge_connection));
+                            FlowType::MessageFlow(..) => {
+                                sweep_node.pull_balance.mf_balance += balance_correction
+                            }
+                            FlowType::DataFlow(..) => {
+                                sweep_node.pull_balance.df_balance += balance_correction
+                            }
+                            FlowType::SequenceFlow => {
+                                sweep_node.pull_balance.sf_balance += balance_correction
+                            }
                         }
                     }
                     let ports_end = result.edge_targets.len();
@@ -356,16 +359,6 @@ impl SweepGraph {
                     sweep_node.ports_len[OUTGOING] =
                         (ports_end - ports_start).try_into().expect("");
                 }
-                // DFs have the least priority, SFs the most.
-                sweep_node.pull = match (sf_balance, mf_balance, df_balance) {
-                    (0, 0, 0) => None,
-                    (0, 0, _) if df_balance > 0 => Some(Pull::BottomWardsDf),
-                    (0, 0, _) => Some(Pull::TopWardsDf),
-                    (0, _, _) if mf_balance > 0 => Some(Pull::BottomWardsMf),
-                    (0, _, _) => Some(Pull::TopWardsMf),
-                    (_, _, _) if sf_balance > 0 => Some(Pull::BottomWardsSf),
-                    (_, _, _) => Some(Pull::TopWardsSf),
-                };
                 result.nodes.push(sweep_node);
             }
             if let Some(next_layer) = layer_it.peek() {
@@ -373,7 +366,10 @@ impl SweepGraph {
                     let node = &n!(*node_id);
                     if !node.is_snake_edge_bisect_dummy() {
                         for incoming in node.incoming.iter().cloned() {
-                            let edge_connection = if e!(incoming).stays_within_lane {
+                            let edge = &e!(incoming);
+                            let edge_connection = if edge.stays_within_lane
+                                && n!(edge.from).layer_id != node.layer_id
+                            {
                                 EdgeConnection::Both
                             } else {
                                 EdgeConnection::Right
@@ -427,12 +423,12 @@ impl SweepGraph {
 #[derive(PartialEq, Eq, Hash)]
 struct SweepSolutionNode {
     in_lane_idx: GeneralIndexType,
-    layer_position: u8,
+    layer_position_just_for_sorting: u8,
 }
 
 #[derive(PartialEq, Eq)]
 struct SingleLaneSweepSolution {
-    layers: Vec<Vec<SweepSolutionNode>>,
+    sorted_layers: Vec</* sorted by layer_position: */ Vec<SweepSolutionNode>>,
     /// TODO is this useful at all?
     layers_crossing_count: Vec<CrossingCount>,
     /// Sum over `layers_crossing_count`.
@@ -442,17 +438,19 @@ struct SingleLaneSweepSolution {
 impl SingleLaneSweepSolution {
     fn new(sweep_graph: &SweepGraph) -> Self {
         Self {
-            layers: sweep_graph
+            sorted_layers: sweep_graph
                 .layers
                 .iter()
                 .map(|layer| {
-                    sweep_graph.nodes[layer.start as usize..layer.end as usize]
+                    let mut nodes = sweep_graph.nodes[layer.start as usize..layer.end as usize]
                         .iter()
                         .map(|sweep_node| SweepSolutionNode {
                             in_lane_idx: sweep_node.in_lane_idx,
-                            layer_position: sweep_node.layer_position,
+                            layer_position_just_for_sorting: sweep_node.layer_position,
                         })
-                        .collect::<Vec<_>>()
+                        .collect::<Vec<_>>();
+                    nodes.sort_unstable_by_key(|n| n.layer_position_just_for_sorting);
+                    nodes
                 })
                 .collect::<Vec<_>>(),
             layers_crossing_count: sweep_graph.layers_crossing_count.to_owned(),
@@ -465,7 +463,7 @@ impl SingleLaneSweepSolution {
 /// a cache variable.
 impl Hash for SingleLaneSweepSolution {
     fn hash<H: Hasher>(&self, state: &mut H) {
-        self.layers.hash(state);
+        self.sorted_layers.hash(state);
     }
 }
 
@@ -525,6 +523,7 @@ pub fn reduce_all_crossings_sweep(graph: &mut Graph) {
     }
     let mut sweep_buffers = SweepBuffers::default();
     let mut debug_output = String::new();
+    let mut all_best_versions = Vec::new();
     for pool_idx in 0..graph.pools.len() {
         for lane_idx in 0..graph.pools[pool_idx].lanes.len() {
             let pool_lane = PoolAndLane {
@@ -532,16 +531,45 @@ pub fn reduce_all_crossings_sweep(graph: &mut Graph) {
                 lane: LaneId(lane_idx),
             };
             let sweep_graph = SweepGraph::new(graph, pool_lane);
-            left_right_sweeps(
+            let best_versions = left_right_sweeps(
                 graph,
                 pool_lane,
-                &graph.pools[pool_lane.pool].lanes[pool_lane.lane],
                 sweep_graph,
                 &constraint_map,
                 &mut sweep_buffers,
                 &mut debug_output,
             );
             debug_output.push_str(", ");
+            all_best_versions.push(best_versions);
+        }
+    }
+    println!("{debug_output}");
+
+    // TODO at this location, if there is a lane with multiple best solutions, one would need to
+    // test them all out.
+    {}
+
+    let mut best_it = all_best_versions.iter();
+    for (pool_idx, pool) in graph.pools.iter().enumerate() {
+        for (lane_idx, lane) in pool.lanes.iter().enumerate() {
+            let best_solutions = best_it.next().unwrap();
+            if best_solutions.solutions.len() > 1 {
+                println!(
+                    "p({})/l({}) has {} solutions, taking some random one",
+                    pool_idx,
+                    lane_idx,
+                    best_solutions.solutions.len()
+                );
+            }
+            let solution = best_solutions.solutions.iter().next().unwrap();
+            for sorted_layer in &solution.sorted_layers {
+                sorted_layer.array_windows().for_each(|[above, below]| {
+                    let above_node_id = lane.nodes[above.in_lane_idx as usize];
+                    let below_node_id = lane.nodes[below.in_lane_idx as usize];
+                    graph.nodes[above_node_id].node_below_in_same_lane = Some(below_node_id);
+                    graph.nodes[below_node_id].node_above_in_same_lane = Some(above_node_id);
+                });
+            }
         }
     }
 }
@@ -549,12 +577,11 @@ pub fn reduce_all_crossings_sweep(graph: &mut Graph) {
 fn left_right_sweeps(
     graph: &Graph,
     pool_lane: PoolAndLane,
-    lane: &Lane,
     mut sweep_graph: SweepGraph,
     constraint_map: &ConstraintMap,
     sweep_buffers: &mut SweepBuffers,
     debug_output: &mut String,
-) {
+) -> SingleLaneSweepSolutions {
     let mut best_versions = SingleLaneSweepSolutions::default();
     debug_output.push_str(&format!("p({})/l({}) ", pool_lane.pool.0, pool_lane.lane.0));
     // Pull is taken into account only in the first iterations. If there are pulls from parallel
@@ -564,16 +591,21 @@ fn left_right_sweeps(
         let mut num_iterations = 0;
         for i in 0..6 {
             num_iterations = i;
-            let something_changed = right_sweep(
-                graph,
-                pool_lane,
-                lane,
-                &mut sweep_graph,
-                &mut best_versions,
-                sweep_buffers,
-                mind_the_pull,
-                constraint_map,
-            );
+            let mut something_changed = false;
+            for is_right_sweep in [true, false] {
+                let something_changed_local = one_direction_sweep(
+                    graph,
+                    pool_lane,
+                    &mut sweep_graph,
+                    &mut best_versions,
+                    sweep_buffers,
+                    mind_the_pull,
+                    is_right_sweep,
+                    constraint_map,
+                );
+                // Don't inline! Otherwise, it would short-circuit.
+                something_changed = something_changed || something_changed_local;
+            }
             if !something_changed {
                 break;
             }
@@ -581,6 +613,7 @@ fn left_right_sweeps(
         debug_output.push_str(&format!("{num_iterations} "));
     }
     //
+    best_versions
 }
 
 #[derive(Default)]
@@ -606,19 +639,24 @@ impl SweepBuffers {
 }
 
 /// Classical left-right sweep.
-fn right_sweep(
+fn one_direction_sweep(
     graph: &Graph,
     pool_lane: PoolAndLane,
-    lane: &Lane,
     sweep_graph: &mut SweepGraph,
     best_versions: &mut SingleLaneSweepSolutions,
     sweep_buffers: &mut SweepBuffers,
     mind_the_pull: bool,
+    is_right_sweep: bool,
     constraint_map: &ConstraintMap,
 ) -> bool {
     sweep_buffers.new_sweep_direction();
     let mut something_changed = false;
-    for i in 0..sweep_graph.layers.len() {
+    let layer_idx_iter = if is_right_sweep {
+        Either::Left(0..sweep_graph.layers.len())
+    } else {
+        Either::Right((0..sweep_graph.layers.len()).rev())
+    };
+    for i in layer_idx_iter {
         let current_position = Coord3 {
             pool_and_lane: pool_lane,
             layer: LayerId(i),
@@ -627,7 +665,7 @@ fn right_sweep(
             graph,
             sweep_graph,
             &current_position,
-            /* is_right_sweep */ true,
+            is_right_sweep,
             mind_the_pull,
             constraint_map
                 .get(&current_position)
@@ -637,7 +675,63 @@ fn right_sweep(
 
         let (ccount1, ccount2) = count_crossings_three_layers(
             graph,
-            lane,
+            &lane!(pool_lane),
+            i.checked_sub(1)
+                .map(|idx| &sweep_graph.nodes[sweep_graph.layers[idx].as_range()])
+                .unwrap_or(&[]),
+            &sweep_graph.nodes[sweep_graph.layers[i].as_range()],
+            sweep_graph
+                .layers
+                .get(i + 1)
+                .map(|range| &sweep_graph.nodes[range.as_range()])
+                .unwrap_or(&[]),
+            &sweep_graph.edges[sweep_graph.edge_layers[i].as_range()],
+            sweep_graph
+                .edge_layers
+                .get(i + 1)
+                .map(|range| &sweep_graph.edges[range.as_range()])
+                .unwrap_or(&[]),
+            sweep_buffers,
+        );
+        sweep_graph.layers_crossing_count[i] = ccount1;
+        sweep_graph.layers_crossing_count[i + 1] = ccount2;
+        something_changed = best_versions.maybe_add(sweep_graph);
+    }
+    something_changed
+}
+
+/// Classical right-left sweep.
+fn left_sweep(
+    graph: &Graph,
+    pool_lane: PoolAndLane,
+    sweep_graph: &mut SweepGraph,
+    best_versions: &mut SingleLaneSweepSolutions,
+    sweep_buffers: &mut SweepBuffers,
+    mind_the_pull: bool,
+    constraint_map: &ConstraintMap,
+) -> bool {
+    sweep_buffers.new_sweep_direction();
+    let mut something_changed = false;
+    for i in (0..sweep_graph.layers.len()).rev() {
+        let current_position = Coord3 {
+            pool_and_lane: pool_lane,
+            layer: LayerId(i),
+        };
+        one_layer::run(
+            graph,
+            sweep_graph,
+            &current_position,
+            /* is_right_sweep */ false,
+            mind_the_pull,
+            constraint_map
+                .get(&current_position)
+                .map(|v| v.as_slice())
+                .unwrap_or_default(),
+        );
+
+        let (ccount1, ccount2) = count_crossings_three_layers(
+            graph,
+            &lane!(pool_lane),
             i.checked_sub(1)
                 .map(|idx| &sweep_graph.nodes[sweep_graph.layers[idx].as_range()])
                 .unwrap_or(&[]),

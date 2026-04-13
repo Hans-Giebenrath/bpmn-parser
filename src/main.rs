@@ -1,6 +1,5 @@
 #![feature(map_try_insert)]
 #![feature(never_type)]
-#![feature(array_windows)]
 
 mod analysis;
 mod common;

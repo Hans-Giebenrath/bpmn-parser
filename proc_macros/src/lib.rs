@@ -125,3 +125,15 @@ pub fn target_nodes(input: TokenStream) -> TokenStream {
 
     TokenStream::from(expanded)
 }
+
+/// Usage: `&lane!(pool_lane)`
+#[proc_macro]
+pub fn lane(input: TokenStream) -> TokenStream {
+    let pool_lane_expr: Expr = parse_macro_input!(input as Expr);
+
+    let expanded = quote! {
+        graph.pools[#pool_lane_expr.pool].lanes[#pool_lane_expr.lane]
+    };
+
+    TokenStream::from(expanded)
+}
