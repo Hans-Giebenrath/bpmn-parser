@@ -52,8 +52,6 @@ pub fn run(
     unconstrained.extend(state.constrained_list.iter().copied());
     state.constrained_list.clear();
 
-    dbg!(&state.merge_nodes);
-    dbg!(&unconstrained);
     unconstrained.sort_by(|&a, &b| {
         // DFs have the least priority, SFs the most.
         let (a, b) = (&state.merge_nodes[a], &state.merge_nodes[b]);
@@ -71,7 +69,6 @@ pub fn run(
             ))
             .unwrap()
     });
-    dbg!(&unconstrained);
 
     // Finished - now just assign the positions.
     let mut i = 0;
@@ -81,7 +78,7 @@ pub fn run(
             .iter()
             .cloned()
         {
-            sweep_graph.nodes[dbg!(sweep_node_id)].layer_position = dbg!(i);
+            sweep_graph.nodes[sweep_node_id].layer_position = i;
             i += 1;
         }
     }

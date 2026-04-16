@@ -407,12 +407,9 @@ impl SweepGraph {
                     .unwrap_or(&[]),
                 &result.edges
                     [result.edge_layers[i].start as usize..result.edge_layers[i].end as usize],
-                &mut sweep_buffers,
-                true,
-            );
-            std::mem::swap(
+                &mut sweep_buffers.sort_buffer_0,
                 &mut sweep_buffers.sort_buffer_1,
-                &mut sweep_buffers.sort_buffer_2,
+                &mut sweep_buffers.positions_buffer,
             );
             result.layers_crossing_count.push(ccount);
         }
@@ -511,7 +508,6 @@ impl SingleLaneSweepSolutions {
 type ConstraintMap = HashMap<Coord3, Vec<Above>>;
 
 pub fn reduce_all_crossings_sweep(graph: &mut Graph) {
-    dbg!(&graph);
     let mut constraint_map = ConstraintMap::new();
     for above_constraint in &graph.layout_constraints.above {
         let coord3 = n!(above_constraint.above).coord3();
@@ -590,7 +586,7 @@ fn left_right_sweeps(
     // the situation pan out after applying the pull as well.
     for mind_the_pull in [true, false] {
         let mut num_iterations = 0;
-        for i in 0..1 {
+        for i in 0..6 {
             num_iterations = i;
             let mut something_changed = false;
             for is_right_sweep in [true, false] {
@@ -620,6 +616,7 @@ fn left_right_sweeps(
 #[derive(Default)]
 struct SweepBuffers {
     positions_buffer: Vec<Positions>,
+    sort_buffer_0: Vec<(NodeId, /* idx within &[SweepNode] */ usize)>,
     sort_buffer_1: Vec<(NodeId, /* idx within &[SweepNode] */ usize)>,
     sort_buffer_2: Vec<(NodeId, /* idx within &[SweepNode] */ usize)>,
     /// In the simple case we could just update the `SweepNode::layer_position` as we go through
@@ -632,27 +629,11 @@ struct SweepBuffers {
 }
 
 impl SweepBuffers {
-    fn new_sweep_direction(&mut self, lane: &Lane, nodes: &[SweepNode], is_right_sweep: bool) {
+    fn new_sweep_direction(&mut self) {
+        self.sort_buffer_0.clear();
         self.sort_buffer_1.clear();
         self.sort_buffer_2.clear();
         self.xyz_center_buffer.clear();
-        if is_right_sweep {
-            self.sort_buffer_1.clear();
-            for (idx, nprev) in nodes.iter().enumerate() {
-                self.sort_buffer_1
-                    .push((lane.nodes[nprev.in_lane_idx as usize], idx));
-            }
-            self.sort_buffer_1
-                .sort_by_key(|(_, idx)| nodes[*idx].layer_position);
-        } else {
-            self.sort_buffer_2.clear();
-            for (idx, ncurrent) in nodes.iter().enumerate() {
-                self.sort_buffer_2
-                    .push((lane.nodes[ncurrent.in_lane_idx as usize], idx));
-            }
-            self.sort_buffer_2
-                .sort_by_key(|(_, idx)| nodes[*idx].layer_position);
-        }
     }
 }
 
@@ -669,26 +650,12 @@ fn one_direction_sweep(
 ) -> bool {
     let mut something_changed = false;
     let lane = &lane!(pool_lane);
-    let (first_layer, layer_idx_iter) = if is_right_sweep {
-        (0, Either::Left(0..sweep_graph.layers.len()))
+    let layer_idx_iter = if is_right_sweep {
+        Either::Left(0..sweep_graph.layers.len())
     } else {
-        (
-            sweep_graph.layers.len() - 1,
-            Either::Right((0..sweep_graph.layers.len()).rev()),
-        )
+        Either::Right((0..sweep_graph.layers.len()).rev())
     };
-    sweep_buffers.new_sweep_direction(
-        lane,
-        &sweep_graph.nodes[sweep_graph.layers[first_layer].as_range()],
-        is_right_sweep,
-    );
-    dbg!(
-        is_right_sweep,
-        &sweep_graph.nodes[sweep_graph.layers[0].as_range()],
-        &sweep_graph.nodes[sweep_graph.layers[sweep_graph.layers.len() - 1].as_range()]
-    );
-    dbg!(&sweep_buffers.sort_buffer_1);
-    dbg!(&sweep_buffers.sort_buffer_2);
+    sweep_buffers.new_sweep_direction();
     for i in layer_idx_iter {
         let current_position = Coord3 {
             pool_and_lane: pool_lane,
@@ -705,9 +672,6 @@ fn one_direction_sweep(
                 .map(|v| v.as_slice())
                 .unwrap_or_default(),
         );
-        dbg!(i, is_right_sweep);
-        dbg!(&sweep_buffers.sort_buffer_1);
-        dbg!(&sweep_buffers.sort_buffer_2);
         let (ccount1, ccount2) = count_crossings_three_layers(
             graph,
             lane,
@@ -727,11 +691,10 @@ fn one_direction_sweep(
                 .map(|range| &sweep_graph.edges[range.as_range()])
                 .unwrap_or(&[]),
             sweep_buffers,
-            is_right_sweep,
         );
         sweep_graph.layers_crossing_count[i] = ccount1;
         sweep_graph.layers_crossing_count[i + 1] = ccount2;
-        something_changed = dbg!(best_versions.maybe_add(sweep_graph));
+        something_changed = best_versions.maybe_add(sweep_graph);
     }
     something_changed
 }
@@ -748,70 +711,28 @@ fn count_crossings_three_layers(
     edges_1: &[(EdgeId, EdgeConnection)],
     edges_2: &[(EdgeId, EdgeConnection)],
     sweep_buffers: &mut SweepBuffers,
-    is_right_sweep: bool,
 ) -> (CrossingCount, CrossingCount) {
-    let keep_left_else_right = is_right_sweep;
-    if is_right_sweep {
-        let left_crossing_count = count_all_crossings_between_two_layers(
-            graph,
-            lane,
-            left,
-            middle,
-            edges_1,
-            sweep_buffers,
-            keep_left_else_right,
-        );
-        std::mem::swap(
-            // `2` is sorted already (`middle`). Move that into `1`.
-            &mut sweep_buffers.sort_buffer_2,
-            &mut sweep_buffers.sort_buffer_1,
-        );
-        let right_crossing_count = count_all_crossings_between_two_layers(
-            graph,
-            lane,
-            middle,
-            right,
-            edges_2,
-            sweep_buffers,
-            keep_left_else_right,
-        );
-        // Ensure that the post-condition holds.
-        std::mem::swap(
-            &mut sweep_buffers.sort_buffer_2,
-            &mut sweep_buffers.sort_buffer_1,
-        );
-        (left_crossing_count, right_crossing_count)
-    } else {
-        let left_crossing_count = count_all_crossings_between_two_layers(
-            graph,
-            lane,
-            middle,
-            right,
-            edges_1,
-            sweep_buffers,
-            keep_left_else_right,
-        );
-        std::mem::swap(
-            // `2` is sorted already (`middle`). Move that into `1`.
-            &mut sweep_buffers.sort_buffer_2,
-            &mut sweep_buffers.sort_buffer_1,
-        );
-        let right_crossing_count = count_all_crossings_between_two_layers(
-            graph,
-            lane,
-            left,
-            middle,
-            edges_2,
-            sweep_buffers,
-            keep_left_else_right,
-        );
-        // Ensure that the post-condition holds.
-        std::mem::swap(
-            &mut sweep_buffers.sort_buffer_2,
-            &mut sweep_buffers.sort_buffer_1,
-        );
-        (left_crossing_count, right_crossing_count)
-    }
+    let left_crossing_count = count_all_crossings_between_two_layers(
+        graph,
+        lane,
+        left,
+        middle,
+        edges_1,
+        &mut sweep_buffers.sort_buffer_0,
+        &mut sweep_buffers.sort_buffer_1,
+        &mut sweep_buffers.positions_buffer,
+    );
+    let right_crossing_count = count_all_crossings_between_two_layers(
+        graph,
+        lane,
+        middle,
+        right,
+        edges_2,
+        &mut sweep_buffers.sort_buffer_0,
+        &mut sweep_buffers.sort_buffer_1,
+        &mut sweep_buffers.positions_buffer,
+    );
+    (left_crossing_count, right_crossing_count)
 }
 
 fn count_all_crossings_between_two_layers(
@@ -820,40 +741,30 @@ fn count_all_crossings_between_two_layers(
     prev: &[SweepNode],
     current: &[SweepNode],
     edges: &[(EdgeId, EdgeConnection)],
-    sweep_buffers: &mut SweepBuffers,
-    keep_left_else_right: bool,
+    // TODO there can be a bit of optimization here to avoid duplicate sorting. But it was too much
+    // fiddling for me atm.
+    sort_buffer_prev: &mut Vec<(NodeId, /* idx within &[SweepNode] */ usize)>,
+    sort_buffer_current: &mut Vec<(NodeId, /* idx within &[SweepNode] */ usize)>,
+    positions_buffer: &mut Vec<Positions>,
 ) -> CrossingCount {
-    // Thing is, in a sweep we look at overlapping windows of three layers (where the middle one
-    // is shuffled). Hence, we can usually reuse the reordering. Should save roughly half of the
-    // re-orderings.
-    if !keep_left_else_right {
-        sweep_buffers.sort_buffer_1.clear();
-        for (idx, nprev) in prev.iter().enumerate() {
-            sweep_buffers
-                .sort_buffer_1
-                .push((lane.nodes[nprev.in_lane_idx as usize], idx));
-        }
-        sweep_buffers
-            .sort_buffer_1
-            .sort_by_key(|(_, idx)| prev[*idx].layer_position);
-    } else {
-        sweep_buffers.sort_buffer_2.clear();
-        for (idx, ncurrent) in current.iter().enumerate() {
-            sweep_buffers
-                .sort_buffer_2
-                .push((lane.nodes[ncurrent.in_lane_idx as usize], idx));
-        }
-        sweep_buffers
-            .sort_buffer_2
-            .sort_by_key(|(_, idx)| current[*idx].layer_position);
+    sort_buffer_prev.clear();
+    for (idx, nprev) in prev.iter().enumerate() {
+        sort_buffer_prev.push((lane.nodes[nprev.in_lane_idx as usize], idx));
     }
+    sort_buffer_prev.sort_by_key(|(_, idx)| prev[*idx].layer_position);
+
+    sort_buffer_current.clear();
+    for (idx, ncurrent) in current.iter().enumerate() {
+        sort_buffer_current.push((lane.nodes[ncurrent.in_lane_idx as usize], idx));
+    }
+    sort_buffer_current.sort_by_key(|(_, idx)| current[*idx].layer_position);
 
     count_all_crossings_between_two_layers_inner(
         edges,
-        &mut sweep_buffers.positions_buffer,
+        positions_buffer,
         graph,
-        &sweep_buffers.sort_buffer_1,
-        &sweep_buffers.sort_buffer_2,
+        sort_buffer_prev,
+        sort_buffer_current,
     )
 }
 #[derive(Clone, Copy)]
