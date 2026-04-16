@@ -52,6 +52,8 @@ pub fn run(
     unconstrained.extend(state.constrained_list.iter().copied());
     state.constrained_list.clear();
 
+    dbg!(&state.merge_nodes);
+    dbg!(&unconstrained);
     unconstrained.sort_by(|&a, &b| {
         // DFs have the least priority, SFs the most.
         let (a, b) = (&state.merge_nodes[a], &state.merge_nodes[b]);
@@ -69,18 +71,20 @@ pub fn run(
             ))
             .unwrap()
     });
+    dbg!(&unconstrained);
 
     // Finished - now just assign the positions.
-    state
-        .merge_nodes
-        .iter()
-        .filter(|mn| mn.alive)
-        .flat_map(|mn| mn.ordered_nodes.iter())
-        .cloned()
-        .enumerate()
-        .for_each(|(position, sweep_node_id)| {
-            sweep_graph.nodes[sweep_node_id].layer_position = position.try_into().unwrap()
-        });
+    let mut i = 0;
+    for merge_node_idx in unconstrained.iter().cloned() {
+        for sweep_node_id in state.merge_nodes[merge_node_idx]
+            .ordered_nodes
+            .iter()
+            .cloned()
+        {
+            sweep_graph.nodes[dbg!(sweep_node_id)].layer_position = dbg!(i);
+            i += 1;
+        }
+    }
 }
 
 impl P3Layer {
