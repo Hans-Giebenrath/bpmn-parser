@@ -10,7 +10,10 @@ X Xinner start ->m ->n
 
 X Xinner end <-M ->A
 
-- Task b  <-b ->A
+- Task b  <-b
+- Task c
+- Task d
+- Task e  ->A
 
 X Xouter end <-A
 . end

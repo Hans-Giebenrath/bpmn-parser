@@ -16,8 +16,9 @@ run() {
     if $release; then
         dir=release
     fi
-    echo time timeout 3s "${CARGO_TARGET_DIR:-./target}"/$dir/bpmn-parser "$@"
+    set -x
     time timeout 3s "${CARGO_TARGET_DIR:-./target}"/$dir/bpmn-parser "$@" 2>&1
+    set +x
 }
 
 basename=$(basename "$f" .bpmd)
