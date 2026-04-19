@@ -4,10 +4,10 @@ use crate::common::graph::EdgeId;
 use crate::common::graph::Graph;
 use crate::common::graph::LaneId;
 use crate::common::graph::MAX_NODE_HEIGHT;
+use crate::common::graph::NodeId;
 use crate::common::graph::PoolId;
 use crate::common::lane::Lane;
 use crate::common::node::BendDummyKind;
-use crate::common::node::LayerId;
 use crate::common::node::Node;
 use crate::common::node::NodePhaseAuxData;
 use crate::common::node::NodeType;
@@ -20,6 +20,18 @@ use proc_macros::to;
 #[derive(Debug)]
 pub struct XyIlpNodeData {
     var: Variable,
+}
+
+struct DiffVar {
+    // Makes comparison easier.
+    min_id: NodeId,
+    max_id: NodeId,
+    diff_var: Variable,
+    edge_weight: f64,
+    active: bool,
+    edge_id: EdgeId,
+    from_id: NodeId,
+    to_id: NodeId,
 }
 
 // TODO should solve the ILP for every lane independently.
@@ -137,10 +149,12 @@ fn assign_y(graph: &mut Graph, pool: PoolId, lane: LaneId, min_y_value: usize) -
     {
         assert!(!edge.is_replaced_by_dummies());
 
+        // TODO gateway nodes seem to be picky about this height diff minimization in microlp, so
+        // remove gateways if possible. But the bend-dummy and the other node should be fixed to the
+        // same y coordinate as well, hence between those the diff stuff should be removed as well.
         let diff_var = vars.add(variable().min(0.0));
-        if !n!(edge.from).is_gateway() && !n!(edge.to).is_gateway() {
-            diff_vars.push((edge.from.0, edge.to.0, diff_var));
-        }
+
+        let active = !n!(edge.from).is_gateway() && !n!(edge.to).is_gateway();
         // Maybe it should just check for the same layer ...
         let is_same_layer = n!(edge.from).layer_id == n!(edge.to).layer_id;
 
@@ -157,15 +171,17 @@ fn assign_y(graph: &mut Graph, pool: PoolId, lane: LaneId, min_y_value: usize) -
             // the bend dummy node and the neighboring node.
             edge_weight *= 0.1;
         }
+        diff_vars.push(DiffVar {
+            edge_id,
+            from_id: edge.from,
+            to_id: edge.to,
+            min_id: std::cmp::min(edge.from, edge.to),
+            max_id: std::cmp::max(edge.from, edge.to),
+            diff_var,
+            active,
+            edge_weight,
+        });
         objective += diff_var * edge_weight;
-        d!(eprintln!(
-            "minimize edge y height: {edge_weight} * e({} | {} -> {} / \"{}\" -> \"{}\")",
-            edge_id.0,
-            edge.from.0,
-            edge.to.0,
-            n!(edge.from).display_text_or_dummy_kind(),
-            n!(edge.to).display_text_or_dummy_kind(),
-        ));
     }
 
     // We want to balance gateway nodes between their outgoing/incoming branching nodes of the same
@@ -205,6 +221,7 @@ fn assign_y(graph: &mut Graph, pool: PoolId, lane: LaneId, min_y_value: usize) -
             gateway,
             gateway.incoming.iter(),
             |edge_id| target_node(&from!(*edge_id)),
+            &mut diff_vars,
         );
         handle_gateway_neighbor_layer_connectivity(
             graph,
@@ -214,6 +231,7 @@ fn assign_y(graph: &mut Graph, pool: PoolId, lane: LaneId, min_y_value: usize) -
             gateway,
             gateway.outgoing.iter(),
             |edge_id| target_node(&to!(*edge_id)),
+            &mut diff_vars,
         );
     }
 
@@ -272,9 +290,29 @@ fn assign_y(graph: &mut Graph, pool: PoolId, lane: LaneId, min_y_value: usize) -
     });
 
     // Helper construct to resolve the minimization of |from.y - to.y|
-    for (from_idx, to_idx, diff_var) in diff_vars.iter() {
-        let from_node = &graph.nodes[*from_idx];
-        let to_node = &graph.nodes[*to_idx];
+    for DiffVar {
+        diff_var,
+        edge_weight,
+        active,
+        edge_id,
+        from_id,
+        to_id,
+        ..
+    } in diff_vars.iter()
+    {
+        if !active {
+            continue;
+        }
+        let from_node = &graph.nodes[*from_id];
+        let to_node = &graph.nodes[*to_id];
+        d!(eprintln!(
+            "minimize edge y height: {edge_weight} * e({} | {} -> {} / \"{}\" -> \"{}\")",
+            edge_id.0,
+            from_id.0,
+            to_id.0,
+            from_node.display_text_or_dummy_kind(),
+            to_node.display_text_or_dummy_kind(),
+        ));
         let from_var = aux(from_node);
         let to_var = aux(to_node);
         let from_y = from_var + (from_node.height / 2) as f64;
@@ -378,7 +416,7 @@ where
     }
 }
 
-pub fn handle_gateway_neighbor_layer_connectivity<'a, I, F>(
+fn handle_gateway_neighbor_layer_connectivity<'a, I, F>(
     graph: &Graph,
     lane: &Lane,
     vars: &mut ProblemVariables,
@@ -386,6 +424,7 @@ pub fn handle_gateway_neighbor_layer_connectivity<'a, I, F>(
     gateway: &Node,
     iter: I,
     pred_bend_from_gateway_to_same_lane: F,
+    diff_vars: &mut [DiffVar],
 ) where
     I: DoubleEndedIterator<Item = &'a EdgeId> + Clone,
     F: FnMut(I::Item) -> Option<&'a Node>,
@@ -396,6 +435,16 @@ pub fn handle_gateway_neighbor_layer_connectivity<'a, I, F>(
             // The bend node shall stay on the same height as the gateway node, so the edge leaves
             // nicely at the right corner of the gateway symbol.
             cached_constraints.push((aux(gateway) - aux(node)).eq(0.0));
+
+            let id1 = std::cmp::min(gateway.id, node.id);
+            let id2 = std::cmp::max(gateway.id, node.id);
+            // Activate the diff_var for this edge. Previously it was deactivated because it was
+            // connected to a gateway, but it is the only edge.
+            diff_vars
+                .iter_mut()
+                .find(|diff_var| diff_var.min_id == id1 && diff_var.max_id == id2)
+                .unwrap()
+                .active = true;
             d!(eprintln!(
                 "gateway fix only same-lane bend node to same y coordinage: gateway node({}) - bend node({})",
                 gateway.id.0, node.id.0,

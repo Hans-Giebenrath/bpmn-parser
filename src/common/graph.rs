@@ -152,7 +152,7 @@ pub(crate) enum StartAt {
 
 /// A Newtype to make sure that code outside of the module does not modify its value.
 /// The invariant is that every created NodeId does point to some existing node.
-#[derive(PartialEq, Default, Clone, Debug, Copy, Hash, Eq)]
+#[derive(PartialEq, Default, Clone, Debug, Copy, Hash, Eq, PartialOrd, Ord)]
 pub struct NodeId(pub usize);
 
 #[derive(PartialEq, Default, Clone, Debug, Copy, Hash, Eq, Ord, PartialOrd)]

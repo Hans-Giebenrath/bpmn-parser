@@ -1,16 +1,16 @@
 # start
-X ->a ->b
+X Xouter start ->a ->b
 
 - task a  <-a
-X ->m ->n
+X Xinner start ->m ->n
 
 - task m  <-m ->M
 
 - task n  <-n ->M
 
-X <-M ->A
+X Xinner end <-M ->A
 
 - Task b  <-b ->A
 
-X <-A
+X Xouter end <-A
 . end
