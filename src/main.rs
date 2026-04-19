@@ -1,5 +1,4 @@
-#![feature(map_try_insert)]
-#![feature(never_type)]
+#![allow(clippy::too_many_arguments)]
 
 mod analysis;
 mod common;

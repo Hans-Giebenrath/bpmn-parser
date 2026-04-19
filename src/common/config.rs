@@ -71,23 +71,23 @@ define_config!(
     dummy_node_y_padding: usize = 20,
     regular_node_y_padding: usize = 30,
     /// Spanning zero layers.
-    same_layer_sequence_flow_weight: f64 = 0.1,
+    same_layer_sequence_flow_weight: f64 = 0.125,
     /// Spanning one layer.
-    short_sequence_flow_weight: f64 = 10.0,
+    short_sequence_flow_weight: f64 = 8.0,
     /// Spanning only zero or one layer.
-    short_data_flow_weight: f64 = 0.01,
+    short_data_flow_weight: f64 = 1.0,
     /// At least spanning two layers.
     /// 3 x short_sequence_flow_weight
-    long_sequence_flow_weight: f64 = 30.0,
+    long_sequence_flow_weight: f64 = 32.0,
     /// At least spanning two layers.
     /// 30 x short_data_flow_weight
-    long_data_edge_weight: f64 = 0.3,
-    message_edge_weight: f64 = 0.01,
+    long_data_edge_weight: f64 = 0.5,
+    message_edge_weight: f64 = 0.015625,
     min_vertical_space_between_gateway_bendpoints: usize = 110,
 
     /// TODO The heuristic moves data nodes just at a good place according to the average distance of
     /// the recipients. Edge case: This could result in a large amount of data objects in the same
-    /// (half)layer. In the future a post-processing step should evenly distribute them to neighboring
+    /// (half)layer. In the future a postprocessing step should evenly distribute them to neighboring
     /// layers. Since this is in practice rather uncommon, it is not implemented, yet.
     max_nodes_per_layer: usize = 3,
 );

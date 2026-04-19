@@ -1,4 +1,5 @@
 * The edges which go straight up from a gateway need to be marked `is_vertical` even for those back edge dummy node cases. Right now they are not treated as vertical and thus get those funny wonks (but must check whether there *really* is no other obstacle in the way, gotta think which phase is the correct to determine that).
+* The gateway VerticalCollapsed should not happen on the branching side. On the non-branching side, where there is only one same-lane edge (regardless of those leaving the lane), it should just always go out straight to the side.
 * microlp seems to get stuck in an endless loop, find out why. might file an issue?
 
 * PE-BPMN tee-external-root-access in a tee-pool should not name itself (@tee-pool)
