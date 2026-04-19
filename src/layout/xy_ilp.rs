@@ -92,6 +92,11 @@ fn aux(node: &Node) -> Variable {
     }
 }
 
+#[track_caller]
+fn middle(node: &Node) -> Expression {
+    aux(node) + (node.height / 2) as f64
+}
+
 fn c<T: SolverModel>(problem: &mut T, constraint: Constraint) {
     //problem.add_constraint(dbg!(constraint));
     problem.add_constraint(constraint);
@@ -119,7 +124,8 @@ fn assign_y(graph: &mut Graph, pool: PoolId, lane: LaneId, min_y_value: usize) -
     // Keep the diagram height compact. Ensures that the solver does not stretch the diagram across
     // infinity.
     const HEIGHT_MINIMIZATION_FACTOR: f64 = 0.01;
-    let height_minimization_var = vars.add(variable().integer().min(0));
+    // NOT an integer variable!
+    let height_minimization_var = vars.add(variable().min(0));
     objective += HEIGHT_MINIMIZATION_FACTOR * height_minimization_var;
     d!(eprintln!(
         "height_minimization_var (HMV) factor: {HEIGHT_MINIMIZATION_FACTOR}"
@@ -133,7 +139,9 @@ fn assign_y(graph: &mut Graph, pool: PoolId, lane: LaneId, min_y_value: usize) -
 
         // Make sure nodes are nicely aligned at the top.
         let min_y_value = min_y_value + (MAX_NODE_HEIGHT - node.height) / 2;
-        let var = vars.add(variable().integer().min(min_y_value as f64));
+        // NOT an integer variable! Otherwise this lead to unsatisfiable problems with nested
+        // gateways (t0029.bpmd). We just round, this must be good enough.
+        let var = vars.add(variable().min(min_y_value as f64));
         node.aux = NodePhaseAuxData::XyIlpNodeData(XyIlpNodeData { var });
         d!(eprintln!("minimum y for n({}): {min_y_value}", node.id.0));
     }
@@ -154,7 +162,12 @@ fn assign_y(graph: &mut Graph, pool: PoolId, lane: LaneId, min_y_value: usize) -
         // same y coordinate as well, hence between those the diff stuff should be removed as well.
         let diff_var = vars.add(variable().min(0.0));
 
-        let active = !n!(edge.from).is_gateway() && !n!(edge.to).is_gateway();
+        let from_node = &n!(edge.from);
+        let to_node = &n!(edge.to);
+        // TODO verify if it is correct that only for bend dummies this is excluded.
+        // There is the case of back-loops and S-bisect dummies, I just need to test them.
+        let active = !((from_node.is_gateway() || to_node.is_gateway())
+            && (from_node.is_bend_dummy() || to_node.is_bend_dummy()));
         // Maybe it should just check for the same layer ...
         let is_same_layer = n!(edge.from).layer_id == n!(edge.to).layer_id;
 
@@ -301,6 +314,7 @@ fn assign_y(graph: &mut Graph, pool: PoolId, lane: LaneId, min_y_value: usize) -
     } in diff_vars.iter()
     {
         if !active {
+            //|| edge_id.0 == 28 || edge_id.0 == 1 {
             continue;
         }
         let from_node = &graph.nodes[*from_id];
@@ -331,9 +345,10 @@ fn assign_y(graph: &mut Graph, pool: PoolId, lane: LaneId, min_y_value: usize) -
     let mut max_y_plus_height_encountered = usize::MIN;
     for node_id in node_ids_iter.clone() {
         d!(eprintln!(
-            "solution n({}) y: {}",
+            "solution n({}) y: {} (non-rounded: {})",
             node_id.0,
             solution.value(aux(&n!(node_id))) as usize,
+            solution.value(aux(&n!(node_id))),
         ));
     }
     for node_id in node_ids_iter.clone() {
@@ -434,20 +449,23 @@ fn handle_gateway_neighbor_layer_connectivity<'a, I, F>(
         GatewayNeighborLayerConnectivity::OnlyOneSameLaneEdge(node) => {
             // The bend node shall stay on the same height as the gateway node, so the edge leaves
             // nicely at the right corner of the gateway symbol.
-            cached_constraints.push((aux(gateway) - aux(node)).eq(0.0));
+            cached_constraints.push((middle(gateway) - middle(node)).eq(0.0));
 
-            let id1 = std::cmp::min(gateway.id, node.id);
-            let id2 = std::cmp::max(gateway.id, node.id);
+            //let id1 = std::cmp::min(gateway.id, node.id);
+            //let id2 = std::cmp::max(gateway.id, node.id);
             // Activate the diff_var for this edge. Previously it was deactivated because it was
             // connected to a gateway, but it is the only edge.
-            diff_vars
-                .iter_mut()
-                .find(|diff_var| diff_var.min_id == id1 && diff_var.max_id == id2)
-                .unwrap()
-                .active = true;
+            //diff_vars
+            //    .iter_mut()
+            //    .find(|diff_var| diff_var.min_id == id1 && diff_var.max_id == id2)
+            //    .unwrap()
+            //    .active = true;
             d!(eprintln!(
-                "gateway fix only same-lane bend node to same y coordinage: gateway node({}) - bend node({})",
-                gateway.id.0, node.id.0,
+                "gateway fix lone same-lane bend node to same y coordinage: gateway node({}) - bend node({}) / \"{}\" - \"{}\"",
+                gateway.id.0,
+                node.id.0,
+                gateway.display_text_or_dummy_kind(),
+                node.display_text_or_dummy_kind()
             ));
             // TODO in principle it would be cool to make the connected edge a bit less rigid. The
             // other side of the gateway is expected to be branching, and to allow the gateway node
@@ -460,12 +478,8 @@ fn handle_gateway_neighbor_layer_connectivity<'a, I, F>(
             bottom_node,
         } => {
             // gateway == (top_node + bottom_node) / 2 <==> 2 * gateway - top_node - bottom_node == 0
-            cached_constraints.push(
-                (2.0 * (aux(gateway) + (gateway.height / 2) as f64)
-                    - (aux(top_node) + (top_node.height / 2) as f64)
-                    - (aux(bottom_node) + (top_node.height / 2) as f64))
-                    .eq(0.0),
-            );
+            cached_constraints
+                .push((2.0 * middle(gateway) - middle(top_node) - middle(bottom_node)).eq(0.0));
 
             // An additional constraint to ensure that the branches are not too close to the gateway
             // node, otherwise it looks awkward.
@@ -559,15 +573,9 @@ fn gateway_forbidden_offset_constraints(
     cached_constraints.push((z0 + zp + zm).eq(1));
 
     //  (1) `d >= min * z+ - max * z-`
-    cached_constraints.push(
-        ((aux(gateway) + (gateway.height / 2) as f64)
-            - (aux(other_node) + (other_node.height / 2) as f64))
-            .geq((min as f64) * zp - (max as f64) * zm),
-    );
+    cached_constraints
+        .push((middle(gateway) - middle(other_node)).geq((min as f64) * zp - (max as f64) * zm));
     //  (2) `d <= max * z+ - min * z-`
-    cached_constraints.push(
-        ((aux(gateway) + (gateway.height / 2) as f64)
-            - (aux(other_node) + (other_node.height / 2) as f64))
-            .leq((max as f64) * zp - (min as f64) * zm),
-    );
+    cached_constraints
+        .push((middle(gateway) - middle(other_node)).leq((max as f64) * zp - (min as f64) * zm));
 }
