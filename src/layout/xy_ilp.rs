@@ -138,7 +138,9 @@ fn assign_y(graph: &mut Graph, pool: PoolId, lane: LaneId, min_y_value: usize) -
         assert!(!edge.is_replaced_by_dummies());
 
         let diff_var = vars.add(variable().min(0.0));
-        diff_vars.push((edge.from.0, edge.to.0, diff_var));
+        if !n!(edge.from).is_gateway() && !n!(edge.to).is_gateway() {
+            diff_vars.push((edge.from.0, edge.to.0, diff_var));
+        }
         // Maybe it should just check for the same layer ...
         let is_same_layer = n!(edge.from).layer_id == n!(edge.to).layer_id;
 
@@ -182,6 +184,7 @@ fn assign_y(graph: &mut Graph, pool: PoolId, lane: LaneId, min_y_value: usize) -
         .map(|node_id| &graph.nodes[node_id])
         .filter(|n| n.is_gateway())
     {
+        // TODO handle S-nodes here as well where all is fully vertical.
         fn target_node(node: &Node) -> Option<&Node> {
             if let NodeType::BendDummy {
                 kind: BendDummyKind::FromGatewayToSameLane { .. },
@@ -343,24 +346,19 @@ enum GatewayNeighborLayerConnectivity<'a, I> {
 }
 
 fn analyse_gateway_neighbor_layer_connectivity<'a, I, F>(
-    current_layer: LayerId,
     mut iter: I,
-    mut pred: F,
+    mut pred_bend_from_gateway_to_same_lane: F,
 ) -> GatewayNeighborLayerConnectivity<'a, impl Iterator<Item = &'a Node>>
 where
     I: DoubleEndedIterator<Item = &'a EdgeId> + Clone,
-    F: FnMut(I::Item) -> Option<(/* bend_dummy */ &'a Node, /* other */ &'a Node)>,
+    F: FnMut(I::Item) -> Option<&'a Node>,
 {
     // Walk inward from both ends until we have both matches or we exhaust the iterator.
 
     // If only one match exists overall, mirror it so both are equal.
     let mut rev = iter.clone().rev();
-    if let Some((first, _)) = iter
-        .find_map(&mut pred)
-        .filter(|(_, other)| other.layer_id != current_layer)
-        && let Some((last, _)) = rev
-            .find_map(&mut pred)
-            .filter(|(_, other)| other.layer_id != current_layer)
+    if let Some(first) = iter.find_map(&mut pred_bend_from_gateway_to_same_lane)
+        && let Some(last) = rev.find_map(&mut pred_bend_from_gateway_to_same_lane)
     {
         if !std::ptr::eq(first, last) {
             GatewayNeighborLayerConnectivity::MultipleSameLaneEdges {
@@ -369,7 +367,7 @@ where
                 // No `filter` for layer_id required, as the in between nodes are guaranteed to be
                 // non-vertical.
                 in_between_nodes: iter
-                    .flat_map(pred)
+                    .flat_map(pred_bend_from_gateway_to_same_lane)
                     .take_while(|t: &&Node| !std::ptr::eq(*t, last)),
             }
         } else {
@@ -387,19 +385,21 @@ pub fn handle_gateway_neighbor_layer_connectivity<'a, I, F>(
     cached_constraints: &mut Vec<Constraint>,
     gateway: &Node,
     iter: I,
-    pred: F,
+    pred_bend_from_gateway_to_same_lane: F,
 ) where
     I: DoubleEndedIterator<Item = &'a EdgeId> + Clone,
     F: FnMut(I::Item) -> Option<&'a Node>,
 {
-    match analyse_gateway_neighbor_layer_connectivity(gateway.layer_id, iter, pred) {
-        GatewayNeighborLayerConnectivity::NoSameLaneEdges => {
-            dbg!(gateway.id);
-        }
+    match analyse_gateway_neighbor_layer_connectivity(iter, pred_bend_from_gateway_to_same_lane) {
+        GatewayNeighborLayerConnectivity::NoSameLaneEdges => {}
         GatewayNeighborLayerConnectivity::OnlyOneSameLaneEdge(node) => {
             // The bend node shall stay on the same height as the gateway node, so the edge leaves
             // nicely at the right corner of the gateway symbol.
             cached_constraints.push((aux(gateway) - aux(node)).eq(0.0));
+            d!(eprintln!(
+                "gateway fix only same-lane bend node to same y coordinage: gateway node({}) - bend node({})",
+                gateway.id.0, node.id.0,
+            ));
             // TODO in principle it would be cool to make the connected edge a bit less rigid. The
             // other side of the gateway is expected to be branching, and to allow the gateway node
             // to be positioned better, without disrupting the rest of the layout, it might be good
@@ -440,7 +440,9 @@ pub fn handle_gateway_neighbor_layer_connectivity<'a, I, F>(
                         graph.config.regular_node_y_padding,
                         graph.config.dummy_node_y_padding,
                     ));
+            let mut in_between_count = 0;
             for in_between_node in in_between_nodes {
+                in_between_count += 1;
                 let z0 = vars.add(variable().binary());
                 let zp = vars.add(variable().binary());
                 let zm = vars.add(variable().binary());
@@ -454,6 +456,12 @@ pub fn handle_gateway_neighbor_layer_connectivity<'a, I, F>(
                     zp,
                     zm,
                 );
+            }
+            if in_between_count > 0 {
+                d!(eprintln!(
+                    "gateway forbidden offset constraint for gateway node {} with {} other intermediate bend nodes",
+                    gateway.id, in_between_count
+                ));
             }
         }
     }
