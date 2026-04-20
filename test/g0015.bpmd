@@ -1,0 +1,11 @@
+= Pool
+== TEE
+# Start
+- Intermediate
+X Gateway ->no"no" ->yes"yes"
+
+. End 1  <-no
+
+. End 2 <-yes
+
+OD Data <-start ->end2

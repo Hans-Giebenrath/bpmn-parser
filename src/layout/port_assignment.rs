@@ -676,6 +676,7 @@ fn partition_ports<'a>(ports: &'a mut [PortInfo]) -> PartitionedPortInfo<'a> {
     }
 }
 
+// TODO This does not support data associations connected to gateway nodes.
 fn handle_gateway_node(this_node_id: NodeId, graph: &mut Graph) {
     // See comment at the end of the function.
     let (above, below) = (
@@ -1100,6 +1101,13 @@ fn handle_gateway_node_one_side(this_node_id: NodeId, graph: &mut Graph, directi
             } else if crossable_other_node.id != other_node.id {
                 // So it is below other_node.
                 crossing_number += 1;
+            } else {
+                // Both edges go into the same target node, e.g. another data association.
+                if !local_has_crossed_gateway {
+                    crossing_number -= 1;
+                } else {
+                    crossing_number += 1;
+                }
             }
 
             maybe_update_best_position(

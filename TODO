@@ -1,3 +1,5 @@
+* crossing reduction support for vertical edges (immediately create the merged nodes, and make sure to analyse that the thing is a DAG.)
+* DSL support for specifying those constraints.
 * The edges which go straight up from a gateway need to be marked `is_vertical` even for those back edge dummy node cases. Right now they are not treated as vertical and thus get those funny wonks (but must check whether there *really* is no other obstacle in the way, gotta think which phase is the correct to determine that).
 * The gateway VerticalCollapsed should not happen on the branching side. On the non-branching side, where there is only one same-lane edge (regardless of those leaving the lane), it should just always go out straight to the side.
 * microlp seems to get stuck in an endless loop, find out why. might file an issue?
@@ -5,13 +7,12 @@
 * PE-BPMN tee-external-root-access in a tee-pool should not name itself (@tee-pool)
 * PE-BPMN tee-software-operators should have a similar `on-premises` placeholder as tee-hardware-operators. `local`? as `on-premises` seems weird. (ChatGPT recommends replacing existing 'on-premises' with 'local' as well, not sure if I agree, must sleep over that suggestion)
 * is `on-premises` for hardware-access doing the wrong thing?
-* pe0001 end events are not drawn as end events
+* pe0001 end events are not drawn as end events (the message event)
 * PE-BPMN the selectors (e.g. secure-channel begin and end) should better filter their node types. Right now one can accidentally select data nodes which doesn't make sense and results in a non-helpful assertion error.
 * error in pe bpmd tool should result in error of test suite.
 * D1.1, page 53 figure 12 subprocess P5, is a good diagram that should be layoutable now.
 * Split the binary into a crate and a binary.
 * Document infallability of the crate: The crate is meant to be used with catch_unwind: `assert`s are sprinkled throughout the codebase, `.unwrap()`s and index accesses are used everywhere (they are kind-of like assumptions). But the logic is complicated and I am 100% there are remaining hidden logic bugs. (well, right now it is just a binary, so one gets failure isolation "for free", but if I ever make this into a crate, then `catch_unwind`)
-* In the crossing minimization, make a tiny factor to favor gateway branch orderings as they were specified in the file, ie. on `NodeId`.
 * Also, make it that boundary event nodes are more likely to leave downwards. Maybe have at all just a general node ID ordering?
 * with boundary events, have their XY edge length constraint smaller? See `overview-boundary-events.bpmd`, should have nice straight regular outgoing sequence flow.
 * fix the doc/test/build.sh to use Make/parallel (or Rust threadpools - or `fd` which also has a jobqueue) so we can have bounded parallelism.
@@ -29,3 +30,5 @@
 * Expand the secure-channel shorthand
 * Parse config values from the .bpmd file (see common/config.rs which is already macro-ified for this purpose).
 * Try to help the crossing reduction phase by solving some variables, if the order can be answered for some nodes trivially (just one node in a given pool/lane/layer coordinate). Some larger diagrams with mostly trivial ordering have rather high ILP solving times. The solver is not very optimized, hence we better help it.
+* Support data associations for Gateways.
+* data elements have wonky y-coordinate differences, although it looks like they should all be at the same height.
