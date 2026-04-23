@@ -14,7 +14,6 @@ use crate::common::bpmn_node::BoundaryEvent;
 use crate::common::bpmn_node::BoundaryEventType;
 use crate::common::bpmn_node::InterruptKind;
 use crate::common::bpmn_node::TaskType;
-use crate::common::graph::SdeId;
 use crate::lexer::*;
 use crate::parser::ParseError;
 
@@ -39,12 +38,20 @@ pub enum Statement {
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum LayoutStatement {
-    LeftOf(String, String),
-    Above(String, String),
-    /// The diagram will only contain at most so many nodes in one row, after which it will start
-    /// from the left below again, similar to a line break.
-    /// Note: This is just an idea for a future feature.
-    RowWidth(usize),
+    LeftOf {
+        left: (TokenCoordinate, String),
+        right: (TokenCoordinate, String),
+    },
+    Above {
+        above: (TokenCoordinate, String),
+        below: (TokenCoordinate, String),
+    },
+    SameLayer((TokenCoordinate, String), (TokenCoordinate, String)),
+    BackEdge((TokenCoordinate, String), (TokenCoordinate, String)),
+    // The diagram will only contain at most so many nodes in one row, after which it will start
+    // from the left below again, similar to a line break.
+    // Note: This is just an idea for a future feature.
+    //RowWidth(usize),
 }
 
 pub type StatementStream = std::vec::IntoIter<(TokenCoordinate, Statement)>;
@@ -542,44 +549,6 @@ fn to_message_flow(atts: Tokens, backup_tc: TokenCoordinate) -> AResult {
         sender_id: sender_id.expect("Message flow must have a sender ID"),
         receiver_id: receiver_id.expect("Message flow must have a receiver ID"),
     }))
-}
-
-fn to_layout_above(atts: Tokens, backup_tc: TokenCoordinate) -> AResult {
-    let atts = assemble_attributes(
-        "Layout Above Statements",
-        atts,
-        AssemblyRequest {
-            display_text: ARAttribute::Forbidden,
-            ids: ARAttribute::RequiredExact(2),
-            flows: ARFlowAttribute::Forbidden,
-            task_type: AROptionalAttribute::Forbidden,
-            event_visual: AROptionalAttribute::Forbidden,
-        },
-        backup_tc,
-    )?;
-    let mut ids = atts.ids.into_iter();
-    let id1 = ids.next().unwrap();
-    let id2 = ids.next().unwrap();
-    Ok(Statement::Layout(LayoutStatement::Above(id1, id2)))
-}
-
-fn to_layout_leftof(atts: Tokens, backup_tc: TokenCoordinate) -> AResult {
-    let atts = assemble_attributes(
-        "Layout LeftOf Statements",
-        atts,
-        AssemblyRequest {
-            display_text: ARAttribute::Forbidden,
-            ids: ARAttribute::RequiredExact(2),
-            flows: ARFlowAttribute::Forbidden,
-            task_type: AROptionalAttribute::Forbidden,
-            event_visual: AROptionalAttribute::Forbidden,
-        },
-        backup_tc,
-    )?;
-    let mut ids = atts.ids.into_iter();
-    let id1 = ids.next().unwrap();
-    let id2 = ids.next().unwrap();
-    Ok(Statement::Layout(LayoutStatement::LeftOf(id1, id2)))
 }
 
 //Maybe find some more type safe approach. Right now if `request` contains something Required, then
@@ -1413,27 +1382,6 @@ impl<'a> Lexer<'a> {
                     self.advance();
                     self.start_extension(tc)?;
                 }
-                Some('a') if self.sas.allow_new_statement && self.continues_with("bove") => {
-                    let tc = self.current_coord();
-                    self.advance(); // a
-                    self.advance(); // b
-                    self.advance(); // o
-                    self.advance(); // v
-                    self.advance(); // e
-                    self.sas
-                        .next_statement(tc, self.position, to_layout_above)?;
-                }
-                Some('l') if self.sas.allow_new_statement && self.continues_with("eftof") => {
-                    let tc = self.current_coord();
-                    self.advance(); // l
-                    self.advance(); // e
-                    self.advance(); // f
-                    self.advance(); // t
-                    self.advance(); // o
-                    self.advance(); // f
-                    self.sas
-                        .next_statement(tc, self.position, to_layout_leftof)?;
-                }
                 Some('\n') | Some('\r') => {
                     self.advance();
                     self.sas.end_line()?;
@@ -1667,39 +1615,6 @@ mod tests {
         assert!(matches!(
             result.next().unwrap().1,
             Statement::MessageFlow(_)
-        ));
-
-        Ok(())
-    }
-
-    #[test]
-    fn basic_leftof() -> Result<(), ParseError> {
-        let mut result = lex("leftof @id1 @id2".to_string(), 0)?;
-        assert!(matches!(
-            result.next().unwrap().1,
-            Statement::Layout(LayoutStatement::LeftOf(..))
-        ));
-
-        Ok(())
-    }
-
-    #[test]
-    fn basic_above() -> Result<(), ParseError> {
-        let mut result = lex("above @id1 @id2".to_string(), 0)?;
-        assert!(matches!(
-            result.next().unwrap().1,
-            Statement::Layout(LayoutStatement::Above(..))
-        ));
-
-        Ok(())
-    }
-
-    #[test]
-    fn basic_rowcount() -> Result<(), ParseError> {
-        let mut result = lex("rowwidth 5".to_string(), 0)?;
-        assert!(matches!(
-            result.next().unwrap().1,
-            Statement::Layout(LayoutStatement::RowWidth(..))
         ));
 
         Ok(())

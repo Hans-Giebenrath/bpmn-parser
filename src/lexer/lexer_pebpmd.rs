@@ -569,6 +569,7 @@ impl<'a> Lexer<'a> {
                                 .sas
                                 .fragments
                                 .last()
+                                // TODO Which one? Is this correct?
                                 .expect("Programming error: there should be at least one fragment")
                                 .0
                                 .end,
@@ -608,7 +609,7 @@ impl<'a> Lexer<'a> {
         if text.is_empty() {
             if is_text {
                 Err(vec![(
-                    "Forbidden text/symbol in this context".to_string(),
+                    "Expected some word here (regular character, underscore _, dash -, dot . or hash #), but found something else.".to_string(),
                     coord_start,
                 )])
             } else {

@@ -11,6 +11,9 @@ use crate::common::graph::{Graph, SdeId};
 use crate::common::graph::{LaneId, NodeId, PoolId};
 use crate::common::node::DataAux;
 use crate::common::node::NodeType;
+use crate::layout::constraint::Above;
+use crate::layout::constraint::LeftOf;
+use crate::layout::constraint::SameLayer;
 use crate::lexer::ActivityMeta;
 use crate::lexer::BoundaryEventMeta;
 use crate::lexer::DataFlowMeta;
@@ -19,6 +22,7 @@ use crate::lexer::Direction;
 use crate::lexer::EdgeMeta;
 use crate::lexer::EventType;
 use crate::lexer::GatewayNodeMeta;
+use crate::lexer::LayoutStatement;
 use crate::lexer::lex;
 use crate::lexer::{self, MessageFlowMeta};
 use crate::lexer::{Statement, StatementStream, TokenCoordinate};
@@ -173,9 +177,7 @@ impl Parser {
                 Statement::MessageFlow(meta) => self.parse_message_flow(meta)?,
                 Statement::Data(meta) => self.parse_data(meta)?,
                 Statement::PeBpmd(pe_bpmd) => self.parse_pe_bpmd(pe_bpmd)?,
-                Statement::Layout(_) => {
-                    eprintln!("Warning: layout instructions are currently ignored.")
-                }
+                Statement::Layout(layout) => self.parse_layout(layout)?,
             }
         }
 
@@ -797,6 +799,41 @@ impl Parser {
             .node_id_matcher
             .register(data_node_id, ids, &self.graph);
 
+        Ok(())
+    }
+
+    fn parse_layout(&mut self, mut layout: LayoutStatement) -> Result<(), ParseError> {
+        let err = |tc: TokenCoordinate| -> ParseError {
+            vec![(
+                "This node id could not be found. Have you defined it?".to_string(),
+                tc,
+            )]
+        };
+        match layout {
+            LayoutStatement::Above { above, below } => {
+                self.graph.layout_constraints.above.push(Above {
+                    above: self.find_node_id(&above.1).ok_or_else(|| err(above.0))?,
+                    below: self.find_node_id(&below.1).ok_or_else(|| err(below.0))?,
+                });
+            }
+            LayoutStatement::LeftOf { left, right } => {
+                self.graph.layout_constraints.left_of.push(LeftOf {
+                    left: self.find_node_id(&left.1).ok_or_else(|| err(left.0))?,
+                    right: self.find_node_id(&right.1).ok_or_else(|| err(right.0))?,
+                });
+            }
+            LayoutStatement::SameLayer(node_a, node_b) => {
+                self.graph.layout_constraints.same_layer.push(SameLayer(
+                    self.find_node_id(&node_a.1).ok_or_else(|| err(node_a.0))?,
+                    self.find_node_id(&node_b.1).ok_or_else(|| err(node_b.0))?,
+                ));
+            }
+            LayoutStatement::BackEdge(_node_a, _node_b) => {
+                eprintln!(
+                    "LayoutStatement::BackEdge is unsupported at the moment. This statement is ignored."
+                );
+            }
+        }
         Ok(())
     }
 
