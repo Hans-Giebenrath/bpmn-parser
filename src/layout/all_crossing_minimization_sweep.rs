@@ -173,14 +173,14 @@ enum EdgeConnection {
     Right,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 struct SweepGraph {
     nodes: Vec<SweepNode>,
     /// Indexing `nodes`.
     layers: Vec<Slice>,
 
-    // All edges which are connected to nodes within the lane, so also those which cross lanes.
-    // This is used to count the edge crossings between two layers.
+    /// All edges. This is used to count the edge crossings between two layers.
+    /// TODO does not include snake bisect edges, but those need to be counted as well.
     edges: Vec<(EdgeId, EdgeConnection)>,
     /// Indexing `edges`.
     /// `0` are loop edges left of the first layer.
@@ -194,9 +194,14 @@ struct SweepGraph {
     layers_crossing_count: Vec<CrossingCount>,
     /// Points into `nodes`. Indexed by `SweepNode::ports_start`. Says where edges are going to.
     /// Note: This only includes edges which stay within the lane.
-    /// This is used to calculate the ordering number when reordering the non-fixed layer during the
-    /// sweep.
+    /// This is used to calculate the barycenter (and thus ordering number) when reordering the
+    /// non-fixed layer during the sweep.
     edge_targets: Vec<(SweepNodeId, EdgeConnection)>,
+
+    /// Required for moving the concerning nodes closer together.
+    /// Those are probably only very few, so no need to segment this further into layers.
+    /// TODO make use of this.
+    same_lane_vertical_edges: Vec<(SweepNodeId, SweepNodeId)>,
 }
 
 impl SweepGraph {
@@ -209,14 +214,7 @@ impl SweepGraph {
                 });
         }
 
-        let mut result = SweepGraph {
-            nodes: Vec::new(),
-            layers: Vec::new(),
-            edge_targets: Vec::new(),
-            edges: Vec::new(),
-            edge_layers: Vec::new(),
-            layers_crossing_count: Vec::new(),
-        };
+        let mut result = SweepGraph::default();
         let mut layer_it = lane
             .nodes
             .chunk_by(|left_node_id, right_node_id| {
@@ -234,6 +232,12 @@ impl SweepGraph {
 
             for node_id in next_layer_nodes.iter() {
                 let node = &n!(*node_id);
+                // TODO this `continue` is wrong. bisect dummy edges must be counted as well.
+                // Further down as well. But: Think why I did this in the first place? Some good reason?
+                // About behaving differently when it can be vertical or not? I don't think so ...
+                // But it does make sense to not record these edges in the `edge_targets`, as
+                // we don't want to include them in the barycenter calculations. We use the
+                // `same_lane_vertical_edges` collection for that.
                 if node.is_snake_edge_bisect_dummy() {
                     continue;
                 }
@@ -466,6 +470,7 @@ impl Hash for SingleLaneSweepSolution {
 
 #[derive(Default)]
 struct SingleLaneSweepSolutions {
+    /// TODO actually not a HashSet but something more deterministic in order. A VecSet would be better.
     solutions: HashSet<SingleLaneSweepSolution>,
 }
 

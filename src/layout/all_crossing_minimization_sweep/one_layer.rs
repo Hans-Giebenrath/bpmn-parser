@@ -141,6 +141,7 @@ impl P3Layer {
     fn find_violated_constraint(&mut self) -> Option<(usize, usize)> {
         // TODO My Java code uses a Queue here with `add` and `poll` but the paper just uses a set.
         // So a `Vec` with `push` and `pop` should be sufficient?
+        // TODO move the allocation out. Does not make sense to alloc+free all the time.
         let mut s: VecDeque<usize> = VecDeque::new();
 
         // fill the queue
