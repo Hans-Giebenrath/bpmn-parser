@@ -1,0 +1,19 @@
+# Start
+X What ->branch
+
+// Shuffled lines, should then appear in nice order.
+- E @e <-branch
+. E End
+- B @b <-branch
+. B End
+- C @c <-branch
+. C End
+- D @d <-branch
+. D End
+- A @a <-branch
+. A End
+
+[place @a above @b]
+[place @c below @b]
+[place @c above @d]
+[place @e below @d]
