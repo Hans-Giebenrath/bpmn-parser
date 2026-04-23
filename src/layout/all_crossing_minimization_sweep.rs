@@ -39,7 +39,7 @@ mod one_layer;
 // nodes. This is quite a lot, but within the boundary of BPMD.
 type GeneralIndexType = u16;
 
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 struct Slice {
     start: GeneralIndexType,
     end: GeneralIndexType,
@@ -94,7 +94,7 @@ fn aux(node: &Node) -> SweepNodeId {
     }
 }
 
-#[derive(Default, Clone, Hash, PartialEq, Eq)]
+#[derive(Debug, Default, Clone, Hash, PartialEq, Eq)]
 struct CrossingCount {
     df_df_crossings: u16,
     mf_df_crossings: u16,
@@ -163,7 +163,7 @@ impl<'a> std::iter::Sum<&'a CrossingCount> for CrossingCount {
     }
 }
 
-#[derive(Clone, Eq, PartialEq, Hash)]
+#[derive(Debug, Clone, Eq, PartialEq, Hash)]
 enum EdgeConnection {
     /// Left loop or a flow which leaves the lane.
     Left,
@@ -173,7 +173,7 @@ enum EdgeConnection {
     Right,
 }
 
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 struct SweepGraph {
     nodes: Vec<SweepNode>,
     /// Indexing `nodes`.
@@ -417,7 +417,7 @@ impl SweepGraph {
     }
 }
 
-#[derive(PartialEq, Eq, Hash)]
+#[derive(PartialEq, Eq, Hash, Debug)]
 struct SweepSolutionNode {
     in_lane_idx: GeneralIndexType,
     layer_position_just_for_sorting: u8,

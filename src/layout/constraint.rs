@@ -1,7 +1,7 @@
 use crate::common::graph::EdgeId;
 use crate::common::graph::NodeId;
 
-#[derive(Default)]
+#[derive(Default, Debug, Clone, PartialEq)]
 pub struct LayoutConstraints {
     pub left_of: Vec<LeftOf>,
     pub above: Vec<Above>,
@@ -11,17 +11,20 @@ pub struct LayoutConstraints {
     pub back_edge: Vec<BackEdge>,
 }
 
+#[derive(Debug, Clone, PartialEq)]
 pub struct LeftOf {
     pub left: NodeId,
     pub right: NodeId,
 }
 
-#[derive(Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct Above {
     pub above: NodeId,
     pub below: NodeId,
 }
+#[derive(Debug, Clone, PartialEq)]
 pub struct SameLayer(pub NodeId, pub NodeId);
+#[derive(Debug, Clone, PartialEq)]
 /// This tells the layer organization ILP to not treat this edge as a forward-facing edge, i.e.
 /// it does not move into the list of constraints.
 pub struct BackEdge(pub EdgeId);

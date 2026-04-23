@@ -139,7 +139,7 @@ impl PoolAndLane {
     };
 }
 
-#[derive(PartialEq, Eq, Hash)]
+#[derive(Debug, PartialEq, Eq, Hash)]
 pub struct Coord3 {
     pub pool_and_lane: PoolAndLane,
     pub layer: LayerId,
