@@ -584,6 +584,7 @@ fn left_right_sweeps(
     // Pull is taken into account only in the first iterations. If there are pulls from parallel
     // sequence flows into the same direction, this can lead to unpleasant crossings. Hence, let
     // the situation pan out after applying the pull as well.
+    let mut one_right_sweep_is_done = false;
     for mind_the_pull in [true, false] {
         let mut num_iterations = 0;
         for i in 0..6 {
@@ -599,7 +600,9 @@ fn left_right_sweeps(
                     mind_the_pull,
                     is_right_sweep,
                     constraint_map,
+                    one_right_sweep_is_done,
                 );
+                one_right_sweep_is_done = true;
                 // Don't inline! Otherwise, it would short-circuit.
                 something_changed = something_changed || something_changed_local;
             }
@@ -647,6 +650,7 @@ fn one_direction_sweep(
     mind_the_pull: bool,
     is_right_sweep: bool,
     constraint_map: &ConstraintMap,
+    one_right_sweep_is_done: bool,
 ) -> bool {
     let mut something_changed = false;
     let lane = &lane!(pool_lane);
@@ -694,7 +698,13 @@ fn one_direction_sweep(
         );
         sweep_graph.layers_crossing_count[i] = ccount1;
         sweep_graph.layers_crossing_count[i + 1] = ccount2;
-        something_changed = best_versions.maybe_add(sweep_graph);
+        if one_right_sweep_is_done {
+            // With constraints, we need to ensure that we get at least once through the whole
+            // graph to satisfy all constraints. The current implementation is too conservative.
+            // We could check at each step whether there are more unsatisfied constraints left.
+            // But I hope that this conservative version is sufficient in practice.
+            something_changed = best_versions.maybe_add(sweep_graph);
+        }
     }
     something_changed
 }
