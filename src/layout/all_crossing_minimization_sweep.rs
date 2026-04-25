@@ -24,7 +24,7 @@ use crate::common::node::NodePhaseAuxData;
 use crate::layout::constraint::Above;
 use itertools::Either;
 use itertools::Itertools;
-use proc_macros::{e, lane, n};
+use proc_macros::{e, lane, n, to};
 use std::cmp::Ordering;
 use std::collections::HashMap;
 use std::collections::HashSet;
@@ -174,6 +174,17 @@ enum EdgeConnection {
 }
 
 #[derive(Debug, Clone, Default)]
+struct SameLaneVerticalEdge {
+    /// One streak of nodes which *must* be ordered as one clump, in the given order, at least in those sweep phases
+    /// where we consider vertical edges. The point is that these are connected via vertical edges,
+    /// and we want vertical edges to be straight, i.e. there should not be any
+    top_to_bottom_node_list: Vec<SweepNodeId>,
+    /// In this case there is no Above constraint involved which would break if the order is swapped,
+    /// i.e. the algorithm can favor the order which fits more naturally with the barycenters.
+    can_be_flipped: bool,
+}
+
+#[derive(Debug, Clone, Default)]
 struct SweepGraph {
     nodes: Vec<SweepNode>,
     /// Indexing `nodes`.
@@ -201,7 +212,9 @@ struct SweepGraph {
     /// Required for moving the concerning nodes closer together.
     /// Those are probably only very few, so no need to segment this further into layers.
     /// TODO make use of this.
-    same_lane_vertical_edges: Vec<(SweepNodeId, SweepNodeId)>,
+    /// TODO this excludes those vertical edges which would result in cycles. Must write an analysis
+    /// for that, similar to the back edge removal analysis.
+    same_lane_vertical_edges: Vec<SameLaneVerticalEdge>,
 }
 
 impl SweepGraph {
@@ -215,73 +228,100 @@ impl SweepGraph {
         }
 
         let mut result = SweepGraph::default();
-        let mut layer_it = lane
-            .nodes
-            .chunk_by(|left_node_id, right_node_id| {
-                n!(*left_node_id).layer_id == n!(*right_node_id).layer_id
-            })
-            .peekable();
+        let layer_it = lane.nodes.chunk_by(|left_node_id, right_node_id| {
+            n!(*left_node_id).layer_id == n!(*right_node_id).layer_id
+        });
 
         let mut edge_collection = HashSet::new();
 
-        'a: {
-            // Go through the left loops.
-            let Some(next_layer_nodes) = layer_it.peek() else {
-                break 'a;
-            };
-
-            for node_id in next_layer_nodes.iter() {
-                let node = &n!(*node_id);
-                // TODO this `continue` is wrong. bisect dummy edges must be counted as well.
-                // Further down as well. But: Think why I did this in the first place? Some good reason?
-                // About behaving differently when it can be vertical or not? I don't think so ...
-                // But it does make sense to not record these edges in the `edge_targets`, as
-                // we don't want to include them in the barycenter calculations. We use the
-                // `same_lane_vertical_edges` collection for that.
-                if node.is_snake_edge_bisect_dummy() {
-                    continue;
-                }
-                for incoming in node.incoming.iter() {
-                    let edge_connection = if e!(*incoming).stays_within_lane {
-                        EdgeConnection::Both
-                    } else {
-                        EdgeConnection::Right
-                    };
-                    edge_collection.insert((*incoming, edge_connection));
-                }
-            }
-            result.edges.extend(edge_collection.drain());
-            result.edge_layers.push(Slice {
-                start: 0,
-                end: result.edges.len() as u16,
-            });
-        }
-        let mut i = 0;
+        // We need to prepend a fake layer (i.e. with zero nodes), because we have an initial layer
+        // which captures only the right loops.
+        let mut layer_it = Some(Default::default() /* meaning &[] */)
+            .into_iter()
+            .chain(layer_it)
+            .peekable();
+        let mut in_lane_idx = 0;
+        let mut is_initial_fake_layer = true;
         while let Some(chunk) = layer_it.next() {
-            result.layers.push(Slice {
-                start: result.nodes.len().try_into().expect("too many nodes, oops"),
-                end: (result.nodes.len() + chunk.len())
-                    .try_into()
-                    .expect("too many nodes, oops"),
-            });
+            if !is_initial_fake_layer {
+                result.layers.push(Slice {
+                    start: result.nodes.len().try_into().expect("too many nodes, oops"),
+                    end: (result.nodes.len() + chunk.len())
+                        .try_into()
+                        .expect("too many nodes, oops"),
+                });
+            }
+
             // Nodes are first ordered by their location in the file. This kinda brings in the
             // situation that users would expect the same gateway branch order as they have declared
             // it in the `.bpmd` file, if otherwise crossing counts are equal.
             for (initial_position, node_id) in chunk.iter().enumerate() {
+                assert!(!is_initial_fake_layer);
                 let node = &n!(*node_id);
                 let mut sweep_node = SweepNode {
-                    in_lane_idx: i,
+                    in_lane_idx,
                     layer_position: initial_position as u8,
                     ..Default::default()
                 };
-                i += 1;
+                in_lane_idx += 1;
+
+                {
+                    // Record all the edges for crossing counting.
+                    if node.is_snake_edge_bisect_dummy() {
+                        // Snake edge bisect dummies are flipped nodes.
+                        for edge_id in node.incoming.iter() {
+                            if !e!(*edge_id).stays_within_lane {
+                                edge_collection.insert((*edge_id, EdgeConnection::Left));
+                            } else {
+                                // This one is already captured by going through the regular nodes'
+                                // outgoing edges.
+                            }
+                        }
+                    } else if node.is_right_back_edge_corner_dummy() {
+                        // Right back edge corner dummies
+                        for edge_id in node.incoming.iter() {
+                            let edge = &e!(*edge_id);
+                            let from = &n!(edge.from);
+                            if from.layer_id == node.layer_id {
+                                if !edge.stays_within_lane {
+                                    edge_collection.insert((*edge_id, EdgeConnection::Left));
+                                } else {
+                                    // This one is already captured by going through the regular nodes'
+                                    // outgoing edges.
+                                }
+                            } else {
+                                // That's the other edge which comes in from the left.
+                                assert!(
+                                    from.layer_id.0 + 1 == node.layer_id.0,
+                                    "edge_id: {}, edge: {:?}, from: {:?}, node: {:?}",
+                                    edge_id.0,
+                                    edge,
+                                    from,
+                                    node
+                                );
+                            }
+                        }
+                    } else {
+                        for edge_id in node.outgoing.iter() {
+                            let edge = &e!(*edge_id);
+                            let edge_connection = if edge.stays_within_lane
+                                && n!(edge.to).layer_id != node.layer_id
+                            {
+                                EdgeConnection::Both
+                            } else {
+                                EdgeConnection::Left
+                            };
+                            edge_collection.insert((*edge_id, edge_connection));
+                        }
+                    };
+                }
 
                 // Keep track whether pull is top-wards (<0) or bottom-wards (>0).
                 {
                     // Do the port traversal once for incoming, ...
                     let ports_start = result.edge_targets.len();
-                    for incoming in node.incoming.iter().cloned() {
-                        let edge = &e!(incoming);
+                    for edge_id in node.incoming.iter().cloned() {
+                        let edge = &e!(edge_id);
                         let from = &n!(edge.from);
                         let balance_correction =
                             match from.pool_and_lane().cmp(&node.pool_and_lane()) {
@@ -317,20 +357,9 @@ impl SweepGraph {
                 {
                     // ... and once for outgoing.
                     let ports_start = result.edge_targets.len();
-                    for outgoing in node.outgoing.iter().cloned() {
-                        let edge = &e!(outgoing);
+                    for edge_id in node.outgoing.iter().cloned() {
+                        let edge = &e!(edge_id);
                         let to = &n!(edge.to);
-
-                        // Record all the edges.
-                        if !node.is_snake_edge_bisect_dummy() {
-                            let edge_connection =
-                                if edge.stays_within_lane && node.layer_id != to.layer_id {
-                                    EdgeConnection::Both
-                                } else {
-                                    EdgeConnection::Left
-                                };
-                            edge_collection.insert((outgoing, edge_connection));
-                        }
 
                         let balance_correction = match to.pool_and_lane().cmp(&node.pool_and_lane())
                         {
@@ -365,20 +394,63 @@ impl SweepGraph {
                 }
                 result.nodes.push(sweep_node);
             }
+
             if let Some(next_layer) = layer_it.peek() {
+                // Peek into the next layer to identify remaining right loops for the crossing counting.
                 for node_id in next_layer.iter() {
                     let node = &n!(*node_id);
-                    if !node.is_snake_edge_bisect_dummy() {
-                        for incoming in node.incoming.iter().cloned() {
-                            let edge = &e!(incoming);
-                            let edge_connection = if edge.stays_within_lane
-                                && n!(edge.from).layer_id != node.layer_id
-                            {
-                                EdgeConnection::Both
+                    if node.is_snake_edge_bisect_dummy() {
+                        // Snake edge bisect dummies are flipped nodes.
+                        for edge_id in node.outgoing.iter() {
+                            if !e!(*edge_id).stays_within_lane {
+                                edge_collection.insert((*edge_id, EdgeConnection::Right));
                             } else {
-                                EdgeConnection::Right
-                            };
-                            edge_collection.insert((incoming, edge_connection));
+                                // This one is already captured by going through the regular nodes'
+                                // incoming edges.
+                            }
+                        }
+                    } else if node.is_left_back_edge_corner_dummy() {
+                        // Snake edge bisect dummies are flipped nodes.
+                        for edge_id in node.outgoing.iter() {
+                            let edge = &e!(*edge_id);
+                            let to = &n!(edge.to);
+                            if to.layer_id == node.layer_id {
+                                if !edge.stays_within_lane {
+                                    edge_collection.insert((*edge_id, EdgeConnection::Right));
+                                } else {
+                                    // This one is already captured by going through the regular nodes'
+                                    // incoming edges.
+                                }
+                            } else {
+                                // That's the other edge which comes in from the left.
+                                // Just a debug assert as this does not result in panics, just wrong
+                                // crossing number counting.
+                                debug_assert!(
+                                    to.layer_id.0 + 1 == node.layer_id.0,
+                                    "edge_id: {}, edge: {:?}, to: {:?}, node: {:?}",
+                                    edge_id.0,
+                                    edge,
+                                    to,
+                                    node
+                                );
+                            }
+                        }
+                    } else {
+                        for edge_id in node.incoming.iter().cloned() {
+                            let edge = &e!(edge_id);
+                            if !edge.stays_within_lane || n!(edge.from).layer_id == node.layer_id {
+                                edge_collection.insert((edge_id, EdgeConnection::Right));
+                            } else {
+                                // The edge should already be part of edge_collection, since it
+                                // should be from one of the outgoing edges.
+                                // Just a debug assert as this does not result in panics, just wrong
+                                // crossing number counting.
+                                debug_assert!(
+                                    edge_collection
+                                        .iter()
+                                        .any(|(existing_id, _)| edge_id == *existing_id),
+                                );
+                            }
                         }
                     }
                 }
@@ -390,6 +462,7 @@ impl SweepGraph {
                 start: start as u16,
                 end: (start + layer_edges_count) as u16,
             });
+            is_initial_fake_layer = false;
         }
 
         let mut sweep_buffers = SweepBuffers::default();
