@@ -155,6 +155,7 @@ fn process_node_edge(
         NodeType::BackEdgeCornerDummy {
             same_layer_real_node_id,
             same_layer_edge_id,
+            ..
         } if *same_layer_real_node_id == this_node_id => {
             // The actual one of two lines which is the whole purpose of this file, the rest
             // just helping to find the situation to run this one line.

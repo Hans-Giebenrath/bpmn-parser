@@ -152,6 +152,7 @@ pub fn dummy_node_generation(graph: &mut Graph) {
                 NodeType::BackEdgeCornerDummy {
                     same_layer_real_node_id: from_id,
                     same_layer_edge_id: EdgeId(current_num_edges),
+                    left_one: true,
                 },
                 PoolAndLane {
                     pool,
@@ -165,6 +166,7 @@ pub fn dummy_node_generation(graph: &mut Graph) {
                 NodeType::BackEdgeCornerDummy {
                     same_layer_real_node_id: to_id,
                     same_layer_edge_id: EdgeId(current_num_edges + 1),
+                    left_one: false,
                 },
                 PoolAndLane {
                     pool,

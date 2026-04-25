@@ -70,6 +70,8 @@ pub enum NodeType {
         same_layer_real_node_id: NodeId,
         /// Connecting to the `same_layer_real_node_id`.
         same_layer_edge_id: EdgeId,
+        /// Is it the left corner dummy or the right corner dummy?
+        left_one: bool,
     },
     /// When two nodes are forced into the same layer (through a layout constraint) an edge between
     /// them would create a snake-like, or "S"-like edge. But this cannot be handled directly, since
@@ -361,6 +363,14 @@ impl Node {
 
     pub fn is_back_edge_corner_dummy(&self) -> bool {
         matches!(self.node_type, NodeType::BackEdgeCornerDummy { .. })
+    }
+
+    pub fn is_left_back_edge_corner_dummy(&self) -> bool {
+        matches!(self.node_type, NodeType::BackEdgeCornerDummy { left_one, .. } if left_one)
+    }
+
+    pub fn is_right_back_edge_corner_dummy(&self) -> bool {
+        matches!(self.node_type, NodeType::BackEdgeCornerDummy { left_one, .. } if !left_one)
     }
 
     pub fn is_snake_edge_bisect_dummy(&self) -> bool {
