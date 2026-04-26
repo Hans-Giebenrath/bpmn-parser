@@ -24,7 +24,7 @@ use crate::common::node::NodePhaseAuxData;
 use crate::layout::constraint::Above;
 use itertools::Either;
 use itertools::Itertools;
-use proc_macros::{e, lane, n, to};
+use proc_macros::{e, from, lane, n, to};
 use std::cmp::Ordering;
 use std::collections::HashMap;
 use std::collections::HashSet;
@@ -51,7 +51,7 @@ impl Slice {
     }
 }
 
-#[derive(Debug, Copy, Clone)]
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub(crate) struct SweepNodeId(usize);
 impl_index!(SweepNodeId, SweepNode);
 
@@ -173,8 +173,15 @@ enum EdgeConnection {
     Right,
 }
 
-#[derive(Debug, Clone, Default)]
-struct SameLaneVerticalEdge {
+/// Vertical edge chains are used to pre-form clumps in the layer-reordering. The algorithm *only*
+/// considers those edge chains which are primitive lists. If they form a circle, or branch, then
+/// this edge chain is simply ignored. These situations require more sophisticated algorithms which
+/// I believe are simply not worth the effort because such situations should *probably* distribute
+/// the nodes onto more layers. Tech demos are the only reason to showcase such a thing, but those
+/// are not my target.
+/// Reminder: Gateways are not connected to `BackEdgeCornerDummy`s in this stage, only after port assignment.
+#[derive(Debug, Clone)]
+struct VerticalEdgeChain {
     /// One streak of nodes which *must* be ordered as one clump, in the given order, at least in those sweep phases
     /// where we consider vertical edges. The point is that these are connected via vertical edges,
     /// and we want vertical edges to be straight, i.e. there should not be any
@@ -182,6 +189,7 @@ struct SameLaneVerticalEdge {
     /// In this case there is no Above constraint involved which would break if the order is swapped,
     /// i.e. the algorithm can favor the order which fits more naturally with the barycenters.
     can_be_flipped: bool,
+    coord3: Coord3,
 }
 
 #[derive(Debug, Clone, Default)]
@@ -214,7 +222,7 @@ struct SweepGraph {
     /// TODO make use of this.
     /// TODO this excludes those vertical edges which would result in cycles. Must write an analysis
     /// for that, similar to the back edge removal analysis.
-    same_lane_vertical_edges: Vec<SameLaneVerticalEdge>,
+    vertical_edge_chains: Vec<VerticalEdgeChain>,
 }
 
 impl SweepGraph {
@@ -227,7 +235,11 @@ impl SweepGraph {
                 });
         }
 
-        let mut result = SweepGraph::default();
+        let mut result = SweepGraph {
+            vertical_edge_chains: calculate_vertical_edge_chains(graph),
+            ..Default::default()
+        };
+
         let layer_it = lane.nodes.chunk_by(|left_node_id, right_node_id| {
             n!(*left_node_id).layer_id == n!(*right_node_id).layer_id
         });
@@ -586,6 +598,7 @@ impl SingleLaneSweepSolutions {
 type ConstraintMap = HashMap<Coord3, Vec<Above>>;
 
 pub fn reduce_all_crossings_sweep(graph: &mut Graph) {
+    dbg!(&graph);
     let mut constraint_map = ConstraintMap::new();
     for above_constraint in &graph.layout_constraints.above {
         let coord3 = n!(above_constraint.above).coord3();
@@ -663,9 +676,12 @@ fn left_right_sweeps(
     // sequence flows into the same direction, this can lead to unpleasant crossings. Hence, let
     // the situation pan out after applying the pull as well.
     let mut one_right_sweep_is_done = false;
-    for mind_the_pull in [true, false] {
+
+    for (mind_the_pull, mind_the_vertical_chains, max_iter) in
+        [(true, true, 6), (false, false, 2), (false, true, 4)]
+    {
         let mut num_iterations = 0;
-        for i in 0..6 {
+        for i in 0..max_iter {
             num_iterations = i;
             let mut something_changed = false;
             for is_right_sweep in [true, false] {
@@ -676,12 +692,14 @@ fn left_right_sweeps(
                     &mut best_versions,
                     sweep_buffers,
                     mind_the_pull,
+                    mind_the_vertical_chains,
                     is_right_sweep,
                     constraint_map,
                     one_right_sweep_is_done,
                 );
                 one_right_sweep_is_done = true;
-                // Don't inline! Otherwise, it would short-circuit.
+                // Don't inline! Otherwise, it would short-circuit. But we want to do the full
+                // right-left sweep.
                 something_changed = something_changed || something_changed_local;
             }
             if !something_changed {
@@ -726,6 +744,7 @@ fn one_direction_sweep(
     best_versions: &mut SingleLaneSweepSolutions,
     sweep_buffers: &mut SweepBuffers,
     mind_the_pull: bool,
+    mind_the_vertical_chains: bool,
     is_right_sweep: bool,
     constraint_map: &ConstraintMap,
     one_right_sweep_is_done: bool,
@@ -749,6 +768,7 @@ fn one_direction_sweep(
             &current_position,
             is_right_sweep,
             mind_the_pull,
+            mind_the_vertical_chains,
             constraint_map
                 .get(&current_position)
                 .map(|v| v.as_slice())
@@ -830,7 +850,7 @@ fn count_all_crossings_between_two_layers(
     current: &[SweepNode],
     edges: &[(EdgeId, EdgeConnection)],
     // TODO there can be a bit of optimization here to avoid duplicate sorting. But it was too much
-    // fiddling for me atm.
+    // fiddling for me at the moment.
     sort_buffer_prev: &mut Vec<(NodeId, /* idx within &[SweepNode] */ usize)>,
     sort_buffer_current: &mut Vec<(NodeId, /* idx within &[SweepNode] */ usize)>,
     positions_buffer: &mut Vec<Positions>,
@@ -1075,4 +1095,224 @@ fn count_crossing_one_edge_pair(
     if is_crossing {
         crossing_count.count(&e!(edge_1.0), &e!(edge_2.0));
     }
+}
+
+/// See documentation for `VerticalEdgeChain`.
+fn calculate_vertical_edge_chains(graph: &Graph) -> Vec<VerticalEdgeChain> {
+    struct IllegalChainSituation;
+    fn next_chain_link<'a>(
+        node: &Node,
+        previous_node_id: Option<NodeId>,
+        current_chain: &[&Node],
+        above_constraints_to_follow: &mut Vec<Above>,
+        graph: &'a Graph,
+    ) -> Result<Option<&'a Node>, IllegalChainSituation> {
+        let mut it = node
+            .incoming
+            .iter()
+            .map(|edge_id| &from!(*edge_id))
+            .chain(node.outgoing.iter().map(|edge_id| &to!(*edge_id)))
+            .filter(|next_node| {
+                Some(next_node.id) != previous_node_id && next_node.coord3() == node.coord3()
+            });
+        if let Some(above) = graph
+            .layout_constraints
+            .above
+            .iter()
+            .find(|above| above.above == node.id || above.below == node.id)
+        {
+            above_constraints_to_follow.push(above.clone());
+        }
+        match (it.next(), it.next()) {
+            (None, None) => Ok(None),
+            (Some(next_node), None)
+                // Not a loop.
+                if !current_chain.iter().any(|prev| std::ptr::eq(*prev, node)) =>
+            {
+                Ok(Some(next_node))
+            }
+            _ => Err(IllegalChainSituation),
+        }
+    }
+
+    fn follow_above_constraints(
+        towards_below: bool,
+        next_constrained_node: NodeId,
+        constraints: &[Above],
+        initial_chain_pos: usize,
+        chain: &[&Node],
+        forwards_is_legal: &mut bool,
+        backwards_is_legal: &mut bool,
+    ) {
+        if towards_below {
+            if let Some(position) = chain
+                .iter()
+                .position(|node| node.id == next_constrained_node)
+            {
+                // There is an above chain
+                if position > initial_chain_pos {
+                    *backwards_is_legal = false;
+                } else {
+                    // Otherwise we have an Above loop, but that should have been detected earlier.
+                    assert!(position < initial_chain_pos);
+                    *forwards_is_legal = false;
+                }
+                // Found a streak, so finish. We look for more streaks in later outer
+                // iterations, no need to continue at this point. It's all a bit sub-optimal,
+                // but the involved amount of nodes, constraints etc is so small that it should
+                // not matter.
+                return;
+            }
+            for Above { below, .. } in constraints
+                .iter()
+                .filter(|above| above.above == next_constrained_node)
+            {
+                if let Some(position) = chain.iter().position(|node| node.id == *below) {
+                    // There is an above chain
+                    if position > initial_chain_pos {
+                        *backwards_is_legal = false;
+                    } else {
+                        // Otherwise we have an Above loop, but that should have been detected earlier.
+                        assert!(position < initial_chain_pos);
+                        *forwards_is_legal = false;
+                    }
+                    // Found a streak, so finish. We look for more streaks in later outer
+                    // iterations, no need to continue at this point. It's all a bit sub-optimal,
+                    // but the involved amount of nodes, constraints etc is so small that it should
+                    // not matter.
+                    return;
+                }
+                follow_above_constraints(
+                    towards_below,
+                    *below,
+                    constraints,
+                    initial_chain_pos,
+                    chain,
+                    forwards_is_legal,
+                    backwards_is_legal,
+                );
+                if !*forwards_is_legal && !*backwards_is_legal {
+                    return;
+                }
+            }
+        } else {
+            if let Some(position) = chain
+                .iter()
+                .position(|node| node.id == next_constrained_node)
+            {
+                // There is an above chain
+                if position > initial_chain_pos {
+                    *forwards_is_legal = false;
+                } else {
+                    // Otherwise we have an Above loop, but that should have been detected earlier.
+                    assert!(position < initial_chain_pos);
+                    *backwards_is_legal = false;
+                }
+                // Found a streak, so finish. We look for more streaks in later outer
+                // iterations, no need to continue at this point. It's all a bit sub-optimal,
+                // but the involved amount of nodes, constraints etc is so small that it should
+                // not matter.
+                return;
+            }
+            for Above { above, .. } in constraints
+                .iter()
+                .filter(|above| above.below == next_constrained_node)
+            {
+                follow_above_constraints(
+                    towards_below,
+                    *above,
+                    constraints,
+                    initial_chain_pos,
+                    chain,
+                    forwards_is_legal,
+                    backwards_is_legal,
+                );
+                if !*forwards_is_legal && !*backwards_is_legal {
+                    return;
+                }
+            }
+        }
+    }
+
+    let mut vertical_edge_chains = Vec::<VerticalEdgeChain>::new();
+    let mut above_constraints_to_follow = Vec::<Above>::new();
+    'outer: for node in &graph.nodes {
+        if vertical_edge_chains
+            .iter()
+            .any(|chain| chain.top_to_bottom_node_list.contains(&aux(node)))
+        {
+            // If this node is part of a valid chain, then it cannot be part of more valid chains
+            // (otherwise the chain would not have been identified as valid to begin with). Hence,
+            // we can ignore this node.
+            continue 'outer;
+        }
+        above_constraints_to_follow.clear();
+        let mut previous_node_id = None;
+        let mut chain = Vec::new();
+        let mut current_node = node;
+        'inner: loop {
+            let next = match next_chain_link(
+                current_node,
+                previous_node_id,
+                &chain,
+                &mut above_constraints_to_follow,
+                graph,
+            ) {
+                Err(IllegalChainSituation) => continue 'outer,
+                Ok(None) => break 'inner,
+                Ok(Some(next)) => next,
+            };
+            chain.push(next);
+            previous_node_id = Some(current_node.id);
+            current_node = next;
+        }
+        if chain.len() < 2 {
+            // That's not a chain, goddammit!
+            continue 'outer;
+        }
+
+        let mut forwards_is_legal = true;
+        let mut backwards_is_legal = true;
+        for above in above_constraints_to_follow.iter().cloned() {
+            if let Some(initial_chain_pos) = chain.iter().position(|node| node.id == above.above) {
+                follow_above_constraints(
+                    true,
+                    above.below,
+                    &graph.layout_constraints.above,
+                    initial_chain_pos,
+                    &chain,
+                    &mut forwards_is_legal,
+                    &mut backwards_is_legal,
+                );
+                if !forwards_is_legal && !backwards_is_legal {
+                    continue 'outer;
+                }
+            }
+            if let Some(initial_chain_pos) = chain.iter().position(|node| node.id == above.below) {
+                follow_above_constraints(
+                    false,
+                    above.above,
+                    &graph.layout_constraints.above,
+                    initial_chain_pos,
+                    &chain,
+                    &mut forwards_is_legal,
+                    &mut backwards_is_legal,
+                );
+                if !forwards_is_legal && !backwards_is_legal {
+                    continue 'outer;
+                }
+            }
+        }
+        assert!(forwards_is_legal || backwards_is_legal);
+        if !forwards_is_legal {
+            chain.reverse();
+            std::mem::swap(&mut forwards_is_legal, &mut backwards_is_legal);
+        }
+        vertical_edge_chains.push(VerticalEdgeChain {
+            top_to_bottom_node_list: chain.iter().map(|node| aux(node)).collect(),
+            can_be_flipped: backwards_is_legal,
+            coord3: node.coord3(),
+        });
+    }
+    vertical_edge_chains
 }

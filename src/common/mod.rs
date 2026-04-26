@@ -3,6 +3,7 @@ pub mod config;
 pub(crate) mod direction;
 pub mod edge;
 pub mod graph;
+pub mod index_iter;
 pub mod iter_ext;
 pub mod lane;
 pub mod macros;

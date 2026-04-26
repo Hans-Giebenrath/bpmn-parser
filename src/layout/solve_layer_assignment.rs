@@ -37,6 +37,8 @@ fn solve_layers(graph: &mut Graph) {
     d!(dbg!(&graph););
     let mut vars = variables!();
 
+    todo!("TODO take into consideration the same-layer, left-of and above constraints.");
+
     let num_nodes = graph.nodes.len();
     for node in graph.nodes.iter_mut().filter(|node| !node.is_data()) {
         node.aux = NodePhaseAuxData::LayerAssignmentData(LayerAssignmentData(

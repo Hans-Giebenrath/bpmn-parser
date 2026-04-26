@@ -1246,6 +1246,7 @@ fn add_bend_points_one_segment(
     }
 }
 
+/// TODO use index_iter instead.
 struct LogicalIdx {
     rev_multiplier: isize,
     rev_offset: isize,

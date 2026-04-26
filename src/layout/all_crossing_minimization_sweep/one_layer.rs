@@ -1,4 +1,5 @@
 use crate::common::graph::{Coord3, Graph, PoolAndLane};
+use crate::common::index_iter::IterIndices;
 use crate::common::lane::Lane;
 use crate::layout::all_crossing_minimization_sweep::{
     EdgeConnection, INCOMING, OUTGOING, PullBalance, SweepGraph, SweepNode, SweepNodeId, aux,
@@ -11,19 +12,38 @@ use std::collections::{HashSet, VecDeque};
 pub struct P3Layer {
     constrained_list: Vec<usize>, // V, indices into `merge_nodes`
     merge_nodes: Vec<MergeNode>,  // L(.)
+    unconstrained: Vec<usize>,    // V' (or `rest`)
 }
 
+// Updated algorithm outline:
+// * same old: Create the initial merge node list as usual
+// * new: put together the same-lane-vertical-edge node clumps, i.e. merge (possibly flipped if allowed and the barycenter favors it) their merge nodes.
+// * same old: do the regular violated constrained search until finished
+// * new (TODO implement): For each of those clumped vertices, check whose vertex is the most offset with its
+//   barycenter value (if that is even possible to define?) - take it and move it into its favored
+//   direction, across long edge dummies, until it hits some non-long-edge dummy node. (Repeat, as
+//   mentioned, for each of the clumped vertices.)
+// Now it should be done.
+
+/// The original algorithm comes from the paper:
+/// Forster, M. (2005). A Fast and Simple Heuristic for Constrained Two-Level Crossing Reduction.
+/// In: Pach, J. (eds) Graph Drawing. GD 2004. Lecture Notes in Computer Science, vol 3383.
+/// Springer, Berlin, Heidelberg. https://doi.org/10.1007/978-3-540-31843-9_22
+///
+/// Implementation history: I first implemented it for my bachelor's thesis in Java. Then, for BPMD,
+/// I used ChatGPT 5.3 (?maybe) to transpile it to Rust. Did heavy editing. Then added the support
+/// for vertical edges.
 pub fn run(
     graph: &Graph,
     sweep_graph: &mut SweepGraph,
     current_location: &Coord3,
     is_right_sweep: bool,
     mind_the_pull: bool,
+    mind_the_vertical_chains: bool,
     constraints: &[Above],
 ) {
     let mut state = P3Layer::default();
 
-    let mut unconstrained: Vec<usize> = Vec::new(); // V' (or `rest`)
     state.create_merge_nodes(
         graph,
         sweep_graph,
@@ -31,28 +51,75 @@ pub fn run(
         current_location,
         is_right_sweep,
         mind_the_pull,
-        &mut unconstrained,
     );
 
-    while let Some((above_idx, below_idx)) = state.find_violated_constraint() {
-        state.absorb(/* winner */ above_idx, /* victim */ below_idx);
-
-        state.constrained_list.retain(|&idx| idx != below_idx);
-
-        debug_assert!(state.constrained_list.contains(&above_idx));
-
-        if state.merge_nodes[above_idx].has_incident_constraints() {
-            // stays in constrained_list
-        } else {
-            state.constrained_list.retain(|&idx| idx != above_idx);
-            unconstrained.push(above_idx);
+    if mind_the_vertical_chains {
+        for vertical_sequence in sweep_graph.vertical_edge_chains.iter() {
+            if vertical_sequence.coord3 != *current_location {
+                continue;
+            }
+            let flip = if vertical_sequence.can_be_flipped {
+                let mut sorted_pairs = 0;
+                let mut rev_sorted_pairs = 0;
+                for [id0, id1] in vertical_sequence.top_to_bottom_node_list.array_windows() {
+                    let mn0 = state
+                        .merge_nodes
+                        .iter()
+                        .find(|mn| mn.ordered_nodes[0] == *id0)
+                        .unwrap();
+                    let mn1 = state
+                        .merge_nodes
+                        .iter()
+                        .find(|mn| mn.ordered_nodes[0] == *id1)
+                        .unwrap();
+                    match mn0.barycenter.partial_cmp(&mn1.barycenter).unwrap() {
+                        std::cmp::Ordering::Less => sorted_pairs += 1,
+                        std::cmp::Ordering::Greater => rev_sorted_pairs += 1,
+                        _ => (),
+                    }
+                }
+                rev_sorted_pairs > sorted_pairs
+            } else {
+                false
+            };
+            let mut sweepnode_it = vertical_sequence
+                .top_to_bottom_node_list
+                .len()
+                .iter_indices(flip)
+                .map(|index| vertical_sequence.top_to_bottom_node_list[index]);
+            let top_most_sn_id = sweepnode_it.next().unwrap();
+            let top_most_mn_id = state
+                .merge_nodes
+                .iter()
+                .position(|mn| mn.ordered_nodes[0] == top_most_sn_id)
+                .unwrap();
+            for sn_id in sweepnode_it {
+                let mn = state
+                    .merge_nodes
+                    .iter()
+                    .position(|mn| mn.ordered_nodes[0] == sn_id)
+                    .unwrap();
+                state.absorb(
+                    /* remaining to-be above: */ top_most_mn_id,
+                    /* consumed to-be below: */ mn,
+                );
+            }
         }
     }
 
-    unconstrained.extend(state.constrained_list.iter().copied());
+    while let Some((above_idx, below_idx)) = state.find_violated_constraint() {
+        // `above_idx` has currently a larger barycenter value, but due to constraints that
+        // sweep node must come above sweep node `below_idx`. Hence, the names refer to the to-be
+        // situation, not how they are currently ordered.
+        state.absorb(/* winner */ above_idx, /* victim */ below_idx);
+    }
+
+    state
+        .unconstrained
+        .extend(state.constrained_list.iter().copied());
     state.constrained_list.clear();
 
-    unconstrained.sort_by(|&a, &b| {
+    state.unconstrained.sort_by(|&a, &b| {
         // DFs have the least priority, SFs the most.
         let (a, b) = (&state.merge_nodes[a], &state.merge_nodes[b]);
         (
@@ -72,7 +139,7 @@ pub fn run(
 
     // Finished - now just assign the positions.
     let mut i = 0;
-    for merge_node_idx in unconstrained.iter().cloned() {
+    for merge_node_idx in state.unconstrained.iter().cloned() {
         for sweep_node_id in state.merge_nodes[merge_node_idx]
             .ordered_nodes
             .iter()
@@ -93,7 +160,6 @@ impl P3Layer {
         current_location: &Coord3,
         is_right_sweep: bool,
         mind_the_pull: bool,
-        unconstrained: &mut Vec<usize>,
     ) {
         let current_layer = sweep_graph.layers[current_location.layer.0].clone();
         let current_lane = &graph.pools[current_location.pool_and_lane.pool].lanes
@@ -133,7 +199,7 @@ impl P3Layer {
             if mn.has_incident_constraints() {
                 self.constrained_list.push(mn_idx);
             } else {
-                unconstrained.push(mn_idx);
+                self.unconstrained.push(mn_idx);
             }
         }
     }
@@ -157,6 +223,8 @@ impl P3Layer {
 
             for &s_idx in &self.merge_nodes[v_idx].incoming_constraints {
                 if self.merge_nodes[s_idx].barycenter >= v_barycenter {
+                    // `s` must come above `v`, but `s.barycenter` is larger than `v.barycenter`.
+                    // So report in the order as they *should* appear.
                     return Some((s_idx, v_idx));
                 }
             }
@@ -238,6 +306,18 @@ impl P3Layer {
         mns[winner_idx].pull_balance.df_balance += mns[victim_idx].pull_balance.df_balance;
 
         mns[victim_idx].deactivate();
+
+        // Fix the lists.
+        self.constrained_list.retain(|&idx| idx != victim_idx);
+
+        debug_assert!(self.constrained_list.contains(&winner_idx));
+
+        if self.merge_nodes[winner_idx].has_incident_constraints() {
+            // stays in constrained_list
+        } else {
+            self.constrained_list.retain(|&idx| idx != winner_idx);
+            self.unconstrained.push(winner_idx);
+        }
     }
 }
 
