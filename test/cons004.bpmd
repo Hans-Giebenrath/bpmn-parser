@@ -1,4 +1,4 @@
 # Start
 . End
 
-[place @start above @end]
+[place @end left of @start]

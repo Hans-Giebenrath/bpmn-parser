@@ -1,5 +1,6 @@
 use crate::common::graph::EdgeId;
 use crate::common::node::NodePhaseAuxData;
+use crate::layout::constraint::{Above, LeftOf, SameLayer};
 use proc_macros::{e, n};
 
 use crate::common::graph::Graph;
@@ -36,8 +37,6 @@ macro_rules! d {
 fn solve_layers(graph: &mut Graph) {
     d!(dbg!(&graph););
     let mut vars = variables!();
-
-    todo!("TODO take into consideration the same-layer, left-of and above constraints.");
 
     let num_nodes = graph.nodes.len();
     for node in graph.nodes.iter_mut().filter(|node| !node.is_data()) {
@@ -82,27 +81,52 @@ fn solve_layers(graph: &mut Graph) {
     //let mut problem = problem.set_verbose(true);
     //problem.set_parameter("loglevel", "0");
 
-    for (_, edge) in graph
+    graph
         .edges
         .iter_mut()
         .enumerate()
         .filter(|(edge_idx, edge)| {
             edge.is_sequence_flow() && !graph.computed_back_edges.contains(&EdgeId(*edge_idx))
         })
-    {
-        let from_var = aux(&n!(edge.from));
-        let to_var = aux(&n!(edge.to));
-        d!(eprintln!(
-            "constraint n({}) leftof n({})",
-            edge.from.0, edge.to.0
-        ));
-        dbg!(from_var, to_var);
-        problem.add_constraint((to_var - from_var).geq(1));
-    }
+        .map(|(_, edge)| (edge.from, edge.to, "regular edge"))
+        .chain(
+            graph
+                .layout_constraints
+                .left_of
+                .iter()
+                .map(|constraint| (constraint.left, constraint.right, "left-of constraint")),
+        )
+        .for_each(|(left, right, msg)| {
+            let from_var = aux(&n!(left));
+            let to_var = aux(&n!(right));
+            d!(eprintln!(
+                "constraint n({}) leftof n({}) ({msg})",
+                left.0, right.0
+            ));
+            problem.add_constraint((to_var - from_var).geq(1));
+        });
 
-    dbg!();
+    graph
+        .layout_constraints
+        .above
+        .iter()
+        .map(|constraint| (constraint.above, constraint.below, "above constraint"))
+        .chain(
+            graph
+                .layout_constraints
+                .same_layer
+                .iter()
+                .map(|constraint| (constraint.0, constraint.1, "same layer constraint")),
+        )
+        .for_each(|(n0, n1, msg)| {
+            d!(eprintln!(
+                "constraint n({}) same layer as n({}) ({msg})",
+                n0.0, n1.0
+            ));
+            problem.add_constraint((aux(&n!(n0)) - aux(&n!(n1))).eq(0));
+        });
+
     let solution = problem.solve().unwrap();
-    dbg!();
     graph.num_layers = usize::MIN;
 
     for node in graph.nodes.iter_mut().filter(|node| !node.is_data()) {

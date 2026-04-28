@@ -1,13 +1,15 @@
 //! Edge routing is the process of specifying the x coordinates of bend points.
+//! ```
 //!    ┌-->
 //!    |
 //! ---┘
+//! ```
 //!
 //!    ^ assigning this x coordinate is the hard part.
 //!
 //! Long sequence flows are split into dummy edges, and each dummy edge is solved separately.
 //! For message flows which have multiple turns we instead use a separate message flow bend point
-//! store, and reuse the x-coordinate algorithm for finding the y-coordinate of the horizonal
+//! store, and reuse the x-coordinate algorithm for finding the y-coordinate of the horizontal
 //! segments in the inter-pool space. Sadly you must be a big pasta fan if you want to dive into
 //! this huge entangled spaghetti.
 //!
@@ -39,7 +41,7 @@
 
 use crate::common::config::{EdgeSegmentSpace, EdgeSegmentSpaceLocation};
 use crate::common::graph::PoolId;
-use crate::common::node::LayerId;
+use crate::common::node::{LayerId, NodeType};
 use proc_macros::e;
 use proc_macros::from;
 use proc_macros::n;
@@ -192,7 +194,7 @@ impl MessageFlowBendState {
 }
 
 /// When the edge routing routine is reused for inter-pool message flow routing, then those
-/// horizontal segments need to be turned around into vertical segments. Hence this transpose.
+/// horizontal segments need to be turned around into vertical segments. Hence, this transpose.
 /// There is the complication that in the upwards facing case the bend points need to be swapped
 /// as they otherwise would not be recognized as up/down but down/up.
 fn transpose(
@@ -201,30 +203,22 @@ fn transpose(
     is_down: bool,
 ) -> ((usize, usize), (usize, usize)) {
     if is_down {
+        // ```
         //   │     ┌►      │      ─┐
         // ┌─┘ ->  │       └─┐ ->  │
         // ▼      ─┘         ▼     └►
+        // ```
         ((y1, x1), (y2, x2))
     } else {
-        // Need to swap p1 and p2, otherwise the transpose would result in wrong direction arrows:
+        // Need to swap `p1` and `p2`, otherwise the transpose would result in wrong direction arrows:
+        // ```
         //   ▲     ┌─      ▲      ◄┐
         // ┌─┘ ->  │       └─┐ ->  │
         // │      ◄┘         │     └─
+        // ```
         ((y2, x2), (y1, x1))
     }
 }
-
-//struct MessageFlowBendPoints {
-//    /// The bend points right next to the port, not the ones in the inter-pool area.
-//    bend_points: Vec<(usize, usize)>,
-//    /// If `None` then this just goes from one layer to the next and does not bend in the interpool
-//    /// area. Actually combining the following three would be better typing, TODO.
-//    bends_after_pool: Option<PoolId>,
-//    /// Only the `x` value, as `y` is calculated in a second edge routing phase.
-//    interpool_bendpoint1_x: Option<usize>,
-//    /// Only the `x` value, as `y` is calculated in a second edge routing phase.
-//    interpool_bendpoint2_x: Option<usize>,
-//}
 
 #[derive(Default, Debug)]
 struct MessageFlowBendPointStore {
@@ -418,7 +412,7 @@ struct VerticalSegment {
     end_y: usize,
     /// Rough index
     idx: usize,
-    /// For ixi situations. `Some(0)` for the first one (with `idx`) and `Some(1)` for the second
+    /// For IXI situations. `Some(0)` for the first one (with `idx`) and `Some(1)` for the second
     /// one (with `idx + 1`).
     /// Not using an enum here (`enum { Vertical(usize), Diagonal(usize, usize) }`) since this makes
     /// usage rather tiresome.
@@ -515,7 +509,7 @@ fn determine_segment_layers(
     // i.e. set idx values into the SegmentLayer variables. This is required to understand what
     // is the left-to-right order of all edge segments. The neat part is that this can be super
     // rough. For example, for upwards edges it basically is sufficient to set their idx value to
-    // the order as they appear from `min_y=0..inf`. Later there is a scanline graph which checks
+    // the order as they appear from `min_y=0..inf`. Later there is a scan line graph which checks
     // which segments are present at the same `y` value, and this just needs to know in general what
     // is left and what is right. Comments are within the functions.
     let mut total_count_of_segment_layers = 0;
@@ -1060,9 +1054,10 @@ fn get_layered_edges(graph: &mut Graph) -> (Vec<SegmentsOfSameLayer>, MessageFlo
         .for_each(|edge_id| finish_straight_vertical_message_flow(graph, edge_id));
 
     let mut result: Vec<SegmentsOfSameLayer> = vec![];
+    dbg!(&edge_layers);
     for mut edge_layer in edge_layers.into_iter() {
         // sort by min_y: To identify groups
-        // sort by max_y: To later be able to easily spot ixi crossings from the up_edges and
+        // sort by max_y: To later be able to easily spot IXI crossings from the up_edges and
         // down_edges vectors.
         edge_layer.sort_unstable_by_key(|e| (e.min_y(), e.max_y()));
         // Chunk as long as edges are overlapping.
@@ -1071,10 +1066,11 @@ fn get_layered_edges(graph: &mut Graph) -> (Vec<SegmentsOfSameLayer>, MessageFlo
             // TODO for self loops, check if edges[_id].from or .to is a special loop helper node,
             // in which case this should become a right_loops or left_loops member,
             // respectively.
+            let origi_edge = dbg!(&e!(edge.id));
+            let to = &n!(origi_edge.to);
+            let from = &n!(origi_edge.from);
             if edge.is_message_flow {
                 // If the message flow goes to the left, then it consists of two looping segments.
-                let to = &to!(edge.id);
-                let from = &from!(edge.id);
                 let layer = result.len();
                 if to.layer_id <= from.layer_id {
                     if from.layer_id.0 + 1 == layer {
@@ -1086,6 +1082,30 @@ fn get_layered_edges(graph: &mut Graph) -> (Vec<SegmentsOfSameLayer>, MessageFlo
                     }
                     return;
                 }
+            }
+            if from.layer_id == to.layer_id {
+                match (&from.node_type, &to.node_type) {
+                    (
+                        NodeType::SnakeEdgeBisectDummy { .. }
+                        | NodeType::BackEdgeCornerDummy { .. },
+                        _,
+                    ) => {
+                        dbg!();
+                        edge.alignment = Alignment::Right;
+                        segments.right_loops.push(edge);
+                    }
+                    (
+                        _,
+                        NodeType::SnakeEdgeBisectDummy { .. }
+                        | NodeType::BackEdgeCornerDummy { .. },
+                    ) => {
+                        dbg!();
+                        edge.alignment = Alignment::Left;
+                        segments.left_loops.push(edge);
+                    }
+                    _ => panic!("impossible! edge: {origi_edge:?},\nfrom: {from:?},\nto: {to:?}"),
+                }
+                return;
             }
             match edge.start_y.cmp(&edge.end_y) {
                 std::cmp::Ordering::Less if edge.is_message_flow => {
@@ -1155,7 +1175,7 @@ fn get_layered_mfs(
     let mut result: Vec<SegmentsOfSameLayer> = vec![];
     for mut edge_layer in edge_layers.into_iter() {
         // sort by min_y: To identify groups
-        // sort by max_y: To later be able to easily spot ixi crossings from the up_edges and
+        // sort by max_y: To later be able to easily spot IXI crossings from the up_edges and
         // down_edges vectors.
         edge_layer.sort_unstable_by_key(|e| (e.min_y(), e.max_y()));
         // Chunk as long as edges are overlapping.

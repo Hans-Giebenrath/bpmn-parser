@@ -21,6 +21,7 @@ use crate::common::macros::impl_index;
 use crate::common::node::LayerId;
 use crate::common::node::Node;
 use crate::common::node::NodePhaseAuxData;
+use crate::common::vecset::VecSet;
 use crate::layout::constraint::Above;
 use itertools::Either;
 use itertools::Itertools;
@@ -555,8 +556,7 @@ impl Hash for SingleLaneSweepSolution {
 
 #[derive(Default)]
 struct SingleLaneSweepSolutions {
-    /// TODO actually not a HashSet but something more deterministic in order. A VecSet would be better.
-    solutions: HashSet<SingleLaneSweepSolution>,
+    solutions: VecSet<SingleLaneSweepSolution>,
 }
 
 impl SingleLaneSweepSolutions {
@@ -1127,7 +1127,7 @@ fn calculate_vertical_edge_chains(graph: &Graph) -> Vec<VerticalEdgeChain> {
             (None, None) => Ok(None),
             (Some(next_node), None)
                 // Not a loop.
-                if !current_chain.iter().any(|prev| std::ptr::eq(*prev, node)) =>
+                if !current_chain.iter().any(|prev| std::ptr::eq(*prev, next_node)) =>
             {
                 Ok(Some(next_node))
             }
@@ -1251,6 +1251,7 @@ fn calculate_vertical_edge_chains(graph: &Graph) -> Vec<VerticalEdgeChain> {
         let mut chain = Vec::new();
         let mut current_node = node;
         'inner: loop {
+            chain.push(current_node);
             let next = match next_chain_link(
                 current_node,
                 previous_node_id,
@@ -1262,7 +1263,6 @@ fn calculate_vertical_edge_chains(graph: &Graph) -> Vec<VerticalEdgeChain> {
                 Ok(None) => break 'inner,
                 Ok(Some(next)) => next,
             };
-            chain.push(next);
             previous_node_id = Some(current_node.id);
             current_node = next;
         }

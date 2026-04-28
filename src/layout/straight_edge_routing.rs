@@ -5,7 +5,8 @@ use crate::common::graph::EdgeId;
 use crate::common::graph::Graph;
 use crate::common::graph::NodeId;
 use crate::common::node::Node;
-use proc_macros::e;
+use crate::common::node::NodeIdOrEdgeId;
+use proc_macros::{e, n};
 use std::collections::HashMap;
 
 const NODE_MARGIN: usize = 5;
@@ -73,33 +74,65 @@ fn sequence_edge_routing(graph: &mut Graph) {
     for edge_idx in 0..graph.edges.len() {
         let edge_id = EdgeId(edge_idx);
         let edge = &e!(edge_id);
-        if !edge.is_sequence_flow() || !edge.is_regular() {
+        let to = &n!(edge.to);
+        if !edge.is_sequence_flow() {
             // Straight dummy edges will be stitched together in the `dummy_node_removal`
             // phase, hence they are skipped here.
             continue;
         }
-        assert!(
-            !edge.is_vertical,
-            "Check whether this should be handled via new HorizontalSegmentDummy nodes."
-        );
-        let edge_id = EdgeId(edge_idx);
-        let [start @ (_, start_y), end @ (_, end_y)] = graph.start_and_end_ports(edge_id);
-        if start_y != end_y {
-            continue;
+
+        if edge.is_regular() {
+            // TODO is this a S bisected edge?
+            //  ---> should check here if the edge is replaced by dummies, by two edges, where the
+            //  middle node is the bisect node, and both edges are marked as vertical.
+            //  Aaa yes, can actually always only look for the outgoing edge and skip the other, so each
+            // edge is only processed once.
+            assert!(
+                !edge.is_vertical,
+                "Check whether this should be handled via new HorizontalSegmentDummy nodes."
+            );
+            let edge_id = EdgeId(edge_idx);
+            let [start @ (_, start_y), end @ (_, end_y)] = graph.start_and_end_ports(edge_id);
+            if start_y != end_y {
+                continue;
+            }
+            let bend_points = if edge.is_reversed {
+                vec![end, start]
+            } else {
+                vec![start, end]
+            };
+            let EdgeType::Regular {
+                bend_points: out_bend_points,
+                ..
+            } = &mut e!(edge_id).edge_type
+            else {
+                unreachable!("Verified `edge.is_regular()` above.");
+            };
+            *out_bend_points = RegularEdgeBendPoints::FullyRouted(bend_points);
+        } else if edge.is_vertical && to.is_snake_edge_bisect_dummy() {
+            let from = &n!(edge.from);
+            let further_to = &n!(to
+                .hop_to_next_node(graph, NodeIdOrEdgeId::EdgeId(edge_id))
+                .1);
+            let EdgeType::DummyEdge { original_edge, .. } = &edge.edge_type else {
+                unreachable!("This is definitely a dummy edge");
+            };
+            let original_edge = *original_edge;
+            let (start_y, end_y) = if from.y < further_to.y {
+                (from.y + from.height, further_to.y)
+            } else {
+                (from.y, to.y + to.height)
+            };
+            let EdgeType::ReplacedByDummies { text, .. } = &mut e!(original_edge).edge_type else {
+                unreachable!();
+            };
+            let text = std::mem::take(text);
+            let x = from.x + from.width / 2;
+            e!(original_edge).edge_type = EdgeType::Regular {
+                text,
+                bend_points: RegularEdgeBendPoints::FullyRouted(vec![(x, start_y), (x, end_y)]),
+            };
         }
-        let bend_points = if edge.is_reversed {
-            vec![end, start]
-        } else {
-            vec![start, end]
-        };
-        let EdgeType::Regular {
-            bend_points: out_bend_points,
-            ..
-        } = &mut e!(edge_id).edge_type
-        else {
-            unreachable!("Verified `edge.is_regular()` above.");
-        };
-        *out_bend_points = RegularEdgeBendPoints::FullyRouted(bend_points);
     }
 }
 

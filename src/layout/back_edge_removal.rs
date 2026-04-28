@@ -90,7 +90,6 @@ pub fn back_edge_removal(graph: &mut Graph) -> Result<(), String> {
         },
         graph,
     );
-    dbg!(&back_edge_groups);
     if back_edge_groups.iter().all(|group| group.len() <= 1) {
         // We only have trivial groups. So no need to spin up the ILP to solve minimum SAT.
         graph.computed_back_edges = back_edge_groups

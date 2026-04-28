@@ -91,13 +91,13 @@ pub fn run(
             let top_most_mn_id = state
                 .merge_nodes
                 .iter()
-                .position(|mn| mn.ordered_nodes[0] == top_most_sn_id)
+                .position(|mn| mn.ordered_nodes.first() == Some(&top_most_sn_id))
                 .unwrap();
             for sn_id in sweepnode_it {
                 let mn = state
                     .merge_nodes
                     .iter()
-                    .position(|mn| mn.ordered_nodes[0] == sn_id)
+                    .position(|mn| mn.ordered_nodes.first() == Some(&sn_id))
                     .unwrap();
                 state.absorb(
                     /* remaining to-be above: */ top_most_mn_id,
@@ -272,12 +272,8 @@ impl P3Layer {
         let victim_below: Vec<usize> = mns[victim_idx].below_of_this.iter().copied().collect();
 
         mns[winner_idx].ordered_nodes.extend(victim_ordered_nodes);
-
-        let removed_above = mns[winner_idx].above_of_this.remove(&victim_idx);
-        debug_assert!(!removed_above);
-
-        let removed_below = mns[winner_idx].below_of_this.remove(&victim_idx);
-        debug_assert!(removed_below);
+        mns[winner_idx].above_of_this.remove(&victim_idx);
+        mns[winner_idx].below_of_this.remove(&victim_idx);
 
         for above_idx in victim_above {
             if above_idx == winner_idx {
@@ -310,10 +306,13 @@ impl P3Layer {
         // Fix the lists.
         self.constrained_list.retain(|&idx| idx != victim_idx);
 
-        debug_assert!(self.constrained_list.contains(&winner_idx));
-
         if self.merge_nodes[winner_idx].has_incident_constraints() {
-            // stays in constrained_list
+            // stays in constrained_list. But during the vertical edge phase it could be that
+            // the winner did not have any constraints to begin with, but now ingested some from the
+            // victim node.
+            if !self.constrained_list.contains(&winner_idx) {
+                self.constrained_list.push(winner_idx);
+            }
         } else {
             self.constrained_list.retain(|&idx| idx != winner_idx);
             self.unconstrained.push(winner_idx);

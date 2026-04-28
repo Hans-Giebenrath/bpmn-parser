@@ -9,3 +9,4 @@ pub mod lane;
 pub mod macros;
 pub mod node;
 pub mod pool;
+pub mod vecset;
