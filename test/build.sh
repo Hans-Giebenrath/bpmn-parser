@@ -11,6 +11,7 @@ pushd "$dir"
 # the fragments are first written in parallel into smaller files, and then
 # in the end all those files are combined sequentially.
 TMPDIR=$(mktemp -d -t 'bpmn-parser-test_build.sh.XXXXXXXX')
+export TMPDIR
 export RUSTFLAGS="${RUSTFLAGS:--Awarnings}"
 export RUST_BACKTRACE="${RUST_BACKTRACE:-1}"
 
@@ -34,7 +35,17 @@ fi
 file_stem=compiled
 adoc_file="$file_stem.adoc"
 
-parallel -j1 ./build_one.sh ::: "${all[@]}"
+parallelism=1
+echo "${all[@]}"
+for f in "${all[@]}"; do
+    if ((parallelism == 0)); then
+        wait -n || true
+    else
+        ((--parallelism)) || true
+    fi
+    ./build_one.sh "$f" &
+done
+wait
 
 cat <<EOF >"$adoc_file"
 = BPMD - Business Process Modeling DSL
