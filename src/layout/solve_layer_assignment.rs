@@ -1,6 +1,5 @@
 use crate::common::graph::EdgeId;
 use crate::common::node::NodePhaseAuxData;
-use crate::layout::constraint::{Above, LeftOf, SameLayer};
 use proc_macros::{e, n};
 
 use crate::common::graph::Graph;
@@ -47,18 +46,6 @@ fn solve_layers(graph: &mut Graph) {
     }
 
     let mut objective = Expression::from(0.0);
-    for edge in graph
-        .edges
-        .iter_mut()
-        .filter(|edge| edge.is_sequence_flow())
-    {
-        let from_var = aux(&n!(edge.from));
-        let to_var = aux(&n!(edge.to));
-
-        // Favor short edges
-        objective += to_var - from_var;
-        d!(eprintln!("minimize n({}) -> n({})", edge.from.0, edge.to.0));
-    }
 
     // Try to pull start nodes to the left. But only starts, let the rest be placed however the
     // algorithm thinks. Not sure yet whether this is good.
@@ -77,7 +64,7 @@ fn solve_layers(graph: &mut Graph) {
         }
     }
 
-    let mut problem = vars.minimise(objective).using(default_solver);
+    let mut constraints = Vec::new();
     //let mut problem = problem.set_verbose(true);
     //problem.set_parameter("loglevel", "0");
 
@@ -88,22 +75,28 @@ fn solve_layers(graph: &mut Graph) {
         .filter(|(edge_idx, edge)| {
             edge.is_sequence_flow() && !graph.computed_back_edges.contains(&EdgeId(*edge_idx))
         })
-        .map(|(_, edge)| (edge.from, edge.to, "regular edge"))
-        .chain(
-            graph
-                .layout_constraints
-                .left_of
-                .iter()
-                .map(|constraint| (constraint.left, constraint.right, "left-of constraint")),
-        )
-        .for_each(|(left, right, msg)| {
+        .map(|(_, edge)| (edge.from, edge.to, true, "regular edge"))
+        .chain(graph.layout_constraints.left_of.iter().map(|constraint| {
+            (
+                constraint.left,
+                constraint.right,
+                false,
+                "left-of constraint",
+            )
+        }))
+        .for_each(|(left, right, minimize, msg)| {
+            if minimize {
+                // Favor short edges
+                objective += aux(&n!(right)) - aux(&n!(left));
+                d!(eprintln!("minimize n({}) -> n({})", left.0, right.0));
+            }
             let from_var = aux(&n!(left));
             let to_var = aux(&n!(right));
             d!(eprintln!(
                 "constraint n({}) leftof n({}) ({msg})",
                 left.0, right.0
             ));
-            problem.add_constraint((to_var - from_var).geq(1));
+            constraints.push((to_var - from_var).geq(1));
         });
 
     graph
@@ -123,8 +116,13 @@ fn solve_layers(graph: &mut Graph) {
                 "constraint n({}) same layer as n({}) ({msg})",
                 n0.0, n1.0
             ));
-            problem.add_constraint((aux(&n!(n0)) - aux(&n!(n1))).eq(0));
+            constraints.push((aux(&n!(n0)) - aux(&n!(n1))).eq(0));
         });
+
+    let mut problem = vars.minimise(objective).using(default_solver);
+    for c in constraints {
+        problem.add_constraint(c);
+    }
 
     let solution = problem.solve().unwrap();
     graph.num_layers = usize::MIN;

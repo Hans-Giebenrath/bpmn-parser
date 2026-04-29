@@ -439,7 +439,7 @@ impl SweepGraph {
                                 // Just a debug assert as this does not result in panics, just wrong
                                 // crossing number counting.
                                 debug_assert!(
-                                    to.layer_id.0 + 1 == node.layer_id.0,
+                                    to.layer_id.0 == node.layer_id.0 + 1,
                                     "edge_id: {}, edge: {:?}, to: {:?}, node: {:?}",
                                     edge_id.0,
                                     edge,
@@ -462,6 +462,7 @@ impl SweepGraph {
                                     edge_collection
                                         .iter()
                                         .any(|(existing_id, _)| edge_id == *existing_id),
+                                    "node: {node:?},\nedge: {edge:?}\nedge_collection: {edge_collection:?}"
                                 );
                             }
                         }
