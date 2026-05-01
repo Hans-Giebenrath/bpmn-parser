@@ -74,10 +74,8 @@ fn fixup_ports_and_bendpoints(graph: &mut Graph) {
                         // This is only relevant for gateway bendpoints that can be put at the
                         // same height as the gateway, i.e. shall be vertically collapsed. The ILP
                         // construction with big M should have forced it to y/2 += rounding
-                        // errors. So due to the rounding errors we, just in case, assign that other
-                        // y here.
+                        // errors.
                         dbg!(&node, &relative_port, &xy, relative_x);
-                        relative_port.y = xy.1;
                         relative_port.x = relative_x;
                         *bend_points = VerticalCollapsed;
                     } else {
