@@ -237,7 +237,7 @@ impl SweepGraph {
         }
 
         let mut result = SweepGraph {
-            vertical_edge_chains: calculate_vertical_edge_chains(graph),
+            vertical_edge_chains: calculate_vertical_edge_chains(graph, pool_lane),
             ..Default::default()
         };
 
@@ -599,7 +599,6 @@ impl SingleLaneSweepSolutions {
 type ConstraintMap = HashMap<Coord3, Vec<Above>>;
 
 pub fn reduce_all_crossings_sweep(graph: &mut Graph) {
-    dbg!(&graph);
     let mut constraint_map = ConstraintMap::new();
     for above_constraint in &graph.layout_constraints.above {
         let coord3 = n!(above_constraint.above).coord3();
@@ -698,6 +697,16 @@ fn left_right_sweeps(
                     constraint_map,
                     one_right_sweep_is_done,
                 );
+                if best_versions
+                    .solutions
+                    .iter()
+                    .next()
+                    .is_some_and(|v| v.total_crossing_count.weighted_count() == 0)
+                {
+                    // The current best version already has 0 crossings. There is no need
+                    // to continue searching for something even better, as that does not exist.
+                    return best_versions;
+                }
                 one_right_sweep_is_done = true;
                 // Don't inline! Otherwise, it would short-circuit. But we want to do the full
                 // right-left sweep.
@@ -804,6 +813,10 @@ fn one_direction_sweep(
             // But I hope that this conservative version is sufficient in practice.
             something_changed = best_versions.maybe_add(sweep_graph);
         }
+    }
+    if !one_right_sweep_is_done {
+        // At the end of the first sweep we can for sure add the current result as a best version.
+        something_changed = best_versions.maybe_add(sweep_graph);
     }
     something_changed
 }
@@ -1099,8 +1112,10 @@ fn count_crossing_one_edge_pair(
 }
 
 /// See documentation for `VerticalEdgeChain`.
-fn calculate_vertical_edge_chains(graph: &Graph) -> Vec<VerticalEdgeChain> {
+fn calculate_vertical_edge_chains(graph: &Graph, pool_lane: PoolAndLane) -> Vec<VerticalEdgeChain> {
+    /// Chains shall only be of list structure, and not form a cycle.
     struct IllegalChainSituation;
+
     fn next_chain_link<'a>(
         node: &Node,
         previous_node_id: Option<NodeId>,
@@ -1142,6 +1157,7 @@ fn calculate_vertical_edge_chains(graph: &Graph) -> Vec<VerticalEdgeChain> {
         constraints: &[Above],
         initial_chain_pos: usize,
         chain: &[&Node],
+        mut left_the_chain: bool,
         forwards_is_legal: &mut bool,
         backwards_is_legal: &mut bool,
     ) {
@@ -1150,6 +1166,17 @@ fn calculate_vertical_edge_chains(graph: &Graph) -> Vec<VerticalEdgeChain> {
                 .iter()
                 .position(|node| node.id == next_constrained_node)
             {
+                if left_the_chain {
+                    // Problem is that the vertical edge chain is interrupted by some other node
+                    // which needs to be fitted in between. So we invalidate the chain altogether.
+                    // Though this is suboptimal for S bisect dummies, as they are now just placed
+                    // rather randomly. Hence need to have a separate sweep phase were S dummies are
+                    // just moved top-to-bottom and we check which of those have the best crossing
+                    // outcome.
+                    *forwards_is_legal = false;
+                    *backwards_is_legal = false;
+                    return;
+                }
                 // There is an above chain
                 if position > initial_chain_pos {
                     *backwards_is_legal = false;
@@ -1163,6 +1190,8 @@ fn calculate_vertical_edge_chains(graph: &Graph) -> Vec<VerticalEdgeChain> {
                 // but the involved amount of nodes, constraints etc is so small that it should
                 // not matter.
                 return;
+            } else {
+                left_the_chain = true;
             }
             for Above { below, .. } in constraints
                 .iter()
@@ -1189,6 +1218,7 @@ fn calculate_vertical_edge_chains(graph: &Graph) -> Vec<VerticalEdgeChain> {
                     constraints,
                     initial_chain_pos,
                     chain,
+                    left_the_chain,
                     forwards_is_legal,
                     backwards_is_legal,
                 );
@@ -1201,6 +1231,17 @@ fn calculate_vertical_edge_chains(graph: &Graph) -> Vec<VerticalEdgeChain> {
                 .iter()
                 .position(|node| node.id == next_constrained_node)
             {
+                if left_the_chain {
+                    // Problem is that the vertical edge chain is interrupted by some other node
+                    // which needs to be fitted in between. So we invalidate the chain altogether.
+                    // Though this is suboptimal for S bisect dummies, as they are now just placed
+                    // rather randomly. Hence need to have a separate sweep phase were S dummies are
+                    // just moved top-to-bottom and we check which of those have the best crossing
+                    // outcome.
+                    *forwards_is_legal = false;
+                    *backwards_is_legal = false;
+                    return;
+                }
                 // There is an above chain
                 if position > initial_chain_pos {
                     *forwards_is_legal = false;
@@ -1214,6 +1255,8 @@ fn calculate_vertical_edge_chains(graph: &Graph) -> Vec<VerticalEdgeChain> {
                 // but the involved amount of nodes, constraints etc is so small that it should
                 // not matter.
                 return;
+            } else {
+                left_the_chain = true;
             }
             for Above { above, .. } in constraints
                 .iter()
@@ -1225,6 +1268,7 @@ fn calculate_vertical_edge_chains(graph: &Graph) -> Vec<VerticalEdgeChain> {
                     constraints,
                     initial_chain_pos,
                     chain,
+                    left_the_chain,
                     forwards_is_legal,
                     backwards_is_legal,
                 );
@@ -1238,13 +1282,16 @@ fn calculate_vertical_edge_chains(graph: &Graph) -> Vec<VerticalEdgeChain> {
     let mut vertical_edge_chains = Vec::<VerticalEdgeChain>::new();
     let mut above_constraints_to_follow = Vec::<Above>::new();
     'outer: for node in &graph.nodes {
+        if node.pool_and_lane() != pool_lane {
+            continue;
+        }
         if vertical_edge_chains
             .iter()
             .any(|chain| chain.top_to_bottom_node_list.contains(&aux(node)))
         {
-            // If this node is part of a valid chain, then it cannot be part of more valid chains
-            // (otherwise the chain would not have been identified as valid to begin with). Hence,
-            // we can ignore this node.
+            // This node is already part of a valid chain. So don't repeat work.
+            // (it can be part of an illegal chain, and since those are not recorded, in that case
+            // work would be repeated.)
             continue 'outer;
         }
         above_constraints_to_follow.clear();
@@ -1260,7 +1307,14 @@ fn calculate_vertical_edge_chains(graph: &Graph) -> Vec<VerticalEdgeChain> {
                 &mut above_constraints_to_follow,
                 graph,
             ) {
-                Err(IllegalChainSituation) => continue 'outer,
+                Err(IllegalChainSituation) => {
+                    // This captures the situation in the first iteration (`previous_node_id ==
+                    // None`) that the node is not a start or end of the chain, but in the middle.
+                    // Those are also just ignored, we want to start from some end.
+                    // But also captures an illegal branching situation, or cycle detection, in
+                    // the middle of traversing the (potential) chain.
+                    continue 'outer;
+                }
                 Ok(None) => break 'inner,
                 Ok(Some(next)) => next,
             };
@@ -1268,7 +1322,7 @@ fn calculate_vertical_edge_chains(graph: &Graph) -> Vec<VerticalEdgeChain> {
             current_node = next;
         }
         if chain.len() < 2 {
-            // That's not a chain, goddammit!
+            // That's not a chain, goddammit! It's just a link, wake up!
             continue 'outer;
         }
 
@@ -1282,6 +1336,7 @@ fn calculate_vertical_edge_chains(graph: &Graph) -> Vec<VerticalEdgeChain> {
                     &graph.layout_constraints.above,
                     initial_chain_pos,
                     &chain,
+                    false,
                     &mut forwards_is_legal,
                     &mut backwards_is_legal,
                 );
@@ -1296,6 +1351,7 @@ fn calculate_vertical_edge_chains(graph: &Graph) -> Vec<VerticalEdgeChain> {
                     &graph.layout_constraints.above,
                     initial_chain_pos,
                     &chain,
+                    false,
                     &mut forwards_is_legal,
                     &mut backwards_is_legal,
                 );

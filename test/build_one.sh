@@ -10,6 +10,7 @@ f="$(realpath -e "$f")"
 
 cd "$(git rev-parse --show-toplevel)"
 release="${release:-false}"
+failed=false
 run() {
     local dir=debug
 
@@ -17,22 +18,38 @@ run() {
         dir=release
     fi
     set -x
-    time timeout 3s "${CARGO_TARGET_DIR:-./target}"/$dir/bpmn-parser "$@" 2>&1
+    echo "OUTPUT FOR $basename" >"$TMPDIR/$basename.output"
+    if ! time timeout 3s "${CARGO_TARGET_DIR:-./target}"/$dir/bpmn-parser "$@" 2>&1 | tee -a "$TMPDIR/$basename.output"; then
+        failed=true
+    fi
+    if [[ "$basename" =~ ^ERR ]]; then
+        # The ERR* files test that an error actually happens.
+        if $failed; then
+            failed=false
+        else
+            failed=true
+            failed_filename="$failed_filename (should have shown an error, but was successful)"
+        fi
+    fi
+
+    if ! $failed; then
+        rm "$TMPDIR/$basename.output"
+    fi
     set +x
 }
 
 basename=$(basename "$f" .bpmd)
+failed_filename="error in $basename"
 tmp_adoc_file="$TMPDIR/$basename.tmp.adoc"
 csv_file="$dir/${basename}.csv"
 correct_csv_file="$dir/${basename}.csv.correct"
-failed=false
 vis_table=false
 
 if grep -q '// GENERATE VISIBILITY TABLE' "$f"; then
-    run -i "$f" -o "${f%.bpmd}.xml" -v "$csv_file" || failed=true
+    run -i "$f" -o "${f%.bpmd}.xml" -v "$csv_file"
     vis_table=true
 else
-    run -i "$f" -o "${f%.bpmd}.xml" || failed=true
+    run -i "$f" -o "${f%.bpmd}.xml"
 fi
 
 cat <<EOF >>"$tmp_adoc_file"
@@ -41,6 +58,8 @@ cat <<EOF >>"$tmp_adoc_file"
 EOF
 
 if $failed; then
+    echo "$basename" >"$TMPDIR/$failed_filename"
+
     cat <<EOF >>"$tmp_adoc_file"
 WARNING: Build Failure.
 

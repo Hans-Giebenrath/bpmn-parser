@@ -91,7 +91,11 @@ impl Drop for Timer {
             .len();
         for (label, duration) in &mut self.measurements {
             let padding = std::iter::repeat_n(' ', longest_label - label.len()).collect::<String>();
-            println!("{padding}{label} took {}ms", duration.as_millis());
+            println!(
+                // 7: total width, this includes the digit and post digit numbers as well.
+                "{padding}{label} took {:7.2} ms",
+                duration.as_micros() as f64 / 1000.
+            );
         }
     }
 }

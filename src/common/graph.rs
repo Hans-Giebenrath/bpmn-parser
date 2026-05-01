@@ -139,10 +139,20 @@ impl PoolAndLane {
     };
 }
 
-#[derive(Debug, PartialEq, Eq, Hash, Clone)]
+#[derive(PartialEq, Eq, Hash, Clone)]
 pub struct Coord3 {
     pub pool_and_lane: PoolAndLane,
     pub layer: LayerId,
+}
+
+impl Debug for Coord3 {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(
+            f,
+            "p/l/l {}/{}/{}",
+            self.pool_and_lane.pool.0, self.pool_and_lane.lane.0, self.layer.0
+        )
+    }
 }
 
 pub(crate) enum StartAt {
@@ -643,25 +653,23 @@ impl Debug for Graph {
         for n in &self.nodes {
             write!(
                 f,
-                "  node: {} (p/l/lyr: {}/{}/{}) - {:?} - in: {:?}, out: {:?}, ",
+                "  node: {} ({:?}) - {:?} - in: {:?}, out: {:?}, ",
                 n.id.0,
-                n.pool.0,
-                n.lane.0,
-                n.layer_id.0,
-                n.display_text().unwrap_or_default(),
+                n.coord3(),
+                n.display_text_or_dummy_kind(),
                 n.incoming.iter().map(|e| e.0).collect::<Vec<_>>(),
                 n.outgoing.iter().map(|e| e.0).collect::<Vec<_>>(),
             )?;
-            match &n.node_type {
-                NodeType::RealNode { .. } => write!(f, "real node")?,
-                NodeType::LongEdgeDummy => write!(f, "dummy node")?,
-                NodeType::SnakeEdgeBisectDummy { .. } => write!(f, "S-dummy node")?,
-                NodeType::BackEdgeCornerDummy { .. } => write!(f, "corner-dummy node")?,
-                NodeType::BendDummy {
-                    originating_node,
-                    kind,
-                } => write!(f, "bend dummy from {}: {:?}", originating_node.0, kind)?,
-            }
+            //match &n.node_type {
+            //    NodeType::RealNode { .. } => write!(f, "real node")?,
+            //    NodeType::LongEdgeDummy => write!(f, "dummy node")?,
+            //    NodeType::SnakeEdgeBisectDummy { .. } => write!(f, "S-dummy node")?,
+            //    NodeType::BackEdgeCornerDummy { .. } => write!(f, "corner-dummy node")?,
+            //    NodeType::BendDummy {
+            //        originating_node,
+            //        kind,
+            //    } => write!(f, "bend dummy from {}: {:?}", originating_node.0, kind)?,
+            //}
             write!(f, ", ")?;
             match n.node_above_in_same_lane {
                 Some(NodeId(idx)) => write!(f, "above {idx}")?,

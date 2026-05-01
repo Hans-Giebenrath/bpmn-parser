@@ -138,7 +138,6 @@ pub(crate) enum PlaceForBendDummy {
 fn handle_nongateway_node(this_node_id: NodeId, graph: &mut Graph) {
     let this_node = &graph.nodes[this_node_id];
     let this_layer = this_node.layer_id;
-    let this_pool = this_node.pool;
 
     let top_barrier = top_barrier(graph, this_node_id);
     let bottom_barrier = bottom_barrier(graph, this_node_id);
@@ -184,7 +183,7 @@ fn handle_nongateway_node(this_node_id: NodeId, graph: &mut Graph) {
 
             let must_go_vertical = top_barrier
                 .as_ref()
-                .map(|barrier| {
+                .and_then(|barrier| {
                     if barrier.blocking_real_node == from!(edge_id).id {
                         Some(VerticalEdgeDocks::Above)
                     } else {
@@ -192,7 +191,7 @@ fn handle_nongateway_node(this_node_id: NodeId, graph: &mut Graph) {
                     }
                 })
                 .or_else(|| {
-                    bottom_barrier.as_ref().map(|barrier| {
+                    bottom_barrier.as_ref().and_then(|barrier| {
                         if barrier.blocking_real_node == from!(edge_id).id {
                             Some(VerticalEdgeDocks::Below)
                         } else {
@@ -200,7 +199,23 @@ fn handle_nongateway_node(this_node_id: NodeId, graph: &mut Graph) {
                         }
                     })
                 })
-                .flatten();
+                .or_else(|| {
+                    let from = &from!(edge_id);
+                    if !edge.is_vertical {
+                        None
+                    } else {
+                        assert!(
+                            from.is_left_back_edge_corner_dummy()
+                                || from.is_snake_edge_bisect_dummy(),
+                            "from: {from:?}\nedge: {edge:?}"
+                        );
+                        if from.pool_and_lane() < this_node.pool_and_lane() {
+                            Some(VerticalEdgeDocks::Above)
+                        } else {
+                            Some(VerticalEdgeDocks::Below)
+                        }
+                    }
+                });
 
             PortInfo {
                 is_incoming: true,
@@ -253,7 +268,7 @@ fn handle_nongateway_node(this_node_id: NodeId, graph: &mut Graph) {
 
             let must_go_vertical = top_barrier
                 .as_ref()
-                .map(|barrier| {
+                .and_then(|barrier| {
                     if barrier.blocking_real_node == to!(edge_id).id {
                         Some(VerticalEdgeDocks::Above)
                     } else {
@@ -261,7 +276,7 @@ fn handle_nongateway_node(this_node_id: NodeId, graph: &mut Graph) {
                     }
                 })
                 .or_else(|| {
-                    bottom_barrier.as_ref().map(|barrier| {
+                    bottom_barrier.as_ref().and_then(|barrier| {
                         if barrier.blocking_real_node == to!(edge_id).id {
                             Some(VerticalEdgeDocks::Below)
                         } else {
@@ -269,7 +284,22 @@ fn handle_nongateway_node(this_node_id: NodeId, graph: &mut Graph) {
                         }
                     })
                 })
-                .flatten();
+                .or_else(|| {
+                    let to = &to!(edge_id);
+                    if !edge.is_vertical {
+                        None
+                    } else {
+                        assert!(
+                            to.is_right_back_edge_corner_dummy() || to.is_snake_edge_bisect_dummy(),
+                            "to: {to:?}\nedge: {edge:?}"
+                        );
+                        if to.pool_and_lane() < this_node.pool_and_lane() {
+                            Some(VerticalEdgeDocks::Above)
+                        } else {
+                            Some(VerticalEdgeDocks::Below)
+                        }
+                    }
+                });
 
             PortInfo {
                 is_incoming: false,
@@ -388,7 +418,7 @@ fn handle_nongateway_node(this_node_id: NodeId, graph: &mut Graph) {
         incoming
             .side_upper
             .iter_mut()
-            .chain(incoming.side_middle_sf.as_deref_mut().into_iter())
+            .chain(incoming.side_middle_sf.as_deref_mut())
             .chain(incoming.side_lower.iter_mut()),
     ) {
         port_info.coordinate = RelativePort { x: 0, y };
@@ -404,7 +434,7 @@ fn handle_nongateway_node(this_node_id: NodeId, graph: &mut Graph) {
         outgoing
             .side_upper
             .iter_mut()
-            .chain(outgoing.side_middle_sf.as_deref_mut().into_iter())
+            .chain(outgoing.side_middle_sf.as_deref_mut())
             .chain(outgoing.side_lower.iter_mut()),
     ) {
         port_info.coordinate = RelativePort {

@@ -69,10 +69,15 @@ pub fn dummy_node_removal(graph: &mut Graph) {
         }
         let AbsolutePort { x: to_x, y: to_y } = graph.nodes[to].port_of_incoming(cur_dummy_edge_id);
         bend_points.push((to_x, to_y));
-        // Vertical lines ([Edge.is_vertical]) have their endpoints as their recorded
-        // `bend_points`. This means that they will duplicate info in `from` and `to`.
-        // So remove the duplicates.
-        bend_points.dedup();
+        // The longer edges should be constructed in an ideal way. Vertical edge segments use
+        // `VerticalBendDummy` where they just record the port of the bend dummy.
+        // Fully vertical `SnakeEdgeBisectDummy`s are already stitched together in an earlier phase.
+        debug_assert!(
+            bend_points
+                .array_windows()
+                .all(|[left, right]| left != right),
+            "bend_points: {bend_points:?}"
+        );
 
         let edge = &mut graph.edges[edge_id];
         if edge.is_reversed {

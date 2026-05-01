@@ -65,7 +65,7 @@ pub enum NodeType {
     /// If there are two incoming edges (and 0 outgoing) then it is the right corner node.
     /// If there are two outgoing edges (and 0 incoming) then it is the left corner node.
     ///
-    /// Not 100% sure if it is really necessary to have this distinction.
+    /// I believe this one can be merged with the `BendDummy`.
     BackEdgeCornerDummy {
         same_layer_real_node_id: NodeId,
         /// Connecting to the `same_layer_real_node_id`.

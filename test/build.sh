@@ -15,6 +15,10 @@ export TMPDIR
 export RUSTFLAGS="${RUSTFLAGS:--Awarnings}"
 export RUST_BACKTRACE="${RUST_BACKTRACE:-1}"
 
+print_in_red() {
+    printf "\033[31m%s\033[0m\n" "$*"
+}
+
 cleanup() {
     rm -rf "$TMPDIR"
 }
@@ -35,7 +39,7 @@ fi
 file_stem=compiled
 adoc_file="$file_stem.adoc"
 
-parallelism=1
+parallelism=2
 echo "${all[@]}"
 for f in "${all[@]}"; do
     if ((parallelism == 0)); then
@@ -61,3 +65,19 @@ done
 
 popd
 asciidoctor -o $file_stem.html $file_stem.adoc
+
+# What a dirty hack! I use file names as error messages to print to the user.
+# Does the job for this little tool.
+cd "$TMPDIR"
+
+shopt -s nullglob
+some_failed=false
+for f in error*; do
+    print_in_red "$f"
+    some_failed=true
+done
+
+if $some_failed; then
+    cat -- *.output >"$dir/failed_runs_output"
+    print_in_red "Error messages can be reviewed in file: ./failed_runs_output."
+fi
