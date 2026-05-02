@@ -1,3 +1,5 @@
+use std::slice::{Iter, IterMut};
+
 #[derive(Debug, Clone)]
 pub struct VecSet<T> {
     inner: Vec<T>,
@@ -68,11 +70,11 @@ impl<T: Eq> VecSet<T> {
         self.inner.iter().find(|x| *x == value)
     }
 
-    pub fn iter(&self) -> impl Iterator<Item = &T> {
+    pub fn iter(&self) -> Iter<'_, T> {
         self.inner.iter()
     }
 
-    pub fn iter_mut(&mut self) -> impl Iterator<Item = &mut T> {
+    pub fn iter_mut(&mut self) -> IterMut<'_, T> {
         self.inner.iter_mut()
     }
 }

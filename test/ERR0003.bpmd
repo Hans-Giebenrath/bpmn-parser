@@ -1,0 +1,10 @@
+# s1 ->s
+
+X x <-s ->e
+
+. e1 <-e
+. e2 <-e
+
+[place @s1 above or below @x]
+[place @e1 above or below @x]
+[place @e2 above or below @x]

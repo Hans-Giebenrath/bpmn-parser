@@ -6,11 +6,12 @@ use crate::common::edge::{Edge, EdgeType};
 use crate::common::node::LayerId;
 use crate::common::node::{Node, NodeType};
 use crate::common::pool::Pool;
-use crate::layout::constraint::LayoutConstraints;
+use crate::common::vecset::VecSet;
+use crate::layout::constraint::{LayoutConstraints, SameLayer};
 use crate::lexer::{DataType, EventType, PeBpmdProtection, TokenCoordinate};
 use crate::parser::ParseError;
 use crate::pe_bpmd::parser::PeBpmd;
-use proc_macros::{from, n, to};
+use proc_macros::{e, from, n, to};
 use std::fmt::{self, Debug};
 use std::iter::from_fn;
 use std::mem;
@@ -737,12 +738,11 @@ pub fn validate_invariants(graph: &Graph) -> Result<(), ValidationErrors> {
     // (1) there is no situation where an edge's from has multiple edges in its outgoing vec, and
     // the edge's to has multiple edges in its incoming vec. TODO in the future this should
     // actually work.
-    // (2) No self-loops: An edge's from is different from to.
-    // (3) The gateway connection stuff should make sense (only one side has multiple edges)
     // (4) Data names should be consistent (when sending and receiving something)
     // (5) Not all activities can have all boundary events
+    //
 
-    let mut errors = Vec::new();
+    let mut errors = Vec::<ParseError>::new();
 
     {
         for message_flow in graph.edges.iter().filter(|e| e.is_message_flow()) {
@@ -751,41 +751,185 @@ pub fn validate_invariants(graph: &Graph) -> Result<(), ValidationErrors> {
         }
     }
 
-    if errors.is_empty() {
-        Ok(())
+    {
+        // No self-loops: An edge's from is different from to.
+        for e in graph.edges.iter() {
+            if e.from == e.to {
+                errors.push(vec![(
+                    "Self edges are forbidden. There is a self edge on this node".to_string(),
+                    n!(e.from).tc(),
+                )]);
+            }
+        }
+    }
+
+    {
+        // Gateways should only have on one side multiple edges.
+        // There are special layout possibilities to actually allow this, but I believe that they
+        // are surprising, i.e. not idiomatic. Better is to dedicate a gateway always to either
+        // branching or either joining.
+        for node in graph.nodes.iter() {
+            if node.is_gateway() {
+                let in_sf_count = node
+                    .incoming
+                    .iter()
+                    .filter(|edge| e!(**edge).is_sequence_flow())
+                    .count();
+                let out_sf_count = node
+                    .outgoing
+                    .iter()
+                    .filter(|edge| e!(**edge).is_sequence_flow())
+                    .count();
+                if in_sf_count > 1 && out_sf_count > 1 {
+                    errors.push(vec![(
+                        "This gateway has multiple incoming sequence flows and multiple outgoing sequence flows. This is forbidden, as there must be exactly one incoming sequence flow or exactly one outgoing sequence flow. Split the joining and branching into two separate gateways to keep visuals more idiomatic.".to_string(),
+                        node.tc(),
+                    )]);
+                }
+                if in_sf_count == 0 {
+                    errors.push(vec![(
+                        "This gateway has no incoming sequence flows. This is forbidden, as there must be at least one incoming sequence flow.".to_string(),
+                        node.tc(),
+                    )]);
+                }
+                if out_sf_count == 0 {
+                    errors.push(vec![(
+                        "This gateway has no outgoing sequence flows. This is forbidden, as there must be at least one outgoing sequence flow.".to_string(),
+                        node.tc(),
+                    )]);
+                }
+            }
+        }
+    }
+
+    let mut all_same_layer_constraint_clusters = Vec::<VecSet<NodeId>>::new();
+    'outer: for (a, b) in graph
+        .layout_constraints
+        .above
+        .iter()
+        .map(|c| (c.above, c.below))
+        .chain(
+            graph
+                .layout_constraints
+                .same_layer
+                .iter()
+                .map(|SameLayer(a, b)| (*a, *b)),
+        )
+    {
+        let c = &mut all_same_layer_constraint_clusters;
+        for cluster_idx_0 in 0..c.len() {
+            let contains_a = c[cluster_idx_0].contains(&a);
+            let contains_b = c[cluster_idx_0].contains(&b);
+            let needle = match (contains_a, contains_b) {
+                (true, true) => continue 'outer,
+                (true, false) => b,
+                (false, true) => a,
+                (false, false) => continue,
+            };
+            c[cluster_idx_0].insert(needle);
+            // Check if any other cluster already contains `needle`, in which case the two
+            // clusters must be merged into one.
+            for cluster_idx_1 in cluster_idx_0 + 1..c.len() {
+                let contains_needle = c[cluster_idx_1].contains(&needle);
+                if contains_needle {
+                    let to_be_merged = c.swap_remove(cluster_idx_1);
+                    let target = &mut c[cluster_idx_0];
+                    to_be_merged.iter().for_each(|n| {
+                        target.insert(*n);
+                    });
+                }
+            }
+            continue 'outer;
+        }
+        // Haven't encountered a nor b, so make them a new cluster.
+        let new_cluster = c.push_mut(Default::default());
+        new_cluster.insert(a);
+        new_cluster.insert(b);
+    }
+
+    {
+        // A gateway shall not have more than at most 2 above constraints with connected nodes.
+        // That ensures that they can be placed directly next to each other, one above and one below,
+        // and not create funky situations with wonky-wonky back and forth edges. Really, if there
+        // are more such nodes, then they should just move into the next layer, as the visuals
+        // really just get spagetthified otherwise.
+        // Together with (2) this basically means that there cannot be illegal vertical chains in the
+        // sweep phase. Only problems are `Above`s forcefully pushed into a chain, not sure still
+        // how to go about that wrt S dummy nodes.
+        for gateway in graph.nodes.iter().filter(|n| n.is_gateway()) {
+            let mut all_connected = VecSet::new();
+            for other in gateway
+                .incoming
+                .iter()
+                .map(|e| e!(*e).from)
+                .chain(gateway.outgoing.iter().map(|e| e!(*e).to))
+            {
+                all_connected.insert(other);
+            }
+            let Some(cluster) = all_same_layer_constraint_clusters
+                .iter()
+                .find(|c| c.contains(&gateway.id))
+            else {
+                // No cluster contains the gateway node. This means that all its others will
+                // be placed on different layers.
+                continue;
+            };
+
+            let iter = all_connected.iter().filter(|n| cluster.contains(n));
+            let count = iter.clone().count();
+            if count >= 3 {
+                //This is the bad situation.
+                let err = errors.push_mut(vec![]);
+                err.push(("This gateway is forced on the same layer as more than two of his incoming or outgoing connected nodes. This leads to confusing layouts. Please remove the constraints instead, to let them move to the next layer instead".to_string(), gateway.tc()));
+                for node in iter {
+                    err.push((
+                        "This connected node is forced onto the same layer as the gateway"
+                            .to_string(),
+                        n!(*node).tc(),
+                    ));
+                }
+            }
+        }
+    }
+
+    if let Some(first) = errors.into_iter().next() {
+        // TODO well, at some point the parser should be rewritten to allow for returning multiple
+        // errors. Right now it is one error at a time, but if multiple things are broken then a
+        // more exhaustive list would be nice.
+        Err(first)
     } else {
-        Err(errors)
+        Ok(())
     }
 }
 
-fn check_if_valid_message_flow_start(node: &Node, errors: &mut ValidationErrors) {
+fn check_if_valid_message_flow_start(node: &Node, errors: &mut Vec<ValidationErrors>) {
     if let NodeType::RealNode { event, tc, .. } = &node.node_type {
         match event {
             BpmnNode::Event(EventType::Message, EventVisual::Throw | EventVisual::End) => (),
             BpmnNode::Activity(_) => (),
             _ => {
-                errors.push((
+                errors.push(vec![(
                 "This node type cannot send messages. Only message events (M#) or tasks (e.g. .-) can be used as message flow starts. Note that shorthand events (#) are automatically transformed into message events when they are used in a message flow.".to_string(),
                     *tc,
 
-                ));
+                )]);
             }
         }
     }
 }
 
-fn check_if_valid_message_flow_end(node: &Node, errors: &mut ValidationErrors) {
+fn check_if_valid_message_flow_end(node: &Node, errors: &mut Vec<ValidationErrors>) {
     if let NodeType::RealNode { event, tc, .. } = &node.node_type {
         match event {
             BpmnNode::Event(EventType::Message, EventVisual::Start(_) | EventVisual::Catch(_)) => {}
             BpmnNode::Event(EventType::Blank, _) => (),
             BpmnNode::Activity(_) => (),
             _ => {
-                errors.push((
+                errors.push(vec![(
                 "This node type cannot catch messages. Only message events (M#) or tasks (e.g. .-) can be used as message flow ends. Note that shorthand events (#) are automatically transformed into message events when they are used in a message flow.".to_string(),
                     *tc,
 
-                ));
+                )]);
             }
         }
     }

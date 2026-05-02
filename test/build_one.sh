@@ -64,7 +64,7 @@ if $failed; then
 WARNING: Build Failure.
 
 EOF
-else
+elif ! [[ "$basename" =~ ^ERR ]]; then
     echo "finished generating ${f%.bpmd}.xml, now generating the png"
     test/node_modules/.bin/bpmn-to-image "${f%.bpmd}.xml":"${f%.bpmd}.png"
     rm "${f%.bpmd}.xml"
