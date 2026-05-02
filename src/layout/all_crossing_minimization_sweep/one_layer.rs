@@ -71,10 +71,22 @@ pub fn run(
                         .iter()
                         .find(|mn| mn.ordered_nodes[0] == *id1)
                         .unwrap();
-                    match mn0.barycenter.partial_cmp(&mn1.barycenter).unwrap() {
-                        std::cmp::Ordering::Less => sorted_pairs += 1,
-                        std::cmp::Ordering::Greater => rev_sorted_pairs += 1,
-                        _ => (),
+                    if mind_the_pull {
+                        match mn0
+                            .pull_and_bary()
+                            .partial_cmp(&mn1.pull_and_bary())
+                            .unwrap()
+                        {
+                            std::cmp::Ordering::Less => sorted_pairs += 1,
+                            std::cmp::Ordering::Greater => rev_sorted_pairs += 1,
+                            _ => (),
+                        }
+                    } else {
+                        match mn0.barycenter.partial_cmp(&mn1.barycenter).unwrap() {
+                            std::cmp::Ordering::Less => sorted_pairs += 1,
+                            std::cmp::Ordering::Greater => rev_sorted_pairs += 1,
+                            _ => (),
+                        }
                     }
                 }
                 rev_sorted_pairs > sorted_pairs
@@ -113,6 +125,7 @@ pub fn run(
         state.absorb(/* winner */ above_idx, /* victim */ below_idx);
     }
 
+    dbg!(&state.unconstrained, &state.constrained_list);
     state
         .unconstrained
         .extend(state.constrained_list.iter().copied());
@@ -121,19 +134,7 @@ pub fn run(
     state.unconstrained.sort_by(|&a, &b| {
         // DFs have the least priority, SFs the most.
         let (a, b) = (&state.merge_nodes[a], &state.merge_nodes[b]);
-        (
-            a.pull_balance.sf_balance,
-            a.pull_balance.mf_balance,
-            a.pull_balance.df_balance,
-            a.barycenter,
-        )
-            .partial_cmp(&(
-                b.pull_balance.sf_balance,
-                b.pull_balance.mf_balance,
-                b.pull_balance.df_balance,
-                b.barycenter,
-            ))
-            .unwrap()
+        a.pull_and_bary().partial_cmp(&b.pull_and_bary()).unwrap()
     });
 
     // Finished - now just assign the positions.
@@ -329,7 +330,9 @@ impl P3Layer {
             }
         } else {
             self.constrained_list.retain(|&idx| idx != winner_idx);
-            self.unconstrained.push(winner_idx);
+            if !self.unconstrained.contains(&winner_idx) {
+                self.unconstrained.push(winner_idx);
+            }
         }
     }
 }
@@ -406,5 +409,14 @@ impl MergeNode {
         self.above_of_this.clear();
         self.below_of_this.clear();
         self.incoming_constraints.clear();
+    }
+
+    fn pull_and_bary(&self) -> (i8, i8, i8, f32) {
+        (
+            self.pull_balance.sf_balance,
+            self.pull_balance.mf_balance,
+            self.pull_balance.df_balance,
+            self.barycenter,
+        )
     }
 }

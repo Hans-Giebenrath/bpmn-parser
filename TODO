@@ -1,6 +1,6 @@
-* crossing reduction support for vertical edges (immediately create the merged nodes, and make sure to analyse that the thing is a DAG.)
+* sweep: S dummies should be moved top-to-bottom to check whether it can be placed between the two nodes. Otherwise there is always the funny loop over the top. Overall, just implement global sifting (at least for S dummies, but maybe also for data edges, not sure).
 * Gateway edges which are recognized as back edges are temporarily swapped, i.e. they *do not* go through the reverse node corner dummy transformation. This is done because they should be positioned next to the gateway (subject to regular rules in the dummy node placement logic). So from the right gateway, the edge going left, should actually be stored as an *incoming* edge with *is_reversed* set to true. For the left gateway, the incoming edge from the right side should temporarily be stored in the *outcoming* edges. However, during the port assignment phase, when bend dummies are added, this is ultimately restored, and then the bend dummy is actually converted into a back edge corner dummy.
-* DSL support for specifying those constraints.
+* Unify back edge corner dummies and bend dummies. They should be the same (though depends on whether they go left or right) - gateways have their bend dummies created in a later phase compared to back edge nodes. Also, do a write-up (paper-like) for how this works, I will forget it myself at some point.
 * The edges which go straight up from a gateway need to be marked `is_vertical` even for those back edge dummy node cases. Right now they are not treated as vertical and thus get those funny wonks (but must check whether there *really* is no other obstacle in the way, gotta think which phase is the correct to determine that).
 * The gateway VerticalCollapsed should not happen on the branching side. On the non-branching side, where there is only one same-lane edge (regardless of those leaving the lane), it should just always go out straight to the side.
 
@@ -31,7 +31,7 @@
 * Parse config values from the .bpmd file (see common/config.rs which is already macro-ified for this purpose).
 * Try to help the crossing reduction phase by solving some variables, if the order can be answered for some nodes trivially (just one node in a given pool/lane/layer coordinate). Some larger diagrams with mostly trivial ordering have rather high ILP solving times. The solver is not very optimized, hence we better help it.
 * Support data associations for Gateways.
-* data elements have wonky y-coordinate differences, although it looks like they should all be at the same height.
+* data elements have wonky y-coordinate differences, although it looks like they should all be at the same height. Also, they are oftentimes not put into the next halflayer, even though there is enough room.
 
 
 Something from chatgpt 5.5, being mostly focused on the parser side:
