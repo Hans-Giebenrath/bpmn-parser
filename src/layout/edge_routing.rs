@@ -1054,7 +1054,6 @@ fn get_layered_edges(graph: &mut Graph) -> (Vec<SegmentsOfSameLayer>, MessageFlo
         .for_each(|edge_id| finish_straight_vertical_message_flow(graph, edge_id));
 
     let mut result: Vec<SegmentsOfSameLayer> = vec![];
-    dbg!(&edge_layers);
     for mut edge_layer in edge_layers.into_iter() {
         // sort by min_y: To identify groups
         // sort by max_y: To later be able to easily spot IXI crossings from the up_edges and
@@ -1066,7 +1065,7 @@ fn get_layered_edges(graph: &mut Graph) -> (Vec<SegmentsOfSameLayer>, MessageFlo
             // TODO for self loops, check if edges[_id].from or .to is a special loop helper node,
             // in which case this should become a right_loops or left_loops member,
             // respectively.
-            let origi_edge = dbg!(&e!(edge.id));
+            let origi_edge = &e!(edge.id);
             let to = &n!(origi_edge.to);
             let from = &n!(origi_edge.from);
             if edge.is_message_flow {
@@ -1090,7 +1089,6 @@ fn get_layered_edges(graph: &mut Graph) -> (Vec<SegmentsOfSameLayer>, MessageFlo
                         | NodeType::BackEdgeCornerDummy { .. },
                         _,
                     ) => {
-                        dbg!();
                         edge.alignment = Alignment::Right;
                         segments.right_loops.push(edge);
                     }
@@ -1099,7 +1097,6 @@ fn get_layered_edges(graph: &mut Graph) -> (Vec<SegmentsOfSameLayer>, MessageFlo
                         NodeType::SnakeEdgeBisectDummy { .. }
                         | NodeType::BackEdgeCornerDummy { .. },
                     ) => {
-                        dbg!();
                         edge.alignment = Alignment::Left;
                         segments.left_loops.push(edge);
                     }
