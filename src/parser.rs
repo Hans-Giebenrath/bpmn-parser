@@ -383,6 +383,7 @@ impl Parser {
     fn parse_gateway(&mut self, mut meta: GatewayNodeMeta) -> Result<(), ParseError> {
         // Assign a unique node ID to this gateway
         let pool_and_lane = self.manage_pool_and_lane_ids_for_new_node();
+        let ids = meta.node_meta.ids;
         let node_id = self.graph.add_node(
             NodeType::RealNode {
                 event: BpmnNode::Gateway(meta.gateway_type),
@@ -394,6 +395,10 @@ impl Parser {
             pool_and_lane,
             None,
         );
+
+        self.context
+            .node_id_matcher
+            .register(node_id, ids, &self.graph);
 
         self.connect_nodes(
             node_id,
