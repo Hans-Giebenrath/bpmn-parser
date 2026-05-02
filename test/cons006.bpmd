@@ -1,0 +1,11 @@
+# Start
+X GW ->out
+
+- n1 <-out
+. done
+
+- n2 <-out
+. done
+
+[place @n1 above @gw]
+[place @gw above @n2]
