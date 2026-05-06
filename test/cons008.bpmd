@@ -1,0 +1,18 @@
+= Pool 1
+
+== Lane 1
+
+# Start ->t1
+
+== Lane 2
+
+- Task 1 <-t1
+- Task 2 ->t3
+
+== Lane 3
+
+- Task 3 <-t3
+
+[place @start above @t1]
+[place @t1 above @t2]
+[place @t2 above @t3]

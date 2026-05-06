@@ -1,0 +1,17 @@
+= Pool 1
+
+== Lane 1
+
+# Start
+X Gateway ->branch
+
+- T1 <-branch ->f1
+- T2 <-branch ->f2
+
+== Lane 2
+
+. End 1 <-f1
+. End 2 <-f2
+
+[place @t1 above @e1]
+[place @t2 above @e2]
