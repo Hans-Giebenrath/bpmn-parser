@@ -1,7 +1,7 @@
 use crate::common::graph::{Coord3, Graph};
 use crate::common::index_iter::IterIndices;
 use crate::layout::all_crossing_minimization_sweep::{
-    EdgeConnection, INCOMING, OUTGOING, PullBalance, SweepGraph, SweepNode, SweepNodeId,
+    EdgeConnection, INCOMING, OUTGOING, PullBalance, SweepGraph, SweepNode, SweepNodeId, aux,
 };
 use crate::layout::constraint::Above;
 use proc_macros::n;
@@ -38,11 +38,13 @@ pub fn run(
     current_location: &Coord3,
     is_right_sweep: bool,
     mind_the_pull: bool,
-    mind_the_vertical_chains: bool,
     constraints: &[Above],
 ) {
     let mut state = P3Layer::default();
 
+    // TODO even if `mind_the_pull == false`, the sequence flow pull *must* be respected, so we don't
+    // get snake edges around nodes which were falsely placed at the border, within two vertically
+    // connected nodes.
     state.create_merge_nodes(
         graph,
         sweep_graph,
@@ -52,69 +54,67 @@ pub fn run(
         mind_the_pull,
     );
 
-    if mind_the_vertical_chains {
-        for vertical_sequence in sweep_graph.vertical_edge_chains.iter() {
-            if vertical_sequence.coord3 != *current_location {
-                continue;
-            }
-            let flip = if vertical_sequence.can_be_flipped {
-                let mut sorted_pairs = 0;
-                let mut rev_sorted_pairs = 0;
-                for [id0, id1] in vertical_sequence.top_to_bottom_node_list.array_windows() {
-                    let mn0 = state
-                        .merge_nodes
-                        .iter()
-                        .find(|mn| mn.ordered_nodes[0] == *id0)
-                        .unwrap();
-                    let mn1 = state
-                        .merge_nodes
-                        .iter()
-                        .find(|mn| mn.ordered_nodes[0] == *id1)
-                        .unwrap();
-                    if mind_the_pull {
-                        match mn0
-                            .pull_and_bary()
-                            .partial_cmp(&mn1.pull_and_bary())
-                            .unwrap()
-                        {
-                            std::cmp::Ordering::Less => sorted_pairs += 1,
-                            std::cmp::Ordering::Greater => rev_sorted_pairs += 1,
-                            _ => (),
-                        }
-                    } else {
-                        match mn0.barycenter.partial_cmp(&mn1.barycenter).unwrap() {
-                            std::cmp::Ordering::Less => sorted_pairs += 1,
-                            std::cmp::Ordering::Greater => rev_sorted_pairs += 1,
-                            _ => (),
-                        }
-                    }
-                }
-                rev_sorted_pairs > sorted_pairs
-            } else {
-                false
-            };
-            let mut sweepnode_it = vertical_sequence
-                .top_to_bottom_node_list
-                .len()
-                .iter_indices(flip)
-                .map(|index| vertical_sequence.top_to_bottom_node_list[index]);
-            let top_most_sn_id = sweepnode_it.next().unwrap();
-            let top_most_mn_id = state
-                .merge_nodes
-                .iter()
-                .position(|mn| mn.ordered_nodes.first() == Some(&top_most_sn_id))
-                .unwrap();
-            for sn_id in sweepnode_it {
-                let mn = state
+    for vertical_sequence in sweep_graph.vertical_edge_chains.iter() {
+        if vertical_sequence.coord3 != *current_location {
+            continue;
+        }
+        let flip = if vertical_sequence.can_be_flipped {
+            let mut sorted_pairs = 0;
+            let mut rev_sorted_pairs = 0;
+            for [id0, id1] in vertical_sequence.top_to_bottom_node_list.array_windows() {
+                let mn0 = state
                     .merge_nodes
                     .iter()
-                    .position(|mn| mn.ordered_nodes.first() == Some(&sn_id))
+                    .find(|mn| mn.ordered_nodes[0] == aux(&n!(*id0)))
                     .unwrap();
-                state.absorb(
-                    /* remaining to-be above: */ top_most_mn_id,
-                    /* consumed to-be below: */ mn,
-                );
+                let mn1 = state
+                    .merge_nodes
+                    .iter()
+                    .find(|mn| mn.ordered_nodes[0] == aux(&n!(*id1)))
+                    .unwrap();
+                if mind_the_pull {
+                    match mn0
+                        .pull_and_bary()
+                        .partial_cmp(&mn1.pull_and_bary())
+                        .unwrap()
+                    {
+                        std::cmp::Ordering::Less => sorted_pairs += 1,
+                        std::cmp::Ordering::Greater => rev_sorted_pairs += 1,
+                        _ => (),
+                    }
+                } else {
+                    match mn0.barycenter.partial_cmp(&mn1.barycenter).unwrap() {
+                        std::cmp::Ordering::Less => sorted_pairs += 1,
+                        std::cmp::Ordering::Greater => rev_sorted_pairs += 1,
+                        _ => (),
+                    }
+                }
             }
+            rev_sorted_pairs > sorted_pairs
+        } else {
+            false
+        };
+        let mut sweepnode_it = vertical_sequence
+            .top_to_bottom_node_list
+            .len()
+            .iter_indices(flip)
+            .map(|index| vertical_sequence.top_to_bottom_node_list[index]);
+        let top_most_sn_id = sweepnode_it.next().unwrap();
+        let top_most_mn_id = state
+            .merge_nodes
+            .iter()
+            .position(|mn| mn.ordered_nodes.first() == Some(&aux(&n!(top_most_sn_id))))
+            .unwrap();
+        for sn_id in sweepnode_it {
+            let mn = state
+                .merge_nodes
+                .iter()
+                .position(|mn| mn.ordered_nodes.first() == Some(&aux(&n!(sn_id))))
+                .unwrap();
+            state.absorb(
+                /* remaining to-be above: */ top_most_mn_id,
+                /* consumed to-be below: */ mn,
+            );
         }
     }
 
@@ -125,7 +125,6 @@ pub fn run(
         state.absorb(/* winner */ above_idx, /* victim */ below_idx);
     }
 
-    dbg!(&state.unconstrained, &state.constrained_list);
     state
         .unconstrained
         .extend(state.constrained_list.iter().copied());
@@ -345,7 +344,6 @@ struct MergeNode {
     above_of_this: HashSet</* merge node idx */ usize>,
     below_of_this: HashSet</* merge node idx */ usize>,
     incoming_constraints: Vec</* merge node idx */ usize>,
-    alive: bool,
     /// Should be the sum from the previous analysis (which generated Pull) instead.
     pull_balance: PullBalance,
 }
@@ -391,7 +389,6 @@ impl MergeNode {
             above_of_this: HashSet::new(),
             below_of_this: HashSet::new(),
             incoming_constraints: Vec::new(),
-            alive: true,
             pull_balance: if mind_the_pull {
                 sweep_node.pull_balance.clone()
             } else {

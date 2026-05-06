@@ -1,0 +1,19 @@
+= Gateways
+
+Gateway nodes are subject to three constraints to make layouting easier:
+. A gateway is either _branching_ or _joining_. This means, it must either have (1) exactly one incoming edge and at least one outgoing edge, or (2) exactly one outgoing edge and at least one incoming edge (`incoming.len().min(&outgoing.len()) == 1` would be a "clever" short formulation for that).
+. A gateway can be connected to at most two nodes which are at the same time forced on the same layer as the gateway node (via `Above` or `SameLayer`) (this actually applies to regular nodes as well)
+. A gateway node and a same-layer-connected-node are always connected via a straight vertical edge, i.e. there is no snake edge going back and forth to navigate around in-between nodes. (TODO add a check in the sweep code for this - basically t) (this actually applies to regular nodes as well)
+
+= Any Node
+
+. A node can be connected to at most two nodes which are at the same time forced on the same layer as the node (via `Above` or `SameLayer`) (this does not apply to message flows, only to sequence flows and data associations)
+. A node and a same-layer-connected-node are always connected via a straight vertical edge, i.e. there is no snake edge going back and forth to navigate around in-between nodes. This is why only two such connected nodes within the same layer can exist (we have a one dimensional layer).
+. There can only be one vertical edge crossing a lane within the same layer. Other such vertical edges are pushed into other layers.
+If a vertical edge crossing a lane goes _over other_ lanes, then no nodes are allowed to be put into that layer within those lanes.
+. A node with a vertical edge crossing a lane is always forced closest to the edge of the lane.
+
+
+= Data Element
+
+. A data element never enters a gateway node in 0°, 90°, 180° or 270°, it must also come in diagonally. This is to  ensure the arrow is more distinctly set apart from regular sequence flows (TODO does this look good? Maybe should also be done for non-gateway nodes)

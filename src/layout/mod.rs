@@ -13,8 +13,4 @@ pub mod solve_layer_assignment;
 pub mod sort_incoming_and_outgoing;
 pub mod straight_edge_routing;
 pub mod try_move_nodes_into_half_layer;
-pub mod vertical_loop_edge_detection;
 pub mod xy_ilp;
-
-// pub mod testlayout;
-// pub mod eliminate_back_edges;

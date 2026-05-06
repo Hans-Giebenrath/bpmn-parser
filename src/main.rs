@@ -12,7 +12,6 @@ mod to_xml;
 use crate::layout::all_crossing_minimization_sweep::reduce_all_crossings_sweep;
 use crate::layout::back_edge_removal::back_edge_removal;
 use crate::layout::sort_incoming_and_outgoing::sort_incoming_and_outgoing;
-use crate::layout::vertical_loop_edge_detection::vertical_loop_edge_detection;
 use crate::lexer::TokenCoordinate;
 use annotate_snippets::AnnotationKind;
 use annotate_snippets::Level;
@@ -129,7 +128,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         pebpmd_analysis(&mut graph, visibility_path, &bpmd_source_files, &mut timer)?;
     };
 
-    layout_graph(&mut graph, &mut timer)?;
+    layout_graph(&mut graph, &mut timer, &bpmd_source_files)?;
     let bpmn = timer.time_it("XML export", || to_xml::generate_bpmn(&graph));
 
     match cli.output {
@@ -140,7 +139,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
-fn layout_graph(graph: &mut Graph, timer: &mut Timer) -> Result<(), String> {
+fn layout_graph(
+    graph: &mut Graph,
+    timer: &mut Timer,
+    bpmd_source_files: &[BpmdSourceFile],
+) -> Result<(), Box<dyn std::error::Error>> {
     // Phase 1
     timer.time_it("back_edge_removal", || back_edge_removal(graph))?;
 
@@ -156,14 +159,11 @@ fn layout_graph(graph: &mut Graph, timer: &mut Timer) -> Result<(), String> {
         });
     } else {
         timer.time_it("reduce_all_crossings_sweep", || {
-            reduce_all_crossings_sweep(graph)
-        });
+            reduce_all_crossings_sweep(graph).bpmd_format_err(bpmd_source_files)
+        })?;
     }
     timer.time_it("sort_incoming_and_outgoing", || {
         sort_incoming_and_outgoing(graph);
-    });
-    timer.time_it("vertical_loop_edge_detection", || {
-        vertical_loop_edge_detection(graph)
     });
     timer.time_it("port_assignment", || port_assignment(graph));
 

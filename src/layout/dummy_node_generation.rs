@@ -29,6 +29,14 @@ pub fn dummy_node_generation(graph: &mut Graph) {
         // The edge spans just a single layer -> ignore.
         if from.layer_id.0 + 1 == to.layer_id.0 {
             continue;
+        } else if from.layer_id == to.layer_id {
+            // This is definitely a vertical edge:
+            // (1) Graph validation only allows to move those connected edges onto the same layer
+            // which have only two such same-layer connected nodes, i.e. they form a list.
+            // (2) Further, during the node reordering there is a check for whether no other nodes
+            // are forced between two same-layer connected nodes via above constraints.
+            edge.is_vertical = true;
+            continue;
         }
 
         // The edge is a message edge that spans across pools, this is handled differently.
@@ -64,66 +72,6 @@ pub fn dummy_node_generation(graph: &mut Graph) {
                 edge_id,
                 boundary_event,
             );
-        } else if from.layer_id == to.layer_id {
-            // ```
-            //   ┌─┐               ┌─┐
-            // ┌►└─┘             ┌►└─┘
-            // │                 │ ┌─┐
-            // └─────┐           └─┴─┴◄┐
-            //   ┌─┬─┘             ┌─┬─┘
-            //   └─┘               └─┘
-            // ```
-            //
-            // Creates `SnakeEdgeBisectDummy`, see documentation there.
-
-            let dummy_node_id = graph.add_node(
-                NodeType::SnakeEdgeBisectDummy {
-                    from_real_node_id: from_id,
-                    from_edge_id: EdgeId(current_num_edges),
-                    to_real_node_id: to_id,
-                    to_edge_id: EdgeId(current_num_edges + 1),
-                },
-                PoolAndLane {
-                    pool,
-                    // Yes, `to.lane`, as I believe it is visually clearer to directly go to the
-                    // target lane. But I might be wrong.
-                    lane: to_coords.pool_and_lane.lane,
-                },
-                Some(to_coords.layer),
-            );
-            graph.add_edge(
-                from_id,
-                dummy_node_id,
-                EdgeType::DummyEdge {
-                    original_edge: edge_id,
-                    bend_points: DummyEdgeBendPoints::ToBeDeterminedOrStraight,
-                },
-                flow_type.clone(),
-                boundary_event,
-            );
-            graph.add_edge(
-                dummy_node_id,
-                to_id,
-                EdgeType::DummyEdge {
-                    original_edge: edge_id,
-                    bend_points: DummyEdgeBendPoints::ToBeDeterminedOrStraight,
-                },
-                flow_type.clone(),
-                None,
-            );
-
-            // Further decomposition is handled in the crossing minimization phase, as shown in the
-            // schema below. That transofmration is solely necessary in the crossing reduction
-            // phase, so it is done and undone only there.
-            //
-            // ```
-            // a                a ↘
-            // ↓    becomes  x  →  y
-            // b              ↘ b
-            // ```
-            //
-            // Having direct connections (the left-hand side) is actually simpler in the rest of the
-            // layout phase, compared to the decomposed version (the right-hand side).
         } else {
             // Transfrom it from the left to the right.
             // ```

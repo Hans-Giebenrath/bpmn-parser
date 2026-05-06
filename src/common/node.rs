@@ -2,7 +2,6 @@
 
 use super::macros::impl_index;
 use crate::common::bpmn_node::*;
-use crate::common::direction::Direction;
 use crate::common::graph::Coord3;
 use crate::common::graph::EdgeId;
 use crate::common::graph::Graph;
@@ -72,27 +71,6 @@ pub enum NodeType {
         same_layer_edge_id: EdgeId,
         /// Is it the left corner dummy or the right corner dummy?
         left_one: bool,
-    },
-    /// When two nodes are forced into the same layer (through a layout constraint) an edge between
-    /// them would create a snake-like, or "S"-like edge. But this cannot be handled directly, since
-    /// we don't know where to put the middle horizontal part. Therefor, another dummy node needs to
-    /// be added.
-    ///
-    /// Conceptually, this bisect dummy is like a merged pair of two BackEdgeCornerDummy nodes.
-    ///
-    /// ```
-    ///   ┌─┐               ┌─┐
-    /// ┌►└─┘             ┌►└─┘
-    /// │                 │ ┌─┐
-    /// └─────┐           └─┴─┴◄┐
-    ///   ┌─┬─┘             ┌─┬─┘
-    ///   └─┘               └─┘
-    /// ```
-    SnakeEdgeBisectDummy {
-        from_real_node_id: NodeId,
-        from_edge_id: EdgeId,
-        to_real_node_id: NodeId,
-        to_edge_id: EdgeId,
     },
     /// Bend dummies are inserted during the port assignment phase. They help to create vertical edge
     /// segments for edges that leave at the top or bottom side of a node.
@@ -318,7 +296,6 @@ impl Node {
             self.node_type,
             NodeType::LongEdgeDummy
                 | NodeType::BackEdgeCornerDummy { .. }
-                | NodeType::SnakeEdgeBisectDummy { .. }
                 | NodeType::BendDummy { .. }
         )
     }
@@ -371,10 +348,6 @@ impl Node {
 
     pub fn is_right_back_edge_corner_dummy(&self) -> bool {
         matches!(self.node_type, NodeType::BackEdgeCornerDummy { left_one, .. } if !left_one)
-    }
-
-    pub fn is_snake_edge_bisect_dummy(&self) -> bool {
-        matches!(self.node_type, NodeType::SnakeEdgeBisectDummy { .. })
     }
 
     pub fn is_gateway(&self) -> bool {
@@ -436,7 +409,6 @@ impl Node {
             NodeType::RealNode { display_text, .. } => display_text.clone(),
             NodeType::LongEdgeDummy => "(-)".to_string(),
             NodeType::BackEdgeCornerDummy { .. } => "(])".to_string(),
-            NodeType::SnakeEdgeBisectDummy { .. } => "(S)".to_string(),
             NodeType::BendDummy { .. } => "(┌)".to_string(),
         }
     }

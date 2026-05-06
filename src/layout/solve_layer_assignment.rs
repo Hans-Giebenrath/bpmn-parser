@@ -1,4 +1,6 @@
-use crate::common::graph::EdgeId;
+use std::collections::{HashMap, HashSet};
+
+use crate::common::graph::{EdgeId, same_layer_lane_crossings_within_cluster};
 use crate::common::node::NodePhaseAuxData;
 use proc_macros::{e, n};
 
@@ -23,7 +25,7 @@ fn aux(node: &Node) -> Variable {
     }
 }
 
-const DEBUG_ILP_CONSTRUCTION: bool = false;
+const DEBUG_ILP_CONSTRUCTION: bool = true;
 
 macro_rules! d {
     ($($tt:tt)*) => {{
@@ -65,6 +67,7 @@ fn solve_layers(graph: &mut Graph) {
     }
 
     let mut constraints = Vec::new();
+    handle_vertical_lane_crossings(graph, &mut vars, &mut constraints);
     //let mut problem = problem.set_verbose(true);
     //problem.set_parameter("loglevel", "0");
 
@@ -208,4 +211,103 @@ fn solve_data_object_layers_via_arithmetic_mean(graph: &mut Graph) {
     // recipients are spread far away. Probably it makes sense to allow 2 per sequence flow and
     // then two "floating" ones. Or one could dictate that floating ones actually don't spread
     // across gateways, but this seems like a rather random restriction.
+}
+
+fn handle_vertical_lane_crossings(
+    graph: &Graph,
+    vars: &mut ProblemVariables,
+    constraints: &mut Vec<Constraint>,
+) {
+    let mut all_same_layer_lane_crossings = graph
+        .layout_constraints
+        .same_layer_clusters
+        .iter()
+        .flat_map(|cluster| same_layer_lane_crossings_within_cluster(graph, cluster))
+        .collect::<Vec<_>>();
+    all_same_layer_lane_crossings.sort_unstable();
+
+    let mut already_constrained = HashSet::new();
+    for crossing in &all_same_layer_lane_crossings {
+        let in_between_lane_range =
+            crossing.top_pool_lane.lane.0 + 1..crossing.bot_pool_lane.lane.0;
+        for in_between_lane in in_between_lane_range {
+            for node_id in &graph.pools[crossing.top_pool_lane.pool].lanes[in_between_lane].nodes {
+                let node_id_1 = (*node_id).min(crossing.top_node_id);
+                let node_id_2 = (*node_id).max(crossing.top_node_id);
+                assert_ne!(node_id_1, node_id_2);
+
+                if !already_constrained.insert((node_id_1, node_id_2)) {
+                    // Duplicate.
+                    continue;
+                }
+
+                force_different_layers(
+                    &n!(node_id_1),
+                    &n!(node_id_2),
+                    vars,
+                    constraints,
+                    graph.nodes.len(),
+                );
+            }
+        }
+    }
+    for [left, right] in all_same_layer_lane_crossings.array_windows() {
+        assert_ne!(left, right); // Make sure that the construction is correct.
+
+        if left.top_pool_lane == left.bot_pool_lane {
+            // This cannot result in a problem. The `right_*` could be on the same
+            // pool_lane, or just on some next.
+            continue;
+        }
+        if !(left.top_pool_lane == right.top_pool_lane && left.bot_pool_lane == right.bot_pool_lane)
+        {
+            // The other case is covered by the above lane-crossing check already.
+            // So in here we are only left with lane crossings that span from the same lane
+            // to the same other lane.
+            continue;
+        }
+
+        let node_id_1 = left.top_node_id.min(right.top_node_id);
+        let node_id_2 = left.top_node_id.max(right.top_node_id);
+        if !already_constrained.insert((node_id_1, node_id_2)) {
+            // Duplicate.
+            continue;
+        }
+        force_different_layers(
+            &n!(node_id_1),
+            &n!(node_id_2),
+            vars,
+            constraints,
+            graph.nodes.len(),
+        );
+    }
+}
+
+fn force_different_layers(
+    a: &Node,
+    b: &Node,
+    vars: &mut ProblemVariables,
+    constraints: &mut Vec<Constraint>,
+    total_num_nodes: usize,
+) {
+    // We want: a != b.
+    //  <==> a < b || a > b
+    // So we have a boolean `z`, and an `M` which is larger than any value which `a` or `b` can ever
+    // become (total number of nodes):
+    //   a < b + M * z
+    //   b < a + M * (1 - z)
+    //
+    // z == 0:           z == 1:
+    //   a < b             (a < b + M)
+    //   (b < a + M)       b < a
+    //
+    // Since there is only `<=` and `>=` in the solver, no `<` or `>`, rewrite it:
+    //   a + 1 <= b + M * z
+    //   b + 1 <= a + M * (1 - z)
+    //
+    //
+    d!(eprintln!("different layers: {} - {}", a.id.0, b.id.0));
+    let z = vars.add(variable().binary());
+    constraints.push((aux(a) + 1).leq(aux(b) + total_num_nodes as f64 * z));
+    constraints.push((aux(b) + 1).leq(aux(a) + total_num_nodes as f64 * (1 - z)));
 }

@@ -23,6 +23,7 @@ use crate::common::node::Node;
 use crate::common::node::NodePhaseAuxData;
 use crate::common::vecset::VecSet;
 use crate::layout::constraint::Above;
+use crate::parser::ParseError;
 use itertools::Either;
 use itertools::Itertools;
 use proc_macros::{e, from, lane, n, to};
@@ -31,6 +32,7 @@ use std::collections::HashMap;
 use std::collections::HashSet;
 use std::hash::Hash;
 use std::hash::Hasher;
+use std::rc::Rc;
 
 mod one_layer;
 
@@ -174,19 +176,17 @@ enum EdgeConnection {
     Right,
 }
 
-/// Vertical edge chains are used to pre-form clumps in the layer-reordering. The algorithm *only*
-/// considers those edge chains which are primitive lists. If they form a circle, or branch, then
-/// this edge chain is simply ignored. These situations require more sophisticated algorithms which
-/// I believe are simply not worth the effort because such situations should *probably* distribute
-/// the nodes onto more layers. Tech demos are the only reason to showcase such a thing, but those
-/// are not my target.
-/// Reminder: Gateways are not connected to `BackEdgeCornerDummy`s in this stage, only after port assignment.
+/// Vertical edge chains are used to build clumps in the layer-reordering. Graph validation in the
+/// beginning already ensured that all such connected nodes only form lists (complicated forms like
+/// trees or cycles should not be possible).
+/// Reminder: Gateways are not connected to `BackEdgeCornerDummy`s in this stage, only after port
+/// assignment.
 #[derive(Debug, Clone)]
 struct VerticalEdgeChain {
     /// One streak of nodes which *must* be ordered as one clump, in the given order, at least in those sweep phases
     /// where we consider vertical edges. The point is that these are connected via vertical edges,
     /// and we want vertical edges to be straight, i.e. there should not be any
-    top_to_bottom_node_list: Vec<SweepNodeId>,
+    top_to_bottom_node_list: Vec<NodeId>,
     /// In this case there is no Above constraint involved which would break if the order is swapped,
     /// i.e. the algorithm can favor the order which fits more naturally with the barycenters.
     can_be_flipped: bool,
@@ -223,11 +223,15 @@ struct SweepGraph {
     /// TODO make use of this.
     /// TODO this excludes those vertical edges which would result in cycles. Must write an analysis
     /// for that, similar to the back edge removal analysis.
-    vertical_edge_chains: Vec<VerticalEdgeChain>,
+    vertical_edge_chains: Rc<Vec<VerticalEdgeChain>>,
 }
 
 impl SweepGraph {
-    fn new(graph: &mut Graph, pool_lane: PoolAndLane) -> Self {
+    fn new(
+        graph: &mut Graph,
+        pool_lane: PoolAndLane,
+        vertical_edge_chains: Rc<Vec<VerticalEdgeChain>>,
+    ) -> Result<Self, ParseError> {
         let lane = &graph.pools[pool_lane.pool].lanes[pool_lane.lane];
         for (idx, node_id) in lane.nodes.iter().enumerate() {
             n!(*node_id).aux =
@@ -237,7 +241,7 @@ impl SweepGraph {
         }
 
         let mut result = SweepGraph {
-            vertical_edge_chains: calculate_vertical_edge_chains(graph, pool_lane),
+            vertical_edge_chains,
             ..Default::default()
         };
 
@@ -280,17 +284,7 @@ impl SweepGraph {
 
                 {
                     // Record all the edges for crossing counting.
-                    if node.is_snake_edge_bisect_dummy() {
-                        // Snake edge bisect dummies are flipped nodes.
-                        for edge_id in node.incoming.iter() {
-                            if !e!(*edge_id).stays_within_lane {
-                                edge_collection.insert((*edge_id, EdgeConnection::Left));
-                            } else {
-                                // This one is already captured by going through the regular nodes'
-                                // outgoing edges.
-                            }
-                        }
-                    } else if node.is_right_back_edge_corner_dummy() {
+                    if node.is_right_back_edge_corner_dummy() {
                         // Right back edge corner dummies
                         for edge_id in node.incoming.iter() {
                             let edge = &e!(*edge_id);
@@ -412,17 +406,7 @@ impl SweepGraph {
                 // Peek into the next layer to identify remaining right loops for the crossing counting.
                 for node_id in next_layer.iter() {
                     let node = &n!(*node_id);
-                    if node.is_snake_edge_bisect_dummy() {
-                        // Snake edge bisect dummies are flipped nodes.
-                        for edge_id in node.outgoing.iter() {
-                            if !e!(*edge_id).stays_within_lane {
-                                edge_collection.insert((*edge_id, EdgeConnection::Right));
-                            } else {
-                                // This one is already captured by going through the regular nodes'
-                                // incoming edges.
-                            }
-                        }
-                    } else if node.is_left_back_edge_corner_dummy() {
+                    if node.is_left_back_edge_corner_dummy() {
                         // Snake edge bisect dummies are flipped nodes.
                         for edge_id in node.outgoing.iter() {
                             let edge = &e!(*edge_id);
@@ -504,7 +488,7 @@ impl SweepGraph {
             );
             result.layers_crossing_count.push(ccount);
         }
-        result
+        Ok(result)
     }
 }
 
@@ -598,7 +582,8 @@ impl SingleLaneSweepSolutions {
 
 type ConstraintMap = HashMap<Coord3, Vec<Above>>;
 
-pub fn reduce_all_crossings_sweep(graph: &mut Graph) {
+pub fn reduce_all_crossings_sweep(graph: &mut Graph) -> Result<(), ParseError> {
+    let vertical_edge_chains = calculate_vertical_edge_chains(graph)?;
     let mut constraint_map = ConstraintMap::new();
     for above_constraint in &graph.layout_constraints.above {
         let coord3 = n!(above_constraint.above).coord3();
@@ -618,7 +603,7 @@ pub fn reduce_all_crossings_sweep(graph: &mut Graph) {
                 pool: PoolId(pool_idx),
                 lane: LaneId(lane_idx),
             };
-            let sweep_graph = SweepGraph::new(graph, pool_lane);
+            let sweep_graph = SweepGraph::new(graph, pool_lane, vertical_edge_chains.clone())?;
             let best_versions = left_right_sweeps(
                 graph,
                 pool_lane,
@@ -660,6 +645,7 @@ pub fn reduce_all_crossings_sweep(graph: &mut Graph) {
             }
         }
     }
+    Ok(())
 }
 
 fn left_right_sweeps(
@@ -677,9 +663,7 @@ fn left_right_sweeps(
     // the situation pan out after applying the pull as well.
     let mut one_right_sweep_is_done = false;
 
-    for (mind_the_pull, mind_the_vertical_chains, max_iter) in
-        [(true, true, 6), (false, false, 2), (false, true, 4)]
-    {
+    for (mind_the_pull, max_iter) in [(true, 6), (false, 6)] {
         let mut num_iterations = 0;
         for i in 0..max_iter {
             num_iterations = i;
@@ -692,7 +676,6 @@ fn left_right_sweeps(
                     &mut best_versions,
                     sweep_buffers,
                     mind_the_pull,
-                    mind_the_vertical_chains,
                     is_right_sweep,
                     constraint_map,
                     one_right_sweep_is_done,
@@ -754,7 +737,6 @@ fn one_direction_sweep(
     best_versions: &mut SingleLaneSweepSolutions,
     sweep_buffers: &mut SweepBuffers,
     mind_the_pull: bool,
-    mind_the_vertical_chains: bool,
     is_right_sweep: bool,
     constraint_map: &ConstraintMap,
     one_right_sweep_is_done: bool,
@@ -778,7 +760,6 @@ fn one_direction_sweep(
             &current_position,
             is_right_sweep,
             mind_the_pull,
-            mind_the_vertical_chains,
             constraint_map
                 .get(&current_position)
                 .map(|v| v.as_slice())
@@ -1112,10 +1093,12 @@ fn count_crossing_one_edge_pair(
 }
 
 /// See documentation for `VerticalEdgeChain`.
-fn calculate_vertical_edge_chains(graph: &Graph, pool_lane: PoolAndLane) -> Vec<VerticalEdgeChain> {
+fn calculate_vertical_edge_chains(graph: &Graph) -> Result<Rc<Vec<VerticalEdgeChain>>, ParseError> {
     /// Chains shall only be of list structure, and not form a cycle.
     struct IllegalChainSituation;
 
+    // TODO maybe this function can be simplified, since we can simply follow `is_vertical` edges
+    // instead of looking for `Above` constraints.
     fn next_chain_link<'a>(
         node: &Node,
         previous_node_id: Option<NodeId>,
@@ -1160,7 +1143,7 @@ fn calculate_vertical_edge_chains(graph: &Graph, pool_lane: PoolAndLane) -> Vec<
         mut left_the_chain: bool,
         forwards_is_legal: &mut bool,
         backwards_is_legal: &mut bool,
-    ) {
+    ) -> Result<(), ParseError> {
         if towards_below {
             if let Some(position) = chain
                 .iter()
@@ -1168,28 +1151,29 @@ fn calculate_vertical_edge_chains(graph: &Graph, pool_lane: PoolAndLane) -> Vec<
             {
                 if left_the_chain {
                     // Problem is that the vertical edge chain is interrupted by some other node
-                    // which needs to be fitted in between. So we invalidate the chain altogether.
-                    // Though this is suboptimal for S bisect dummies, as they are now just placed
-                    // rather randomly. Hence need to have a separate sweep phase were S dummies are
-                    // just moved top-to-bottom and we check which of those have the best crossing
-                    // outcome.
-                    *forwards_is_legal = false;
-                    *backwards_is_legal = false;
-                    return;
+                    // which needs to be fitted in between. This is forbidden right now.
+                    let mut err = vec![(
+                        "A vertical edge chain is broken up by `above` place constraints (an unrelated node would be forced between to connected nodes on the same layer). This is forbidden as it would result in an S shaped vertical edge, hurting readability (if you disagree, please show me your situation). This is the first node of the chain of vertically connected nodes:".to_string(),
+                        chain[0].tc(),
+                    )];
+                    for node in chain.iter().skip(1) {
+                        err.push(("This is the next node".to_string(), node.tc()));
+                    }
+                    return Err(err);
                 }
                 // There is an above chain
                 if position > initial_chain_pos {
                     *backwards_is_legal = false;
                 } else {
-                    // Otherwise we have an Above loop, but that should have been detected earlier.
+                    // Otherwise, we have an Above loop, but that should have been detected earlier.
                     assert!(position < initial_chain_pos);
                     *forwards_is_legal = false;
                 }
                 // Found a streak, so finish. We look for more streaks in later outer
-                // iterations, no need to continue at this point. It's all a bit sub-optimal,
+                // iterations, no need to continue at this point. It's all a bit suboptimal,
                 // but the involved amount of nodes, constraints etc is so small that it should
                 // not matter.
-                return;
+                return Ok(());
             } else {
                 left_the_chain = true;
             }
@@ -1197,21 +1181,6 @@ fn calculate_vertical_edge_chains(graph: &Graph, pool_lane: PoolAndLane) -> Vec<
                 .iter()
                 .filter(|above| above.above == next_constrained_node)
             {
-                if let Some(position) = chain.iter().position(|node| node.id == *below) {
-                    // There is an above chain
-                    if position > initial_chain_pos {
-                        *backwards_is_legal = false;
-                    } else {
-                        // Otherwise we have an Above loop, but that should have been detected earlier.
-                        assert!(position < initial_chain_pos);
-                        *forwards_is_legal = false;
-                    }
-                    // Found a streak, so finish. We look for more streaks in later outer
-                    // iterations, no need to continue at this point. It's all a bit sub-optimal,
-                    // but the involved amount of nodes, constraints etc is so small that it should
-                    // not matter.
-                    return;
-                }
                 follow_above_constraints(
                     towards_below,
                     *below,
@@ -1221,9 +1190,10 @@ fn calculate_vertical_edge_chains(graph: &Graph, pool_lane: PoolAndLane) -> Vec<
                     left_the_chain,
                     forwards_is_legal,
                     backwards_is_legal,
-                );
+                )?;
                 if !*forwards_is_legal && !*backwards_is_legal {
-                    return;
+                    // This error is handled outside.
+                    return Ok(());
                 }
             }
         } else {
@@ -1233,28 +1203,29 @@ fn calculate_vertical_edge_chains(graph: &Graph, pool_lane: PoolAndLane) -> Vec<
             {
                 if left_the_chain {
                     // Problem is that the vertical edge chain is interrupted by some other node
-                    // which needs to be fitted in between. So we invalidate the chain altogether.
-                    // Though this is suboptimal for S bisect dummies, as they are now just placed
-                    // rather randomly. Hence need to have a separate sweep phase were S dummies are
-                    // just moved top-to-bottom and we check which of those have the best crossing
-                    // outcome.
-                    *forwards_is_legal = false;
-                    *backwards_is_legal = false;
-                    return;
+                    // which needs to be fitted in between. This is forbidden right now.
+                    let mut err = vec![(
+                        "A vertical edge chain is broken up by `above` place constraints (an unrelated node would be forced between to connected nodes on the same layer). This is forbidden as it would result in an S shaped vertical edge, hurting readability (if you disagree, please show me your situation). This is the first node of the chain of vertically connected nodes:".to_string(),
+                        chain[0].tc(),
+                    )];
+                    for node in chain.iter().skip(1) {
+                        err.push(("This is the next node".to_string(), node.tc()));
+                    }
+                    return Err(err);
                 }
                 // There is an above chain
                 if position > initial_chain_pos {
                     *forwards_is_legal = false;
                 } else {
-                    // Otherwise we have an Above loop, but that should have been detected earlier.
+                    // Otherwise, we have an Above loop, but that should have been detected earlier.
                     assert!(position < initial_chain_pos);
                     *backwards_is_legal = false;
                 }
                 // Found a streak, so finish. We look for more streaks in later outer
-                // iterations, no need to continue at this point. It's all a bit sub-optimal,
+                // iterations, no need to continue at this point. It's all a bit suboptimal,
                 // but the involved amount of nodes, constraints etc is so small that it should
                 // not matter.
-                return;
+                return Ok(());
             } else {
                 left_the_chain = true;
             }
@@ -1271,23 +1242,22 @@ fn calculate_vertical_edge_chains(graph: &Graph, pool_lane: PoolAndLane) -> Vec<
                     left_the_chain,
                     forwards_is_legal,
                     backwards_is_legal,
-                );
+                )?;
                 if !*forwards_is_legal && !*backwards_is_legal {
-                    return;
+                    // This error is handled outside.
+                    return Ok(());
                 }
             }
         }
+        Ok(())
     }
 
     let mut vertical_edge_chains = Vec::<VerticalEdgeChain>::new();
     let mut above_constraints_to_follow = Vec::<Above>::new();
     'outer: for node in &graph.nodes {
-        if node.pool_and_lane() != pool_lane {
-            continue;
-        }
         if vertical_edge_chains
             .iter()
-            .any(|chain| chain.top_to_bottom_node_list.contains(&aux(node)))
+            .any(|chain| chain.top_to_bottom_node_list.contains(&node.id))
         {
             // This node is already part of a valid chain. So don't repeat work.
             // (it can be part of an illegal chain, and since those are not recorded, in that case
@@ -1339,9 +1309,16 @@ fn calculate_vertical_edge_chains(graph: &Graph, pool_lane: PoolAndLane) -> Vec<
                     false,
                     &mut forwards_is_legal,
                     &mut backwards_is_legal,
-                );
+                )?;
                 if !forwards_is_legal && !backwards_is_legal {
-                    continue 'outer;
+                    let mut err = vec![(
+                        "A vertical edge chain could not be laid out straight in one direction or the other, due to conflicting `above` place constraints.. This is forbidden as it would result in an S shaped vertical edge, hurting readability (if you disagree, please show me your situation). This is the first node of the chain of vertically connected nodes:".to_string(),
+                        chain[0].tc(),
+                    )];
+                    for node in chain.iter().skip(1) {
+                        err.push(("This is the next node".to_string(), node.tc()));
+                    }
+                    return Err(err);
                 }
             }
             if let Some(initial_chain_pos) = chain.iter().position(|node| node.id == above.below) {
@@ -1354,9 +1331,16 @@ fn calculate_vertical_edge_chains(graph: &Graph, pool_lane: PoolAndLane) -> Vec<
                     false,
                     &mut forwards_is_legal,
                     &mut backwards_is_legal,
-                );
+                )?;
                 if !forwards_is_legal && !backwards_is_legal {
-                    continue 'outer;
+                    let mut err = vec![(
+                        "A vertical edge chain could not be laid out straight in one direction or the other, due to conflicting `above` place constraints.. This is forbidden as it would result in an S shaped vertical edge, hurting readability (if you disagree, please show me your situation). This is the first node of the chain of vertically connected nodes:".to_string(),
+                        chain[0].tc(),
+                    )];
+                    for node in chain.iter().skip(1) {
+                        err.push(("This is the next node".to_string(), node.tc()));
+                    }
+                    return Err(err);
                 }
             }
         }
@@ -1366,10 +1350,10 @@ fn calculate_vertical_edge_chains(graph: &Graph, pool_lane: PoolAndLane) -> Vec<
             std::mem::swap(&mut forwards_is_legal, &mut backwards_is_legal);
         }
         vertical_edge_chains.push(VerticalEdgeChain {
-            top_to_bottom_node_list: chain.iter().map(|node| aux(node)).collect(),
+            top_to_bottom_node_list: chain.iter().map(|node| node.id).collect(),
             can_be_flipped: backwards_is_legal,
             coord3: node.coord3(),
         });
     }
-    vertical_edge_chains
+    Ok(Rc::new(vertical_edge_chains))
 }

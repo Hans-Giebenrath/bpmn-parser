@@ -7,7 +7,7 @@ use crate::common::node::LayerId;
 use crate::common::node::{Node, NodeType};
 use crate::common::pool::Pool;
 use crate::common::vecset::VecSet;
-use crate::layout::constraint::{LayoutConstraints, SameLayer};
+use crate::layout::constraint::LayoutConstraints;
 use crate::lexer::{DataType, EventType, PeBpmdProtection, TokenCoordinate};
 use crate::parser::ParseError;
 use crate::pe_bpmd::parser::PeBpmd;
@@ -244,7 +244,7 @@ impl Graph {
         // Modifies the edge in place (instead of marking it as deleted and creating a new one), so
         // no unnecessary hole is created within graph.edges.
         let edge = &mut self.edges[edge_id];
-        // This function is not meant to be called after port assignment. Or fix the function or IDK
+        // This function is not meant to be called after port assignment. Or fix the function etc,
         // depends on the context.
         assert!(edge.from != edge.to);
         assert!(self.nodes[edge.from].outgoing.contains(&edge_id));
@@ -619,7 +619,6 @@ pub fn node_size(node_type: &NodeType) -> (usize, usize) {
     let event = match &node_type {
         NodeType::LongEdgeDummy
         | NodeType::BackEdgeCornerDummy { .. }
-        | NodeType::SnakeEdgeBisectDummy { .. }
         | NodeType::BendDummy { .. } => {
             // Height of 0 so there is just padding between the lines.
             // Otherwise, there would be too much whitespace between lines.
@@ -661,16 +660,6 @@ impl Debug for Graph {
                 n.incoming.iter().map(|e| e.0).collect::<Vec<_>>(),
                 n.outgoing.iter().map(|e| e.0).collect::<Vec<_>>(),
             )?;
-            //match &n.node_type {
-            //    NodeType::RealNode { .. } => write!(f, "real node")?,
-            //    NodeType::LongEdgeDummy => write!(f, "dummy node")?,
-            //    NodeType::SnakeEdgeBisectDummy { .. } => write!(f, "S-dummy node")?,
-            //    NodeType::BackEdgeCornerDummy { .. } => write!(f, "corner-dummy node")?,
-            //    NodeType::BendDummy {
-            //        originating_node,
-            //        kind,
-            //    } => write!(f, "bend dummy from {}: {:?}", originating_node.0, kind)?,
-            //}
             write!(f, ", ")?;
             match n.node_above_in_same_lane {
                 Some(NodeId(idx)) => write!(f, "above {idx}")?,
@@ -731,6 +720,77 @@ impl SemanticDataElement {
 }
 
 type ValidationErrors = ParseError;
+
+#[derive(Debug, Eq, PartialEq)]
+pub struct SameLayerLaneCrossing {
+    pub top_pool_lane: PoolAndLane,
+    pub top_tc: TokenCoordinate,
+    pub top_node_id: NodeId,
+    pub bot_pool_lane: PoolAndLane,
+    pub bot_tc: TokenCoordinate,
+    pub bot_node_id: NodeId,
+}
+
+impl Ord for SameLayerLaneCrossing {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        (
+            self.top_pool_lane,
+            self.bot_pool_lane,
+            self.top_node_id,
+            self.bot_node_id,
+        )
+            .cmp(&(
+                other.top_pool_lane,
+                other.bot_pool_lane,
+                other.top_node_id,
+                other.bot_node_id,
+            ))
+    }
+}
+
+impl PartialOrd for SameLayerLaneCrossing {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+pub fn same_layer_lane_crossings_within_cluster(
+    graph: &Graph,
+    cluster: &VecSet<NodeId>,
+) -> impl Iterator<Item = SameLayerLaneCrossing> {
+    cluster.iter().flat_map(|node_id|
+            // Only need to inspect `incoming`, as we are only interested for those pairs where
+            // the other end is also within the cluster, so if we would look at that one's
+            // `outgoing`, we'd get duplicates.
+        {let node = &n!(*node_id);
+            node.incoming
+                .iter()
+                .map(|e| &from!(*e))
+                .map(|n| (n.id, n.pool_and_lane()))
+                .filter(|(n, _)| n!(*n).pool == node.pool) // We don't inspect message flows.
+                .filter(|(n, _)| cluster.contains(n))
+                .map(|(n, pool_lane)| {
+                    if node.pool_and_lane() < pool_lane {
+                        SameLayerLaneCrossing {
+                            top_pool_lane: node.pool_and_lane(),
+                            top_node_id: node.id,
+                            top_tc: node.tc(),
+                            bot_pool_lane: pool_lane,
+                            bot_node_id: n,
+                            bot_tc: n!(n).tc(),
+                        }
+                    } else {
+                        SameLayerLaneCrossing {
+                            bot_pool_lane: node.pool_and_lane(),
+                            bot_node_id: node.id,
+                            bot_tc: node.tc(),
+                            top_pool_lane: pool_lane,
+                            top_node_id: n,
+                            top_tc: n!(n).tc(),
+                        }
+                    }
+                })})
+}
 
 pub fn validate_invariants(graph: &Graph) -> Result<(), ValidationErrors> {
     // TODO
@@ -802,60 +862,52 @@ pub fn validate_invariants(graph: &Graph) -> Result<(), ValidationErrors> {
         }
     }
 
-    let mut all_same_layer_constraint_clusters = Vec::<VecSet<NodeId>>::new();
-    'outer: for (a, b) in graph
-        .layout_constraints
-        .above
-        .iter()
-        .map(|c| (c.above, c.below))
-        .chain(
-            graph
-                .layout_constraints
-                .same_layer
-                .iter()
-                .map(|SameLayer(a, b)| (*a, *b)),
-        )
-    {
-        let c = &mut all_same_layer_constraint_clusters;
-        for cluster_idx_0 in 0..c.len() {
-            let contains_a = c[cluster_idx_0].contains(&a);
-            let contains_b = c[cluster_idx_0].contains(&b);
-            let needle = match (contains_a, contains_b) {
-                (true, true) => continue 'outer,
-                (true, false) => b,
-                (false, true) => a,
-                (false, false) => continue,
-            };
-            c[cluster_idx_0].insert(needle);
-            // Check if any other cluster already contains `needle`, in which case the two
-            // clusters must be merged into one.
-            for cluster_idx_1 in cluster_idx_0 + 1..c.len() {
-                let contains_needle = c[cluster_idx_1].contains(&needle);
-                if contains_needle {
-                    let to_be_merged = c.swap_remove(cluster_idx_1);
-                    let target = &mut c[cluster_idx_0];
-                    to_be_merged.iter().for_each(|n| {
-                        target.insert(*n);
-                    });
-                }
-            }
-            continue 'outer;
+    // Regular nodes don't branch nor join. This is the job for gateways.
+    // In principle, I think BPMN with Style said that it is OK to join, but my tool is opinionated.
+    for node in &graph.nodes {
+        if node.is_gateway() {
+            continue;
         }
-        // Haven't encountered a nor b, so make them a new cluster.
-        let new_cluster = c.push_mut(Default::default());
-        new_cluster.insert(a);
-        new_cluster.insert(b);
+
+        let inc_iter = node
+            .incoming
+            .iter()
+            .map(|edge_id| (&e!(*edge_id), &from!(*edge_id)))
+            .filter(|(e, _)| e.is_sequence_flow());
+        let out_iter = node
+            .outgoing
+            .iter()
+            .map(|edge_id| (&e!(*edge_id), &to!(*edge_id)))
+            .filter(|(e, _)| e.is_sequence_flow());
+        if inc_iter.clone().count() > 1 {
+            let err = errors.push_mut(vec![(
+                "This node has more than one incoming sequence flow which is forbidden. Use a gateway for joining."
+                    .to_string(),
+                node.tc(),
+            )]);
+            for (_, from) in inc_iter {
+                err.push(("One sequence flow comes from here".to_string(), from.tc()));
+            }
+        }
+
+        if out_iter.clone().count() > 1 {
+            let err = errors.push_mut(vec![(
+                "This node has more than one outgoing sequence flow which is forbidden. Use a gateway for branching."
+                    .to_string(),
+                node.tc(),
+            )]);
+            for (_, from) in out_iter {
+                err.push(("One sequence flow goes here".to_string(), from.tc()));
+            }
+        }
     }
 
     {
-        // A gateway shall not have more than at most 2 above constraints with connected nodes.
-        // That ensures that they can be placed directly next to each other, one above and one below,
-        // and not create funky situations with wonky-wonky back and forth edges. Really, if there
-        // are more such nodes, then they should just move into the next layer, as the visuals
-        // really just get spagetthified otherwise.
-        // Together with (2) this basically means that there cannot be illegal vertical chains in the
-        // sweep phase. Only problems are `Above`s forcefully pushed into a chain, not sure still
-        // how to go about that wrt S dummy nodes.
+        // A gateway shall not have more than at most two above/same-layer constraints with
+        // connected nodes. That ensures that they can be placed directly next to each other, one
+        // above and one below, and not create funky situations with wonky-wonky back and forth
+        // edges. Really, if there are more such nodes, then they should just move into the next
+        // layer, as the visuals really just get spagetthified otherwise.
         for gateway in graph.nodes.iter().filter(|n| n.is_gateway()) {
             let mut all_connected = VecSet::new();
             for other in gateway
@@ -866,7 +918,9 @@ pub fn validate_invariants(graph: &Graph) -> Result<(), ValidationErrors> {
             {
                 all_connected.insert(other);
             }
-            let Some(cluster) = all_same_layer_constraint_clusters
+            let Some(cluster) = graph
+                .layout_constraints
+                .same_layer_clusters
                 .iter()
                 .find(|c| c.contains(&gateway.id))
             else {
@@ -888,6 +942,75 @@ pub fn validate_invariants(graph: &Graph) -> Result<(), ValidationErrors> {
                         n!(*node).tc(),
                     ));
                 }
+            }
+        }
+    }
+
+    {
+        // A complicated one: Currently I believe that there is no need for S edges. But that also
+        // means, that we cannot have a same-layer cluster where edges would overlap. I mean,
+        // within the same lane you can just order them nicely. But in the case of a lane crossing,
+        // you can not order them: To allow for only-vertical edges (not S edges), there can only
+        // be one edge per cluster to do a given lane crossing.
+        // Complementing this: If a lane crossing spans over another lane, then there
+        // cannot be another node forced into that lane at all.
+        let mut all_lane_crossings = Vec::new();
+        for cluster in &graph.layout_constraints.same_layer_clusters {
+            all_lane_crossings.clear();
+            all_lane_crossings.extend(same_layer_lane_crossings_within_cluster(graph, cluster));
+            all_lane_crossings.sort_unstable();
+
+            for crossing in &all_lane_crossings {
+                assert_eq!(crossing.top_pool_lane.pool, crossing.bot_pool_lane.pool);
+                let in_between_lane_range =
+                    crossing.top_pool_lane.lane.0 + 1..crossing.bot_pool_lane.lane.0;
+                if in_between_lane_range.is_empty() {
+                    continue;
+                }
+                for node_id in cluster.iter().cloned() {
+                    let node = &n!(node_id);
+                    let PoolAndLane { pool, lane } = node.pool_and_lane();
+                    if pool != crossing.top_pool_lane.pool
+                        || !in_between_lane_range.contains(&lane.0)
+                    {
+                        continue;
+                    }
+                    errors.push(vec![("Two connected nodes are forced into the same layer, but they span across another lane. This means that the algorithm must push other nodes into other layers. However, this node is forced as well into the same layer (via above or same-layer `place` constraints). Please relax some of the same-layer and/or above constraints.".to_string(), node.tc()),
+                    ("This is the top node of the two connected nodes".to_string(), crossing.top_tc),
+                    ("This is the bottom node of the two connected nodes".to_string(), crossing.bot_tc),
+                    ]);
+                }
+            }
+
+            for [left, right] in all_lane_crossings.array_windows() {
+                assert_ne!(left, right); // Make sure that the construction is correct.
+
+                if left.top_pool_lane == left.bot_pool_lane {
+                    // This cannot result in a problem. The `right_*` could be on the same
+                    // pool_lane, or just on some next.
+                    continue;
+                }
+                if !(left.top_pool_lane == right.top_pool_lane
+                    && left.bot_pool_lane == right.bot_pool_lane)
+                {
+                    // The other case is covered by the above lane-crossing check already.
+                    // So in here we are only left with lane crossings that span from the same lane
+                    // to the same other lane.
+                    continue;
+                }
+                let err =  errors.push_mut(vec![("Two connected nodes are put into the same layer. However, they cross from one lane to another lane, and in that case no other nodes within the same layer are allowed to do the same lane crossing. But there is another node pair which is forced into the same layer due to `above of` or `same layer` constraints and which does the same lane crossing. Please think through your above and same-layer place constraints again. This is the top node of the first pair:".to_string(),right.top_tc)]);
+                err.push((
+                    "This is the bottom node of the first pair:".to_string(),
+                    right.bot_tc,
+                ));
+                err.push((
+                    "This the top node of the second pair:".to_string(),
+                    left.top_tc,
+                ));
+                err.push((
+                    "This the bottom node of the second pair:".to_string(),
+                    left.bot_tc,
+                ));
             }
         }
     }

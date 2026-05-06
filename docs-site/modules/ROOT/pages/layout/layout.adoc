@@ -1,0 +1,4 @@
+= Layout Algorithm
+
+This section is *very* under construction. I primarily organize notes for my future self to remember what were my thoughts on a high level.
+The plan is to polish this in the form of a paper and then just reference the paper from here.

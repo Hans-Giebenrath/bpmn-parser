@@ -1,6 +1,15 @@
-//! BUGS:
-//! * Message flow ports are never placed above or below ... They probably should if they are
-//!   looping. Then they should leave/enter above/below.
+// Gateway updated algorithm:
+//  * if the joining side is a vertical edge (due to a same/layer or above constraint), then
+//    all the other bend-dummies must be on the opposite side of the gateway, or at the same height
+//    as the gateway. This ensures that the vertical joining outgoing/incoming edge does not funnily
+//    overlap with the other edges, and create visual ambiguities. So ideally, when searching for
+//    good places for the bend dummies, one should not allow crossing the gateway, or would not
+//    accept a solution before the gateway was crossed.
+//    The gateway inner run function should probably take two additional arguments, for whether top
+//    is limited by a top barrier node or by the gateway, and similar for the bottom limit.
+//    This can then be reused. For the joining side, it is a bit hard to discover that it is joining
+//    - there is just one non-reversed edge in the respective incoming or outgoing. That's the only
+//    rule, this must exist.
 
 use crate::common::edge::DummyEdgeBendPoints;
 use crate::common::edge::Edge;
@@ -205,8 +214,7 @@ fn handle_nongateway_node(this_node_id: NodeId, graph: &mut Graph) {
                         None
                     } else {
                         assert!(
-                            from.is_left_back_edge_corner_dummy()
-                                || from.is_snake_edge_bisect_dummy(),
+                            from.is_left_back_edge_corner_dummy(),
                             "from: {from:?}\nedge: {edge:?}"
                         );
                         if from.pool_and_lane() < this_node.pool_and_lane() {
@@ -290,7 +298,7 @@ fn handle_nongateway_node(this_node_id: NodeId, graph: &mut Graph) {
                         None
                     } else {
                         assert!(
-                            to.is_right_back_edge_corner_dummy() || to.is_snake_edge_bisect_dummy(),
+                            to.is_right_back_edge_corner_dummy(),
                             "to: {to:?}\nedge: {edge:?}"
                         );
                         if to.pool_and_lane() < this_node.pool_and_lane() {
@@ -728,13 +736,13 @@ fn handle_gateway_node(this_node_id: NodeId, graph: &mut Graph) {
                 // ... is this valid at all? Maybe when in draft mode, i.e. while creating the diagram
                 // and the diagram is just rendered as the BPMD text is written? So don't panic here.
             }
-            [_single] => {
-                // This edge must leave as a regular flow. Nothing shall be done here.
-                ports.push(RelativePort {
-                    x,
-                    y: this_node.height / 2,
-                });
-            }
+            //[_single] => {
+            //    // This edge must leave as a regular flow. Nothing shall be done here.
+            //    ports.push(RelativePort {
+            //        x,
+            //        y: this_node.height / 2,
+            //    });
+            //}
             many => {
                 // Ports are in the center, since right now we don't know which one will be above, and
                 // which one will be below. They can only be corrected at a later staged.
@@ -823,7 +831,6 @@ fn classify_barrier_node(this_node_id: NodeId, node: &Node) -> Option<BarrierInf
             same_layer_real_node_id,
             ..
         } if *same_layer_real_node_id == this_node_id => None,
-        NodeType::SnakeEdgeBisectDummy { .. } => None,
         NodeType::BendDummy {
             originating_node, ..
         } => Some(BarrierInfo {

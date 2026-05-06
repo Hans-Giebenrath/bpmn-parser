@@ -889,17 +889,14 @@ fn get_layered_edges(graph: &mut Graph) -> (Vec<SegmentsOfSameLayer>, MessageFlo
                 // Straight to the right without any vertical segment.
                 continue;
             }
-            let (layer_idx, alignment) = if from_node.is_snake_edge_bisect_dummy()
-                || (from_node.is_back_edge_corner_dummy() && from_node.layer_id == to_node.layer_id)
+            let (layer_idx, alignment) = if from_node.is_back_edge_corner_dummy()
+                && from_node.layer_id == to_node.layer_id
             {
                 // This edge leaves to the left, so it is part of the previous layer.
                 (from_node.layer_id.0, Alignment::Right)
             } else {
                 let layer_idx = from_node.layer_id.0 + 1;
-                if to_node.is_snake_edge_bisect_dummy()
-                    || (to_node.is_back_edge_corner_dummy()
-                        && from_node.layer_id == to_node.layer_id)
-                {
+                if to_node.is_back_edge_corner_dummy() && from_node.layer_id == to_node.layer_id {
                     // This is a loop which leaves to the right side, and then loops directly back.
                     (layer_idx, Alignment::Left)
                 } else {
@@ -1084,19 +1081,11 @@ fn get_layered_edges(graph: &mut Graph) -> (Vec<SegmentsOfSameLayer>, MessageFlo
             }
             if from.layer_id == to.layer_id {
                 match (&from.node_type, &to.node_type) {
-                    (
-                        NodeType::SnakeEdgeBisectDummy { .. }
-                        | NodeType::BackEdgeCornerDummy { .. },
-                        _,
-                    ) => {
+                    (NodeType::BackEdgeCornerDummy { .. }, _) => {
                         edge.alignment = Alignment::Right;
                         segments.right_loops.push(edge);
                     }
-                    (
-                        _,
-                        NodeType::SnakeEdgeBisectDummy { .. }
-                        | NodeType::BackEdgeCornerDummy { .. },
-                    ) => {
+                    (_, NodeType::BackEdgeCornerDummy { .. }) => {
                         edge.alignment = Alignment::Left;
                         segments.left_loops.push(edge);
                     }
