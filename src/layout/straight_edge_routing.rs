@@ -13,7 +13,6 @@ use std::collections::HashMap;
 const NODE_MARGIN: usize = 5;
 
 pub fn find_straight_edges(graph: &mut Graph) {
-    dbg!(&graph);
     // HashMap to store coordinates of obstacles with node id and is_datanode as key
     // HashMap stores tuples of top left and bottom right coordinates of obstacles
     // TODO filter this more by pools and possibly layers, as a sort of quad tree (not by lanes
@@ -75,10 +74,11 @@ fn is_in_obstacle_ignore_self(
 fn sequence_edge_routing(graph: &mut Graph) {
     for edge_id in (0..graph.edges.len()).map(EdgeId) {
         let edge = &e!(edge_id);
-        if !edge.is_sequence_flow() {
+        if !edge.is_sequence_flow() || !edge.is_regular() {
             continue;
         }
 
+        dbg!(&graph, &edge);
         let [start @ (_, start_y), end @ (_, end_y)] = graph.start_and_end_ports(edge_id);
         let is_reversed = edge.is_reversed;
         let is_vertical = edge.is_vertical;

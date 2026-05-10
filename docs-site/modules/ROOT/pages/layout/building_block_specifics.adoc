@@ -5,6 +5,11 @@ Gateway nodes are subject to three constraints to make layouting easier:
 . A gateway can be connected to at most two nodes which are at the same time forced on the same layer as the gateway node (via `Above` or `SameLayer`) (this actually applies to regular nodes as well)
 . A gateway node and a same-layer-connected-node are always connected via a straight vertical edge, i.e. there is no snake edge going back and forth to navigate around in-between nodes. (TODO add a check in the sweep code for this - basically t) (this actually applies to regular nodes as well)
 
+How it is determined to what side an edge attaches to a gateway:
+The only incoming or outgoing edge is coming in at the side if the other node is not in the same layer, or otherwise coming from above or below if it is in the same layer. Though maybe there should be more thinking, especially if the only-edge does a lane crossing, in which case it *could also be routed downwards. Not sure.
+if a gateway has an edge incoming *from the right* and an edge outgoing *to the left* then this is basically a flipped gateway.
+a flipped gateway is not supported. BPMN processes are forward looking. (otherwise one would need to
+
 = Any Node
 
 . A node can be connected to at most two nodes which are at the same time forced on the same layer as the node (via `Above` or `SameLayer`) (this does not apply to message flows, only to sequence flows and data associations)

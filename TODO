@@ -1,8 +1,9 @@
-* sweep: S dummies should be moved top-to-bottom to check whether it can be placed between the two nodes. Otherwise there is always the funny loop over the top. Overall, just implement global sifting (at least for S dummies, but maybe also for data edges, not sure).
-* Gateway edges which are recognized as back edges are temporarily swapped, i.e. they *do not* go through the reverse node corner dummy transformation. This is done because they should be positioned next to the gateway (subject to regular rules in the dummy node placement logic). So from the right gateway, the edge going left, should actually be stored as an *incoming* edge with *is_reversed* set to true. For the left gateway, the incoming edge from the right side should temporarily be stored in the *outcoming* edges. However, during the port assignment phase, when bend dummies are added, this is ultimately restored, and then the bend dummy is actually converted into a back edge corner dummy.
+* Gateway edges which are recognized as back edges must be temporarily reversed (and moved from inc to outg, + vice versa), i.e. they *do not* go through the reverse node corner dummy transformation. This is done because they should be positioned next to the gateway (subject to regular rules in the dummy node placement logic). So from the right gateway, the edge going left, should actually be stored as an *incoming* edge with *is_reversed* set to true. For the left gateway, the incoming edge from the right side should temporarily be stored in the *outcoming* edges. However, during the port assignment phase, when bend dummies are added, this is ultimately restored, and then the bend dummy is actually converted into a back edge corner dummy.
+* g0013.bpmd fails
+* Data edges should always go diagonally into a gateway. This also means, if it can't go straight from data node to gateway, then the last step (long edge dummy <-> gateway) needs to be straight, not routed).
+* data elements need to be placed in accordance to above/same layer constraints. But this should also be verified: imagine data above gw above incoming node. Then multiple outgoing to the right. No way to layout because all outgoing must emerge from the right. Instead, forbid that data is above gw in the first place. And data should be either a bit above gw or below gw (at least the data node which is directly close to the target node)
+* Lone-data elements need to be ensured to be moved to the left if a node already has two vertical connected nodes. Otherwise the data node placement logic would put it also vertically on the same layer and there is chaos.
 * Unify back edge corner dummies and bend dummies. They should be the same (though depends on whether they go left or right) - gateways have their bend dummies created in a later phase compared to back edge nodes. Also, do a write-up (paper-like) for how this works, I will forget it myself at some point.
-* The edges which go straight up from a gateway need to be marked `is_vertical` even for those back edge dummy node cases. Right now they are not treated as vertical and thus get those funny wonks (but must check whether there *really* is no other obstacle in the way, gotta think which phase is the correct to determine that).
-* The gateway VerticalCollapsed should not happen on the branching side. On the non-branching side, where there is only one same-lane edge (regardless of those leaving the lane), it should just always go out straight to the side.
 
 * PE-BPMN tee-external-root-access in a tee-pool should not name itself (@tee-pool)
 * PE-BPMN tee-software-operators should have a similar `on-premises` placeholder as tee-hardware-operators. `local`? as `on-premises` seems weird. (ChatGPT recommends replacing existing 'on-premises' with 'local' as well, not sure if I agree, must sleep over that suggestion)
@@ -37,9 +38,6 @@
 Something from chatgpt 5.5, being mostly focused on the parser side:
 
 >>>>>>
-    Gateway IDs are parsed but never registered.
-    to_gateway_outer keeps ids in GatewayNodeMeta, but parse_gateway never calls node_id_matcher.register, unlike events/activities/data. This means @gateway_id will not work for message flows, layout constraints, PE-BPMD refs, etc.
-
     Data continuation can panic on first data statement.
     In parse_data, meta.is_continuation uses SdeId(self.graph.data_elements.len() - 1). If the file starts with & ..., or continuation appears before any data element, this underflows/panics instead of returning a parse error.
 

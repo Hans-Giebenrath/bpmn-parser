@@ -300,6 +300,10 @@ impl Node {
         )
     }
 
+    pub fn is_real(&self) -> bool {
+        !self.is_any_dummy()
+    }
+
     /// Sometimes dummy nodes need to be traversed. Since it varies whether there is exactly one
     /// incoming and one outgoing edge, or maybe two incoming or two outgoing edges, it is easier to
     /// have this hop functionality put into a dedicated function.
@@ -442,6 +446,19 @@ impl std::fmt::Display for Node {
             "Node {{ id: {}, x: {:?}, y: {:?}, event: {:?}, pool: {:?}, lane: {:?} }}",
             self.id, self.x, self.y, self.node_type, self.pool, self.lane
         )
+    }
+}
+
+pub(crate) fn classify_barrier_node_for_gateway(
+    gateway_node_id: NodeId,
+    node: &Node,
+) -> Option<NodeId> {
+    match &node.node_type {
+        NodeType::LongEdgeDummy => None,
+        NodeType::BendDummy {
+            originating_node, ..
+        } if *originating_node == gateway_node_id => None,
+        _ => Some(node.id),
     }
 }
 

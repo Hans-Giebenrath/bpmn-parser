@@ -1,0 +1,30 @@
+= Pool
+
+== Lane 1
+
+. End L1 <-outg
+
+== Lane 2
+
+# Start
+- PreX ->inc
+
+. End L2 <-outg
+
+== Lane 3
+
+. End L3 <-outg
+
+== Lane 4
+
+X gateway <-inc ->outg
+
+== Lane 5
+
+. End L5 <-outg
+
+== Lane 6
+
+. End L6 <-outg
+
+[place @gateway left of @prex]

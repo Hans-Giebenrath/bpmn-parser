@@ -31,6 +31,7 @@ use crate::common::node::LayerId;
 use crate::common::node::Node;
 use crate::common::node::NodeType;
 use crate::common::node::RelativePort;
+use crate::common::node::classify_barrier_node_for_gateway;
 use itertools::Itertools;
 use proc_macros::{e, from, n, to};
 use std::collections::HashSet;
@@ -755,40 +756,6 @@ fn handle_gateway_node(this_node_id: NodeId, graph: &mut Graph) {
             }
         }
     }
-    // The gateway node might become detached if bend dummies are added in the same lane. In that
-    // case the gateway node should point to the original above and below nodes to ensure that they
-    // point to the original above/below. Note: If the original above itself was already a bend
-    // dummy, it is replaced by its originating node to ensure proper spacing as well.
-    // TODO maybe it does not need to become detached? This is just done to make xy-ilp easier, but
-    // that one could simply account for the gateway bend dummies correctly. Could have the rule
-    // that we simply add all the gateway bend dummies below the gateway (or above, which is
-    // arbitrary and without consequence, just needs to be consistent).
-    n!(this_node_id).node_above_in_same_lane = above.map(|node_id| {
-        if let NodeType::BendDummy {
-            originating_node, ..
-        } = &n!(node_id).node_type
-            && n!(*originating_node).pool_and_lane() == n!(this_node_id).pool_and_lane()
-        {
-            assert_ne!(*originating_node, this_node_id);
-            *originating_node
-        } else {
-            assert_ne!(node_id, this_node_id);
-            node_id
-        }
-    });
-    n!(this_node_id).node_below_in_same_lane = below.map(|node_id| {
-        if let NodeType::BendDummy {
-            originating_node, ..
-        } = &n!(node_id).node_type
-            && n!(*originating_node).pool_and_lane() == n!(this_node_id).pool_and_lane()
-        {
-            assert_ne!(*originating_node, this_node_id);
-            *originating_node
-        } else {
-            assert_ne!(node_id, this_node_id);
-            node_id
-        }
-    });
 }
 
 #[derive(Debug)]
@@ -803,27 +770,17 @@ struct BarrierInfo {
 }
 
 fn top_barrier(graph: &Graph, this_node_id: NodeId) -> Option<BarrierInfo> {
-    for node in graph.iter_upwards_all_pools(StartAt::Node(this_node_id), None) {
-        match classify_barrier_node(this_node_id, node) {
-            result @ Some(_) => return result,
-            None => continue,
-        }
-    }
-    None
+    graph
+        .iter_upwards_all_pools(StartAt::Node(this_node_id), None)
+        .find_map(|node| classify_barrier_node(this_node_id, node))
 }
 
 fn bottom_barrier(graph: &Graph, this_node_id: NodeId) -> Option<BarrierInfo> {
-    for node in graph.iter_downwards_all_pools(StartAt::Node(this_node_id), None) {
-        match classify_barrier_node(this_node_id, node) {
-            result @ Some(_) => return result,
-            None => continue,
-        }
-    }
-    None
+    graph
+        .iter_downwards_all_pools(StartAt::Node(this_node_id), None)
+        .find_map(|node| classify_barrier_node(this_node_id, node))
 }
 
-// Note: Conceptually a duplicate to `vertical_loop_edge_detection::process_node_edge` but not sure
-// how to unify them without making it just more confusing.
 fn classify_barrier_node(this_node_id: NodeId, node: &Node) -> Option<BarrierInfo> {
     match &node.node_type {
         NodeType::LongEdgeDummy => None,
@@ -931,86 +888,46 @@ fn handle_gateway_node_one_side(this_node_id: NodeId, graph: &mut Graph, directi
         kind: BendDummyKind::FromBoundaryEvent,
     })
     .0 / 2;
-    let mut has_dummy_nodes_in_same_lane = false;
-    let (top_loop_edges, regular_edges, bottom_loop_edges) = {
-        let top_loop_edges_partition_point = edges.partition_point(|edge_id| {
-            let other_node = match direction {
-                Direction::Outgoing => &to!(*edge_id),
-                Direction::Incoming => &from!(*edge_id),
-            };
-            other_node.layer_id == this_layer
-        });
-        let top_loop_edges = &edges[..top_loop_edges_partition_point];
+    let sideways_edges = {
+        let top_loop_edges_partition_point =
+            edges.partition_point(|edge_id| e!(*edge_id).is_vertical);
         let rest_edges = &edges[top_loop_edges_partition_point..];
-        let regular_edges_partition_point = rest_edges.partition_point(|edge_id| {
-            let other_node = match direction {
-                Direction::Outgoing => &to!(*edge_id),
-                Direction::Incoming => &from!(*edge_id),
-            };
-            other_node.layer_id != this_layer
-        });
-        (
-            top_loop_edges,
-            &rest_edges[..regular_edges_partition_point],
-            &rest_edges[regular_edges_partition_point..],
-        )
+        let regular_edges_partition_point =
+            rest_edges.partition_point(|edge_id| !e!(*edge_id).is_vertical);
+        &rest_edges[..regular_edges_partition_point]
     };
     // Just a safety measure to ensure we no longer use `edges` directly, but only the partitioned
     // ones.
     #[allow(unused)]
     let edges = ();
 
-    let top_loop_barrier = top_loop_edges.last().map(|edge_id| match direction {
-        Direction::Outgoing => to!(*edge_id).id,
-        Direction::Incoming => from!(*edge_id).id,
-    });
-    let bottom_loop_barrier = bottom_loop_edges.first().map(|edge_id| match direction {
-        Direction::Outgoing => to!(*edge_id).id,
-        Direction::Incoming => from!(*edge_id).id,
-    });
-
-    if regular_edges.is_empty() {
+    let (Some(&first_edge), Some(&last_edge)) = (sideways_edges.first(), sideways_edges.last())
+    else {
         // This gateway is purely put together of back edges and loop edges. So no further bend
         // dummies need to be inserted, i.e. all work is done here.
         return;
-    }
+    };
 
     let other_topmost_node = match direction {
-        Direction::Outgoing => &to!(*regular_edges
-            .first()
-            .expect("Just checked above in the condition")),
-        Direction::Incoming => &from!(
-            *regular_edges
-                .first()
-                .expect("Just checked above in the condition")
-        ),
+        Direction::Outgoing => &to!(first_edge),
+        Direction::Incoming => &from!(first_edge),
     };
     let top_most_pool_lane = other_topmost_node.pool_and_lane();
     let bottom_most_pool_lane = match direction {
-        Direction::Outgoing => to!(*regular_edges
-            .last()
-            .expect("Just checked above in the condition"))
-        .pool_and_lane(),
-        Direction::Incoming => from!(
-            *regular_edges
-                .last()
-                .expect("Just checked above in the condition")
-        )
-        .pool_and_lane(),
+        Direction::Outgoing => to!(last_edge).pool_and_lane(),
+        Direction::Incoming => from!(last_edge).pool_and_lane(),
     };
 
     // First we search a regular (or dummy-(loop-connected)-to-regular) node as the top barrier.
-    // Later these are our own newly inserted dummy nodes.
+    // Later `current_top_barrier` becomes, one by one, our own newly inserted dummy nodes.
     let mut current_top_barrier = graph
         .iter_upwards_same_pool(StartAt::Node(this_node_id), Some(top_most_pool_lane))
-        .find(|&node| !node.is_long_edge_dummy() || Some(node.id) == top_loop_barrier)
-        .map(|node| node.id);
+        .find_map(|node| classify_barrier_node_for_gateway(this_node_id, node));
 
     // This is always the same. We iterate always until we hit this one.
     let bottom_barrier = graph
         .iter_downwards_same_pool(StartAt::Node(this_node_id), Some(bottom_most_pool_lane))
-        .find(|node| !node.is_long_edge_dummy() || Some(node.id) == bottom_loop_barrier)
-        .map(|node| node.id);
+        .find_map(|node| classify_barrier_node_for_gateway(this_node_id, node));
 
     // This one is used to count the number of crossings.
     let mut above_nodes_in_other_layer = HashSet::<NodeId>::from_iter(
@@ -1021,11 +938,16 @@ fn handle_gateway_node_one_side(this_node_id: NodeId, graph: &mut Graph, directi
 
     let mut has_crossed_gateway = false;
     let mut previous_other_node_id = None;
-    for edge_id in regular_edges.iter().cloned() {
+    for edge_id in sideways_edges.iter().cloned() {
         let other_node = match direction {
             Direction::Outgoing => &to!(edge_id),
             Direction::Incoming => &from!(edge_id),
         };
+        if e!(edge_id).is_data_flow() {
+            // Data nodes are treated differently, they should always come in diagonally, if not
+            // predetermined vertical.
+            continue;
+        }
         let other_node_pool_lane = other_node.pool_and_lane();
 
         if let Some(previous_other_node_id) = previous_other_node_id {
@@ -1184,32 +1106,11 @@ fn handle_gateway_node_one_side(this_node_id: NodeId, graph: &mut Graph, directi
             relative_port_x,
             kind,
         );
-        if best_position.1 == this_pool_and_lane {
-            has_dummy_nodes_in_same_lane = true;
-        }
         has_crossed_gateway = best_position.0;
         // The order is already fixed, so we are not allowed to put any of the following nodes
         // above `new_dummy_node`. We insert from top to bottom.
         current_top_barrier = Some(new_dummy_node);
         continue;
-    }
-
-    if has_dummy_nodes_in_same_lane {
-        // Take the gateway node out, so the Y-ILP does not force the gateway node exactly
-        // between its above and below nodes. The idea is that it should actually be rather
-        // floaty, and if less edge crossings can be achieved by moving it over above/below
-        // nodes, then it should move to the better position.
-        let this_node = &mut n!(this_node_id);
-        let above = this_node.node_above_in_same_lane.take();
-        let below = this_node.node_below_in_same_lane.take();
-        if let Some(above) = above {
-            assert_ne!(Some(above), below);
-            n!(above).node_below_in_same_lane = below;
-        }
-        if let Some(below) = below {
-            assert_ne!(above, Some(below));
-            n!(below).node_above_in_same_lane = above;
-        }
     }
 }
 
