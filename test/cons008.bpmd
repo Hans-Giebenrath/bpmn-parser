@@ -11,8 +11,8 @@
 
 == Lane 3
 
-- Task 3 <-t3
+. End <-t3
 
 [place @start above @t1]
 [place @t1 above @t2]
-[place @t2 above @t3]
+[place @t2 above @end]

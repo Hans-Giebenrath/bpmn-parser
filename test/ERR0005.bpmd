@@ -1,0 +1,10 @@
+// ERROR A vertical edge chain is broken up by `above` place constraints (an unrelated node would be forced between to connected nodes on the same layer). This is forbidden as it would result in an S shaped vertical edge, hurting readability (if you disagree, please show me your situation). This is the first node of the chain of vertically connected nodes
+
+# Start
+. End @end
+
+# Unrelated
+. End 2
+
+[place @start above @unrelated]
+[place @unrelated above @end]

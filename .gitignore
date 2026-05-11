@@ -4,3 +4,4 @@ input.txt
 generated_bpmn*
 /input
 *.drawio.bkp
+failed_runs_output

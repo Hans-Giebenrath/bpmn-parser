@@ -127,7 +127,7 @@ pub struct LaneId(pub usize);
 // `PoolAndLane`? Or maybe something funny like `Poolane`? `PoLa`? `Place2`? `Coord2`?
 // `PoolLane` seems the most reasonable. The variables could then be shortly named `poolane`,
 // `poollane` or really `pool_lane`. Probably `pool_lane` is the most readable after all.
-#[derive(PartialEq, Default, Clone, Debug, Copy, Hash, Eq, PartialOrd, Ord)]
+#[derive(PartialEq, Default, Clone, Copy, Hash, Eq, PartialOrd, Ord)]
 pub struct PoolAndLane {
     pub pool: PoolId,
     pub lane: LaneId,
@@ -138,6 +138,12 @@ impl PoolAndLane {
         pool: PoolId(0),
         lane: LaneId(0),
     };
+}
+
+impl Debug for PoolAndLane {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "p/l {}/{}", self.pool.0, self.lane.0)
+    }
 }
 
 #[derive(PartialEq, Eq, Hash, Clone)]
@@ -156,6 +162,7 @@ impl Debug for Coord3 {
     }
 }
 
+#[derive(Debug)]
 pub(crate) enum StartAt {
     Node(NodeId),
     PoolLane(Coord3),
@@ -330,7 +337,10 @@ impl Graph {
         mut final_pool_lane_to_consider: PoolAndLane,
         layer: LayerId,
     ) -> Option<(PoolAndLane, NodeId)> {
-        assert!(final_pool_lane_to_consider <= lane_below_requested_one);
+        assert!(
+            final_pool_lane_to_consider <= lane_below_requested_one,
+            "{self:?}\nlane_below_requested_one: {lane_below_requested_one:?}, final_pool_lane_to_consider: {final_pool_lane_to_consider:?}, layer: {layer:?}"
+        );
         if final_pool_lane_to_consider.pool != lane_below_requested_one.pool {
             // Bend the `final_pool_lane_to_consider` around to use it as a sentinel value.
             final_pool_lane_to_consider = PoolAndLane {
@@ -481,7 +491,10 @@ impl Graph {
         mut final_pool_lane_to_consider: PoolAndLane,
         layer: LayerId,
     ) -> Option<(PoolAndLane, NodeId)> {
-        assert!(final_pool_lane_to_consider >= lane_above_requested_one);
+        assert!(
+            final_pool_lane_to_consider >= lane_above_requested_one,
+            "{self:?}\nlane_above_requested_one: {lane_above_requested_one:?}, final_pool_lane_to_consider: {final_pool_lane_to_consider:?}, layer: {layer:?}"
+        );
         if final_pool_lane_to_consider.pool != lane_above_requested_one.pool {
             assert!(!self.pools[lane_above_requested_one.pool].lanes.is_empty());
             final_pool_lane_to_consider = PoolAndLane {

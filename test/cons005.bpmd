@@ -1,8 +1,0 @@
-# Start
-. End @end
-
-# Unrelated
-. End 2
-
-[place @start above @unrelated]
-[place @unrelated above @end]

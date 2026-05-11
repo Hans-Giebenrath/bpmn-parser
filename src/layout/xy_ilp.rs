@@ -453,14 +453,11 @@ enum GatewayNeighborLayerConnectivity<'a, I> {
     },
 }
 
-fn analyse_gateway_neighbor_layer_connectivity<'a, I>(
+fn analyse_gateway_neighbor_layer_connectivity<'a>(
     graph: &'a Graph,
-    mut iter: I,
+    edges: &[EdgeId],
     from_or_to: impl Fn(&Edge) -> NodeId + Clone,
-) -> GatewayNeighborLayerConnectivity<'a, impl Iterator<Item = &'a Node>>
-where
-    I: DoubleEndedIterator<Item = &'a EdgeId> + Clone,
-{
+) -> GatewayNeighborLayerConnectivity<'a, impl Iterator<Item = &'a Node>> {
     // Walk inward from both ends until we have both matches or we exhaust the iterator.
 
     let target_node = move |edge_id: &EdgeId| -> Option<&Node> {
@@ -477,8 +474,8 @@ where
     };
 
     // If only one match exists overall, mirror it so both are equal.
-    let mut rev = iter.clone().rev();
-    if let Some(first) = iter.find_map(&target_node)
+    let mut rev = edges.iter().rev();
+    if let Some(first) = edges.iter().find_map(&target_node)
         && let Some(last) = rev.find_map(&target_node)
     {
         if !std::ptr::eq(first, last) {
@@ -487,7 +484,8 @@ where
                 bottom_node: last,
                 // No `filter` for layer_id required, as the in between nodes are guaranteed to be
                 // non-vertical.
-                in_between_nodes: iter
+                in_between_nodes: edges
+                    .iter()
                     .flat_map(target_node)
                     .take_while(|t: &&Node| !std::ptr::eq(*t, last)),
             }
@@ -522,15 +520,25 @@ fn handle_gateway(
         // Doing the iteration is expensive, so only do it if necessary.
         let mut top_barrier = None;
         let top_barrier_calc = || {
-            graph
-                .iter_upwards_same_pool(StartAt::Node(gateway.id), Some(gateway.pool_and_lane()))
-                .find_map(|node| classify_barrier_node_for_gateway(gateway.id, node))
+            dbg!(
+                graph
+                    .iter_upwards_same_pool(
+                        StartAt::Node(gateway.id),
+                        Some(gateway.pool_and_lane())
+                    )
+                    .find_map(|node| classify_barrier_node_for_gateway(gateway.id, node))
+            )
         };
         let mut bottom_barrier = None;
         let bottom_barrier_calc = || {
-            graph
-                .iter_upwards_same_pool(StartAt::Node(gateway.id), Some(gateway.pool_and_lane()))
-                .find_map(|node| classify_barrier_node_for_gateway(gateway.id, node))
+            dbg!(
+                graph
+                    .iter_downwards_same_pool(
+                        StartAt::Node(gateway.id),
+                        Some(gateway.pool_and_lane())
+                    )
+                    .find_map(|node| classify_barrier_node_for_gateway(gateway.id, node))
+            )
         };
 
         enum WhichSlot {
@@ -768,7 +776,7 @@ fn handle_gateway(
         vars,
         cached_constraints,
         gateway,
-        gateway.incoming.iter(),
+        &gateway.incoming,
         |edge| edge.from,
         left_lone_element_position,
         top_is_blocked_for_non_lones,
@@ -786,7 +794,7 @@ fn handle_gateway(
         vars,
         cached_constraints,
         gateway,
-        gateway.outgoing.iter(),
+        &gateway.outgoing,
         |edge| edge.to,
         right_lone_element_position,
         top_is_blocked_for_non_lones,
@@ -800,13 +808,13 @@ fn handle_gateway(
     gateway_additional
 }
 
-fn handle_gateway_neighbor_layer_connectivity<'a, I>(
-    graph: &'a Graph,
+fn handle_gateway_neighbor_layer_connectivity(
+    graph: &Graph,
     lane: &Lane,
     vars: &mut ProblemVariables,
     cached_constraints: &mut Vec<Constraint>,
     gateway: &Node,
-    iter: I,
+    edges: &[EdgeId],
     from_or_to: impl Fn(&Edge) -> NodeId + Clone,
     lone_element_position: Option<LoneElementPosition>,
     top_is_blocked_for_non_lones: bool,
@@ -816,13 +824,11 @@ fn handle_gateway_neighbor_layer_connectivity<'a, I>(
     top_slot_is_data: bool,
     bottom_slot_is_data: bool,
     gateway_additional: &mut PaddingVarsExpandedAux,
-) where
-    I: DoubleEndedIterator<Item = &'a EdgeId> + Clone,
-{
+) {
     let mut first_other = None;
     let mut last_other = None;
-    let inc_iter = iter
-        .clone()
+    let inc_iter = edges
+        .iter()
         .map(|edge_id| &e!(*edge_id))
         .map(|edge| (edge, from_or_to(edge)))
         .filter(|&(edge, other_node_id)| {
@@ -910,6 +916,11 @@ fn handle_gateway_neighbor_layer_connectivity<'a, I>(
     if let Some(first_other) = first_other.take()
         && first_other.pool_and_lane() == gateway.pool_and_lane()
     {
+        assert!(
+            first_other.is_bend_dummy(),
+            "{graph:?},\nfirst_other: {}, top_slot: {top_slot:?}, bottom_slot: {bottom_slot:?}",
+            first_other.id,
+        );
         gateway_additional
             .0
             .push((aux(first_other), graph.config.dummy_node_y_padding));
@@ -918,6 +929,7 @@ fn handle_gateway_neighbor_layer_connectivity<'a, I>(
     if let Some(last_other) = last_other.take()
         && last_other.pool_and_lane() == gateway.pool_and_lane()
     {
+        assert!(last_other.is_bend_dummy());
         gateway_additional
             .1
             .push((aux(last_other), graph.config.dummy_node_y_padding));
@@ -933,12 +945,16 @@ fn handle_gateway_neighbor_layer_connectivity<'a, I>(
         // The lone element is on this side, hence we don't enforce any further constraints.
         // It *might* be that we should still add a small pull factor between the gateway and its
         // staying-within-lane bend points, but let's first see how in practice it looks like.
+        dbg!();
         return;
     }
 
-    match analyse_gateway_neighbor_layer_connectivity(graph, iter, from_or_to) {
-        GatewayNeighborLayerConnectivity::NoSameLaneEdges => {}
+    match analyse_gateway_neighbor_layer_connectivity(graph, edges, from_or_to) {
+        GatewayNeighborLayerConnectivity::NoSameLaneEdges => {
+            dbg!()
+        }
         GatewayNeighborLayerConnectivity::OnlyOneSameLaneEdge(node) => {
+            dbg!();
             // The bend node shall stay on the same height as the gateway node, so the edge leaves
             // nicely at the right corner of the gateway symbol.
             cached_constraints.push((middle(gateway) - middle(node)).eq(0.0));
@@ -969,6 +985,7 @@ fn handle_gateway_neighbor_layer_connectivity<'a, I>(
             in_between_nodes,
             bottom_node,
         } => {
+            dbg!();
             if !top_is_blocked_for_non_lones && !bottom_is_blocked_for_non_lones {
                 // gateway == (top_node + bottom_node) / 2 <==> 2 * gateway - top_node - bottom_node == 0
                 cached_constraints

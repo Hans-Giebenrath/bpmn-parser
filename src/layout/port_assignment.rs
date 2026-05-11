@@ -921,12 +921,20 @@ fn handle_gateway_node_one_side(this_node_id: NodeId, graph: &mut Graph, directi
     // First we search a regular (or dummy-(loop-connected)-to-regular) node as the top barrier.
     // Later `current_top_barrier` becomes, one by one, our own newly inserted dummy nodes.
     let mut current_top_barrier = graph
-        .iter_upwards_same_pool(StartAt::Node(this_node_id), Some(top_most_pool_lane))
+        .iter_upwards_same_pool(
+            StartAt::Node(this_node_id),
+            // Might be that the other highest node is on a _lower_ pool_lane.
+            Some(this_pool_and_lane.min(top_most_pool_lane)),
+        )
         .find_map(|node| classify_barrier_node_for_gateway(this_node_id, node));
 
     // This is always the same. We iterate always until we hit this one.
     let bottom_barrier = graph
-        .iter_downwards_same_pool(StartAt::Node(this_node_id), Some(bottom_most_pool_lane))
+        .iter_downwards_same_pool(
+            StartAt::Node(this_node_id),
+            // Might be that the other highest node is on a _higher_ pool_lane.
+            Some(this_pool_and_lane.max(bottom_most_pool_lane)),
+        )
         .find_map(|node| classify_barrier_node_for_gateway(this_node_id, node));
 
     // This one is used to count the number of crossings.

@@ -78,7 +78,6 @@ fn sequence_edge_routing(graph: &mut Graph) {
             continue;
         }
 
-        dbg!(&graph, &edge);
         let [start @ (_, start_y), end @ (_, end_y)] = graph.start_and_end_ports(edge_id);
         let is_reversed = edge.is_reversed;
         let is_vertical = edge.is_vertical;
@@ -101,7 +100,6 @@ fn sequence_edge_routing(graph: &mut Graph) {
             vec![start, end]
         };
         *out_bend_points = RegularEdgeBendPoints::FullyRouted(bend_points);
-        dbg!(&from!(edge_id), &to!(edge_id));
         /*
         } else {
             let from = &n!(edge.from);
