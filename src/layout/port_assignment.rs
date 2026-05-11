@@ -889,9 +889,12 @@ fn handle_gateway_node_one_side(this_node_id: NodeId, graph: &mut Graph, directi
     })
     .0 / 2;
     let sideways_edges = {
-        let top_loop_edges_partition_point =
-            edges.partition_point(|edge_id| e!(*edge_id).is_vertical);
-        let rest_edges = &edges[top_loop_edges_partition_point..];
+        let mut rest_edges = edges.as_slice();
+        while let Some((first, rest)) = rest_edges.split_first()
+            && e!(*first).is_vertical
+        {
+            rest_edges = rest;
+        }
         let regular_edges_partition_point =
             rest_edges.partition_point(|edge_id| !e!(*edge_id).is_vertical);
         &rest_edges[..regular_edges_partition_point]
