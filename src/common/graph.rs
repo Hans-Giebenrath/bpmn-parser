@@ -683,6 +683,7 @@ impl Debug for Graph {
                 Some(NodeId(idx)) => write!(f, "below {idx}")?,
                 None => write!(f, "below -")?,
             }
+            write!(f, ", y {}", n.y)?;
             writeln!(f)?;
         }
         for (idx, e) in self.edges.iter().enumerate() {
@@ -886,12 +887,12 @@ pub fn validate_invariants(graph: &Graph) -> Result<(), ValidationErrors> {
             .incoming
             .iter()
             .map(|edge_id| (&e!(*edge_id), &from!(*edge_id)))
-            .filter(|(e, _)| e.is_sequence_flow());
+            .filter(|(e, _)| e.is_sequence_flow() && e.attached_to_boundary_event.is_none());
         let out_iter = node
             .outgoing
             .iter()
             .map(|edge_id| (&e!(*edge_id), &to!(*edge_id)))
-            .filter(|(e, _)| e.is_sequence_flow());
+            .filter(|(e, _)| e.is_sequence_flow() && e.attached_to_boundary_event.is_none());
         if inc_iter.clone().count() > 1 {
             let err = errors.push_mut(vec![(
                 "This node has more than one incoming sequence flow which is forbidden. Use a gateway for joining."

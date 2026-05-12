@@ -30,19 +30,78 @@ pub fn postprocess_ports_and_vertical_edges(graph: &mut Graph) {
         let bottom_border_y = node.y + node.height;
         let left_side_x = 0;
         let right_side_x = node.width;
-        let mut process_gateway =
-            |in_or_out: &[EdgeId], in_or_out_ports: &mut [RelativePort], relative_x: usize| {
-                for (edge_id, relative_port) in
-                    in_or_out.iter().cloned().zip(in_or_out_ports.iter_mut())
-                {
-                    let edge = &mut e!(edge_id);
-                    assert!(edge.is_vertical);
-                    let maybe_bend_points =
-                        if let EdgeType::DummyEdge { bend_points, .. } = &mut edge.edge_type {
-                            Some(bend_points)
+        if node.is_gateway() {
+            // Set the port of vertical edges to the correct side of the gateway node, and
+            // assign `VerticalBendDummy` or `VerticalCollapsed` to the vertical edge between
+            // gateway and bend dummy.
+            let mut process_gateway =
+                |in_or_out: &[EdgeId], in_or_out_ports: &mut [RelativePort], relative_x: usize| {
+                    for (edge_id, relative_port) in
+                        in_or_out.iter().cloned().zip(in_or_out_ports.iter_mut())
+                    {
+                        let edge = &mut e!(edge_id);
+                        assert!(edge.is_vertical);
+                        let maybe_bend_points =
+                            if let EdgeType::DummyEdge { bend_points, .. } = &mut edge.edge_type {
+                                Some(bend_points)
+                            } else {
+                                None
+                            };
+                        use DummyEdgeBendPoints::*;
+                        let other_node = &n!(if edge.from == node.id {
+                            edge.to
                         } else {
-                            None
-                        };
+                            edge.from
+                        });
+                        let xy = (if edge.from == node.id {
+                            other_node.port_of_incoming(edge_id)
+                        } else {
+                            other_node.port_of_outgoing(edge_id)
+                        })
+                        .as_pair();
+
+                        if other_node.y < top_border_y {
+                            // above
+                            relative_port.y = 0;
+
+                            if let Some(bend_points) = maybe_bend_points {
+                                *bend_points = VerticalBendDummy(xy);
+                            }
+                        } else if other_node.y <= bottom_border_y {
+                            // within
+                            // This is only relevant for gateway bendpoints that can be put at the
+                            // same height as the gateway, i.e. shall be vertically collapsed. The ILP
+                            // construction with big M should have forced it to y/2 += rounding
+                            // errors.
+                            relative_port.x = relative_x;
+
+                            if let Some(bend_points) = maybe_bend_points {
+                                *bend_points = VerticalCollapsed;
+                            }
+                        } else {
+                            // below
+                            relative_port.y = node.height;
+
+                            if let Some(bend_points) = maybe_bend_points {
+                                *bend_points = VerticalBendDummy(xy);
+                            }
+                        }
+                    }
+                };
+
+            process_gateway(&node.incoming, &mut incoming_ports, left_side_x);
+            process_gateway(&node.outgoing, &mut outgoing_ports, right_side_x);
+        } else {
+            // Just create the `VerticalBendDummy` information for vertical boundary event edges.
+            let mut process_non_gateway = |in_or_out: &[EdgeId]| {
+                for edge_id in in_or_out.iter().cloned() {
+                    let edge = &mut e!(edge_id);
+                    if !edge.is_vertical {
+                        continue;
+                    }
+                    let EdgeType::DummyEdge { bend_points, .. } = &mut edge.edge_type else {
+                        continue;
+                    };
                     use DummyEdgeBendPoints::*;
                     let other_node = &n!(if edge.from == node.id {
                         edge.to
@@ -56,38 +115,12 @@ pub fn postprocess_ports_and_vertical_edges(graph: &mut Graph) {
                     })
                     .as_pair();
 
-                    if other_node.y < top_border_y {
-                        // above
-                        relative_port.y = 0;
-
-                        if let Some(bend_points) = maybe_bend_points {
-                            *bend_points = VerticalBendDummy(xy);
-                        }
-                    } else if other_node.y <= bottom_border_y {
-                        // within
-                        // This is only relevant for gateway bendpoints that can be put at the
-                        // same height as the gateway, i.e. shall be vertically collapsed. The ILP
-                        // construction with big M should have forced it to y/2 += rounding
-                        // errors.
-                        relative_port.x = relative_x;
-
-                        if let Some(bend_points) = maybe_bend_points {
-                            *bend_points = VerticalCollapsed;
-                        }
-                    } else {
-                        // below
-                        relative_port.y = node.height;
-
-                        if let Some(bend_points) = maybe_bend_points {
-                            *bend_points = VerticalBendDummy(xy);
-                        }
-                    }
+                    *bend_points = VerticalBendDummy(xy);
                 }
             };
 
-        if node.is_gateway() {
-            process_gateway(&node.incoming, &mut incoming_ports, left_side_x);
-            process_gateway(&node.outgoing, &mut outgoing_ports, right_side_x);
+            process_non_gateway(&node.incoming);
+            process_non_gateway(&node.outgoing);
         }
         // TODO do we need a version for regular nodes as well? For their bend points I think yes?
         // Need to check what was broken here.

@@ -310,7 +310,6 @@ fn assign_y(graph: &mut Graph, pool: PoolId, lane: LaneId, min_y_value: usize) -
                 match &above.node_type {
                     NodeType::BendDummy {
                         originating_node, ..
-                      // At some point the bend dummy will be used for non-gateway nodes as well.
                     } if n!(*originating_node).is_gateway() => *originating_node,
                     _ => return true,
                 }
@@ -321,7 +320,6 @@ fn assign_y(graph: &mut Graph, pool: PoolId, lane: LaneId, min_y_value: usize) -
                 match &below.node_type {
                     NodeType::BendDummy {
                         originating_node, ..
-                      // At some point the bend dummy will be used for non-gateway nodes as well.
                     } if n!(*originating_node).is_gateway() => *originating_node,
                     _ => return true,
                 }
@@ -439,10 +437,7 @@ fn assign_x(graph: &mut Graph) {
     }
 }
 
-/// Ignores same-layer same-lane edges, because they are a bit awkward to handle I fear. They
-/// might be straight, but might not be. WELL actually we do know this already here. But
-/// I'd first see how it looks overall, then we can make special `is_vertical` handling (if this is
-/// at all correctly set for S-node dummies?).
+/// Ignores vertical edges as they are handled separately.
 enum GatewayNeighborLayerConnectivity<'a, I> {
     NoSameLaneEdges,
     OnlyOneSameLaneEdge(&'a Node),
