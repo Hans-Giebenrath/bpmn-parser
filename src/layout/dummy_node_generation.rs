@@ -96,57 +96,67 @@ pub fn dummy_node_generation(graph: &mut Graph) {
                 .0
                 .checked_sub(to.layer_id.0 + 1)
                 .expect("`equals` case was checked already earlier");
-            let dummy_from_node_id = graph.add_node(
-                NodeType::BackEdgeCornerDummy {
-                    same_layer_real_node_id: from_id,
-                    same_layer_edge_id: EdgeId(current_num_edges),
-                    left_one: false,
-                },
-                PoolAndLane {
-                    pool,
-                    // Yes, `to.lane`, as I believe it is visually clearer to directly go to the
-                    // target lane. But I might be wrong.
-                    lane: to_coords.pool_and_lane.lane,
-                },
-                Some(from_coords.layer),
-            );
-            let dummy_to_node_id = graph.add_node(
-                NodeType::BackEdgeCornerDummy {
-                    same_layer_real_node_id: to_id,
-                    same_layer_edge_id: EdgeId(current_num_edges + 1),
-                    left_one: true,
-                },
-                PoolAndLane {
-                    pool,
-                    lane: to_coords.pool_and_lane.lane,
-                },
-                Some(to_coords.layer),
-            );
-            // XXX: Later code builds upon the assumption that at `incoming[0]`/`outgoing[0]` they
-            // will find the edge which connects to the regular edge.
-            // TODO but why was is at [1] then?
-            graph.add_edge(
-                from_id,
-                dummy_from_node_id,
-                EdgeType::DummyEdge {
-                    original_edge: edge_id,
-                    bend_points: DummyEdgeBendPoints::ToBeDeterminedOrStraight,
-                },
-                flow_type.clone(),
-                boundary_event,
-            );
-            graph.add_edge(
-                dummy_to_node_id,
-                to_id,
-                EdgeType::DummyEdge {
-                    original_edge: edge_id,
-                    bend_points: DummyEdgeBendPoints::ToBeDeterminedOrStraight,
-                },
-                flow_type.clone(),
-                None,
-            );
+            let from_is_gateway = from.is_gateway();
+            let to_is_gateway = to.is_gateway();
+            let dummy_from_node_id = if from_is_gateway {
+                from_id
+            } else {
+                let dummy_node_id = graph.add_node(
+                    NodeType::BackEdgeCornerDummy {
+                        same_layer_real_node_id: from_id,
+                        same_layer_edge_id: EdgeId(current_num_edges),
+                        left_one: false,
+                    },
+                    PoolAndLane {
+                        pool,
+                        // Yes, `to.lane`, as I believe it is visually clearer to directly go to the
+                        // target lane. But I might be wrong.
+                        lane: to_coords.pool_and_lane.lane,
+                    },
+                    Some(from_coords.layer),
+                );
+                graph.add_edge(
+                    from_id,
+                    dummy_node_id,
+                    EdgeType::DummyEdge {
+                        original_edge: edge_id,
+                        bend_points: DummyEdgeBendPoints::ToBeDeterminedOrStraight,
+                    },
+                    flow_type.clone(),
+                    boundary_event,
+                );
+                dummy_node_id
+            };
+            let dummy_to_node_id = if to_is_gateway {
+                to_id
+            } else {
+                let dummy_node_id = graph.add_node(
+                    NodeType::BackEdgeCornerDummy {
+                        same_layer_real_node_id: to_id,
+                        same_layer_edge_id: EdgeId(current_num_edges + 1),
+                        left_one: true,
+                    },
+                    PoolAndLane {
+                        pool,
+                        lane: to_coords.pool_and_lane.lane,
+                    },
+                    Some(to_coords.layer),
+                );
+                graph.add_edge(
+                    dummy_node_id,
+                    to_id,
+                    EdgeType::DummyEdge {
+                        original_edge: edge_id,
+                        bend_points: DummyEdgeBendPoints::ToBeDeterminedOrStraight,
+                    },
+                    flow_type.clone(),
+                    None,
+                );
+                dummy_node_id
+            };
 
-            // Need to add two nodes at the target node's lane. I hypothesize that this creates
+            let old_num_edges = graph.edges.len();
+            // Need to add the nodes at the target node's lane. I hypothesize that this creates
             // better visual results compared to switching lanes on half the way as is done for the
             // forward-looking edges.
             insert_dummy_nodes(
@@ -160,6 +170,9 @@ pub fn dummy_node_generation(graph: &mut Graph) {
                 edge_id,
                 None,
             );
+            for edge in graph.edges.iter_mut().skip(old_num_edges) {
+                edge.is_reversed = true;
+            }
         }
         graph.nodes[from_id]
             .outgoing

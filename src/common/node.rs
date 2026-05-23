@@ -30,10 +30,10 @@ pub enum NodeType {
         /// rely on that.
         transported_data: Vec<SdeId>,
 
-        /// In the "tee-tasks"/"mpc-tasks" form, the TEE activity is abstracted away in a single box
-        /// (activity), and so there is no dedicated "tee-in-unprotect"/"tee-out-protect" (and the
-        /// same for MPC), hence some checks need to be omitted because we simply must assume that
-        /// they will be done correctly within these abstracted away black boxes.
+        /// In the "tee-tasks" / "mpc-tasks" form, the TEE activity is abstracted away in a single
+        /// box (activity), and so there is no dedicated "tee-in-unprotect" / "tee-out-protect" (and
+        /// the same for MPC), hence some checks need to be omitted because we simply must assume
+        /// that they will be done correctly within these abstracted away black boxes.
         pe_bpmd_hides_protection_operations: bool,
     },
     /// Dummy nodes are inserted in three stages:
@@ -45,9 +45,9 @@ pub enum NodeType {
     ///     neighboring layers).
     ///     These are reversed/undone in the same crossing optimization phase.
     ///  3. During port assignment, to handle those edges which leave above or below a node and then
-    ///     bend to the right. The bendpoint is represented by a new dummy node.
+    ///     bend to the right. The bend point is represented by a new dummy node.
     LongEdgeDummy,
-    /// Back edges are transformed as follow:
+    /// Back edges are transformed as follows:
     ///
     /// ```
     ///                         to
