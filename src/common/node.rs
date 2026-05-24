@@ -150,8 +150,8 @@ pub struct Node {
 
     // Sequence flow edges, message edges and data object edges are all treated equally.
     // Note: This might benefit from going
-    //   from: Vec<EdgeId>
-    //   to:   Vec<struct{EdgeId, FlowType, stays_within_lane}>
+    //   from: `Vec<EdgeId>`
+    //     to: `Vec<struct{EdgeId, FlowType, stays_within_lane}>`
     /// Invariant: After global crossing minimization, this is sorted.
     /// TODO make `incoming` and `outgoing` a `ports: [Vec<EdgeId>; 2]` with INCOMING=0 and
     /// OUTGOING=1. Same for edge.from and to.

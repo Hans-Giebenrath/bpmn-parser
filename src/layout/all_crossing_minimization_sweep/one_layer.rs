@@ -194,7 +194,7 @@ impl P3Layer {
         }
 
         // Second pass: wire constraints. Since those should be *very* few, then doing it suboptimal
-        // is probably OK (BUT! the partitioning per Coord3 should ideally be done outside.)
+        // is probably okay.
         for above_constraint in constraints {
             // `above` and `below` are indices into both sweep_graph.nodes[current_layer.as_range()]
             // and `self.merge_nodes`.

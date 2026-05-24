@@ -21,6 +21,7 @@ use crate::common::macros::impl_index;
 use crate::common::node::LayerId;
 use crate::common::node::Node;
 use crate::common::node::NodePhaseAuxData;
+use crate::common::vecmap::VecMap;
 use crate::common::vecset::VecSet;
 use crate::layout::constraint::Above;
 use crate::parser::ParseError;
@@ -97,7 +98,7 @@ fn aux(node: &Node) -> SweepNodeId {
     }
 }
 
-#[derive(Debug, Default, Clone, Hash, PartialEq, Eq)]
+#[derive(Debug, Default, Clone, PartialEq, Eq)]
 struct CrossingCount {
     df_df_crossings: u16,
     mf_df_crossings: u16,
@@ -124,7 +125,6 @@ impl CrossingCount {
 
     #[allow(clippy::identity_op)]
     fn weighted_count(&self) -> usize {
-        // XXX If you update these numbers, then
         0 // formatting
             + self.sf_sf_crossings as usize * 100
             + self.sf_mf_crossings as usize * 95

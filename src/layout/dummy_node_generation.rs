@@ -31,7 +31,7 @@ pub fn dummy_node_generation(graph: &mut Graph) {
             continue;
         } else if from.layer_id == to.layer_id {
             // This is definitely a vertical edge:
-            // (1) Graph validation only allows to move those connected edges onto the same layer
+            // (1) Graph validation only allows moving those connected edges onto the same layer
             // which have only two such same-layer connected nodes, i.e. they form a list.
             // (2) Further, during the node reordering there is a check for whether no other nodes
             // are forced between two same-layer connected nodes via above constraints.
@@ -73,7 +73,7 @@ pub fn dummy_node_generation(graph: &mut Graph) {
                 boundary_event,
             );
         } else {
-            // Transfrom it from the left to the right.
+            // Transform it from the left to the right.
             // ```
             //                         to
             //  to                      ┌┐

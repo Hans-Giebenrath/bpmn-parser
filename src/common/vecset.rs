@@ -13,23 +13,21 @@ impl<T> Default for VecSet<T> {
     }
 }
 
+impl<T: Eq> PartialEq for VecSet<T> {
+    fn eq(&self, other: &Self) -> bool {
+        self.len() == other.len() && self.iter().all(|e| other.contains(e))
+    }
+}
+
+impl<T: Eq> Eq for VecSet<T> {}
+
 impl<T: Eq> VecSet<T> {
     pub fn new() -> Self {
         Self { inner: Vec::new() }
     }
 
-    pub fn with_capacity(capacity: usize) -> Self {
-        Self {
-            inner: Vec::with_capacity(capacity),
-        }
-    }
-
     pub fn len(&self) -> usize {
         self.inner.len()
-    }
-
-    pub fn is_empty(&self) -> bool {
-        self.inner.is_empty()
     }
 
     pub fn clear(&mut self) {
@@ -49,32 +47,7 @@ impl<T: Eq> VecSet<T> {
         }
     }
 
-    //pub fn remove(&mut self, value: &T) -> bool {
-    //    if let Some(pos) = self.inner.iter().position(|x| x == value) {
-    //        self.inner.swap_remove(pos);
-    //        true
-    //    } else {
-    //        false
-    //    }
-    //}
-
-    pub fn take(&mut self, value: &T) -> Option<T> {
-        if let Some(pos) = self.inner.iter().position(|x| x == value) {
-            Some(self.inner.swap_remove(pos))
-        } else {
-            None
-        }
-    }
-
-    pub fn get(&self, value: &T) -> Option<&T> {
-        self.inner.iter().find(|x| *x == value)
-    }
-
     pub fn iter(&self) -> Iter<'_, T> {
         self.inner.iter()
-    }
-
-    pub fn iter_mut(&mut self) -> IterMut<'_, T> {
-        self.inner.iter_mut()
     }
 }

@@ -39,7 +39,7 @@ fi
 file_stem=compiled
 adoc_file="$file_stem.adoc"
 
-parallelism=2
+parallelism=$(nproc)
 echo "${all[@]}"
 for f in "${all[@]}"; do
     if ((parallelism == 0)); then
