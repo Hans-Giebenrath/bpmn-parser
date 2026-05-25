@@ -25,7 +25,8 @@ pub(crate) fn temporarily_add_dummy_nodes_for_edges_within_same_layer(graph: &mu
         node.layer_id.0 += 1;
     }
 
-    return undo;
+    graph.num_layers += 1;
+
     for edge_id in (0..original_edge_count).map(EdgeId) {
         let edge = &mut graph.edges[edge_id];
         let from = &graph.nodes[edge.from];
@@ -85,7 +86,7 @@ pub(crate) fn remove_temporarily_added_dummy_nodes_for_edges_within_same_layer(
     for node in &mut graph.nodes {
         node.layer_id.0 -= 1;
     }
-    return;
+    graph.num_layers -= 1;
 
     // also fix the `node_below_in_same_lane` etc properties
     let num_edges_to_retain: usize = graph.edges.len() - undo.original_edges.len();

@@ -247,9 +247,20 @@ impl SweepGraph {
             ..Default::default()
         };
 
-        let layer_it = lane.nodes.chunk_by(|left_node_id, right_node_id| {
-            n!(*left_node_id).layer_id == n!(*right_node_id).layer_id
-        });
+        let mut empty_layer_tracker = 0;
+        let layer_it = lane
+            .nodes
+            .chunk_by(|left_node_id, right_node_id| {
+                n!(*left_node_id).layer_id == n!(*right_node_id).layer_id
+            })
+            // Now create empty chunks for the intermediate layers.
+            .flat_map(|chunk| {
+                let result = (empty_layer_tracker..n!(chunk[0]).layer_id.0)
+                    .map(|_| &[][..])
+                    .chain(std::iter::once(chunk));
+                empty_layer_tracker = n!(chunk[0]).layer_id.0 + 1;
+                result
+            });
 
         let mut edge_collection = HashSet::new();
 
