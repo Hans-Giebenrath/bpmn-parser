@@ -19,13 +19,19 @@ pub fn dummy_node_removal(graph: &mut Graph) {
         else {
             continue;
         };
+        let is_reversed = edge.is_reversed;
         let text = text.clone();
         let first_dummy_edge_id = *first_dummy_edge;
         let AbsolutePort {
             x: from_x,
             y: from_y,
-        } = graph.nodes[edge.from].port_of_outgoing(first_dummy_edge_id);
+        } = if !is_reversed {
+            graph.nodes[edge.from].port_of_outgoing(first_dummy_edge_id)
+        } else {
+            graph.nodes[edge.to].port_of_outgoing(first_dummy_edge_id)
+        };
         let to = edge.to;
+        let from = edge.from;
         let mut bend_points = vec![(from_x, from_y)];
         let mut cur_dummy_edge_id = first_dummy_edge_id;
         // This is used to access to `to` port.
@@ -67,7 +73,11 @@ pub fn dummy_node_removal(graph: &mut Graph) {
             (cur_dummy_edge_id, next_node_id) =
                 next_node.hop_to_next_node(graph, NodeIdOrEdgeId::EdgeId(cur_dummy_edge_id));
         }
-        let AbsolutePort { x: to_x, y: to_y } = graph.nodes[to].port_of_incoming(cur_dummy_edge_id);
+        let AbsolutePort { x: to_x, y: to_y } = if !is_reversed {
+            graph.nodes[to].port_of_incoming(cur_dummy_edge_id)
+        } else {
+            graph.nodes[from].port_of_incoming(cur_dummy_edge_id)
+        };
         bend_points.push((to_x, to_y));
         // The longer edges should be constructed in an ideal way. Vertical edge segments use
         // `VerticalBendDummy` where they just record the port of the bend dummy.

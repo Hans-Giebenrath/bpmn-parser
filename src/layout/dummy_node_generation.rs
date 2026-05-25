@@ -91,6 +91,7 @@ pub fn dummy_node_generation(graph: &mut Graph) {
                 boundary_event,
             );
         } else {
+            edge.is_reversed = true;
             // Transform it from the left to the right.
             // ```
             //                         to
