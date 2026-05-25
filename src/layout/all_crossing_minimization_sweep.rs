@@ -11,6 +11,7 @@
 //! Naaa. New idea: Lane per lane. Then store multiple results, depending on the order. Then stitch
 //! lanes together, by checking all combinations for their global crossing counts, take the best one.
 use crate::common::edge::Edge;
+use crate::common::edge::EdgeType;
 use crate::common::edge::FlowType;
 use crate::common::graph::Coord3;
 use crate::common::graph::LaneId;
@@ -106,10 +107,44 @@ struct CrossingCount {
     sf_df_crossings: u16,
     sf_mf_crossings: u16,
     sf_sf_crossings: u16,
+    // XXX Keep this one sorted, so `Eq` works better.
+    gateway_loop_crossings: Vec<GatewayLoopCrossing>,
+}
+
+#[derive(Debug, Default, Clone, Hash, PartialEq, Eq, PartialOrd, Ord)]
+struct GatewayLoopCrossing {
+    // Could be that both are gateway loops.
+    edge_1: EdgeId,
+    edge_2: EdgeId,
+}
+
+enum AboveOrBelow {
+    Above,
+    Below,
+}
+
+struct GatewayLoopEdgeInfo {
+    // Only those segments are here which are part of a looped edge.
+    dummy_edge_to_regular_edge: VecMap<EdgeId, EdgeId>,
+    bend_dummy_mapping: VecMap<
+        (
+            /* gateway node */ NodeId,
+            /* bend dummy node */ NodeId,
+        ),
+        AboveOrBelow,
+    >,
 }
 
 impl CrossingCount {
-    fn count(&mut self, edge1: &Edge, edge2: &Edge) {
+    fn count(
+        &mut self,
+        graph: &Graph,
+        edge_id_1: EdgeId,
+        edge_id_2: EdgeId,
+        m: &GatewayLoopEdgeInfo,
+    ) {
+        let edge1 = &e!(edge_id_1);
+        let edge2 = &e!(edge_id_2);
         match (&edge1.flow_type, &edge2.flow_type) {
             (FlowType::DataFlow(..), FlowType::DataFlow(..)) => self.df_df_crossings += 1,
             (FlowType::DataFlow(..), FlowType::MessageFlow(..)) => self.mf_df_crossings += 1,
@@ -120,6 +155,34 @@ impl CrossingCount {
             (FlowType::DataFlow(..), FlowType::SequenceFlow) => self.sf_df_crossings += 1,
             (FlowType::MessageFlow(..), FlowType::SequenceFlow) => self.sf_mf_crossings += 1,
             (FlowType::SequenceFlow, FlowType::SequenceFlow) => self.sf_sf_crossings += 1,
+        }
+
+        fn original_edge(graph: &Graph, edge_id: EdgeId) -> EdgeId {
+            match &e!(edge_id).edge_type {
+                EdgeType::DummyEdge { original_edge, .. } => *original_edge,
+                EdgeType::ReplacedByDummies { .. } => {
+                    unreachable!("should not be iterated at the moment")
+                }
+                EdgeType::Regular { .. } => edge_id,
+            }
+        }
+
+        let gateway_original_edge_1 = m.dummy_edge_to_regular_edge.get(&edge_id_1).cloned();
+        let gateway_original_edge_2 = m.dummy_edge_to_regular_edge.get(&edge_id_2).cloned();
+        if gateway_original_edge_1.is_some() || gateway_original_edge_2.is_some() {
+            let original_edge_1 =
+                gateway_original_edge_1.unwrap_or_else(|| original_edge(graph, edge_id_1));
+            let original_edge_2 =
+                gateway_original_edge_2.unwrap_or_else(|| original_edge(graph, edge_id_2));
+            let glc = GatewayLoopCrossing {
+                edge_1: original_edge_1.min(original_edge_2),
+                edge_2: original_edge_1.max(original_edge_2),
+            };
+            // Keep it sorted for `Eq` to work.
+            match self.gateway_loop_crossings.binary_search(&glc) {
+                Ok(_) => { /* element already in vector @ `pos` */ }
+                Err(pos) => self.gateway_loop_crossings.insert(pos, glc),
+            }
         }
     }
 
@@ -162,6 +225,12 @@ impl<'a> std::iter::Sum<&'a CrossingCount> for CrossingCount {
                 .sf_sf_crossings
                 .checked_add(x.sf_sf_crossings)
                 .expect("overflow in sf_sf_crossings"),
+            // Keep it sorted for `Eq` to work.
+            gateway_loop_crossings: acc
+                .gateway_loop_crossings
+                .into_iter()
+                .merge(x.gateway_loop_crossings.iter().cloned())
+                .collect(),
         })
     }
 }
@@ -186,7 +255,9 @@ struct VerticalEdgeChain {
     /// One streak of nodes which *must* be ordered as one clump, in the given order, at least in those sweep phases
     /// where we consider vertical edges. The point is that these are connected via vertical edges,
     /// and we want vertical edges to be straight, i.e. there should not be any
+    top_gateway_loop_nodes: Vec<NodeId>,
     top_to_bottom_node_list: Vec<NodeId>,
+    bottom_gateway_loop_nodes: Vec<NodeId>,
     /// In this case there is no Above constraint involved which would break if the order is swapped,
     /// i.e. the algorithm can favor the order which fits more naturally with the barycenters.
     can_be_flipped: bool,
@@ -648,6 +719,36 @@ pub fn reduce_all_crossings_sweep(graph: &mut Graph) -> Result<(), ParseError> {
     Ok(())
 }
 
+struct Undo {
+    original_num_nodes: usize,
+    original_num_edges: usize,
+}
+
+// Loop edges from gateways are duplicated to be able to route one edge above the gateway and one
+// below the gateway. The idea is that we probably cannot tell which is the better route in advance, so we just let the algorithm layout both and then we pick whichever produces less crossings, or the top one (I think reverse edges at the top are more natural, though maybe this differs for whether it is a forward facing or a backwards facing edge).
+fn augment_graph(graph: &mut Graph) -> (GatewayLoopEdgeInfo, Undo) {
+    let mut result = GatewayLoopEdgeInfo {
+        dummy_edge_to_regular_edge: Default::default(),
+        bend_dummy_mapping: Default::default(),
+    };
+    let undo = Undo {
+        original_num_nodes: graph.nodes.len(),
+        original_num_edges: graph.edges.len(),
+    };
+    for edge_id in (0..graph.edges.len()).map(EdgeId) {
+        let edge = &e!(edge_id);
+        let needs_to_be_duplicated = edge.is_replaced_by_dummies()
+            && edge.is_reversed
+            && (n!(edge.from).is_gateway() || n!(edge.to).is_gateway());
+        if !needs_to_be_duplicated {
+            continue;
+        }
+    }
+    (result, undo)
+}
+
+fn deaugment_graph(graph: &mut Graph, solution: &mut SingleLaneSweepSolutions, undo: Undo) {}
+
 fn left_right_sweeps(
     graph: &Graph,
     pool_lane: PoolAndLane,
@@ -655,6 +756,7 @@ fn left_right_sweeps(
     constraint_map: &ConstraintMap,
     sweep_buffers: &mut SweepBuffers,
     debug_output: &mut String,
+    gateway_loop_edge_info: &GatewayLoopEdgeInfo,
 ) -> SingleLaneSweepSolutions {
     let mut best_versions = SingleLaneSweepSolutions::default();
     debug_output.push_str(&format!("p({})/l({}) ", pool_lane.pool.0, pool_lane.lane.0));
@@ -679,6 +781,7 @@ fn left_right_sweeps(
                     is_right_sweep,
                     constraint_map,
                     one_right_sweep_is_done,
+                    gateway_loop_edge_info,
                 );
                 if best_versions
                     .solutions
@@ -740,6 +843,7 @@ fn one_direction_sweep(
     is_right_sweep: bool,
     constraint_map: &ConstraintMap,
     one_right_sweep_is_done: bool,
+    gateway_loop_edge_info: &GatewayLoopEdgeInfo,
 ) -> bool {
     let mut something_changed = false;
     let lane = &lane!(pool_lane);
@@ -784,6 +888,7 @@ fn one_direction_sweep(
                 .map(|range| &sweep_graph.edges[range.as_range()])
                 .unwrap_or(&[]),
             sweep_buffers,
+            gateway_loop_edge_info,
         );
         sweep_graph.layers_crossing_count[i] = ccount1;
         sweep_graph.layers_crossing_count[i + 1] = ccount2;
@@ -814,6 +919,7 @@ fn count_crossings_three_layers(
     edges_1: &[(EdgeId, EdgeConnection)],
     edges_2: &[(EdgeId, EdgeConnection)],
     sweep_buffers: &mut SweepBuffers,
+    gateway_loop_edge_info: &GatewayLoopEdgeInfo,
 ) -> (CrossingCount, CrossingCount) {
     let left_crossing_count = count_all_crossings_between_two_layers(
         graph,
@@ -824,6 +930,7 @@ fn count_crossings_three_layers(
         &mut sweep_buffers.sort_buffer_0,
         &mut sweep_buffers.sort_buffer_1,
         &mut sweep_buffers.positions_buffer,
+        gateway_loop_edge_info,
     );
     let right_crossing_count = count_all_crossings_between_two_layers(
         graph,
@@ -834,6 +941,7 @@ fn count_crossings_three_layers(
         &mut sweep_buffers.sort_buffer_0,
         &mut sweep_buffers.sort_buffer_1,
         &mut sweep_buffers.positions_buffer,
+        gateway_loop_edge_info,
     );
     (left_crossing_count, right_crossing_count)
 }
@@ -849,6 +957,7 @@ fn count_all_crossings_between_two_layers(
     sort_buffer_prev: &mut Vec<(NodeId, /* idx within &[SweepNode] */ usize)>,
     sort_buffer_current: &mut Vec<(NodeId, /* idx within &[SweepNode] */ usize)>,
     positions_buffer: &mut Vec<Positions>,
+    gateway_loop_edge_info: &GatewayLoopEdgeInfo,
 ) -> CrossingCount {
     sort_buffer_prev.clear();
     for (idx, nprev) in prev.iter().enumerate() {
@@ -868,6 +977,7 @@ fn count_all_crossings_between_two_layers(
         graph,
         sort_buffer_prev,
         sort_buffer_current,
+        gateway_loop_edge_info,
     )
 }
 #[derive(Clone, Copy)]
@@ -1009,6 +1119,7 @@ fn count_all_crossings_between_two_layers_inner(
     graph: &Graph,
     left_ordering: &[(NodeId, /* ignore: */ usize)],
     right_ordering: &[(NodeId, /* ignore: */ usize)],
+    gateway_loop_edge_info: &GatewayLoopEdgeInfo,
 ) -> CrossingCount {
     let mut crossing_count = CrossingCount::default();
 
@@ -1037,6 +1148,7 @@ fn count_all_crossings_between_two_layers_inner(
                 &positions_buffer[i],
                 &positions_buffer[j],
                 graph,
+                gateway_loop_edge_info,
             );
         }
     }
@@ -1050,6 +1162,7 @@ fn count_crossing_one_edge_pair(
     positions_1: &Positions,
     positions_2: &Positions,
     graph: &Graph,
+    gateway_loop_edge_info: &GatewayLoopEdgeInfo,
 ) {
     // TODO this positions_1 and _2 query should be moved one level up and cached. This is itself a
     // linear search.
@@ -1088,14 +1201,22 @@ fn count_crossing_one_edge_pair(
     };
 
     if is_crossing {
-        crossing_count.count(&e!(edge_1.0), &e!(edge_2.0));
+        crossing_count.count(graph, edge_1.0, edge_2.0, gateway_loop_edge_info);
     }
 }
 
 /// See documentation for `VerticalEdgeChain`.
-fn calculate_vertical_edge_chains(graph: &Graph) -> Result<Rc<Vec<VerticalEdgeChain>>, ParseError> {
+fn calculate_vertical_edge_chains(
+    graph: &Graph,
+    gateway_loop_edge_info: &GatewayLoopEdgeInfo,
+) -> Result<Rc<Vec<VerticalEdgeChain>>, ParseError> {
     /// Chains shall only be of list structure, and not form a cycle.
     struct IllegalChainSituation;
+    struct NextChainLink<'a> {
+        next_chain_link: Option<&'a Node>,
+        top_gateway_loop: Option<&'a Node>,
+        bottom_gateway_loop: Option<&'a Node>,
+    }
 
     // TODO maybe this function can be simplified, since we can simply follow `is_vertical` edges
     // instead of looking for `Above` constraints.
@@ -1105,7 +1226,13 @@ fn calculate_vertical_edge_chains(graph: &Graph) -> Result<Rc<Vec<VerticalEdgeCh
         current_chain: &[&Node],
         above_constraints_to_follow: &mut Vec<Above>,
         graph: &'a Graph,
-    ) -> Result<Option<&'a Node>, IllegalChainSituation> {
+        gateway_loop_edge_info: &GatewayLoopEdgeInfo,
+    ) -> Result<NextChainLink<'a>, IllegalChainSituation> {
+        let mut result = NextChainLink {
+            next_chain_link: None,
+            top_gateway_loop: None,
+            bottom_gateway_loop: None,
+        };
         let mut it = node
             .incoming
             .iter()
@@ -1113,6 +1240,21 @@ fn calculate_vertical_edge_chains(graph: &Graph) -> Result<Rc<Vec<VerticalEdgeCh
             .chain(node.outgoing.iter().map(|edge_id| &to!(*edge_id)))
             .filter(|next_node| {
                 Some(next_node.id) != previous_node_id && next_node.coord3() == node.coord3()
+            })
+            .filter(|next_node| {
+                if node.is_gateway()
+                    && let Some(above_or_below) = gateway_loop_edge_info
+                        .bend_dummy_mapping
+                        .get(&(node.id, next_node.id))
+                {
+                    match above_or_below {
+                        AboveOrBelow::Above => result.top_gateway_loop = Some(*next_node),
+                        AboveOrBelow::Below => result.bottom_gateway_loop = Some(*next_node),
+                    }
+                    false
+                } else {
+                    true
+                }
             });
         if let Some(above) = graph
             .layout_constraints
@@ -1123,15 +1265,16 @@ fn calculate_vertical_edge_chains(graph: &Graph) -> Result<Rc<Vec<VerticalEdgeCh
             above_constraints_to_follow.push(above.clone());
         }
         match (it.next(), it.next()) {
-            (None, None) => Ok(None),
+            (None, None) => (),
             (Some(next_node), None)
                 // Not a loop.
                 if !current_chain.iter().any(|prev| std::ptr::eq(*prev, next_node)) =>
             {
-                Ok(Some(next_node))
+                result.next_chain_link =Some(next_node);
             }
-            _ => Err(IllegalChainSituation),
+            _ => return Err(IllegalChainSituation),
         }
+        Ok(result)
     }
 
     fn follow_above_constraints(
@@ -1268,6 +1411,8 @@ fn calculate_vertical_edge_chains(graph: &Graph) -> Result<Rc<Vec<VerticalEdgeCh
         let mut previous_node_id = None;
         let mut chain = Vec::new();
         let mut current_node = node;
+        let mut top_gateway_loop_nodes = Vec::new();
+        let mut bottom_gateway_loop_nodes = Vec::new();
         'inner: loop {
             chain.push(current_node);
             let next = match next_chain_link(
@@ -1276,6 +1421,7 @@ fn calculate_vertical_edge_chains(graph: &Graph) -> Result<Rc<Vec<VerticalEdgeCh
                 &chain,
                 &mut above_constraints_to_follow,
                 graph,
+                gateway_loop_edge_info,
             ) {
                 Err(IllegalChainSituation) => {
                     // This captures the situation in the first iteration (`previous_node_id ==
@@ -1285,13 +1431,26 @@ fn calculate_vertical_edge_chains(graph: &Graph) -> Result<Rc<Vec<VerticalEdgeCh
                     // the middle of traversing the (potential) chain.
                     continue 'outer;
                 }
-                Ok(None) => break 'inner,
-                Ok(Some(next)) => next,
+                Ok(result) => {
+                    if let Some(top_gateway_loop) = result.top_gateway_loop {
+                        top_gateway_loop_nodes.push(top_gateway_loop.id);
+                    }
+                    if let Some(bottom_gateway_loop) = result.bottom_gateway_loop {
+                        bottom_gateway_loop_nodes.push(bottom_gateway_loop.id);
+                    }
+                    match result.next_chain_link {
+                        None => break 'inner,
+                        Some(next) => next,
+                    }
+                }
             };
             previous_node_id = Some(current_node.id);
             current_node = next;
         }
-        if chain.len() < 2 {
+        if chain.len() < 2
+            && top_gateway_loop_nodes.is_empty()
+            && bottom_gateway_loop_nodes.is_empty()
+        {
             // That's not a chain, goddammit! It's just a link, wake up!
             continue 'outer;
         }
@@ -1348,11 +1507,18 @@ fn calculate_vertical_edge_chains(graph: &Graph) -> Result<Rc<Vec<VerticalEdgeCh
         if !forwards_is_legal {
             chain.reverse();
             std::mem::swap(&mut forwards_is_legal, &mut backwards_is_legal);
+        } else {
+            // If there are multiple nodes, then reversing them in the forward case is required to
+            // not introduce unnecessary crossings between the loop edges.
+            top_gateway_loop_nodes.reverse();
+            bottom_gateway_loop_nodes.reverse();
         }
         vertical_edge_chains.push(VerticalEdgeChain {
             top_to_bottom_node_list: chain.iter().map(|node| node.id).collect(),
             can_be_flipped: backwards_is_legal,
             coord3: node.coord3(),
+            top_gateway_loop_nodes,
+            bottom_gateway_loop_nodes,
         });
     }
     Ok(Rc::new(vertical_edge_chains))
