@@ -666,12 +666,14 @@ impl Debug for Graph {
         for n in &self.nodes {
             write!(
                 f,
-                "  node: {} ({:?}) - {:?} - in: {:?}, out: {:?}, ",
+                "  node: {} ({:?}) - {:?} - in: {:?}, out: {:?}, #inports: {}, #outports: {}",
                 n.id.0,
                 n.coord3(),
                 n.display_text_or_dummy_kind(),
                 n.incoming.iter().map(|e| e.0).collect::<Vec<_>>(),
                 n.outgoing.iter().map(|e| e.0).collect::<Vec<_>>(),
+                n.incoming_ports.len(),
+                n.outgoing_ports.len(),
             )?;
             write!(f, ", ")?;
             match n.node_above_in_same_lane {

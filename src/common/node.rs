@@ -379,7 +379,7 @@ impl Node {
             .zip(self.incoming_ports.iter())
             .find(|(inner_edge_id, _)| *inner_edge_id == edge_id)
             .map(|(_, port)| port + self.xy())
-            .unwrap()
+            .unwrap_or_else(|| panic!("node_id: {}, edge_id: {}", self.id.0, edge_id.0))
     }
 
     pub fn port_of_outgoing(&self, edge_id: EdgeId) -> AbsolutePort {
@@ -389,7 +389,7 @@ impl Node {
             .zip(self.outgoing_ports.iter())
             .find(|(inner_edge_id, _)| *inner_edge_id == edge_id)
             .map(|(_, port)| port + self.xy())
-            .unwrap()
+            .unwrap_or_else(|| panic!("node_id: {}, edge_id: {}", self.id.0, edge_id.0))
     }
 
     pub fn port_is_left_or_right(&self, port_y: usize) -> bool {
