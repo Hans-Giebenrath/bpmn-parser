@@ -153,7 +153,7 @@ fn c<T: SolverModel>(problem: &mut T, constraint: Constraint) {
     problem.add_constraint(constraint);
 }
 
-const DEBUG_ILP_CONSTRUCTION: bool = true;
+const DEBUG_ILP_CONSTRUCTION: bool = false;
 
 macro_rules! d {
     ($($tt:tt)*) => {{

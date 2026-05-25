@@ -25,7 +25,7 @@ fn aux(node: &Node) -> Variable {
     }
 }
 
-const DEBUG_ILP_CONSTRUCTION: bool = true;
+const DEBUG_ILP_CONSTRUCTION: bool = false;
 
 macro_rules! d {
     ($($tt:tt)*) => {{
