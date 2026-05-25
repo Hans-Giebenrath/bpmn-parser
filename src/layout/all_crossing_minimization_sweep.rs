@@ -23,6 +23,8 @@ use crate::common::node::Node;
 use crate::common::node::NodePhaseAuxData;
 use crate::common::vecmap::VecMap;
 use crate::common::vecset::VecSet;
+use crate::layout::all_crossing_minimization_common::remove_temporarily_added_dummy_nodes_for_edges_within_same_layer;
+use crate::layout::all_crossing_minimization_common::temporarily_add_dummy_nodes_for_edges_within_same_layer;
 use crate::layout::constraint::Above;
 use crate::parser::ParseError;
 use itertools::Either;
@@ -583,6 +585,7 @@ impl SingleLaneSweepSolutions {
 type ConstraintMap = HashMap<Coord3, Vec<Above>>;
 
 pub fn reduce_all_crossings_sweep(graph: &mut Graph) -> Result<(), ParseError> {
+    let undo = temporarily_add_dummy_nodes_for_edges_within_same_layer(graph);
     let vertical_edge_chains = calculate_vertical_edge_chains(graph)?;
     let mut constraint_map = ConstraintMap::new();
     for above_constraint in &graph.layout_constraints.above {
@@ -645,6 +648,7 @@ pub fn reduce_all_crossings_sweep(graph: &mut Graph) -> Result<(), ParseError> {
             }
         }
     }
+    remove_temporarily_added_dummy_nodes_for_edges_within_same_layer(graph, undo);
     Ok(())
 }
 

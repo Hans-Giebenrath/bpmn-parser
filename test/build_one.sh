@@ -18,7 +18,7 @@ run() {
         dir=release
     fi
     set -x
-    echo "OUTPUT FOR $basename" >"$TMPDIR/$basename.output"
+    printf "\nOUTPUT FOR %s:\n" "$basename" >"$TMPDIR/$basename.output"
     if ! time timeout 3s "${CARGO_TARGET_DIR:-./target}"/$dir/bpmn-parser "$@" 2>&1 | tee -a "$TMPDIR/$basename.output"; then
         failed=true
     fi

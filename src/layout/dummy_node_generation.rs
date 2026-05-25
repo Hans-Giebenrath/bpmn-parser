@@ -1,3 +1,5 @@
+use std::collections::HashSet;
+
 use crate::common::bpmn_node::BoundaryEvent;
 use crate::common::edge::DummyEdgeBendPoints;
 use crate::common::edge::EdgeType;
@@ -8,7 +10,7 @@ use crate::common::graph::NodeId;
 use crate::common::graph::PoolAndLane;
 use crate::common::node::LayerId;
 use crate::common::node::NodeType;
-use proc_macros::e;
+
 use proc_macros::n;
 
 pub fn dummy_node_generation(graph: &mut Graph) {
@@ -16,6 +18,22 @@ pub fn dummy_node_generation(graph: &mut Graph) {
     // real edges "obsolete" - they will be marked as "replaced_by_dummies" but still kept.
     // New edges are added to graph.edges, so we can't iterate over it at the same time.
     // Hence, we store the number.
+
+    let mut lone_looping_gateway_edges = HashSet::new();
+    for node in &graph.nodes {
+        if node.is_gateway() {
+            let lone_edge = match (&node.incoming[..], &node.outgoing[..]) {
+                ([lone_edge], _) | (_, [lone_edge])
+                    if graph.computed_back_edges.contains(lone_edge) =>
+                {
+                    lone_edge
+                }
+                _ => continue,
+            };
+            lone_looping_gateway_edges.insert((node.id, *lone_edge));
+        }
+    }
+
     let num_real_edges = graph.edges.len();
     for edge_id in (0..num_real_edges).map(EdgeId) {
         let current_num_edges = graph.edges.len();
@@ -96,9 +114,12 @@ pub fn dummy_node_generation(graph: &mut Graph) {
                 .0
                 .checked_sub(to.layer_id.0 + 1)
                 .expect("`equals` case was checked already earlier");
-            let from_is_gateway = from.is_gateway();
-            let to_is_gateway = to.is_gateway();
-            let dummy_from_node_id = if from_is_gateway {
+            let from_does_not_need_back_edge_corner_dummy =
+                from.is_gateway() && !lone_looping_gateway_edges.contains(&(from.id, edge_id));
+            let to_does_not_need_back_edge_corner_dummy =
+                to.is_gateway() && !lone_looping_gateway_edges.contains(&(to.id, edge_id));
+
+            let dummy_from_node_id = if from_does_not_need_back_edge_corner_dummy {
                 from_id
             } else {
                 let dummy_node_id = graph.add_node(
@@ -127,7 +148,8 @@ pub fn dummy_node_generation(graph: &mut Graph) {
                 );
                 dummy_node_id
             };
-            let dummy_to_node_id = if to_is_gateway {
+
+            let dummy_to_node_id = if to_does_not_need_back_edge_corner_dummy {
                 to_id
             } else {
                 let dummy_node_id = graph.add_node(

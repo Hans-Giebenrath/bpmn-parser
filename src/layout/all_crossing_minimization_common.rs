@@ -5,10 +5,11 @@ use crate::common::graph::EdgeId;
 use crate::common::graph::{Graph, NodeId};
 use crate::common::node::LayerId;
 use crate::common::node::NodeType;
+use proc_macros::{e, n};
 
 pub(crate) struct Undo {
     original_num_nodes: usize,
-    original_edges: Vec<(EdgeId, Edge)>,
+    original_edges: Vec<(EdgeId, Edge, /*left one*/ bool)>,
 }
 
 pub(crate) fn temporarily_add_dummy_nodes_for_edges_within_same_layer(graph: &mut Graph) -> Undo {
@@ -18,43 +19,57 @@ pub(crate) fn temporarily_add_dummy_nodes_for_edges_within_same_layer(graph: &mu
         original_edges: Vec::new(),
     };
 
+    // We need to make place for dummy edges to the left, i.e. in layer -1. Since LayerId is
+    // meant to be usize, just shift everything one layer to the right. Should not break anything.
+    for node in &mut graph.nodes {
+        node.layer_id.0 += 1;
+    }
+
+    return undo;
     for edge_id in (0..original_edge_count).map(EdgeId) {
         let edge = &mut graph.edges[edge_id];
         let from = &graph.nodes[edge.from];
         let to = &graph.nodes[edge.to];
-        if edge.is_replaced_by_dummies() {
-            continue;
-        }
+        let left_one = match (&from.node_type, &to.node_type) {
+            (NodeType::BackEdgeCornerDummy { left_one, .. }, _)
+            | (_, NodeType::BackEdgeCornerDummy { left_one, .. }) => *left_one,
+            // We do the transformation only for back edge corner dummies.
+            _ => continue,
+        };
+        assert_eq!(from.pool, to.pool);
         if from.layer_id != to.layer_id {
+            // This is not the edge which stays within the same layer.
             continue;
         }
-        if from.pool != to.pool {
-            dbg!(&"TODO");
+
+        if from.lane != to.lane {
+            // This should be handled separately by the pull factors. The order between the
+            // regular node and the corner dummy are already determined due to them being in
+            // different lanes, which themselves are ordered.
             continue;
         }
-        if from.is_data_with_only_one_edge() || to.is_data_with_only_one_edge() {
-            // These are processed specially.
-            continue;
-        }
+
         let layer_id = from.layer_id;
         let pool_and_lane = from.pool_and_lane();
 
-        undo.original_edges.push((edge_id, edge.clone()));
-        let right_node_id = graph.add_node(
-            NodeType::LongEdgeDummy,
-            pool_and_lane,
-            Some(LayerId(layer_id.0 + 1)),
-        );
-        let left_node_id = if layer_id.0 > 0 {
+        undo.original_edges.push((edge_id, edge.clone(), left_one));
+        let right_node_id = if !left_one {
+            Some(graph.add_node(
+                NodeType::LongEdgeDummy,
+                pool_and_lane,
+                Some(LayerId(layer_id.0 + 1)),
+            ))
+        } else {
+            None
+        };
+
+        let left_node_id = if left_one {
             Some(graph.add_node(
                 NodeType::LongEdgeDummy,
                 pool_and_lane,
                 Some(LayerId(layer_id.0 - 1)),
             ))
         } else {
-            // No room to the left. In that case we anyway don't gain anything from having
-            // additional dummy nodes there, since it wouldn't cross with anything (or at least it
-            // would not be meaningful I think).
             None
         };
         reroute_vertical_edge(graph, edge_id, left_node_id, right_node_id);
@@ -67,8 +82,13 @@ pub(crate) fn remove_temporarily_added_dummy_nodes_for_edges_within_same_layer(
     graph: &mut Graph,
     undo: Undo,
 ) {
+    for node in &mut graph.nodes {
+        node.layer_id.0 -= 1;
+    }
+    return;
+
     // also fix the `node_below_in_same_lane` etc properties
-    let mut num_edges_to_retain: usize = graph.edges.len() - undo.original_edges.len();
+    let num_edges_to_retain: usize = graph.edges.len() - undo.original_edges.len();
     let num_nodes_to_retain: usize = undo.original_num_nodes;
     for pool in &mut graph.pools {
         for lane in &mut pool.lanes {
@@ -76,21 +96,18 @@ pub(crate) fn remove_temporarily_added_dummy_nodes_for_edges_within_same_layer(
         }
     }
 
-    // Undo the changes in reverse order, important! Otherwise,,, this will crash for snake nodes.
-    for (rerouted_edge_id, original_edge_value) in undo.original_edges.into_iter().rev() {
-        // I have a feeling that this can be written more cleanly, need to ask an AI.
+    // Undo the changes in reverse order, important! Otherwise, this will crash for snake nodes.
+    for (rerouted_edge_id, original_edge_value, left_one) in undo.original_edges.into_iter().rev() {
         let to_node_id = original_edge_value.to;
         let from_node_id = original_edge_value.from;
         graph.edges[rerouted_edge_id] = original_edge_value;
-        // XXX don't move this down, as there is a `to_node.incoming.push(.)`.
-        if graph.nodes[to_node_id].layer_id.0 > 0 {
-            graph.nodes[to_node_id].incoming.pop();
+        if left_one {
             graph.nodes[from_node_id].incoming.pop();
-            num_edges_to_retain -= 2;
+            graph.nodes[from_node_id].outgoing.push(rerouted_edge_id);
+        } else {
+            graph.nodes[to_node_id].outgoing.pop();
+            graph.nodes[to_node_id].incoming.push(rerouted_edge_id);
         }
-        let to_node = &mut graph.nodes[to_node_id];
-        to_node.outgoing.pop();
-        to_node.incoming.push(rerouted_edge_id);
     }
 
     for node_id in (num_nodes_to_retain..graph.nodes.len()).map(NodeId) {
@@ -127,55 +144,54 @@ fn reroute_vertical_edge(
     graph: &mut Graph,
     to_be_rerouted_edge_id: EdgeId,
     left_intermediate_node_id: Option<NodeId>,
-    right_intermediate_node_id: NodeId,
+    right_intermediate_node_id: Option<NodeId>,
 ) {
-    let edge = &mut graph.edges[to_be_rerouted_edge_id];
+    let edge = &mut e!(to_be_rerouted_edge_id);
     let from_node_id = edge.from;
-    let to_node_id = std::mem::replace(&mut edge.to, right_intermediate_node_id);
+    let to_node_id = edge.to;
     let flow_type = edge.flow_type.clone();
-    // These value are not used within this phase, so just put something random here.
-    let is_reversed = false;
-    let stays_within_lane = false;
 
-    let right_second_edge_id = EdgeId(graph.edges.len());
-    graph.edges.push(Edge {
-        from: to_node_id,
-        to: right_intermediate_node_id,
-        edge_type: EdgeType::DummyEdge {
-            original_edge: to_be_rerouted_edge_id,
-            bend_points: DummyEdgeBendPoints::ToBeDeterminedOrStraight,
-        },
-        flow_type: flow_type.clone(),
-        is_reversed,
-        stays_within_lane,
-        stroke_color: None,
-        is_vertical: false,
-        attached_to_boundary_event: None,
-    });
+    if let Some(right_intermediate_node_id) = right_intermediate_node_id {
+        edge.to = right_intermediate_node_id;
+        let right_second_edge_id = EdgeId(graph.edges.len());
+        graph.edges.push(Edge {
+            from: to_node_id,
+            to: right_intermediate_node_id,
+            edge_type: EdgeType::DummyEdge {
+                original_edge: to_be_rerouted_edge_id,
+                bend_points: DummyEdgeBendPoints::ToBeDeterminedOrStraight,
+            },
+            flow_type: flow_type.clone(),
+            is_reversed: false, // True value doesn't matter in this phase.
+            stays_within_lane: true,
+            stroke_color: None,
+            is_vertical: false,
+            attached_to_boundary_event: None,
+        });
 
-    let to_node = &mut graph.nodes[to_node_id];
-    let Some(i) = to_node
-        .incoming
-        .iter()
-        .position(|i| *i == to_be_rerouted_edge_id)
-    else {
-        // TODO add some debug printing
-        unreachable!(
-            "to-be-rerouted edge: {}, from node: {}, to node: {}",
-            to_be_rerouted_edge_id.0, from_node_id.0, to_node_id.0
-        );
-    };
-    to_node.incoming.remove(i);
-    to_node.outgoing.push(right_second_edge_id);
+        let to_node = &mut n!(to_node_id);
+        let Some(i) = to_node
+            .incoming
+            .iter()
+            .position(|i| *i == to_be_rerouted_edge_id)
+        else {
+            // TODO add some debug printing
+            unreachable!(
+                "to-be-rerouted edge: {}, from node: {}, to node: {}",
+                to_be_rerouted_edge_id.0, from_node_id.0, to_node_id.0
+            );
+        };
+        to_node.incoming.remove(i);
+        to_node.outgoing.push(right_second_edge_id);
 
-    let right_intermediate_node = &mut graph.nodes[right_intermediate_node_id];
-    right_intermediate_node
-        .incoming
-        .push(to_be_rerouted_edge_id);
-    right_intermediate_node.incoming.push(right_second_edge_id);
-
-    if let Some(left_intermediate_node_id) = left_intermediate_node_id {
-        let left_first_edge_id = EdgeId(graph.edges.len());
+        let right_intermediate_node = &mut graph.nodes[right_intermediate_node_id];
+        right_intermediate_node
+            .incoming
+            .push(to_be_rerouted_edge_id);
+        right_intermediate_node.incoming.push(right_second_edge_id);
+    } else if let Some(left_intermediate_node_id) = left_intermediate_node_id {
+        edge.from = left_intermediate_node_id;
+        let left_second_edge_id = EdgeId(graph.edges.len());
         graph.edges.push(Edge {
             from: left_intermediate_node_id,
             to: from_node_id,
@@ -184,34 +200,29 @@ fn reroute_vertical_edge(
                 bend_points: DummyEdgeBendPoints::ToBeDeterminedOrStraight,
             },
             flow_type: flow_type.clone(),
-            is_reversed,
-            stays_within_lane,
+            is_reversed: false, // True value doesn't matter in this phase.
+            stays_within_lane: true,
             stroke_color: None,
             is_vertical: false,
             attached_to_boundary_event: None,
         });
-
-        let left_second_edge_id = EdgeId(graph.edges.len());
-        graph.edges.push(Edge {
-            from: left_intermediate_node_id,
-            to: to_node_id,
-            edge_type: EdgeType::DummyEdge {
-                original_edge: to_be_rerouted_edge_id,
-                bend_points: DummyEdgeBendPoints::ToBeDeterminedOrStraight,
-            },
-            flow_type,
-            is_reversed,
-            stays_within_lane,
-            stroke_color: None,
-            is_vertical: false,
-            attached_to_boundary_event: None,
-        });
+        let from_node = &mut n!(from_node_id);
+        let Some(i) = from_node
+            .outgoing
+            .iter()
+            .position(|i| *i == to_be_rerouted_edge_id)
+        else {
+            // TODO add some debug printing
+            unreachable!(
+                "to-be-rerouted edge: {}, from node: {}, to node: {}",
+                to_be_rerouted_edge_id.0, from_node_id.0, to_node_id.0
+            );
+        };
+        from_node.outgoing.remove(i);
+        from_node.incoming.push(left_second_edge_id);
 
         let left_intermediate_node = &mut graph.nodes[left_intermediate_node_id];
-        left_intermediate_node.outgoing.push(left_first_edge_id);
+        left_intermediate_node.outgoing.push(to_be_rerouted_edge_id);
         left_intermediate_node.outgoing.push(left_second_edge_id);
-
-        graph.nodes[from_node_id].incoming.push(left_first_edge_id);
-        graph.nodes[to_node_id].incoming.push(left_second_edge_id);
     }
 }

@@ -83,7 +83,7 @@ pub struct Graph {
     /// These edges are omitted from the forward facing constraint in the layer assignment phase.
     /// But whether they actually turn out to be back edges will be seen after layers have actually
     /// been assigned. If some of the computed back edges happens to not be required to be a back
-    /// edge, then those are removed from this list (maybe?).
+    /// edge, then those are removed from this list.
     pub computed_back_edges: Vec<EdgeId>,
 }
 
