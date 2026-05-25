@@ -13,19 +13,8 @@ pub struct LayoutConstraints {
 
     /// A mix of `Above` and `SameLayer` constraints which form a cluster.
     pub same_layer_clusters: Vec<VecSet<NodeId>>,
-
-    /// TODO need to parse. A `flipped` gateway has its lone edge come in from the wrong side.
-    /// So if an incoming lone edge for a branching gateway is naturally connected to the left side,
-    /// in the flipped case it will be connected to the right side. This is primarily interesting
-    /// for back edges. But since it is hard to tell whether this should really be applied, ask the
-    /// user to manually specify it.
-    pub flipped_gateways: Vec<FlippedGateway>,
 }
 
-#[derive(Debug, Clone, PartialEq)]
-pub struct FlippedGateway {
-    gateway: NodeId,
-}
 #[derive(Debug, Clone, PartialEq)]
 pub struct LeftOf {
     pub left: NodeId,

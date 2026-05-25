@@ -85,12 +85,6 @@ pub struct Graph {
     /// been assigned. If some of the computed back edges happens to not be required to be a back
     /// edge, then those are removed from this list (maybe?).
     pub computed_back_edges: Vec<EdgeId>,
-    pub gateway_reversed_lone_edges: Vec<GatewayReversedLoneEdge>,
-}
-
-pub struct GatewayReversedLoneEdge {
-    gateway: NodeId,
-    edge_id: EdgeId,
 }
 
 #[derive(Debug, Eq, PartialEq, Hash, Clone)]

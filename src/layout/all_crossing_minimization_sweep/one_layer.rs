@@ -61,8 +61,6 @@ pub fn run(
         let flip = if vertical_sequence.can_be_flipped {
             let mut sorted_pairs = 0;
             let mut rev_sorted_pairs = 0;
-            // I think it makes sense to ignore the gateway loops in this analysis of
-            // flip-or-no-flip.
             for [id0, id1] in vertical_sequence.top_to_bottom_node_list.array_windows() {
                 let mn0 = state
                     .merge_nodes
@@ -96,26 +94,11 @@ pub fn run(
         } else {
             false
         };
-        // The chained iters really need to be flipped one by one, not as one big chunk.
         let mut sweepnode_it = vertical_sequence
-            .top_gateway_loop_nodes
+            .top_to_bottom_node_list
             .len()
             .iter_indices(flip)
-            .map(|index| vertical_sequence.top_gateway_loop_nodes[index])
-            .chain(
-                vertical_sequence
-                    .top_to_bottom_node_list
-                    .len()
-                    .iter_indices(flip)
-                    .map(|index| vertical_sequence.top_to_bottom_node_list[index]),
-            )
-            .chain(
-                vertical_sequence
-                    .bottom_gateway_loop_nodes
-                    .len()
-                    .iter_indices(flip)
-                    .map(|index| vertical_sequence.bottom_gateway_loop_nodes[index]),
-            );
+            .map(|index| vertical_sequence.top_to_bottom_node_list[index]);
         let top_most_sn_id = sweepnode_it.next().unwrap();
         let top_most_mn_id = state
             .merge_nodes
