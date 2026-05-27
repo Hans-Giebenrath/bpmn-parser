@@ -944,25 +944,37 @@ fn handle_gateway_neighbor_layer_connectivity(
         (_, true, false) | (_, false, true) => {
             inc_iter.fold(Option::<&Node>::None, |prev, cur| {
                 if top_is_blocked_for_non_lones {
-                    cached_constraints.push((middle(gateway) - middle(cur)).leq(0.0));
-                    d!(eprintln!(
-                        "gateway below non-lone bend node: gateway node({}) - bend node({}) / \"{}\" - \"{}\"",
-                        gateway.id.0,
-                        cur.id.0,
-                        gateway.display_text_or_dummy_kind(),
-                        cur.display_text_or_dummy_kind()
-                    ));
+                    if gateway.pool_and_lane() == cur.pool_and_lane() {
+                        cached_constraints.push((middle(gateway) - middle(cur)).leq(0.0));
+                        d!(eprintln!(
+                            "gateway below non-lone bend node: gateway node({}) - bend node({}) / \"{}\" - \"{}\"",
+                            gateway.id.0,
+                            cur.id.0,
+                            gateway.display_text_or_dummy_kind(),
+                            cur.display_text_or_dummy_kind()
+                        ));
+                    } else {
+                        // Assert: Otherwise bend dummy placement logic is flawed, should not have pushed
+                        // the bend dummy into another lane if we cannot leave from the top/bottom at all.
+                        assert!(cur.pool_and_lane() > gateway.pool_and_lane());
+                    }
                 } else {
-                    cached_constraints.push((middle(gateway) - middle(cur)).geq(0.0));
-                    d!(eprintln!(
-                        "gateway above non-lone bend node: gateway node({}) - bend node({}) / \"{}\" - \"{}\"",
-                        gateway.id.0,
-                        cur.id.0,
-                        gateway.display_text_or_dummy_kind(),
-                        cur.display_text_or_dummy_kind()
-                    ));
+                    if gateway.pool_and_lane() == cur.pool_and_lane() {
+                        cached_constraints.push((middle(gateway) - middle(cur)).geq(0.0));
+                        d!(eprintln!(
+                            "gateway above non-lone bend node: gateway node({}) - bend node({}) / \"{}\" - \"{}\"",
+                            gateway.id.0,
+                            cur.id.0,
+                            gateway.display_text_or_dummy_kind(),
+                            cur.display_text_or_dummy_kind()
+                        ));
+                    } else {
+                        // Assert: Otherwise bend dummy placement logic is flawed, should not have pushed
+                        // the bend dummy into another lane if we cannot leave from the top/bottom at all.
+                        assert!(cur.pool_and_lane() < gateway.pool_and_lane());
+                    }
                 }
-                if let Some(prev) = prev {
+                if let Some(prev) = prev && cur.pool_and_lane() == prev.pool_and_lane() && cur.pool_and_lane() == gateway.pool_and_lane() {
                     cached_constraints.push(
                         (middle(cur) - middle(prev)).geq(graph.config.dummy_node_y_padding as f64),
                     );
