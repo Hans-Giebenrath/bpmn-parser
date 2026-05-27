@@ -5,6 +5,7 @@ mod common;
 mod layout;
 mod lexer;
 mod node_id_matcher;
+mod output;
 mod parser;
 mod pe_bpmd;
 mod pool_id_matcher;
