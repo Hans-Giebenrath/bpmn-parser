@@ -764,6 +764,7 @@ enum VerticalEdgeDocks {
     Above,
 }
 
+#[derive(Debug)]
 struct BarrierInfo {
     pool_and_lane: PoolAndLane,
     blocking_real_node: NodeId,
@@ -783,11 +784,13 @@ fn bottom_barrier(graph: &Graph, this_node_id: NodeId) -> Option<BarrierInfo> {
 
 fn classify_barrier_node(this_node_id: NodeId, node: &Node) -> Option<BarrierInfo> {
     match &node.node_type {
-        NodeType::LongEdgeDummy => None,
-        NodeType::BackEdgeCornerDummy {
-            same_layer_real_node_id,
-            ..
-        } if *same_layer_real_node_id == this_node_id => None,
+        // The back edge corner dummy is detached from its originating node - the whole point is
+        // that it can move more freely, to make looping possible around above nodes (see cons007
+        // where the back edge corner dummy is above n1, not directly next to the gateway node).
+        // Hence it is not a barrier.
+        NodeType::LongEdgeDummy | NodeType::BackEdgeCornerDummy { .. } => None,
+        // The bend dummy on the other hand is specifically meant to be next to the originating node,
+        // so it must be considered a barrier.
         NodeType::BendDummy {
             originating_node, ..
         } => Some(BarrierInfo {
@@ -797,13 +800,6 @@ fn classify_barrier_node(this_node_id: NodeId, node: &Node) -> Option<BarrierInf
         NodeType::RealNode { .. } => Some(BarrierInfo {
             pool_and_lane: node.pool_and_lane(),
             blocking_real_node: node.id,
-        }),
-        NodeType::BackEdgeCornerDummy {
-            same_layer_real_node_id,
-            ..
-        } => Some(BarrierInfo {
-            pool_and_lane: node.pool_and_lane(),
-            blocking_real_node: *same_layer_real_node_id,
         }),
     }
 }
