@@ -43,6 +43,12 @@ pub fn dummy_node_generation(graph: &mut Graph) {
         let to = &graph.nodes[to_id];
         let pool = from.pool;
 
+        // The edge is a message edge that spans across pools, this is handled differently.
+        if from.pool != to.pool {
+            assert!(edge.is_message_flow());
+            continue;
+        }
+
         // The edge spans just a single layer -> ignore.
         if from.layer_id.0 + 1 == to.layer_id.0 {
             continue;
@@ -53,12 +59,6 @@ pub fn dummy_node_generation(graph: &mut Graph) {
             // (2) Further, during the node reordering there is a check for whether no other nodes
             // are forced between two same-layer connected nodes via above constraints.
             edge.is_vertical = true;
-            continue;
-        }
-
-        // The edge is a message edge that spans across pools, this is handled differently.
-        if from.pool != to.pool {
-            assert!(edge.is_message_flow());
             continue;
         }
 
