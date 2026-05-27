@@ -776,23 +776,52 @@ fn defs(style: &SvgStyle) -> String {
           />
   </symbol>
 
-  TODO continue here
   <symbol id="task-business-rule" viewBox="0 0 20 20">
-    <rect x="3" y="4" width="14" height="12" fill="none" stroke="{stroke}" stroke-width="1.4"/>
-    <path d="M3 8 h14 M8 4 v12 M13 4 v12" stroke="{stroke}" stroke-width="1.1"/>
+      <rect
+         style="fill:none;stroke:{stroke};stroke-width:0.8;stroke-linecap:round;stroke-linejoin:round"
+         width="16"
+         height="16"
+         x="2"
+         y="2" />
+      <rect
+         style="fill:#cccccc;stroke:{stroke};stroke-width:0.8;stroke-linecap:round;stroke-linejoin:round"
+         width="16"
+         height="4"
+         x="2"
+         y="2" />
+      <path
+         style="fill:none;stroke:{stroke};stroke-width:0.8;stroke-linecap:round;stroke-linejoin:round"
+         d="M 2,10.000001 H 18" />
+      <path
+         style="fill:none;stroke:{stroke};stroke-width:0.8;stroke-linecap:round;stroke-linejoin:round"
+         d="M 2,14.000004 H 18" />
+      <path
+         style="fill:none;stroke:{stroke};stroke-width:0.8;stroke-linecap:round;stroke-linejoin:round"
+         d="M 6,6 V 18" />
   </symbol>
 
   <symbol id="task-send" viewBox="0 0 20 20">
-    <path d="M3 6 h14 v9 H3 z" fill="none" stroke="{stroke}" stroke-width="1.4"/>
-    <path d="M3 6 l7 5 l7-5" fill="none" stroke="{stroke}" stroke-width="1.4"/>
+      <path
+         d="m 3,6 h 14 v 9 H 3 Z"
+         fill="none"
+         stroke="{stroke}"
+         style="stroke-width:1;stroke-linecap:round;stroke-linejoin:round;stroke-dasharray:none"
+         />
+      <path
+         d="m 3,6 7,4 7,-4"
+         fill="none"
+         stroke="{stroke}"
+         style="stroke-width:1;stroke-linecap:round;stroke-linejoin:round;stroke-dasharray:none"
+         />
   </symbol>
 
   <symbol id="task-receive" viewBox="0 0 20 20">
-    <path d="M3 6 h14 v9 H3 z" fill="none" stroke="{stroke}" stroke-width="1.4"/>
-    <path d="M3 6 l7 5 l7-5" fill="none" stroke="{stroke}" stroke-width="1.4"/>
-    <path d="M10 2 v5 M7.5 4.5 L10 7 l2.5-2.5" fill="none" stroke="{stroke}" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/>
+  <path
+     style="baseline-shift:baseline;display:inline;overflow:visible;vector-effect:none;stroke-linecap:round;stroke-linejoin:round;enable-background:accumulate;stop-color:{stroke}"
+     d="M 3 5.5 C 2.7238691 5.5000276 2.5000276 5.7238691 2.5 6 L 2.5 15 C 2.5000276 15.276131 2.7238691 15.499972 3 15.5 L 17 15.5 C 17.276131 15.499972 17.499972 15.276131 17.5 15 L 17.5 6 C 17.499972 5.7238691 17.276131 5.5000276 17 5.5 L 3 5.5 z M 16.800781 5.6621094 A 0.5 0.5 0 0 1 17.232422 5.9160156 A 0.5 0.5 0 0 1 17.042969 6.5976562 L 10.246094 10.435547 A 0.50005 0.50005 0 0 1 9.7539062 10.435547 L 2.9570312 6.5976562 A 0.5 0.5 0 0 1 2.7675781 5.9160156 A 0.5 0.5 0 0 1 3.0703125 5.6816406 A 0.5 0.5 0 0 1 3.4492188 5.7265625 L 10 9.4257812 L 16.550781 5.7265625 A 0.5 0.5 0 0 1 16.800781 5.6621094 z " />
   </symbol>
 
+  TODO continue here
   <!-- Event markers. All are authored in a 20x20 viewport. -->
   <symbol id="event-message" viewBox="0 0 20 20">
     <path d="M3 6 h14 v9 H3 z" fill="none" stroke="{stroke}" stroke-width="1.5"/>
