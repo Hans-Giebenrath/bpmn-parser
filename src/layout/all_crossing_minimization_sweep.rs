@@ -45,6 +45,16 @@ mod one_layer;
 // nodes. This is quite a lot, but within the boundary of BPMD.
 type GeneralIndexType = u16;
 
+const DEBUG_CONSTRUCTION: bool = false;
+
+macro_rules! d {
+    ($($tt:tt)*) => {{
+        if DEBUG_CONSTRUCTION {
+            $($tt)*
+        }
+    }};
+}
+
 #[derive(Debug, Clone)]
 struct Slice {
     start: GeneralIndexType,
@@ -630,7 +640,7 @@ pub fn reduce_all_crossings_sweep(graph: &mut Graph) -> Result<(), ParseError> {
             all_best_versions.push(best_versions);
         }
     }
-    println!("{debug_output}");
+    d!(println!("{debug_output}"));
 
     // TODO at this location, if there is a lane with multiple best solutions, one would need to
     // test them all out.
