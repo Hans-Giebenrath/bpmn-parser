@@ -300,7 +300,7 @@ fn handle_nongateway_node(this_node_id: NodeId, graph: &mut Graph) {
                     } else {
                         assert!(
                             to.is_right_back_edge_corner_dummy(),
-                            "to: {to:?}\nedge: {edge:?}"
+                            "to: {to:?}\nedge: {edge:?},\n{graph:?}"
                         );
                         if to.pool_and_lane() < this_node.pool_and_lane() {
                             Some(VerticalEdgeDocks::Above)
