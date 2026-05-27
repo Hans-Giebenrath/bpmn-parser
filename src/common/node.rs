@@ -18,7 +18,7 @@ use crate::lexer::TokenCoordinate;
 use proc_macros::e;
 use std::ops::Add;
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum NodeType {
     RealNode {
         /// Is data node -> DataStoreReference or DataObjectReference
@@ -82,7 +82,7 @@ pub enum NodeType {
 
 /// This is primarily used to make some Y-ILP stuff easier.
 /// Check whether it makes sense to inline this, i.e. make more BendDummy variants on NodeType.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum BendDummyKind {
     /// The target node is in another lane but the bend dummy stayed *in the same* lane as the
     /// gateway node due to a blocker.
@@ -387,6 +387,22 @@ impl Node {
             .iter()
             .cloned()
             .zip(self.outgoing_ports.iter())
+            .find(|(inner_edge_id, _)| *inner_edge_id == edge_id)
+            .map(|(_, port)| port + self.xy())
+            .unwrap_or_else(|| panic!("node_id: {}, edge_id: {}", self.id.0, edge_id.0))
+    }
+
+    pub fn port_of_incoming_or_outgoing(&self, edge_id: EdgeId) -> AbsolutePort {
+        self.incoming
+            .iter()
+            .cloned()
+            .zip(self.incoming_ports.iter())
+            .chain(
+                self.outgoing
+                    .iter()
+                    .cloned()
+                    .zip(self.outgoing_ports.iter()),
+            )
             .find(|(inner_edge_id, _)| *inner_edge_id == edge_id)
             .map(|(_, port)| port + self.xy())
             .unwrap_or_else(|| panic!("node_id: {}, edge_id: {}", self.id.0, edge_id.0))

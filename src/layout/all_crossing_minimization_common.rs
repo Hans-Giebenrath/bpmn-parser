@@ -10,6 +10,7 @@ use proc_macros::{e, n};
 pub(crate) struct Undo {
     original_num_nodes: usize,
     original_edges: Vec<(EdgeId, Edge, /*left one*/ bool)>,
+    original_node_types: Vec<(NodeId, NodeType)>,
 }
 
 pub(crate) fn temporarily_add_dummy_nodes_for_edges_within_same_layer(graph: &mut Graph) -> Undo {
@@ -17,6 +18,7 @@ pub(crate) fn temporarily_add_dummy_nodes_for_edges_within_same_layer(graph: &mu
     let mut undo = Undo {
         original_num_nodes: graph.nodes.len(),
         original_edges: Vec::new(),
+        original_node_types: Vec::new(),
     };
 
     // We need to make place for dummy edges to the left, i.e. in layer -1. Since LayerId is
@@ -54,6 +56,20 @@ pub(crate) fn temporarily_add_dummy_nodes_for_edges_within_same_layer(graph: &mu
         let pool_and_lane = from.pool_and_lane();
 
         undo.original_edges.push((edge_id, edge.clone(), left_one));
+
+        // Replace the `BackEdgeCornerDummy` node type with the `LongEdgeDummy` node type,
+        // as otherwise some analysis will break during sweeping, which looks for real loops.
+        // Untransformed `BackEdgeCornerDummy` nodes may continue to exist for when they cross the
+        // lane.
+        if from.is_back_edge_corner_dummy() {
+            undo.original_node_types
+                .push((from.id, from.node_type.clone()));
+            n!(edge.from).node_type = NodeType::LongEdgeDummy;
+        } else if to.is_back_edge_corner_dummy() {
+            undo.original_node_types.push((to.id, to.node_type.clone()));
+            n!(edge.to).node_type = NodeType::LongEdgeDummy;
+        }
+
         let right_node_id = if !left_one {
             Some(graph.add_node(
                 NodeType::LongEdgeDummy,
@@ -83,11 +99,6 @@ pub(crate) fn remove_temporarily_added_dummy_nodes_for_edges_within_same_layer(
     graph: &mut Graph,
     undo: Undo,
 ) {
-    for node in &mut graph.nodes {
-        node.layer_id.0 -= 1;
-    }
-    graph.num_layers -= 1;
-
     // also fix the `node_below_in_same_lane` etc properties
     let num_edges_to_retain: usize = graph.edges.len() - undo.original_edges.len();
     let num_nodes_to_retain: usize = undo.original_num_nodes;
@@ -95,6 +106,10 @@ pub(crate) fn remove_temporarily_added_dummy_nodes_for_edges_within_same_layer(
         for lane in &mut pool.lanes {
             lane.nodes.retain(|node_id| node_id.0 < num_nodes_to_retain);
         }
+    }
+
+    for (node_id, node_type) in undo.original_node_types {
+        graph.nodes[node_id].node_type = node_type;
     }
 
     // Undo the changes in reverse order, important! Otherwise, this will crash for snake nodes.
@@ -139,6 +154,13 @@ pub(crate) fn remove_temporarily_added_dummy_nodes_for_edges_within_same_layer(
 
     graph.nodes.truncate(num_nodes_to_retain);
     graph.edges.truncate(num_edges_to_retain);
+
+    // Need to do this at the end, as we first need to remove the artificial dummy nodes from layer
+    // 0.
+    for node in &mut graph.nodes {
+        node.layer_id.0 -= 1;
+    }
+    graph.num_layers -= 1;
 }
 
 fn reroute_vertical_edge(

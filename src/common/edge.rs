@@ -41,7 +41,9 @@ pub enum EdgeType {
         /// The EdgeId is the Id of the first DummyEdge which replaces this edge. Note that the
         /// dummy edges, which make up this original edge, are not consecutive within `graph.nodes`.
         /// Instead, one must move through the incoming/outgoing edges of the connected nodes, i.e.
-        /// more through the graph.
+        /// more through the graph. Later reconstruction of the original edge traverses starting
+        /// from this edge, so if more edges are added later (e.g. for bend dummies), then the
+        /// [first_dummy_edge] might need to be updated.
         first_dummy_edge: EdgeId,
         text: Option<String>,
     },

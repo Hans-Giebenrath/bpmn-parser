@@ -959,6 +959,13 @@ fn handle_gateway_node_one_side(this_node_id: NodeId, graph: &mut Graph, directi
             // predetermined vertical.
             continue;
         }
+        if other_node.is_back_edge_corner_dummy() {
+            // The back edge corner dummy handles loop situations. In that case we don't need an
+            // additional bend dummy, because we already know in this situation that the edge must
+            // enter from the left or right side. Adding the bend dummy would make it harder to spot
+            // this situation later.
+            continue;
+        }
         let other_node_pool_lane = other_node.pool_and_lane();
 
         if let Some(previous_other_node_id) = previous_other_node_id {

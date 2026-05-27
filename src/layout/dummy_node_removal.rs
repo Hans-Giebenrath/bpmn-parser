@@ -1,4 +1,5 @@
 use crate::common::edge::DummyEdgeBendPoints;
+use crate::common::edge::Edge;
 use crate::common::edge::EdgeType;
 use crate::common::edge::RegularEdgeBendPoints;
 use crate::common::graph::EdgeId;
@@ -7,35 +8,52 @@ use crate::common::graph::MAX_NODE_WIDTH;
 use crate::common::node::AbsolutePort;
 use crate::common::node::NodeIdOrEdgeId;
 use proc_macros::e;
+use proc_macros::n;
 
 // Assigns bend points to the Regular edges. Afterwards, no more dummy nodes or edges are present.
 pub fn dummy_node_removal(graph: &mut Graph) {
+    dbg!(&graph);
     for edge_id in (0..graph.edges.len()).map(EdgeId) {
-        let edge = &mut graph.edges[edge_id];
+        let edge = &graph.edges[edge_id];
         let EdgeType::ReplacedByDummies {
             first_dummy_edge,
             text,
-        } = &mut edge.edge_type
+        } = &edge.edge_type
         else {
             continue;
         };
         let is_reversed = edge.is_reversed;
         let text = text.clone();
+        let to = edge.to;
+        let from = edge.from;
         let first_dummy_edge_id = *first_dummy_edge;
+        let first_dummy_edge = &e!(first_dummy_edge_id);
+        let to_node = &n!(to);
+        let from_node = &n!(from);
         let AbsolutePort {
             x: from_x,
             y: from_y,
         } = if !is_reversed {
-            graph.nodes[edge.from].port_of_outgoing(first_dummy_edge_id)
+            // incoming or outgoing because it is tricky with loop edges on gateways.
+            from_node.port_of_incoming_or_outgoing(first_dummy_edge_id)
         } else {
-            graph.nodes[edge.to].port_of_outgoing(first_dummy_edge_id)
+            to_node.port_of_incoming_or_outgoing(first_dummy_edge_id)
         };
-        let to = edge.to;
-        let from = edge.from;
         let mut bend_points = vec![(from_x, from_y)];
         let mut cur_dummy_edge_id = first_dummy_edge_id;
-        // This is used to access to `to` port.
-        let mut next_node_id = e!(cur_dummy_edge_id).to;
+        let mut next_node_id = if !is_reversed {
+            if from == first_dummy_edge.from {
+                first_dummy_edge.to
+            } else {
+                first_dummy_edge.from
+            }
+        } else {
+            if to == first_dummy_edge.from {
+                first_dummy_edge.to
+            } else {
+                first_dummy_edge.from
+            }
+        };
         let mut loop_protector = graph.endless_graph_traversal_protector();
         // This loop hops along the edges via node.incoming/.outgoing, as dummy edges might
         // not necessarily be consecutive in `graph.edges`.
@@ -59,8 +77,13 @@ pub fn dummy_node_removal(graph: &mut Graph) {
                     // So just go on jumping to the next edge.
                 }
                 DummyEdgeBendPoints::SegmentEndpoints(segment_from, segment_to) => {
-                    bend_points.push(*segment_from);
-                    bend_points.push(*segment_to);
+                    if is_loop_edge(graph, edge) {
+                        bend_points.push(*segment_to);
+                        bend_points.push(*segment_from);
+                    } else {
+                        bend_points.push(*segment_from);
+                        bend_points.push(*segment_to);
+                    }
                 }
                 DummyEdgeBendPoints::VerticalBendDummy(segment) => bend_points.push(*segment),
                 DummyEdgeBendPoints::VerticalCollapsed => { /* empty */ }
@@ -71,12 +94,13 @@ pub fn dummy_node_removal(graph: &mut Graph) {
                 break;
             }
             (cur_dummy_edge_id, next_node_id) =
-                next_node.hop_to_next_node(graph, NodeIdOrEdgeId::EdgeId(cur_dummy_edge_id));
+                next_node.hop_to_next_node(graph, NodeIdOrEdgeId::EdgeId(dbg!(cur_dummy_edge_id)));
+            dbg!(cur_dummy_edge_id);
         }
         let AbsolutePort { x: to_x, y: to_y } = if !is_reversed {
-            graph.nodes[to].port_of_incoming(cur_dummy_edge_id)
+            graph.nodes[to].port_of_incoming_or_outgoing(cur_dummy_edge_id)
         } else {
-            graph.nodes[from].port_of_incoming(cur_dummy_edge_id)
+            graph.nodes[from].port_of_incoming_or_outgoing(cur_dummy_edge_id)
         };
         bend_points.push((to_x, to_y));
         // The longer edges should be constructed in an ideal way. Vertical edge segments use
@@ -144,4 +168,11 @@ pub fn dummy_node_removal(graph: &mut Graph) {
     assert!(!graph.nodes.iter().any(|n| n.is_any_dummy()));
     assert!(graph.edges.iter().all(|e| e.is_regular()));
     // println!("Graph: {graph:?}");
+}
+
+fn is_loop_edge(graph: &Graph, edge: &Edge) -> bool {
+    let from = &n!(edge.from);
+    let to = &n!(edge.to);
+    (from.is_back_edge_corner_dummy() || to.is_back_edge_corner_dummy())
+        && from.layer_id == to.layer_id
 }

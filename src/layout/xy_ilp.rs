@@ -338,10 +338,20 @@ fn assign_y(graph: &mut Graph, pool: PoolId, lane: LaneId, min_y_value: usize) -
                         &mut problem,
                         (below_aux - above_aux).geq((above.height + padding) as f64),
                     );
-                    d!(eprintln!(
-                        "padding above node({}) <dist {}> below node({})",
-                        above.id.0, padding, below.id.0
-                    ));
+                    d! {
+                        let real_above = node_ids_iter
+                            .clone()
+                            .find(|n| aux(&n!(*n)) == above_aux)
+                            .unwrap();
+                        let real_below = node_ids_iter
+                            .clone()
+                            .find(|n| aux(&n!(*n)) == below_aux)
+                            .unwrap();
+                        eprintln!(
+                            "padding above node({}) <dist {}> below node({})",
+                            real_above.0, padding, real_below.0
+                        );
+                    };
                 },
             );
         });
@@ -515,25 +525,15 @@ fn handle_gateway(
         // Doing the iteration is expensive, so only do it if necessary.
         let mut top_barrier = None;
         let top_barrier_calc = || {
-            dbg!(
-                graph
-                    .iter_upwards_same_pool(
-                        StartAt::Node(gateway.id),
-                        Some(gateway.pool_and_lane())
-                    )
-                    .find_map(|node| classify_barrier_node_for_gateway(gateway.id, node))
-            )
+            graph
+                .iter_upwards_same_pool(StartAt::Node(gateway.id), Some(gateway.pool_and_lane()))
+                .find_map(|node| classify_barrier_node_for_gateway(gateway.id, node))
         };
         let mut bottom_barrier = None;
         let bottom_barrier_calc = || {
-            dbg!(
-                graph
-                    .iter_downwards_same_pool(
-                        StartAt::Node(gateway.id),
-                        Some(gateway.pool_and_lane())
-                    )
-                    .find_map(|node| classify_barrier_node_for_gateway(gateway.id, node))
-            )
+            graph
+                .iter_downwards_same_pool(StartAt::Node(gateway.id), Some(gateway.pool_and_lane()))
+                .find_map(|node| classify_barrier_node_for_gateway(gateway.id, node))
         };
 
         enum WhichSlot {
@@ -846,18 +846,45 @@ fn handle_gateway_neighbor_layer_connectivity(
             inc_iter.fold(false, |lone_encountered, cur| {
                 if *other_node_id == cur.id {
                     assert!(gateway.pool_and_lane() == cur.pool_and_lane());
-                    cached_constraints.push((middle(gateway) - middle(cur)).eq(0.0));
-                    true
+                    if cur.is_bend_dummy() {
+                        cached_constraints.push((middle(gateway) - middle(cur)).eq(0.0));
+                        d!(eprintln!(
+                            "gateway fix lone bend node to same y coordinate: gateway node({}) - bend node({}) / \"{}\" - \"{}\"",
+                            gateway.id.0,
+                            cur.id.0,
+                            gateway.display_text_or_dummy_kind(),
+                            cur.display_text_or_dummy_kind()
+                        ));
+                    } else {
+                        // In this case we have a loop lone element, i.e. `cur` is somewhere
+                        // above or below the gateway node. Cannot fix it to the same y coordinate.
+                        assert!(cur.is_back_edge_corner_dummy());
+                    }
+                    true // set `lone_encountered := true`
                 } else if !lone_encountered {
                     assert!(!top_slot_is_data); // Graph validation insufficient.
                     if gateway.pool_and_lane() == cur.pool_and_lane() {
-                        cached_constraints.push((middle(gateway) - middle(cur)).leq(0.0));
+                        cached_constraints.push((middle(gateway) - middle(cur)).geq(graph.config.min_vertical_space_between_gateway_bendpoints as f64 / 2.0));
+                        d!(eprintln!(
+                            "gateway below non-lone bend node: gateway node({}) - bend node({}) / \"{}\" - \"{}\"",
+                            gateway.id.0,
+                            cur.id.0,
+                            gateway.display_text_or_dummy_kind(),
+                            cur.display_text_or_dummy_kind()
+                        ));
                     }
                     lone_encountered
                 } else {
                     assert!(!bottom_slot_is_data); // Graph validation insufficient.
                     if gateway.pool_and_lane() == cur.pool_and_lane() {
-                        cached_constraints.push((middle(gateway) - middle(cur)).geq(0.0));
+                        cached_constraints.push((middle(cur) - middle(gateway)).geq(graph.config.min_vertical_space_between_gateway_bendpoints as f64 / 2.0));
+                        d!(eprintln!(
+                            "gateway above non-lone bend node: gateway node({}) - bend node({}) / \"{}\" - \"{}\"",
+                            gateway.id.0,
+                            cur.id.0,
+                            gateway.display_text_or_dummy_kind(),
+                            cur.display_text_or_dummy_kind()
+                        ));
                     }
                     lone_encountered
                 }
@@ -869,6 +896,13 @@ fn handle_gateway_neighbor_layer_connectivity(
                 // the bend dummy into another lane if we cannot leave from the top/bottom at all.
                 assert!(gateway.pool_and_lane() == cur.pool_and_lane());
                 cached_constraints.push((middle(gateway) - middle(cur)).eq(0.0));
+                d!(eprintln!(
+                    "gateway fix non-lone bend node to same y: gateway node({}) - bend node({}) / \"{}\" - \"{}\"",
+                    gateway.id.0,
+                    cur.id.0,
+                    gateway.display_text_or_dummy_kind(),
+                    cur.display_text_or_dummy_kind()
+                ));
 
                 if nr == 1 {
                     // Already second edge. But also only print on the second edge to not spam.
@@ -883,13 +917,31 @@ fn handle_gateway_neighbor_layer_connectivity(
             inc_iter.fold(Option::<&Node>::None, |prev, cur| {
                 if top_is_blocked_for_non_lones {
                     cached_constraints.push((middle(gateway) - middle(cur)).leq(0.0));
+                    d!(eprintln!(
+                        "gateway below non-lone bend node: gateway node({}) - bend node({}) / \"{}\" - \"{}\"",
+                        gateway.id.0,
+                        cur.id.0,
+                        gateway.display_text_or_dummy_kind(),
+                        cur.display_text_or_dummy_kind()
+                    ));
                 } else {
                     cached_constraints.push((middle(gateway) - middle(cur)).geq(0.0));
+                    d!(eprintln!(
+                        "gateway above non-lone bend node: gateway node({}) - bend node({}) / \"{}\" - \"{}\"",
+                        gateway.id.0,
+                        cur.id.0,
+                        gateway.display_text_or_dummy_kind(),
+                        cur.display_text_or_dummy_kind()
+                    ));
                 }
                 if let Some(prev) = prev {
                     cached_constraints.push(
                         (middle(cur) - middle(prev)).geq(graph.config.dummy_node_y_padding as f64),
                     );
+                    d!(eprintln!(
+                        "padding above node({}) <dist {}> below node({})",
+                        prev.id.0, graph.config.dummy_node_y_padding, cur.id.0
+                    ));
                 }
                 Some(cur)
             });
@@ -902,6 +954,10 @@ fn handle_gateway_neighbor_layer_connectivity(
                     cached_constraints.push(
                         (middle(cur) - middle(prev)).geq(graph.config.dummy_node_y_padding as f64),
                     );
+                    d!(eprintln!(
+                        "padding above node({}) <dist {}> below node({})",
+                        prev.id.0, graph.config.dummy_node_y_padding, cur.id.0
+                    ));
                 }
                 Some(cur)
             });
@@ -911,23 +967,33 @@ fn handle_gateway_neighbor_layer_connectivity(
     if let Some(first_other) = first_other.take()
         && first_other.pool_and_lane() == gateway.pool_and_lane()
     {
-        assert!(
-            first_other.is_bend_dummy(),
-            "{graph:?},\nfirst_other: {}, top_slot: {top_slot:?}, bottom_slot: {bottom_slot:?}",
-            first_other.id,
-        );
-        gateway_additional
-            .0
-            .push((aux(first_other), graph.config.dummy_node_y_padding));
+        if first_other.is_bend_dummy() {
+            gateway_additional
+                .0
+                .push((aux(first_other), graph.config.dummy_node_y_padding));
+        } else {
+            assert!(
+                first_other.is_back_edge_corner_dummy(),
+                "{graph:?},\nfirst_other: {}, top_slot: {top_slot:?}, bottom_slot: {bottom_slot:?}",
+                first_other.id,
+            );
+        }
     }
 
     if let Some(last_other) = last_other.take()
         && last_other.pool_and_lane() == gateway.pool_and_lane()
     {
-        assert!(last_other.is_bend_dummy());
-        gateway_additional
-            .1
-            .push((aux(last_other), graph.config.dummy_node_y_padding));
+        if last_other.is_bend_dummy() {
+            gateway_additional
+                .1
+                .push((aux(last_other), graph.config.dummy_node_y_padding));
+        } else {
+            assert!(
+                last_other.is_back_edge_corner_dummy(),
+                "{graph:?},\nlast_other: {}, top_slot: {top_slot:?}, bottom_slot: {bottom_slot:?}",
+                last_other.id,
+            );
+        }
     }
 
     if top_is_blocked_for_non_lones && bottom_is_blocked_for_non_lones {

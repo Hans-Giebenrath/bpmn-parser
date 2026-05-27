@@ -11,7 +11,7 @@ use crate::common::graph::PoolAndLane;
 use crate::common::node::LayerId;
 use crate::common::node::NodeType;
 
-use proc_macros::n;
+use proc_macros::{e, n};
 
 pub fn dummy_node_generation(graph: &mut Graph) {
     // After this function we will have a bunch of new temporary edges which make some of the
@@ -36,7 +36,6 @@ pub fn dummy_node_generation(graph: &mut Graph) {
 
     let num_real_edges = graph.edges.len();
     for edge_id in (0..num_real_edges).map(EdgeId) {
-        let current_num_edges = graph.edges.len();
         let edge = &mut graph.edges[edge_id];
         let from_id = edge.from;
         let to_id = edge.to;
@@ -71,15 +70,17 @@ pub fn dummy_node_generation(graph: &mut Graph) {
         let EdgeType::Regular { text, .. } = &edge.edge_type else {
             unreachable!();
         };
+        // We need respect the invariant of `first_dummy_edge`: It must be the first edge from
+        // which one can continue to traverse along the rest of the newly added long edge dummies.
+        // Since the edge segments are not added here in the very same order (code would become a
+        // bit awkward), we need to do some work to identify the correct first edge.
+        let mut first_dummy_edge = None;
         let text = text.clone();
-        edge.edge_type = EdgeType::ReplacedByDummies {
-            first_dummy_edge: EdgeId(current_num_edges),
-            text,
-        };
-
         if let Some(total_edge_count) = to.layer_id.0.checked_sub(from.layer_id.0)
             && total_edge_count > 0
         {
+            let current_num_edges = graph.edges.len();
+            first_dummy_edge = Some(EdgeId(current_num_edges));
             let total_node_count = total_edge_count.strict_sub(1);
             insert_dummy_nodes(
                 graph,
@@ -123,6 +124,7 @@ pub fn dummy_node_generation(graph: &mut Graph) {
             let dummy_from_node_id = if from_does_not_need_back_edge_corner_dummy {
                 from_id
             } else {
+                let current_num_edges = graph.edges.len();
                 let dummy_node_id = graph.add_node(
                     NodeType::BackEdgeCornerDummy {
                         same_layer_real_node_id: from_id,
@@ -153,10 +155,11 @@ pub fn dummy_node_generation(graph: &mut Graph) {
             let dummy_to_node_id = if to_does_not_need_back_edge_corner_dummy {
                 to_id
             } else {
+                let current_num_edges = graph.edges.len();
                 let dummy_node_id = graph.add_node(
                     NodeType::BackEdgeCornerDummy {
                         same_layer_real_node_id: to_id,
-                        same_layer_edge_id: EdgeId(current_num_edges + 1),
+                        same_layer_edge_id: EdgeId(current_num_edges),
                         left_one: true,
                     },
                     PoolAndLane {
@@ -165,6 +168,7 @@ pub fn dummy_node_generation(graph: &mut Graph) {
                     },
                     Some(to_coords.layer),
                 );
+                first_dummy_edge = Some(EdgeId(dbg!(current_num_edges)));
                 graph.add_edge(
                     dummy_node_id,
                     to_id,
@@ -179,6 +183,9 @@ pub fn dummy_node_generation(graph: &mut Graph) {
             };
 
             let old_num_edges = graph.edges.len();
+            if first_dummy_edge.is_none() {
+                first_dummy_edge = Some(EdgeId(dbg!(old_num_edges)));
+            }
             // Need to add the nodes at the target node's lane. I hypothesize that this creates
             // better visual results compared to switching lanes on half the way as is done for the
             // forward-looking edges.
@@ -197,6 +204,11 @@ pub fn dummy_node_generation(graph: &mut Graph) {
                 edge.is_reversed = true;
             }
         }
+        e!(edge_id).edge_type = EdgeType::ReplacedByDummies {
+            first_dummy_edge: first_dummy_edge.unwrap(),
+            text,
+        };
+
         graph.nodes[from_id]
             .outgoing
             .retain(|outgoing_edge_idx| *outgoing_edge_idx != edge_id);

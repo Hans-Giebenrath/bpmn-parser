@@ -40,7 +40,6 @@ pub fn postprocess_ports_and_vertical_edges(graph: &mut Graph) {
                         in_or_out.iter().cloned().zip(in_or_out_ports.iter_mut())
                     {
                         let edge = &mut e!(edge_id);
-                        assert!(edge.is_vertical);
                         let maybe_bend_points =
                             if let EdgeType::DummyEdge { bend_points, .. } = &mut edge.edge_type {
                                 Some(bend_points)
@@ -53,6 +52,14 @@ pub fn postprocess_ports_and_vertical_edges(graph: &mut Graph) {
                         } else {
                             edge.from
                         });
+                        if !edge.is_vertical {
+                            assert!(other_node.is_back_edge_corner_dummy());
+                            // `y` stays the same, only `x` needs to be fixed.
+                            // And `bend_points` will be assigned regularly later, we have a "full
+                            // blown" edge here.
+                            relative_port.x = relative_x;
+                            continue;
+                        }
                         let xy = (if edge.from == node.id {
                             other_node.port_of_incoming(edge_id)
                         } else {
