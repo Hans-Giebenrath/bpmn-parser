@@ -100,7 +100,6 @@ impl Drop for Timer {
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
-    env_logger::init();
     let cli = Cli::parse();
     let mut timer = Timer::default();
 
