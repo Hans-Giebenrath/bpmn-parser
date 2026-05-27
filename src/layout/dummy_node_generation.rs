@@ -168,7 +168,7 @@ pub fn dummy_node_generation(graph: &mut Graph) {
                     },
                     Some(to_coords.layer),
                 );
-                first_dummy_edge = Some(EdgeId(dbg!(current_num_edges)));
+                first_dummy_edge = Some(EdgeId(current_num_edges));
                 graph.add_edge(
                     dummy_node_id,
                     to_id,
@@ -184,7 +184,7 @@ pub fn dummy_node_generation(graph: &mut Graph) {
 
             let old_num_edges = graph.edges.len();
             if first_dummy_edge.is_none() {
-                first_dummy_edge = Some(EdgeId(dbg!(old_num_edges)));
+                first_dummy_edge = Some(EdgeId(old_num_edges));
             }
             // Need to add the nodes at the target node's lane. I hypothesize that this creates
             // better visual results compared to switching lanes on half the way as is done for the

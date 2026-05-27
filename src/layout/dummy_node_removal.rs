@@ -12,7 +12,6 @@ use proc_macros::n;
 
 // Assigns bend points to the Regular edges. Afterwards, no more dummy nodes or edges are present.
 pub fn dummy_node_removal(graph: &mut Graph) {
-    dbg!(&graph);
     for edge_id in (0..graph.edges.len()).map(EdgeId) {
         let edge = &graph.edges[edge_id];
         let EdgeType::ReplacedByDummies {
@@ -94,8 +93,7 @@ pub fn dummy_node_removal(graph: &mut Graph) {
                 break;
             }
             (cur_dummy_edge_id, next_node_id) =
-                next_node.hop_to_next_node(graph, NodeIdOrEdgeId::EdgeId(dbg!(cur_dummy_edge_id)));
-            dbg!(cur_dummy_edge_id);
+                next_node.hop_to_next_node(graph, NodeIdOrEdgeId::EdgeId(cur_dummy_edge_id));
         }
         let AbsolutePort { x: to_x, y: to_y } = if !is_reversed {
             graph.nodes[to].port_of_incoming_or_outgoing(cur_dummy_edge_id)

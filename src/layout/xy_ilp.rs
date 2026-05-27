@@ -1006,16 +1006,12 @@ fn handle_gateway_neighbor_layer_connectivity(
         // The lone element is on this side, hence we don't enforce any further constraints.
         // It *might* be that we should still add a small pull factor between the gateway and its
         // staying-within-lane bend points, but let's first see how in practice it looks like.
-        dbg!();
         return;
     }
 
     match analyse_gateway_neighbor_layer_connectivity(graph, edges, from_or_to) {
-        GatewayNeighborLayerConnectivity::NoSameLaneEdges => {
-            dbg!()
-        }
+        GatewayNeighborLayerConnectivity::NoSameLaneEdges => {}
         GatewayNeighborLayerConnectivity::OnlyOneSameLaneEdge(node) => {
-            dbg!();
             // The bend node shall stay on the same height as the gateway node, so the edge leaves
             // nicely at the right corner of the gateway symbol.
             cached_constraints.push((middle(gateway) - middle(node)).eq(0.0));
@@ -1046,7 +1042,6 @@ fn handle_gateway_neighbor_layer_connectivity(
             in_between_nodes,
             bottom_node,
         } => {
-            dbg!();
             if !top_is_blocked_for_non_lones && !bottom_is_blocked_for_non_lones {
                 // gateway == (top_node + bottom_node) / 2 <==> 2 * gateway - top_node - bottom_node == 0
                 cached_constraints
