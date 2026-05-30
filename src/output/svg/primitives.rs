@@ -726,6 +726,27 @@ fn defs(style: &SvgStyle) -> String {
     <circle cx="5" cy="5" r="3" stroke-width="1.5" />
   </marker>
 
+  <symbol id="envelope-filled" viewBox="0 0 20 20">
+      <path
+         d="m 3,6 h 14 v 9 H 3 Z"
+         fill="none"
+         stroke="{stroke}"
+         style="stroke-width:1;stroke-linecap:round;stroke-linejoin:round;stroke-dasharray:none"
+         />
+      <path
+         d="m 3,6 7,4 7,-4"
+         fill="none"
+         stroke="{stroke}"
+         style="stroke-width:1;stroke-linecap:round;stroke-linejoin:round;stroke-dasharray:none"
+         />
+  </symbol>
+
+  <symbol id="envelope-outline" viewBox="0 0 20 20">
+  <path
+     style="baseline-shift:baseline;display:inline;overflow:visible;vector-effect:none;stroke-linecap:round;stroke-linejoin:round;enable-background:accumulate;stop-color:{stroke}"
+     d="M 3 5.5 C 2.7238691 5.5000276 2.5000276 5.7238691 2.5 6 L 2.5 15 C 2.5000276 15.276131 2.7238691 15.499972 3 15.5 L 17 15.5 C 17.276131 15.499972 17.499972 15.276131 17.5 15 L 17.5 6 C 17.499972 5.7238691 17.276131 5.5000276 17 5.5 L 3 5.5 z M 16.800781 5.6621094 A 0.5 0.5 0 0 1 17.232422 5.9160156 A 0.5 0.5 0 0 1 17.042969 6.5976562 L 10.246094 10.435547 A 0.50005 0.50005 0 0 1 9.7539062 10.435547 L 2.9570312 6.5976562 A 0.5 0.5 0 0 1 2.7675781 5.9160156 A 0.5 0.5 0 0 1 3.0703125 5.6816406 A 0.5 0.5 0 0 1 3.4492188 5.7265625 L 10 9.4257812 L 16.550781 5.7265625 A 0.5 0.5 0 0 1 16.800781 5.6621094 z " />
+  </symbol>
+
   <!-- Task icons. All are authored in a 20x20 viewport. -->
   <symbol id="task-user" viewBox="0 0 20 20">
     <circle cx="10" cy="5" r="3" fill="none" stroke-width="1" />
@@ -801,62 +822,219 @@ fn defs(style: &SvgStyle) -> String {
   </symbol>
 
   <symbol id="task-send" viewBox="0 0 20 20">
-      <path
-         d="m 3,6 h 14 v 9 H 3 Z"
-         fill="none"
-         stroke="{stroke}"
-         style="stroke-width:1;stroke-linecap:round;stroke-linejoin:round;stroke-dasharray:none"
-         />
-      <path
-         d="m 3,6 7,4 7,-4"
-         fill="none"
-         stroke="{stroke}"
-         style="stroke-width:1;stroke-linecap:round;stroke-linejoin:round;stroke-dasharray:none"
-         />
+      <use href="#envelope-filled" x="0" y="0" width="20" height="20"/>
   </symbol>
 
   <symbol id="task-receive" viewBox="0 0 20 20">
-  <path
-     style="baseline-shift:baseline;display:inline;overflow:visible;vector-effect:none;stroke-linecap:round;stroke-linejoin:round;enable-background:accumulate;stop-color:{stroke}"
-     d="M 3 5.5 C 2.7238691 5.5000276 2.5000276 5.7238691 2.5 6 L 2.5 15 C 2.5000276 15.276131 2.7238691 15.499972 3 15.5 L 17 15.5 C 17.276131 15.499972 17.499972 15.276131 17.5 15 L 17.5 6 C 17.499972 5.7238691 17.276131 5.5000276 17 5.5 L 3 5.5 z M 16.800781 5.6621094 A 0.5 0.5 0 0 1 17.232422 5.9160156 A 0.5 0.5 0 0 1 17.042969 6.5976562 L 10.246094 10.435547 A 0.50005 0.50005 0 0 1 9.7539062 10.435547 L 2.9570312 6.5976562 A 0.5 0.5 0 0 1 2.7675781 5.9160156 A 0.5 0.5 0 0 1 3.0703125 5.6816406 A 0.5 0.5 0 0 1 3.4492188 5.7265625 L 10 9.4257812 L 16.550781 5.7265625 A 0.5 0.5 0 0 1 16.800781 5.6621094 z " />
+      <use href="#envelope-outline" x="0" y="0" width="20" height="20"/>
   </symbol>
 
-  TODO continue here
   <!-- Event markers. All are authored in a 20x20 viewport. -->
-  <symbol id="event-message" viewBox="0 0 20 20">
-    <path d="M3 6 h14 v9 H3 z" fill="none" stroke="{stroke}" stroke-width="1.5"/>
-    <path d="M3 6 l7 5 l7-5" fill="none" stroke="{stroke}" stroke-width="1.5"/>
+  <symbol id="event-message-catch" viewBox="0 0 20 20">
+    <use href="#envelope-outline" x="0" y="0" width="20" height="20"/>
+  </symbol>
+
+  <symbol id="event-message-throw" viewBox="0 0 20 20">
+    <use href="#envelope-filled" x="0" y="0" width="20" height="20"/>
   </symbol>
 
   <symbol id="event-timer" viewBox="0 0 20 20">
-    <circle cx="10" cy="10" r="7" fill="none" stroke="{stroke}" stroke-width="1.5"/>
-    <path d="M10 10 V5 M10 10 L14 12" fill="none" stroke="{stroke}" stroke-width="1.5" stroke-linecap="round"/>
-    <path d="M10 3 V1 M7 1 h6" stroke="{stroke}" stroke-width="1.2"/>
+      <g
+         transform="matrix(1.1171135,0,0,1.1171135,-1.1711354,-1.1711354)">
+        <circle
+           style="fill:none;stroke:{stroke};stroke-width:0.71613135;stroke-linecap:round;stroke-linejoin:round"
+           cx="10"
+           cy="10"
+           r="6.6344123" />
+        <g
+           style="stroke-width:0.6"
+           transform="matrix(0.82930155,0,0,0.82930155,1.7069845,1.7069845)">
+          <path
+             style="fill:none;stroke:{stroke};stroke-width:0.5397097;stroke-linecap:round;stroke-linejoin:round"
+             d="M 10,2 V 4"
+             />
+          <path
+             style="fill:none;stroke:{stroke};stroke-width:0.5397097;stroke-linecap:round;stroke-linejoin:round"
+             d="m 10,16 v 2"
+             />
+          <path
+             style="fill:none;stroke:{stroke};stroke-width:0.5397097;stroke-linecap:round;stroke-linejoin:round"
+             d="M 14,3.0717968 13,4.8038476"
+             />
+          <path
+             style="fill:none;stroke:{stroke};stroke-width:0.5397097;stroke-linecap:round;stroke-linejoin:round"
+             d="M 7,15.196152 6,16.928203"
+             />
+          <path
+             style="fill:none;stroke:{stroke};stroke-width:0.5397097;stroke-linecap:round;stroke-linejoin:round"
+             d="M 16.928203,6 15.196152,7"
+             />
+          <path
+             style="fill:none;stroke:{stroke};stroke-width:0.5397097;stroke-linecap:round;stroke-linejoin:round"
+             d="M 4.8038476,13 3.0717968,14"
+             />
+          <path
+             style="fill:none;stroke:{stroke};stroke-width:0.5397097;stroke-linecap:round;stroke-linejoin:round"
+             d="M 18,10 H 16"
+             />
+          <path
+             style="fill:none;stroke:{stroke};stroke-width:0.5397097;stroke-linecap:round;stroke-linejoin:round"
+             d="M 4,10 H 2"
+             />
+          <path
+             style="fill:none;stroke:{stroke};stroke-width:0.5397097;stroke-linecap:round;stroke-linejoin:round"
+             d="M 16.928203,14 15.196152,13"
+             />
+          <path
+             style="fill:none;stroke:{stroke};stroke-width:0.5397097;stroke-linecap:round;stroke-linejoin:round"
+             d="M 4.8038476,7 3.0717968,6"
+             />
+          <path
+             style="fill:none;stroke:{stroke};stroke-width:0.5397097;stroke-linecap:round;stroke-linejoin:round"
+             d="M 14,16.928203 13,15.196152"
+             />
+          <path
+             style="fill:none;stroke:{stroke};stroke-width:0.5397097;stroke-linecap:round;stroke-linejoin:round"
+             d="M 7,4.8038476 6,3.0717968"
+             />
+        </g>
+        <path
+           style="fill:none;stroke:{stroke};stroke-width:0.71613135;stroke-linecap:round;stroke-linejoin:round"
+           d="M 11.509767,4.9497724 10,10 l 3.317206,0.829302" />
+      </g>
   </symbol>
 
-  <symbol id="event-error" viewBox="0 0 20 20">
-    <path d="M5 16 L9 4 L11 12 L15 4 L11 16 L9 8 z" fill="none" stroke="{stroke}" stroke-width="1.5" stroke-linejoin="round"/>
+  <symbol id="event-error-catching" viewBox="0 0 20 20">
+  <path
+     style="fill:none;stroke:{stroke};stroke-width:0.8;stroke-linecap:round;stroke-linejoin:round"
+     d="M 4,14 8,4 12,11 16,6 12,16 8,9 Z" />
   </symbol>
 
-  <symbol id="event-signal" viewBox="0 0 20 20">
-    <path d="M10 3 L17 16 H3 z" fill="none" stroke="{stroke}" stroke-width="1.5" stroke-linejoin="round"/>
+  <symbol id="event-error-throwing" viewBox="0 0 20 20">
+  <path
+     style="fill:{stroke};stroke:{stroke};stroke-width:0.8;stroke-linecap:round;stroke-linejoin:round"
+     d="M 4,14 8,4 12,11 16,6 12,16 8,9 Z" />
   </symbol>
 
-  <symbol id="event-conditional" viewBox="0 0 20 20">
-    <path d="M5 4 h10 v12 H5 z" fill="none" stroke="{stroke}" stroke-width="1.4"/>
-    <path d="M7 8 h6 M7 11 h6 M7 14 h4" stroke="{stroke}" stroke-width="1.2"/>
+  <symbol id="event-escalation-catching" viewBox="0 0 20 20">
+  <path
+     style="fill:none;stroke:{stroke};stroke-width:0.8;stroke-linecap:round;stroke-linejoin:round"
+     d="m 10,3 -4,13 4,-5 4,5 z" />
   </symbol>
 
-  <symbol id="event-escalation" viewBox="0 0 20 20">
-    <path d="M10 3 L16 16 L10 12 L4 16 z" fill="none" stroke="{stroke}" stroke-width="1.5" stroke-linejoin="round"/>
+  <symbol id="event-escalation-throwing" viewBox="0 0 20 20">
+  <path
+     style="fill:{stroke};stroke:{stroke};stroke-width:0.8;stroke-linecap:round;stroke-linejoin:round"
+     d="m 10,3 -4,13 4,-5 4,5 z" />
   </symbol>
 
-  <symbol id="event-link" viewBox="0 0 20 20">
-    <path d="M4 10 h10 M10 5 l5 5 l-5 5" fill="none" stroke="{stroke}" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/>
+  <symbol id="event-cancel-catching" viewBox="0 0 20 20">
+  <path
+     style="fill:none;stroke:{stroke};stroke-width:0.8;stroke-linecap:round;stroke-linejoin:round"
+     d="m 4,6 2,-2 4,4 4,-4 2,2 -4,4 4,4 -2,2 -4,-4 -4,4 -2,-2 4,-4 z"
+     />
   </symbol>
 
-  <symbol id="event-terminate" viewBox="0 0 20 20">
-    <circle cx="10" cy="10" r="6" fill="{stroke}" stroke="{stroke}" stroke-width="1.5"/>
+  <symbol id="event-cancel-throwing" viewBox="0 0 20 20">
+  <path
+     style="fill:{stroke};stroke:{stroke};stroke-width:0.8;stroke-linecap:round"
+     d="m 4,6 2,-2 4,4 4,-4 2,2 -4,4 4,4 -2,2 -4,-4 -4,4 -2,-2 4,-4 z"
+     />
+  </symbol>
+
+  <symbol id="event-compensation-catching" viewBox="0 0 20 20">
+  <path
+     style="fill:none;stroke:{stroke};stroke-width:0.8;stroke-linecap:round;stroke-linejoin:round"
+     d="m 4.0513388,10 5,-5 v 10 z" />
+  <path
+     style="fill:none;stroke:{stroke};stroke-width:0.8;stroke-linecap:round;stroke-linejoin:round"
+     d="M 9.5892896,10 14.589288,5 v 10 z" />
+  </symbol>
+
+  <symbol id="event-compensation-throwing" viewBox="0 0 20 20">
+  <path
+     style="fill:{stroke};stroke:{stroke};stroke-width:0.8;stroke-linecap:round;stroke-linejoin:round"
+     d="m 4.0513388,10 5,-5 v 10 z" />
+  <path
+     style="fill:{stroke};stroke:{stroke};stroke-width:0.8;stroke-linecap:round;stroke-linejoin:round"
+     d="M 9.5892896,10 14.589288,5 v 10 z" />
+  </symbol>
+
+  <symbol id="event-conditional-catching" viewBox="0 0 20 20">
+  <path
+     style="fill:none;stroke:{stroke};stroke-width:0.8;stroke-linecap:round;stroke-linejoin:round"
+     d="m 6,4 h 8 V 16 H 6 Z" />
+  <path
+     style="fill:none;stroke:{stroke};stroke-width:0.8;stroke-linecap:round;stroke-linejoin:round"
+     d="m 7,6 h 6" />
+  <path
+     style="fill:none;stroke:{stroke};stroke-width:0.8;stroke-linecap:round;stroke-linejoin:round"
+     d="m 7,8 h 6" />
+  <path
+     style="fill:none;stroke:{stroke};stroke-width:0.8;stroke-linecap:round;stroke-linejoin:round"
+     d="M 13,10 H 7" />
+  <path
+     style="fill:none;stroke:{stroke};stroke-width:0.8;stroke-linecap:round;stroke-linejoin:round"
+     d="m 7,12 h 6" />
+  <path
+     style="fill:none;stroke:{stroke};stroke-width:0.8;stroke-linecap:round;stroke-linejoin:round"
+     d="M 13,14 H 7" />
+  </symbol>
+
+  <symbol id="event-link-catching" viewBox="0 0 20 20">
+  <path
+     style="fill:none;stroke:{stroke};stroke-width:0.8;stroke-linecap:round;stroke-linejoin:round"
+     d="m 4,7 h 8 V 3 l 5,7 -5,7 V 13 H 4 Z" />
+  </symbol>
+
+  <symbol id="event-link-throwing" viewBox="0 0 20 20">
+  <path
+     style="fill:{stroke};stroke:{stroke};stroke-width:0.8;stroke-linecap:round;stroke-linejoin:round"
+     d="m 4,7 h 8 V 3 l 5,7 -5,7 V 13 H 4 Z" />
+  </symbol>
+
+  <symbol id="event-signal-catching" viewBox="0 0 20 20">
+  <path
+     style="fill:none;stroke:{stroke};stroke-width:0.8;stroke-linecap:round;stroke-linejoin:round"
+     d="M 10,3 4,14 h 12 z" />
+  </symbol>
+
+  <symbol id="event-signal-throwing" viewBox="0 0 20 20">
+  <path
+     style="fill:{stroke};stroke:{stroke};stroke-width:0.8;stroke-linecap:round;stroke-linejoin:round"
+     d="M 10,3 4,14 h 12 z" />
+  </symbol>
+
+  <symbol id="event-terminate-throwing" viewBox="0 0 20 20">
+  <circle
+     style="fill:{stroke};stroke:{stroke};stroke-width:0.8;stroke-linecap:round;stroke-linejoin:round"
+     cx="10"
+     cy="10"
+     r="7.0710678" />
+  </symbol>
+
+  <symbol id="event-multiple-catching" viewBox="0 0 20 20">
+  <path
+     style="fill:none;stroke:{stroke};stroke-width:0.8;stroke-linecap:round;stroke-linejoin:round"
+     d="m 10,3 -7,5 3,8 h 8 l 3,-8 z" />
+  </symbol>
+
+  <symbol id="event-multiple-throwing" viewBox="0 0 20 20">
+  <path
+     style="fill:{stroke};stroke:{stroke};stroke-width:0.8;stroke-linecap:round;stroke-linejoin:round"
+     d="m 10,3 -7,5 3,8 h 8 l 3,-8 z" />
+  </symbol>
+
+  <symbol id="event-parallel-multiple-catching" viewBox="0 0 20 20">
+  <path
+     style="fill:none;stroke:{stroke};stroke-width:0.8;stroke-linecap:round;stroke-linejoin:round"
+     d="m 8.5857864,2.9289322 h 2.8284276 v 5.6568542 l 5.656854,0 v 2.8284276 h -5.656854 l 0,5.656854 H 8.5857864 V 11.414214 H 2.9289322 V 8.5857864 h 5.6568542 z" />
+  </symbol>
+
+  <symbol id="event-parallel-multiple-throwing" viewBox="0 0 20 20">
+  <path
+     style="fill:{stroke};stroke:{stroke};stroke-width:0.8;stroke-linecap:round;stroke-linejoin:round"
+     d="m 8.5857864,2.9289322 h 2.8284276 v 5.6568542 l 5.656854,0 v 2.8284276 h -5.656854 l 0,5.656854 H 8.5857864 V 11.414214 H 2.9289322 V 8.5857864 h 5.6568542 z" />
   </symbol>
 
   <!-- Gateway markers. -->
