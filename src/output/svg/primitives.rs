@@ -8,14 +8,32 @@
 
 use cosmic_text::{Align, Attrs, Buffer, BufferLine, FontSystem, Metrics, Shaping, Wrap};
 use std::fmt::Write as _;
-const STROKE_WIDTH: &'static str = "0.8";
+const STROKE_WIDTH: &str = "0.8";
 
 #[derive(Debug, Clone)]
 pub struct EscapedSvgAttribute(String);
 
 impl EscapedSvgAttribute {
     fn new(value: &str) -> Self {
+        Self(esc_attr(value))
+    }
+}
+
+impl From<String> for EscapedSvgAttribute {
+    fn from(value: String) -> Self {
         Self(esc_attr(&value))
+    }
+}
+
+impl From<&String> for EscapedSvgAttribute {
+    fn from(value: &String) -> Self {
+        Self(esc_attr(value))
+    }
+}
+
+impl From<&str> for EscapedSvgAttribute {
+    fn from(value: &str) -> Self {
+        Self(esc_attr(value))
     }
 }
 
@@ -138,10 +156,9 @@ impl Svg {
         lanes: &[(
             /* title */ &str,
             /* height */ usize,
-            &ElementSvgStyle,
+            ElementSvgStyle,
         )],
         style: &ElementSvgStyle,
-        _pool_id: usize,
     ) {
         let (x, y) = top_left_corner_xy;
         let total_width = pool_header_width + content_width;
@@ -156,10 +173,10 @@ impl Svg {
                 merged.fill,
             ).unwrap();
 
-        if let &[(lane_title, lane_height, lane_style)] = &lanes[..]
+        if let [(lane_title, lane_height, lane_style)] = &lanes[..]
             && lane_title.is_empty()
         {
-            assert_eq!(lane_height, height);
+            assert_eq!(*lane_height, height);
             if let Some(fill) = &lane_style.fill {
                 writeln!(
                         self.body,
@@ -195,10 +212,10 @@ impl Svg {
         )
         .unwrap();
 
-        if let &[(lane_title, lane_height, lane_style)] = &lanes[..]
+        if let [(lane_title, lane_height, lane_style)] = &lanes[..]
             && lane_title.is_empty()
         {
-            assert_eq!(lane_height, height);
+            assert_eq!(*lane_height, height);
             if let Some(stroke) = &lane_style.stroke {
                 writeln!(
                         self.body,
@@ -229,29 +246,29 @@ impl Svg {
             title,
             Some(height),
             true,
+            true,
             &merged,
             "pool-title",
         );
 
-        if let &[(lane_title, _lane_height, _lane_style)] = &lanes[..]
-            && lane_title.is_empty()
-        {
-        } else {
-            let mut cumulative_height = 0;
-            for (lane_title, lane_height, lane_style) in lanes {
-                let merged = MergedSvgStyle::new(&self.style, lane_style);
-                write_wrapped_text(
-                    &mut self.body,
-                    pool_header_width + lane_header_width / 2,
-                    cumulative_height + lane_height / 2,
-                    lane_title,
-                    Some(*lane_height),
-                    true,
-                    &merged,
-                    "lane-title",
-                );
-                cumulative_height += lane_height;
+        let mut cumulative_height = 0;
+        for (lane_title, lane_height, lane_style) in lanes {
+            if lane_title.is_empty() {
+                continue;
             }
+            let merged = MergedSvgStyle::new(&self.style, lane_style);
+            write_wrapped_text(
+                &mut self.body,
+                pool_header_width + lane_header_width / 2,
+                cumulative_height + lane_height / 2,
+                lane_title,
+                Some(*lane_height),
+                true,
+                true,
+                &merged,
+                "lane-title",
+            );
+            cumulative_height += lane_height;
         }
         writeln!(self.body, "</g>").unwrap();
     }
@@ -605,6 +622,7 @@ fn write_wrapped_text(
     text: &str,
     max_width: Option<usize>,
     center_vertically: bool,
+    rotate: bool,
     merged: &MergedSvgStyle,
     class: &str,
 ) {
@@ -635,7 +653,7 @@ fn write_wrapped_text(
         return;
     }
 
-    let (y, dominant_baseline) = if center_vertically {
+    let (start_y, dominant_baseline) = if center_vertically {
         (
             y as f32 - (lines.len() as f32 * merged.line_height) / 2.0,
             "middle",
@@ -644,19 +662,30 @@ fn write_wrapped_text(
         (y as f32, "hanging")
     };
 
-    writeln!(
+    if rotate {
+        assert!(center_vertically); // Otherwise, the center rotation center is wrong
+        writeln!(
                 body,
-                r#"<text class="{class}" y="{y}" text-anchor="middle" dominant-baseline="{dominant_baseline}" font-family="{}" font-size="{}" fill="{}">"#,
+                r#"<text class="{class}" transform="translate({x}, {y}) rotate(-90)" text-anchor="middle" dominant-baseline="middle" font-family="{}" font-size="{}" fill="{}">"#,
                 merged.font_family,
                 merged.font_size,
                 merged.font_color
             ).unwrap();
+    } else {
+        writeln!(
+                body,
+                r#"<text class="{class}" y="{start_y}" text-anchor="middle" dominant-baseline="{dominant_baseline}" font-family="{}" font-size="{}" fill="{}">"#,
+                merged.font_family,
+                merged.font_size,
+                merged.font_color
+            ).unwrap();
+    }
 
     for (i, line) in lines.iter().enumerate() {
         let dy = if i == 0 { 0.0 } else { merged.line_height };
         writeln!(
             body,
-            r#"  <tspan x="{x}" dy="{dy}">{}</tspan>"#,
+            r#"  <tspan dy="{dy}">{}</tspan>"#,
             esc_text(line.text())
         )
         .unwrap();

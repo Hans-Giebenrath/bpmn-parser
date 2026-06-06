@@ -6,11 +6,6 @@ pub fn defs(stroke: &str) -> String {
     .filled * {{ fill: {stroke}; stroke: {stroke}; }}
     .outline * {{ fill: none; stroke: {stroke}; }}
     text {{ user-select: none; }}
-
-    .pool-title, .lane-title {{
-      transform: rotate(45deg);
-      transform-origin: 50% 50%; /* Rotates exactly from the center */
-    }}
   ]]></style>
 
   <!-- use with fill="{{stroke}}" -->

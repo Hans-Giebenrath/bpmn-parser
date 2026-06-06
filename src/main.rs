@@ -14,13 +14,15 @@ use crate::layout::all_crossing_minimization_sweep::reduce_all_crossings_sweep;
 use crate::layout::back_edge_removal::back_edge_removal;
 use crate::layout::sort_incoming_and_outgoing::sort_incoming_and_outgoing;
 use crate::lexer::TokenCoordinate;
+use crate::output::svg::to_svg;
 use annotate_snippets::AnnotationKind;
 use annotate_snippets::Level;
+use std::fmt::Display;
 use std::path::PathBuf;
 
 use annotate_snippets::Snippet;
 use annotate_snippets::renderer::{DecorStyle, Renderer};
-use clap::Parser;
+use clap::{Parser, ValueEnum};
 use layout::all_crossing_minimization_ilp::reduce_all_crossings_ilp;
 use layout::dummy_node_generation::dummy_node_generation;
 use layout::dummy_node_removal::dummy_node_removal;
@@ -44,13 +46,33 @@ struct Cli {
     #[arg(short, long, value_name = "IN_FILE")]
     input: Option<std::path::PathBuf>,
 
-    /// Output XML file. If missing, the xml data will be written to standard output.
+    /// Output file. If missing, the data will be written to standard output.
     #[arg(short, long, value_name = "OUT_FILE")]
     output: Option<std::path::PathBuf>,
+
+    #[arg(short = 'f', long, value_name = "FORMAT", default_value_t = OutputFormat::Svg)]
+    output_format: OutputFormat,
 
     /// Output visibility table to this file (CSV format).
     #[arg(short, long, value_name = "VISIBILITY_FILE")]
     visibility_table: Option<std::path::PathBuf>,
+}
+
+#[derive(ValueEnum, Clone)]
+enum OutputFormat {
+    Bpmn,
+    Svg,
+    Png,
+}
+
+impl Display for OutputFormat {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            OutputFormat::Bpmn => write!(f, ".bpmn"),
+            OutputFormat::Svg => write!(f, ".svg"),
+            OutputFormat::Png => write!(f, ".png"),
+        }
+    }
 }
 
 pub struct BpmdSourceFile {
@@ -129,11 +151,18 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     };
 
     layout_graph(&mut graph, &mut timer, &bpmd_source_files)?;
-    let bpmn = timer.time_it("XML export", || to_xml::generate_bpmn(&graph));
+    let output_data = match cli.output_format {
+        OutputFormat::Bpmn => timer.time_it("XML export", || to_xml::generate_bpmn(&graph)),
+        OutputFormat::Svg => timer.time_it("SVG export", || to_svg(&graph)),
+        OutputFormat::Png => {
+            let _svg = timer.time_it("SVG export", || to_svg(&graph));
+            timer.time_it("Png export", || todo!())
+        }
+    };
 
     match cli.output {
-        Some(pb) => std::fs::write(pb, bpmn)?,
-        None => print!("{bpmn}"),
+        Some(pb) => std::fs::write(pb, output_data)?,
+        None => print!("{output_data}"),
     };
 
     Ok(())
