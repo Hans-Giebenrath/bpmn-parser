@@ -12,6 +12,8 @@ mod pool_id_matcher;
 mod to_xml;
 use crate::layout::all_crossing_minimization_sweep::reduce_all_crossings_sweep;
 use crate::layout::back_edge_removal::back_edge_removal;
+use crate::layout::fix_boundary_event_connections;
+use crate::layout::fix_boundary_event_connections::fix_boundary_event_connections;
 use crate::layout::sort_incoming_and_outgoing::sort_incoming_and_outgoing;
 use crate::lexer::TokenCoordinate;
 use crate::output::svg::to_svg;
@@ -68,9 +70,9 @@ enum OutputFormat {
 impl Display for OutputFormat {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            OutputFormat::Bpmn => write!(f, ".bpmn"),
-            OutputFormat::Svg => write!(f, ".svg"),
-            OutputFormat::Png => write!(f, ".png"),
+            OutputFormat::Bpmn => write!(f, "bpmn"),
+            OutputFormat::Svg => write!(f, "svg"),
+            OutputFormat::Png => write!(f, "png"),
         }
     }
 }
@@ -209,6 +211,9 @@ fn layout_graph(
     timer.time_it("find_straight_edges", || find_straight_edges(graph));
     timer.time_it("edge_routing", || edge_routing(graph));
     timer.time_it("dummy_node_removal", || dummy_node_removal(graph));
+    timer.time_it("fix_boundary_event_connections", || {
+        fix_boundary_event_connections(graph)
+    });
 
     Ok(())
 }

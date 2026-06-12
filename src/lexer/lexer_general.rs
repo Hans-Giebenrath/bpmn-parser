@@ -85,7 +85,7 @@ pub(crate) struct EdgeMeta {
     pub(crate) text_label: String,
 }
 
-#[derive(Debug, Clone, Eq, PartialEq)]
+#[derive(Debug, Clone, Copy, Eq, PartialEq)]
 pub enum DataType {
     Store,
     Object,
@@ -140,7 +140,7 @@ pub(crate) struct DataFlowMeta {
     pub(crate) text_label: String,
 }
 
-#[derive(Debug, Clone, Eq, PartialEq)]
+#[derive(Debug, Clone, Copy, Eq, PartialEq)]
 pub enum GatewayType {
     /// X
     Exclusive,
@@ -517,6 +517,8 @@ fn to_boundary_event(mut tokens: Tokens, backup_tc: TokenCoordinate) -> AResult 
         boundary_event: BoundaryEvent {
             event_type,
             interrupt_kind,
+            x: 0,
+            y: 0,
         },
     }))
 }

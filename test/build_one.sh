@@ -46,10 +46,10 @@ correct_csv_file="$dir/${basename}.csv.correct"
 vis_table=false
 
 if grep -q '// GENERATE VISIBILITY TABLE' "$f"; then
-    run -i "$f" -o "${f%.bpmd}.xml" -v "$csv_file"
+    run -i "$f" -o "${f%.bpmd}.xml" -f bpmn -v "$csv_file"
     vis_table=true
 else
-    run -i "$f" -o "${f%.bpmd}.xml"
+    run -i "$f" -o "${f%.bpmd}.xml" -f bpmn
 fi
 
 cat <<EOF >>"$tmp_adoc_file"

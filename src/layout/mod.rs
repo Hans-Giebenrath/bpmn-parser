@@ -6,6 +6,7 @@ pub mod constraint;
 pub mod dummy_node_generation;
 pub mod dummy_node_removal;
 pub mod edge_routing;
+pub mod fix_boundary_event_connections;
 pub mod introduce_snake_edge_bisect_dummies;
 pub mod port_assignment;
 pub mod postprocess_ports_and_vertical_edges;

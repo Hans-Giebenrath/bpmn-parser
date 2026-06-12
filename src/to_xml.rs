@@ -309,13 +309,12 @@ pub fn generate_bpmn(graph: &Graph) -> String {
             continue;
         };
 
-        let &(start_x, start_y) = bend_points.first().unwrap();
-        if edge.attached_to_boundary_event.is_some() {
+        if let Some(boundary_event) = &edge.attached_to_boundary_event {
             bpmn.push_str(&format!(
                 r#"      <bpmndi:BPMNShape id="BoundaryEvent_{}_{}_di" bpmnElement="BoundaryEvent_{}_{}">
         <dc:Bounds x="{}" y="{}" width="{}" height="{}" />
       </bpmndi:BPMNShape>
-"#, edge.from.0, edge_idx, edge.from.0, edge_idx, start_x.strict_sub(EVENT_NODE_WIDTH / 2), start_y.strict_sub(EVENT_NODE_HEIGHT / 2), EVENT_NODE_WIDTH, EVENT_NODE_HEIGHT
+"#, edge.from.0, edge_idx, edge.from.0, edge_idx, boundary_event.x, boundary_event.y, EVENT_NODE_WIDTH, EVENT_NODE_HEIGHT
             ));
         }
 
@@ -324,27 +323,8 @@ pub fn generate_bpmn(graph: &Graph) -> String {
             AdditionalEdgeShapeInfo(edge),
         ));
 
-        let (mut first_transform_x, mut first_transform_y) =
-            if edge.attached_to_boundary_event.is_none() {
-                (0, 0)
-            } else if n!(edge.from).port_is_left_or_right(start_y) {
-                // For boundary events our edge starts at the boundary of the boundary event,
-                // so we need to shift it. But it depends on which side it leaves. Here it is to the
-                // right side (atm left side boundary events are unsupported).
-                (EVENT_NODE_WIDTH / 2, 0)
-            } else if start_y <= n!(edge.from).y {
-                // Leaves at the top.
-                (0, -(EVENT_NODE_HEIGHT as isize / 2))
-            } else {
-                // Leaves at the bottom.
-                (0, EVENT_NODE_HEIGHT as isize / 2)
-            };
         bend_points.iter().for_each(|(x, y)| {
-            bpmn.push_str(&format!(
-                "        <di:waypoint x=\"{}\" y=\"{}\" />\n",
-                x + std::mem::replace(&mut first_transform_x, 0),
-                (*y as isize + std::mem::replace(&mut first_transform_y, 0)) as usize
-            ))
+            bpmn.push_str(&format!("        <di:waypoint x=\"{x}\" y=\"{y}\" />\n",))
         });
 
         bpmn.push_str("      </bpmndi:BPMNEdge>\n");

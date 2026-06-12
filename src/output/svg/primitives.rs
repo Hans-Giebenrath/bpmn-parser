@@ -7,10 +7,28 @@
 //! reference it while drawing.
 
 use cosmic_text::{Align, Attrs, Buffer, BufferLine, FontSystem, Metrics, Shaping, Wrap};
+
 use std::fmt::Write as _;
-const STROKE_WIDTH: &str = "0.8";
+
+use crate::{
+    common::{
+        bpmn_node::{ActivityType, EventVisual, InterruptKind, TaskType},
+        edge::FlowType,
+        graph::{
+            ACTIVITY_NODE_HEIGHT, ACTIVITY_NODE_WIDTH, DATAOBJECT_NODE_HEIGHT,
+            DATAOBJECT_NODE_WIDTH, DATASTORE_NODE_HEIGHT, DATASTORE_NODE_WIDTH, EVENT_NODE_HEIGHT,
+            EVENT_NODE_WIDTH, GATEWAY_NODE_HEIGHT, GATEWAY_NODE_WIDTH, MAX_NODE_WIDTH,
+        },
+    },
+    lexer::{DataType, EventType, GatewayType},
+};
+pub const STROKE_WIDTH: f64 = 2.;
+pub const FLOW_CORNER_RADIUS: usize = 7;
+pub const MESSAGE_FLOW_START_MARKER_RADIUS: f64 = 4.;
+pub const MESSAGE_FLOW_END_MARKER_WIDTH: f64 = 10.;
 
 #[derive(Debug, Clone)]
+/// TODO make this a Cow, as most of the time no escaping is needed.
 pub struct EscapedSvgAttribute(String);
 
 impl EscapedSvgAttribute {
@@ -105,7 +123,7 @@ impl Default for SvgStyle {
             line_height: 14.0,
             font_color: EscapedSvgAttribute::new("#111"),
             stroke: EscapedSvgAttribute::new("#222"),
-            fill: EscapedSvgAttribute::new("none"),
+            fill: EscapedSvgAttribute::new("#fff"),
         }
     }
 }
@@ -118,6 +136,7 @@ pub struct Svg {
     height: usize,
     body: String,
     style: SvgStyle,
+    font_system: FontSystem,
 }
 
 impl Svg {
@@ -127,6 +146,7 @@ impl Svg {
             height: 0,
             body: String::new(),
             style: SvgStyle::default(),
+            font_system: FontSystem::new(),
         }
     }
 
@@ -138,7 +158,7 @@ impl Svg {
                 r#"<svg xmlns="http://www.w3.org/2000/svg" width="{0}" height="{1}" viewBox="0 0 {0} {1}" role="img">"#,
                 self.width, self.height,
             ).unwrap();
-        writeln!(out, "{}", super::defs::defs(&self.style.stroke.0)).unwrap();
+        writeln!(out, "{}", super::defs::defs(&self.style.stroke.0,)).unwrap();
         writeln!(out, "{}", self.body).unwrap();
         writeln!(out, "</svg>").unwrap();
         out
@@ -241,6 +261,7 @@ impl Svg {
         // Rotation is done via CSS, hence the "pool-title" class.
         write_wrapped_text(
             &mut self.body,
+            &mut self.font_system,
             pool_header_width / 2,
             height / 2,
             title,
@@ -259,6 +280,7 @@ impl Svg {
             let merged = MergedSvgStyle::new(&self.style, lane_style);
             write_wrapped_text(
                 &mut self.body,
+                &mut self.font_system,
                 pool_header_width + lane_header_width / 2,
                 cumulative_height + lane_height / 2,
                 lane_title,
@@ -273,335 +295,417 @@ impl Svg {
         writeln!(self.body, "</g>").unwrap();
     }
 
-    //pub fn draw_task(
-    //    &mut self,
-    //    top_left_corner_xy: (usize, usize),
-    //    width: usize,
-    //    height: usize,
-    //    text: &str,
-    //    task_type: TaskType,
-    //) {
-    //    let (x, y) = top_left_corner_xy;
-    //    let id = symbol_for_task(task_type);
+    pub fn draw_task(
+        &mut self,
+        (x, y): (usize, usize),
+        text: &str,
+        element_style: &ElementSvgStyle,
+        activity_type: &ActivityType,
+    ) {
+        let merged = MergedSvgStyle::new(&self.style, element_style);
+        writeln!(
+            self.body,
+            r##"<g class="task" transform="translate({},{})">
+            <use href="#task-box" x="0" y="0" stroke="{}" fill="{}" width="{ACTIVITY_NODE_WIDTH}" height="{ACTIVITY_NODE_HEIGHT}" stroke-width="{STROKE_WIDTH}" />
+            "##,
+            x, y, merged.stroke, merged.fill
+        )
+        .unwrap();
 
-    //    writeln!(
-    //        self.body,
-    //        r#"<g class="bpmn-task bpmn-task-{:?}" transform="translate({},{})">"#,
-    //        task_type, x, y
-    //    )
-    //    .unwrap();
-    //    writeln!(
-    //            self.body,
-    //            r#"  <rect x="0" y="0" width="{}" height="{}" rx="10" ry="10" fill="{}" stroke="{}" stroke-width="1.5"/>"#,
-    //            width, height, self.style.fill, self.style.stroke
-    //        ).unwrap();
+        let activity_type_href = match activity_type {
+            ActivityType::Task(TaskType::None) => "",
+            ActivityType::Task(TaskType::Send) => "task-send",
+            ActivityType::Task(TaskType::Receive) => "task-receive",
+            ActivityType::Task(TaskType::Manual) => "task-manual",
+            ActivityType::Task(TaskType::User) => "task-user",
+            ActivityType::Task(TaskType::Script) => "task-script",
+            ActivityType::Task(TaskType::Service) => "task-service",
+            ActivityType::Task(TaskType::Businessrule) => "task-business-rule",
+            ActivityType::Subprocess => todo!(),
+            ActivityType::CallActivity => todo!(),
+            ActivityType::EventSubprocess => todo!(),
+            ActivityType::Transaction => todo!(),
+        };
+        if !activity_type_href.is_empty() {
+            writeln!(
+                self.body,
+                r##"  <use href="#{activity_type_href}" x="8" y="8" width="20" height="20"/>"##,
+            )
+            .unwrap();
+        }
 
-    //    if let Some(symbol_id) = id {
-    //        writeln!(
-    //            self.body,
-    //            r##"  <use href="#{}" x="10" y="8" width="18" height="18"/>"##,
-    //            symbol_id
-    //        )
-    //        .unwrap();
-    //    }
-
-    //    self.write_wrapped_text(
-    //        x + width / 2,
-    //        y + height / 2,
-    //        text,
-    //        width.saturating_sub(18),
-    //        true,
-    //    );
-    //    writeln!(self.body, "</g>").unwrap();
-    //}
+        write_wrapped_text(
+            &mut self.body,
+            &mut self.font_system,
+            ACTIVITY_NODE_WIDTH / 2,
+            ACTIVITY_NODE_HEIGHT / 2,
+            text,
+            Some((ACTIVITY_NODE_WIDTH - STROKE_WIDTH as usize) - 4),
+            true,
+            false,
+            &merged,
+            "",
+        );
+        writeln!(self.body, "</g>").unwrap();
+    }
 
     ///// Draws a BPMN event. The event is positioned by its top-left bounding box.
-    //pub fn draw_event(
-    //    &mut self,
-    //    top_left_corner_xy: (usize, usize),
-    //    width: usize,
-    //    height: usize,
-    //    text: &str,
-    //    event: EventSpec,
-    //) {
-    //    let (x, y) = top_left_corner_xy;
-    //    let cx = x + width / 2;
-    //    let cy = y + height / 2;
-    //    let r = width.min(height) / 2;
+    pub fn draw_event(
+        &mut self,
+        (x, y): (usize, usize),
+        text: &str,
+        event_type: EventType,
+        event_visual: EventVisual,
+        style: &ElementSvgStyle,
+    ) {
+        let merged = MergedSvgStyle::new(&self.style, style);
 
-    //    let stroke_width = match event.kind {
-    //        EventKind::Start => 1.5,
-    //        EventKind::Intermediate => 1.5,
-    //        EventKind::End => 3.0,
-    //    };
+        let (event_outer_symbol, event_inner_symbol_fill_kind, stroke, fill) = match event_visual {
+            EventVisual::Catch(InterruptKind::NonInterrupting) => {
+                ("event-dashed-dashed", "catching", merged.stroke, "none")
+            }
+            EventVisual::Catch(InterruptKind::Interrupting) => {
+                ("event-solid-solid", "catching", merged.stroke, "none")
+            }
+            EventVisual::Start(InterruptKind::NonInterrupting) => {
+                ("event-dashed", "catching", merged.stroke, "none")
+            }
+            EventVisual::Start(InterruptKind::Interrupting) => {
+                ("event-solid", "catching", merged.stroke, "none")
+            }
+            EventVisual::Throw => ("event-solid-solid", "throwing", "none", merged.stroke),
+            EventVisual::End => ("event-thick", "throwing", "none", merged.stroke),
+        };
 
-    //    writeln!(
-    //        self.body,
-    //        r#"<g class="bpmn-event bpmn-event-{:?} bpmn-event-{:?}">"#,
-    //        event.kind, event.event_type
-    //    )
-    //    .unwrap();
-    //    writeln!(
-    //        self.body,
-    //        r#"  <circle cx="{}" cy="{}" r="{}" fill="{}" stroke="{}" stroke-width="{}"/>"#,
-    //        cx,
-    //        cy,
-    //        r.saturating_sub(2),
-    //        self.style.fill,
-    //        self.style.stroke,
-    //        stroke_width
-    //    )
-    //    .unwrap();
+        let event_inner_symbol = match event_type {
+            EventType::Blank => "blank",
+            EventType::Message => "message",
+            EventType::Timer => "timer",
+            EventType::Conditional => "conditional",
+            EventType::Link => "link",
+            EventType::Signal => "signal",
+            EventType::Error => "error",
+            EventType::Escalation => "escalation",
+            EventType::Termination => "termination",
+            EventType::Compensation => "compensation",
+            EventType::Cancel => "cancel",
+            EventType::Multiple => "multiple",
+            EventType::MultipleParallel => "multiple-parallel",
+        };
 
-    //    if matches!(event.kind, EventKind::Intermediate) {
-    //        writeln!(
-    //            self.body,
-    //            r#"  <circle cx="{}" cy="{}" r="{}" fill="none" stroke="{}" stroke-width="1"/>"#,
-    //            cx,
-    //            cy,
-    //            r.saturating_sub(6),
-    //            self.style.stroke
-    //        )
-    //        .unwrap();
-    //    }
+        writeln!(
+            self.body,
+            r##"
+<g class="event event-{event_outer_symbol} bpmn-event-{event_inner_symbol_fill_kind} bpmn-event-{event_inner_symbol}">
+  <use href="#{event_outer_symbol}" x="{x}" y="{y}" width="{EVENT_NODE_WIDTH}" height="{EVENT_NODE_HEIGHT}" stroke="{}" fill="{}"/>
+  <use href="#event-{event_inner_symbol}-{event_inner_symbol_fill_kind}" x="{x}" y="{y}" width="{EVENT_NODE_WIDTH}" height="{EVENT_NODE_HEIGHT}" stroke="{stroke}" fill="{fill}"/>
+"##,
+merged.stroke, merged.fill
+        )
+        .unwrap();
 
-    //    if let Some(symbol_id) = symbol_for_event(event.event_type) {
-    //        let marker_size = r.saturating_sub(10).max(10) * 2;
-    //        let mx = cx.saturating_sub(marker_size / 2);
-    //        let my = cy.saturating_sub(marker_size / 2);
-    //        let class = if event.filled_marker {
-    //            "filled"
-    //        } else {
-    //            "outline"
-    //        };
-    //        writeln!(
-    //            self.body,
-    //            r##"  <use class="{}" href="#{}" x="{}" y="{}" width="{}" height="{}"/>"##,
-    //            class, symbol_id, mx, my, marker_size, marker_size
-    //        )
-    //        .unwrap();
-    //    }
+        if !text.is_empty() {
+            write_wrapped_text(
+                &mut self.body,
+                &mut self.font_system,
+                x + EVENT_NODE_WIDTH / 2,
+                y + EVENT_NODE_HEIGHT + 10,
+                text,
+                Some(MAX_NODE_WIDTH),
+                false,
+                false,
+                &merged,
+                "",
+            );
+        }
+        writeln!(self.body, "</g>").unwrap();
+    }
 
-    //    writeln!(self.body, "</g>").unwrap();
+    pub fn draw_gateway(
+        &mut self,
+        (x, y): (usize, usize),
+        text: &str,
+        element_style: &ElementSvgStyle,
+        gateway_type: GatewayType,
+    ) {
+        let merged = MergedSvgStyle::new(&self.style, element_style);
 
-    //    if !text.is_empty() {
-    //        self.write_wrapped_text(cx, y + height + 16, text, width.max(70), false);
-    //    }
-    //}
+        let symbol = match gateway_type {
+            GatewayType::Exclusive => "exclusive",
+            GatewayType::Parallel => "parallel",
+            GatewayType::Inclusive => "inclusive",
+            GatewayType::Event => "event",
+        };
 
-    ///// Draws a BPMN gateway diamond. Positioned by top-left bounding box.
-    //pub fn draw_gateway(
-    //    &mut self,
-    //    top_left_corner_xy: (usize, usize),
-    //    width: usize,
-    //    height: usize,
-    //    text: &str,
-    //    gateway_type: GatewayType,
-    //) {
-    //    let (x, y) = top_left_corner_xy;
-    //    let cx = x + width / 2;
-    //    let cy = y + height / 2;
-    //    let symbol_id = symbol_for_gateway(gateway_type);
+        writeln!(
+            self.body,
+            r##"<g class="gateway gateway-{symbol}" transform="translate({x},{y})">"##,
+        )
+        .unwrap();
+        writeln!(
+            self.body,
+            r##"
+<use href="#gateway-box" x="0" y="0" />
+<use href="#gateway-{symbol}" x="0" y="0" />
+"##,
+        )
+        .unwrap();
 
-    //    writeln!(
-    //        self.body,
-    //        r#"<g class="bpmn-gateway bpmn-gateway-{:?}">"#,
-    //        gateway_type
-    //    )
-    //    .unwrap();
-    //    writeln!(
-    //            self.body,
-    //            r#"  <polygon points="{},{} {},{} {},{} {},{}" fill="{}" stroke="{}" stroke-width="1.5"/>"#,
-    //            cx, y,
-    //            x + width, cy,
-    //            cx, y + height,
-    //            x, cy,
-    //            self.style.fill,
-    //            self.style.stroke
-    //        ).unwrap();
-    //    writeln!(
-    //        self.body,
-    //        r##"  <use href="#{}" x="{}" y="{}" width="{}" height="{}"/>"##,
-    //        symbol_id,
-    //        x + width / 4,
-    //        y + height / 4,
-    //        width / 2,
-    //        height / 2
-    //    )
-    //    .unwrap();
-    //    writeln!(self.body, "</g>").unwrap();
-
-    //    if !text.is_empty() {
-    //        self.write_wrapped_text(cx, y + height + 16, text, width.max(80), false);
-    //    }
-    //}
+        if !text.is_empty() {
+            write_wrapped_text(
+                &mut self.body,
+                &mut self.font_system,
+                x + GATEWAY_NODE_WIDTH / 2,
+                y + GATEWAY_NODE_HEIGHT + 10,
+                text,
+                Some(MAX_NODE_WIDTH),
+                false,
+                false,
+                &merged,
+                "",
+            );
+        }
+        writeln!(self.body, "</g>").unwrap();
+    }
 
     ///// Draws BPMN data object/input/output/store.
-    //pub fn draw_data(
-    //    &mut self,
-    //    top_left_corner_xy: (usize, usize),
-    //    width: usize,
-    //    height: usize,
-    //    text: &str,
-    //    data_type: DataType,
-    //) {
-    //    let (x, y) = top_left_corner_xy;
-    //    let symbol_id = symbol_for_data(data_type);
+    pub fn draw_data(
+        &mut self,
+        (x, y): (usize, usize),
+        text: &str,
+        data_type: DataType,
+        style: &ElementSvgStyle,
+    ) {
+        let merged = MergedSvgStyle::new(&self.style, style);
+        let (symbol, width, height) = match data_type {
+            DataType::Store => ("data-store", DATASTORE_NODE_WIDTH, DATASTORE_NODE_HEIGHT),
+            DataType::Object => ("data-object", DATAOBJECT_NODE_WIDTH, DATAOBJECT_NODE_HEIGHT),
+        };
 
-    //    writeln!(
-    //        self.body,
-    //        r#"<g class="bpmn-data bpmn-data-{:?}" transform="translate({},{})">"#,
-    //        data_type, x, y
-    //    )
-    //    .unwrap();
-    //    writeln!(
-    //        self.body,
-    //        r##"  <use href="#{}" x="0" y="0" width="{}" height="{}"/>"##,
-    //        symbol_id, width, height
-    //    )
-    //    .unwrap();
-    //    writeln!(self.body, "</g>").unwrap();
+        writeln!(
+            self.body,
+            r#"<g class="{symbol}" transform="translate({x},{y})">"#,
+        )
+        .unwrap();
 
-    //    if !text.is_empty() {
-    //        self.write_wrapped_text(x + width / 2, y + height + 15, text, width.max(80), false);
-    //    }
-    //}
+        writeln!(
+            self.body,
+            r##"  <use href="#{symbol}" x="0" y="0" stroke-width="{STROKE_WIDTH}" width="{width}" height="{height}" fill="{}" stroke="{}" />"##,
+            merged.fill, merged.stroke,
+        )
+        .unwrap();
 
-    ///// Draws a sequence flow with a solid line and filled arrowhead.
-    //pub fn draw_sequence_flow(&mut self, points: &[(usize, usize)], label: Option<&str>) {
-    //    self.draw_flow(points, label, FlowKind::Sequence);
-    //}
+        if !text.is_empty() {
+            write_wrapped_text(
+                &mut self.body,
+                &mut self.font_system,
+                width / 2,
+                height + 10,
+                text,
+                Some(MAX_NODE_WIDTH),
+                false,
+                false,
+                &merged,
+                "",
+            );
+        }
 
-    ///// Draws a data association/data flow with a dotted line and open arrowhead.
-    //pub fn draw_data_flow(&mut self, points: &[(usize, usize)], label: Option<&str>) {
-    //    self.draw_flow(points, label, FlowKind::DataAssociation);
-    //}
+        writeln!(self.body, "</g>").unwrap();
+    }
 
-    ///// Draws a message flow with a dashed line, open circle start, and open arrowhead.
-    //pub fn draw_message_flow(&mut self, points: &[(usize, usize)], label: Option<&str>) {
-    //    self.draw_flow(points, label, FlowKind::Message);
-    //}
+    pub fn draw_flow(
+        &mut self,
+        points: &[(usize, usize)],
+        label: &Option<String>,
+        flow_type: &FlowType,
+        element_style: &ElementSvgStyle,
+    ) {
+        if points.len() < 2 {
+            return;
+        }
 
-    ///// Lower-level escape hatch for custom SVG snippets.
-    ///// The caller is responsible for emitting valid SVG.
-    //pub fn push_raw(&mut self, svg_fragment: &str) {
-    //    self.body.push_str(svg_fragment);
-    //    if !svg_fragment.ends_with('\n') {
-    //        self.body.push('\n');
-    //    }
-    //}
+        let merged = MergedSvgStyle::new(&self.style, element_style);
 
-    //fn draw_partition(
-    //    &mut self,
-    //    class_name: &str,
-    //    header_width: usize,
-    //    height: usize,
-    //    content_width: usize,
-    //    top_left_corner_xy: (usize, usize),
-    //    title: &str,
-    //    header_fill: &str,
-    //) {
-    //}
+        let (d, attributes, stroke_width) = match flow_type {
+            FlowType::SequenceFlow => (
+                flow_points(points, 0., 3. + 2. * STROKE_WIDTH),
+                r##"class="sequence-flow" marker-end="url(#sequence-flow-head)""##,
+                STROKE_WIDTH,
+            ),
+            FlowType::DataFlow(..) => (
+                flow_points(points, 0., STROKE_WIDTH / 2.),
+                r#" class="data-association" stroke-dasharray="1 7" stroke-linecap="round" marker-end="url(#data-association-head)" "#,
+                // Kinda looks like the data associations have a finer stroke in the BPMN spec.
+                // To me personally it looks nicer this way actually.
+                1.6,
+            ),
+            FlowType::MessageFlow(..) => (
+                flow_points(
+                    points,
+                    MESSAGE_FLOW_START_MARKER_RADIUS / 2.,
+                    MESSAGE_FLOW_END_MARKER_WIDTH + 1.0 * STROKE_WIDTH,
+                ),
+                r##"class="message-flow" stroke-dasharray="10 8" marker-start="url(#message-start)" marker-end="url(#message-flow-head)""##,
+                STROKE_WIDTH,
+            ),
+        };
 
-    //fn draw_flow(&mut self, points: &[(usize, usize)], label: Option<&str>, kind: FlowKind) {
-    //    if points.len() < 2 {
-    //        return;
-    //    }
+        writeln!(
+            self.body,
+            r#"<path d="{d}" fill="none" stroke="{}" stroke-width="{stroke_width}" {attributes} />"#,
+            merged.stroke,
+        )
+        .unwrap();
 
-    //    let d = polyline_points(points);
-    //    let (class_name, extra, marker_start, marker_end) = match kind {
-    //        FlowKind::Sequence => (
-    //            "bpmn-sequence-flow",
-    //            "",
-    //            "",
-    //            r##" marker-end="url(#arrow-filled)""##,
-    //        ),
-    //        FlowKind::DataAssociation => (
-    //            "bpmn-data-association",
-    //            r#" stroke-dasharray="1 5" stroke-linecap="round""#,
-    //            "",
-    //            r##" marker-end="url(#arrow-open)""##,
-    //        ),
-    //        FlowKind::Message => (
-    //            "bpmn-message-flow",
-    //            r#" stroke-dasharray="8 5""#,
-    //            r##" marker-start="url(#message-start)""##,
-    //            r##" marker-end="url(#arrow-open)""##,
-    //        ),
-    //    };
-
-    //    writeln!(
-    //            self.body,
-    //            r#"<polyline class="{}" points="{}" fill="none" stroke="{}" stroke-width="1.5"{}{}{} />"#,
-    //            class_name,
-    //            d,
-    //            self.style.stroke,
-    //            extra,
-    //            marker_start,
-    //            marker_end
-    //        ).unwrap();
-
-    //    if let Some(label) = label.filter(|s| !s.is_empty()) {
-    //        let mid = points[points.len() / 2];
-    //        self.write_wrapped_text(mid.0, mid.1.saturating_sub(6), label, 120, false);
-    //    }
-    //}
+        if let Some(label) = label.as_ref().filter(|s| !s.is_empty()) {
+            let mid = if (points.len() & 1) == 1 {
+                // Uneven, so just take middle point.
+                points[points.len() / 2]
+            } else {
+                let a = points[points.len() / 2];
+                let b = points[(points.len() / 2) + 1];
+                ((a.0 + b.0) / 2, (a.1 + b.1) / 2)
+            };
+            write_wrapped_text(
+                &mut self.body,
+                &mut self.font_system,
+                mid.0,
+                mid.1.saturating_sub(merged.line_height as usize / 2),
+                &label,
+                None,
+                false,
+                false,
+                &merged,
+                "",
+            );
+        }
+    }
 }
 
-//fn symbol_for_task(task_type: TaskType) -> Option<&'static str> {
-//    match task_type {
-//        TaskType::None => None,
-//        TaskType::User => Some("task-user"),
-//        TaskType::Manual => Some("task-manual"),
-//        TaskType::Service => Some("task-service"),
-//        TaskType::Script => Some("task-script"),
-//        TaskType::BusinessRule => Some("task-business-rule"),
-//        TaskType::Send => Some("task-send"),
-//        TaskType::Receive => Some("task-receive"),
-//    }
-//}
-//
-//fn symbol_for_event(event_type: EventType) -> Option<&'static str> {
-//    match event_type {
-//        EventType::None => None,
-//        EventType::Message => Some("event-message"),
-//        EventType::Timer => Some("event-timer"),
-//        EventType::Error => Some("event-error"),
-//        EventType::Signal => Some("event-signal"),
-//        EventType::Conditional => Some("event-conditional"),
-//        EventType::Escalation => Some("event-escalation"),
-//        EventType::Link => Some("event-link"),
-//        EventType::Terminate => Some("event-terminate"),
-//    }
-//}
-//
-//fn symbol_for_gateway(gateway_type: GatewayType) -> &'static str {
-//    match gateway_type {
-//        GatewayType::Exclusive => "gateway-exclusive",
-//        GatewayType::Inclusive => "gateway-inclusive",
-//        GatewayType::Parallel => "gateway-parallel",
-//        GatewayType::EventBased => "gateway-event-based",
-//        GatewayType::Complex => "gateway-complex",
-//    }
-//}
-//
-//fn symbol_for_data(data_type: DataType) -> &'static str {
-//    match data_type {
-//        DataType::DataObject => "data-object",
-//        DataType::DataInput => "data-input",
-//        DataType::DataOutput => "data-output",
-//        DataType::DataStore => "data-store",
-//    }
-//}
-//
-fn polyline_points(points: &[(usize, usize)]) -> String {
+fn move_towards(a: f64, b: f64, k: f64) -> f64 {
+    a + (b - a).clamp(-k, k)
+}
+
+fn flow_points(points: &[(usize, usize)], first_offset: f64, last_offset: f64) -> String {
     let mut out = String::new();
-    for (i, (x, y)) in points.iter().enumerate() {
-        if i > 0 {
-            out.push(' ');
-        }
-        write!(out, "{},{}", x, y).unwrap();
+    if let [(x1, y1), (x2, y2), ..] = points {
+        write!(
+            out,
+            "M{} {} ",
+            move_towards(*x1 as f64, *x2 as f64, first_offset),
+            move_towards(*y1 as f64, *y2 as f64, first_offset),
+        )
+        .unwrap();
     }
+    for &[prev, cur, next] in points.array_windows() {
+        if prev.1 == cur.1 {
+            if prev.0 < cur.0 {
+                // `prev` to `cur` is goes right.
+                write!(out, "L{} {} ", cur.0 - FLOW_CORNER_RADIUS, cur.1).unwrap();
+                if cur.1 < next.1 {
+                    // line goes downwards
+                    write!(
+                        out,
+                        "A {FLOW_CORNER_RADIUS} {FLOW_CORNER_RADIUS} 0 0 1 {} {} ",
+                        cur.0,
+                        cur.1 + FLOW_CORNER_RADIUS,
+                    )
+                    .unwrap();
+                } else {
+                    assert!(cur.1 > next.1);
+                    // line goes upwards
+                    write!(
+                        out,
+                        "A {FLOW_CORNER_RADIUS} {FLOW_CORNER_RADIUS} 0 0 0 {} {} ",
+                        cur.0,
+                        cur.1 - FLOW_CORNER_RADIUS,
+                    )
+                    .unwrap();
+                }
+            } else {
+                assert!(prev.0 > cur.0);
+                // `prev` to `cur` is goes left.
+                write!(out, "L{} {} ", cur.0 + FLOW_CORNER_RADIUS, cur.1).unwrap();
+                if cur.1 < next.1 {
+                    // line goes downwards
+                    write!(
+                        out,
+                        "A {FLOW_CORNER_RADIUS} {FLOW_CORNER_RADIUS} 0 0 0 {} {} ",
+                        cur.0,
+                        cur.1 + FLOW_CORNER_RADIUS,
+                    )
+                    .unwrap();
+                } else {
+                    assert!(cur.1 > next.1);
+                    // line goes upwards
+                    write!(
+                        out,
+                        "A {FLOW_CORNER_RADIUS} {FLOW_CORNER_RADIUS} 0 0 1 {} {} ",
+                        cur.0,
+                        cur.1 - FLOW_CORNER_RADIUS,
+                    )
+                    .unwrap();
+                }
+            }
+        } else if prev.1 < cur.1 {
+            // `prev` to `cur` goes downwards
+            write!(out, "L{} {} ", cur.0, cur.1 - FLOW_CORNER_RADIUS).unwrap();
+            if cur.0 > next.0 {
+                // line goes left
+                write!(
+                    out,
+                    "A {FLOW_CORNER_RADIUS} {FLOW_CORNER_RADIUS} 0 0 1 {} {} ",
+                    cur.0 - FLOW_CORNER_RADIUS,
+                    cur.1,
+                )
+                .unwrap();
+            } else {
+                assert!(cur.0 < next.0);
+                // line goes right
+                write!(
+                    out,
+                    "A {FLOW_CORNER_RADIUS} {FLOW_CORNER_RADIUS} 0 0 0 {} {} ",
+                    cur.0 + FLOW_CORNER_RADIUS,
+                    cur.1,
+                )
+                .unwrap();
+            }
+        } else {
+            assert!(prev.1 > cur.1);
+            // `prev` to `cur` goes upwards
+            write!(out, "L{} {} ", cur.0, cur.1 + FLOW_CORNER_RADIUS).unwrap();
+            if cur.0 > next.0 {
+                // line goes left
+                write!(
+                    out,
+                    "A {FLOW_CORNER_RADIUS} {FLOW_CORNER_RADIUS} 0 0 0 {} {} ",
+                    cur.0 - FLOW_CORNER_RADIUS,
+                    cur.1,
+                )
+                .unwrap();
+            } else {
+                assert!(cur.0 < next.0);
+                // line goes right
+                write!(
+                    out,
+                    "A {FLOW_CORNER_RADIUS} {FLOW_CORNER_RADIUS} 0 0 1 {} {}",
+                    cur.0 + FLOW_CORNER_RADIUS,
+                    cur.1,
+                )
+                .unwrap();
+            }
+        }
+    }
+    if let [.., (x2, y2), (x1, y1)] = points {
+        write!(
+            out,
+            "L{} {} ",
+            move_towards(*x1 as f64, *x2 as f64, last_offset),
+            move_towards(*y1 as f64, *y2 as f64, last_offset),
+        )
+        .unwrap();
+    }
+
     out
 }
 
@@ -617,6 +721,7 @@ fn esc_attr(s: &str) -> String {
 
 fn write_wrapped_text(
     body: &mut String,
+    font_system: &mut FontSystem,
     x: usize,
     y: usize,
     text: &str,
@@ -626,12 +731,11 @@ fn write_wrapped_text(
     merged: &MergedSvgStyle,
     class: &str,
 ) {
-    let mut font_system = FontSystem::new();
     let metrics = Metrics::new(merged.font_size, merged.line_height);
 
-    let mut buffer = Buffer::new(&mut font_system, metrics);
+    let mut buffer = Buffer::new(font_system, metrics);
 
-    let mut buffer = buffer.borrow_with(&mut font_system);
+    let mut buffer = buffer.borrow_with(font_system);
 
     // Add some text!
     buffer.set_wrap(Wrap::Word);
@@ -674,7 +778,7 @@ fn write_wrapped_text(
     } else {
         writeln!(
                 body,
-                r#"<text class="{class}" y="{start_y}" text-anchor="middle" dominant-baseline="{dominant_baseline}" font-family="{}" font-size="{}" fill="{}">"#,
+                r#"<text class="{class}" x="{x}" y="{start_y}" text-anchor="middle" dominant-baseline="{dominant_baseline}" font-family="{}" font-size="{}" fill="{}">"#,
                 merged.font_family,
                 merged.font_size,
                 merged.font_color

@@ -19,6 +19,9 @@ pub enum BpmnNode {
 pub struct BoundaryEvent {
     pub event_type: BoundaryEventType,
     pub interrupt_kind: InterruptKind,
+    // Set x and y explicitly. This makes rendering a lot easier, although it is redundant.
+    pub x: usize,
+    pub y: usize,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -37,6 +40,8 @@ pub enum BoundaryEventType {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ActivityType {
+    // TODO missing: task markers, see bpmn p 155, note: the compensation marker can be combined
+    // with the others.
     Task(TaskType),
     Subprocess,
     CallActivity,
@@ -55,13 +60,12 @@ pub enum TaskType {
     Script,
     Service,
     Businessrule,
-    Multiple,
 }
 
 // TODO not sure if the inlined InterruptingKind is a good idea. Maybe it should be
 // part of the container, but this should depend on how the logic can be written more easily in the
 // emitting code (xml, svg, ...).
-#[derive(Eq, Debug, Clone, PartialEq)]
+#[derive(Eq, Debug, Clone, Copy, PartialEq)]
 pub enum EventVisual {
     Start(InterruptKind),
     Catch(InterruptKind),
@@ -133,7 +137,7 @@ impl EventVisual {
     }
 }
 
-#[derive(Eq, Debug, Clone, PartialEq)]
+#[derive(Eq, Debug, Clone, Copy, PartialEq)]
 pub enum InterruptKind {
     NonInterrupting,
     Interrupting,
