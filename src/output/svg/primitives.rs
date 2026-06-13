@@ -6,7 +6,10 @@
 //! Anyway, the idea is to have one big `defs` section which contains all icons, and then we can
 //! reference it while drawing.
 
-use cosmic_text::{Align, Attrs, Buffer, BufferLine, FontSystem, Metrics, Shaping, Wrap};
+use cosmic_text::{
+    Align, Attrs, Buffer, BufferLine, Command, FontSystem, LayoutRun, Metrics, Shaping, SwashCache,
+    Wrap,
+};
 
 use std::fmt::Write as _;
 
@@ -137,16 +140,18 @@ pub struct Svg {
     body: String,
     style: SvgStyle,
     font_system: FontSystem,
+    embed_font: bool,
 }
 
 impl Svg {
-    pub fn new() -> Self {
+    pub fn new(embed_font: bool) -> Self {
         Self {
             width: 0,
             height: 0,
             body: String::new(),
             style: SvgStyle::default(),
             font_system: FontSystem::new(),
+            embed_font,
         }
     }
 
@@ -735,31 +740,26 @@ fn write_wrapped_text(
 
     let mut buffer = Buffer::new(font_system, metrics);
 
-    let mut buffer = buffer.borrow_with(font_system);
-
-    // Add some text!
     buffer.set_wrap(Wrap::Word);
+    buffer.set_size(dbg!(max_width.map(|width| width as f32)), None);
     buffer.set_text(
         // Don't escape just yet. We want to first inspect the text that will be visible.
-        text,
+        dbg!(text),
         &Attrs::new().family(cosmic_text::Family::Name(merged.font_family)),
         Shaping::Advanced,
         Some(Align::Center),
     );
 
-    // Set a size for the text buffer, in pixels
-    buffer.set_size(max_width.map(|width| width as f32), None);
-
     // Perform shaping as desired
-    buffer.shape_until_scroll(false /* not sure? */);
-    let lines = &buffer.lines;
-    if lines.is_empty() {
+    buffer.shape_until_scroll(font_system, false /* not sure? */);
+    let count = buffer.layout_runs().count();
+    let lines = buffer.layout_runs();
+    if count == 0 {
         return;
     }
-
     let (start_y, dominant_baseline) = if center_vertically {
         (
-            y as f32 - (lines.len() as f32 * merged.line_height) / 2.0,
+            y as f32 - ((count - 1) as f32 * merged.line_height) / 2.0,
             "middle",
         )
     } else {
@@ -768,7 +768,7 @@ fn write_wrapped_text(
 
     if rotate {
         assert!(center_vertically); // Otherwise, the center rotation center is wrong
-        writeln!(
+        write!(
                 body,
                 r#"<text class="{class}" transform="translate({x}, {y}) rotate(-90)" text-anchor="middle" dominant-baseline="middle" font-family="{}" font-size="{}" fill="{}">"#,
                 merged.font_family,
@@ -776,7 +776,7 @@ fn write_wrapped_text(
                 merged.font_color
             ).unwrap();
     } else {
-        writeln!(
+        write!(
                 body,
                 r#"<text class="{class}" x="{x}" y="{start_y}" text-anchor="middle" dominant-baseline="{dominant_baseline}" font-family="{}" font-size="{}" fill="{}">"#,
                 merged.font_family,
@@ -785,14 +785,76 @@ fn write_wrapped_text(
             ).unwrap();
     }
 
-    for (i, line) in lines.iter().enumerate() {
+    // When rotating, the `x` transformation is already applied. In that case only `0` needs to be
+    // hardcoded to reset the x state.
+    let tspan_x = if rotate { 0 } else { x };
+    for (i, line) in lines.enumerate() {
         let dy = if i == 0 { 0.0 } else { merged.line_height };
-        writeln!(
+        let start = line.glyphs.first().map(|g| g.start).unwrap_or(0);
+        let end = line.glyphs.last().map(|g| g.end).unwrap_or(start);
+        write!(
             body,
-            r#"  <tspan dy="{dy}">{}</tspan>"#,
-            esc_text(line.text())
+            r#"<tspan x="{tspan_x}" dy="{dy}">{}</tspan>"#,
+            esc_text(&line.text[start..end])
         )
         .unwrap();
     }
     writeln!(body, "</text>").unwrap();
+}
+
+/// TODO! Untested, received form ChatGPT.
+fn run_to_svg_path(
+    font_system: &mut FontSystem,
+    swash_cache: &mut SwashCache,
+    run: &LayoutRun<'_>,
+) -> String {
+    let mut d = String::new();
+
+    for glyph in run.glyphs.iter() {
+        let physical = glyph.physical((0.0, 0.0), 1.0);
+
+        let Some(commands) = swash_cache.get_outline_commands(font_system, physical.cache_key)
+        else {
+            continue;
+        };
+
+        let dx = glyph.x + glyph.x_offset;
+        let dy = run.line_y + glyph.y + glyph.y_offset;
+
+        for cmd in commands {
+            match *cmd {
+                Command::MoveTo(p) => {
+                    d.push_str(&format!("M {} {} ", p.x + dx, p.y + dy));
+                }
+                Command::LineTo(p) => {
+                    d.push_str(&format!("L {} {} ", p.x + dx, p.y + dy));
+                }
+                Command::QuadTo(p1, p2) => {
+                    d.push_str(&format!(
+                        "Q {} {} {} {} ",
+                        p1.x + dx,
+                        p1.y + dy,
+                        p2.x + dx,
+                        p2.y + dy,
+                    ));
+                }
+                Command::CurveTo(p1, p2, p3) => {
+                    d.push_str(&format!(
+                        "C {} {} {} {} {} {} ",
+                        p1.x + dx,
+                        p1.y + dy,
+                        p2.x + dx,
+                        p2.y + dy,
+                        p3.x + dx,
+                        p3.y + dy,
+                    ));
+                }
+                Command::Close => {
+                    d.push_str("Z ");
+                }
+            }
+        }
+    }
+
+    d
 }

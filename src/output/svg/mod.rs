@@ -11,8 +11,8 @@ pub mod primitives;
 use primitives::ElementSvgStyle;
 use proc_macros::n;
 
-pub fn to_svg(graph: &Graph) -> String {
-    let mut svg = primitives::Svg::new();
+pub fn to_svg(graph: &Graph, embed_font: bool) -> String {
+    let mut svg = primitives::Svg::new(embed_font);
     for pool in &graph.pools {
         let pool_style = ElementSvgStyle {
             stroke: pool.stroke_color.as_ref().map(Into::into),

@@ -12,7 +12,6 @@ mod pool_id_matcher;
 mod to_xml;
 use crate::layout::all_crossing_minimization_sweep::reduce_all_crossings_sweep;
 use crate::layout::back_edge_removal::back_edge_removal;
-use crate::layout::fix_boundary_event_connections;
 use crate::layout::fix_boundary_event_connections::fix_boundary_event_connections;
 use crate::layout::sort_incoming_and_outgoing::sort_incoming_and_outgoing;
 use crate::lexer::TokenCoordinate;
@@ -54,6 +53,9 @@ struct Cli {
 
     #[arg(short = 'f', long, value_name = "FORMAT", default_value_t = OutputFormat::Svg)]
     output_format: OutputFormat,
+
+    #[arg(short = 'e', long, default_value_t = false)]
+    svg_embed_font: bool,
 
     /// Output visibility table to this file (CSV format).
     #[arg(short, long, value_name = "VISIBILITY_FILE")]
@@ -155,9 +157,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     layout_graph(&mut graph, &mut timer, &bpmd_source_files)?;
     let output_data = match cli.output_format {
         OutputFormat::Bpmn => timer.time_it("XML export", || to_xml::generate_bpmn(&graph)),
-        OutputFormat::Svg => timer.time_it("SVG export", || to_svg(&graph)),
+        OutputFormat::Svg => timer.time_it("SVG export", || to_svg(&graph, cli.svg_embed_font)),
         OutputFormat::Png => {
-            let _svg = timer.time_it("SVG export", || to_svg(&graph));
+            let _svg = timer.time_it("SVG export", || to_svg(&graph, true));
             timer.time_it("Png export", || todo!())
         }
     };
