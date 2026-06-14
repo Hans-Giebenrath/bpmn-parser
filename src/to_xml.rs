@@ -93,7 +93,7 @@ impl Display for EventDefinition<'_> {
             EventType::Timer => "<bpmn:timerEventDefinition />",
             EventType::Message => "<bpmn:messageEventDefinition />",
             EventType::Conditional => "<bpmn:conditionalEventDefinition />",
-            EventType::Link => "<bpmn:conditionalEventDefinition />",
+            EventType::Link => "<bpmn:linkEventDefinition />",
             EventType::Signal => "<bpmn:signalEventDefinition />",
             EventType::Error => "<bpmn:errorEventDefinition />",
             EventType::Escalation => "<bpmn:escalationEventDefinition />",
