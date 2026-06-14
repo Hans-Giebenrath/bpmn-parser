@@ -24,7 +24,7 @@ pub struct BoundaryEvent {
     pub y: usize,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum BoundaryEventType {
     Error,
     Timer,

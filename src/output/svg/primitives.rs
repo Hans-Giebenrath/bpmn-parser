@@ -15,7 +15,7 @@ use std::fmt::Write as _;
 
 use crate::{
     common::{
-        bpmn_node::{ActivityType, EventVisual, InterruptKind, TaskType},
+        bpmn_node::{ActivityType, BoundaryEventType, EventVisual, InterruptKind, TaskType},
         edge::FlowType,
         graph::{
             ACTIVITY_NODE_HEIGHT, ACTIVITY_NODE_WIDTH, DATAOBJECT_NODE_HEIGHT,
@@ -310,10 +310,10 @@ impl Svg {
         let merged = MergedSvgStyle::new(&self.style, element_style);
         writeln!(
             self.body,
-            r##"<g class="task" transform="translate({},{})">
+            r##"<g class="task" transform="translate({x},{y})">
             <use href="#task-box" x="0" y="0" stroke="{}" fill="{}" width="{ACTIVITY_NODE_WIDTH}" height="{ACTIVITY_NODE_HEIGHT}" stroke-width="{STROKE_WIDTH}" />
             "##,
-            x, y, merged.stroke, merged.fill
+            merged.stroke, merged.fill
         )
         .unwrap();
 
@@ -401,7 +401,7 @@ impl Svg {
         writeln!(
             self.body,
             r##"
-<g class="event event-{event_outer_symbol} bpmn-event-{event_inner_symbol_fill_kind} bpmn-event-{event_inner_symbol}">
+<g class="event {event_outer_symbol} event-{event_inner_symbol_fill_kind} event-{event_inner_symbol}">
   <use href="#{event_outer_symbol}" x="{x}" y="{y}" width="{EVENT_NODE_WIDTH}" height="{EVENT_NODE_HEIGHT}" stroke="{}" fill="{}"/>
   <use href="#event-{event_inner_symbol}-{event_inner_symbol_fill_kind}" x="{x}" y="{y}" width="{EVENT_NODE_WIDTH}" height="{EVENT_NODE_HEIGHT}" stroke="{stroke}" fill="{fill}"/>
 "##,
@@ -424,6 +424,45 @@ merged.stroke, merged.fill
             );
         }
         writeln!(self.body, "</g>").unwrap();
+    }
+
+    pub fn draw_boundary_event(
+        &mut self,
+        (x, y): (usize, usize),
+        event_type: BoundaryEventType,
+        interrupt_kind: InterruptKind,
+        style: &ElementSvgStyle,
+    ) {
+        let merged = MergedSvgStyle::new(&self.style, style);
+
+        let event_outer_symbol = match interrupt_kind {
+            InterruptKind::NonInterrupting => "event-dashed-dashed",
+            InterruptKind::Interrupting => "event-solid-solid",
+        };
+
+        let event_inner_symbol = match event_type {
+            BoundaryEventType::Message => "message",
+            BoundaryEventType::Timer => "timer",
+            BoundaryEventType::Conditional => "conditional",
+            BoundaryEventType::Signal => "signal",
+            BoundaryEventType::Error => "error",
+            BoundaryEventType::Escalation => "escalation",
+            BoundaryEventType::Compensation => "compensation",
+            BoundaryEventType::Cancel => "cancel",
+            BoundaryEventType::Multiple => "multiple",
+            BoundaryEventType::MultipleParallel => "multiple-parallel",
+        };
+
+        writeln!(
+            self.body,
+            r##"
+<g class="event {event_outer_symbol} event-boundary event-{event_inner_symbol}">
+  <use href="#{event_outer_symbol}" x="{x}" y="{y}" width="{EVENT_NODE_WIDTH}" height="{EVENT_NODE_HEIGHT}" stroke="{0}" fill="{1}"/>
+  <use href="#event-{event_inner_symbol}-catching" x="{x}" y="{y}" width="{EVENT_NODE_WIDTH}" height="{EVENT_NODE_HEIGHT}" stroke="{0}" fill="{1}"/>
+</g>"##,
+merged.stroke, merged.fill
+        )
+        .unwrap();
     }
 
     pub fn draw_gateway(
@@ -450,9 +489,10 @@ merged.stroke, merged.fill
         writeln!(
             self.body,
             r##"
-<use href="#gateway-box" x="0" y="0" />
-<use href="#gateway-{symbol}" x="0" y="0" />
+<use href="#gateway-box" x="0" y="0" stroke="{0}" fill="{1}" width="{GATEWAY_NODE_WIDTH}" height="{GATEWAY_NODE_HEIGHT}" stroke-width="{STROKE_WIDTH}" />
+<use href="#gateway-{symbol}" x="0" y="0" stroke="{0}" fill="{0}" width="{GATEWAY_NODE_WIDTH}" height="{GATEWAY_NODE_HEIGHT}" stroke-width="{STROKE_WIDTH}" />
 "##,
+merged.stroke, merged.fill
         )
         .unwrap();
 

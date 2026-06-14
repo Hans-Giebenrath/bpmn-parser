@@ -345,24 +345,24 @@ pub fn defs(stroke: &str) -> String {
      d="m 8.5857864,2.9289322 h 2.8284276 v 5.6568542 l 5.656854,0 v 2.8284276 h -5.656854 l 0,5.656854 H 8.5857864 V 11.414214 H 2.9289322 V 8.5857864 h 5.6568542 z" />
   </symbol>
 
-  <symbol id="event-solid" viewBox="0 0 20 20" overflow="visible">
+  <symbol id="event-solid" viewBox="0 0 36 36" overflow="visible">
   <circle
-     style="fill:none;stroke:inherit;stroke-width:0.8;stroke-linecap:round;stroke-linejoin:round"
-     cx="10" cy="10" r="10" />
+     style="fill:inherit;stroke:inherit;stroke-width:{STROKE_WIDTH};stroke-linecap:round;stroke-linejoin:round"
+     cx="18" cy="18" r="18" />
   </symbol>
 
   <symbol id="event-solid-solid" viewBox="0 0 20 20" overflow="visible">
   <circle
-     style="fill:none;stroke:inherit;stroke-width:0.8;stroke-linecap:round;stroke-linejoin:round"
+     style="fill:inherit;stroke:inherit;stroke-width:{STROKE_WIDTH};stroke-linecap:round;stroke-linejoin:round"
      cx="10" cy="10" r="10" />
   <circle
-     style="fill:none;stroke:inherit;stroke-width:0.8;stroke-linecap:round;stroke-linejoin:round"
-     cx="10" cy="10" r="8.6939783" />
+     style="fill:none;stroke:inherit;stroke-width:{STROKE_WIDTH};stroke-linecap:round;stroke-linejoin:round"
+     cx="10" cy="10" r="8" />
   </symbol>
 
   <symbol id="event-dashed" viewBox="0 0 20 20" overflow="visible">
   <circle
-     style="fill:none;stroke:inherit;stroke-width:0.8;stroke-linecap:round;stroke-linejoin:round;stroke-dasharray:2.40000006,2.40000006;stroke-dashoffset:0"
+     style="fill:inherit;stroke:inherit;stroke-width:0.8;stroke-linecap:round;stroke-linejoin:round;stroke-dasharray:2.40000006,2.40000006;stroke-dashoffset:0"
      cx="10"
      cy="10"
      r="10" />
@@ -370,7 +370,7 @@ pub fn defs(stroke: &str) -> String {
 
   <symbol id="event-dashed-dashed" viewBox="0 0 20 20" overflow="visible">
   <circle
-     style="fill:none;stroke:inherit;stroke-width:0.8;stroke-linecap:round;stroke-linejoin:round;stroke-dasharray:2.40000006,2.40000006;stroke-dashoffset:0"
+     style="fill:inherit;stroke:inherit;stroke-width:0.8;stroke-linecap:round;stroke-linejoin:round;stroke-dasharray:2.40000006,2.40000006;stroke-dashoffset:0"
      cx="10"
      cy="10"
      r="10" />
@@ -395,7 +395,7 @@ pub fn defs(stroke: &str) -> String {
   </symbol>
 
   <symbol id="gateway-box" viewBox="0 0 {GATEWAY_NODE_WIDTH} {GATEWAY_NODE_HEIGHT}" overflow="visible" >
-  <path stroke="inherit" d="M25 0 L50 25 L25 50 L0 25 z" />
+  <path d="M25 0 L50 25 L25 50 L0 25 z" />
   </symbol>
 
   <!-- Gateway markers. -->

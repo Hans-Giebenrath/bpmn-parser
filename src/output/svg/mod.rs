@@ -85,7 +85,18 @@ pub fn to_svg(graph: &Graph, embed_font: bool) -> String {
             dbg!("This should never be the case?");
             continue;
         };
-        svg.draw_flow(bend_points, text, &edge.flow_type, &edge_style(edge));
+
+        let style = edge_style(edge);
+        if let Some(boundary_event) = &edge.attached_to_boundary_event {
+            svg.draw_boundary_event(
+                (boundary_event.x, boundary_event.y),
+                boundary_event.event_type,
+                boundary_event.interrupt_kind,
+                &style,
+            );
+        }
+
+        svg.draw_flow(bend_points, text, &edge.flow_type, &style);
     }
 
     svg.finish()
