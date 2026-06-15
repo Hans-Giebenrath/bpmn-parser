@@ -307,7 +307,10 @@ fn to_lane(atts: Tokens, backup_tc: TokenCoordinate) -> AResult {
     Ok(Statement::Lane(atts.display_text.unwrap()))
 }
 
-fn to_event(atts: Tokens, backup_tc: TokenCoordinate) -> AResult {
+fn to_event(mut atts: Tokens, backup_tc: TokenCoordinate) -> AResult {
+    let (_, Token::Event(event_type)) = atts.next().unwrap() else {
+        unreachable!();
+    };
     let atts = assemble_attributes(
         "Action Events",
         atts,
@@ -333,8 +336,7 @@ fn to_event(atts: Tokens, backup_tc: TokenCoordinate) -> AResult {
             display_text: atts.display_text.unwrap(),
             ids: atts.ids,
         },
-        // TODO
-        event_type: EventType::Blank,
+        event_type,
         // TODO (Start is discovered by the parser)
         event_visual: (EventVisual::None, Default::default()),
         shorthand_syntax: atts.used_shorthand_syntax,
@@ -343,8 +345,10 @@ fn to_event(atts: Tokens, backup_tc: TokenCoordinate) -> AResult {
     }))
 }
 
-fn to_event_end(atts: Tokens, backup_tc: TokenCoordinate) -> AResult {
-    // TODO use virtual tokens to distinguish end from non-end, to DRY with `to_event`.
+fn to_event_end(mut atts: Tokens, backup_tc: TokenCoordinate) -> AResult {
+    let (_, Token::Event(event_type)) = atts.next().unwrap() else {
+        unreachable!();
+    };
     let atts = assemble_attributes(
         "End events",
         atts,
@@ -370,8 +374,7 @@ fn to_event_end(atts: Tokens, backup_tc: TokenCoordinate) -> AResult {
             display_text: atts.display_text.unwrap(),
             ids: atts.ids,
         },
-        // TODO
-        event_type: EventType::Blank,
+        event_type,
         event_visual: (EventVisual::None, Default::default()),
         shorthand_syntax: atts.used_shorthand_syntax,
         sequence_flow_jump: None,
@@ -700,23 +703,30 @@ fn assemble_attributes(
                     }
                 }
             },
-            Token::GatewayType(_) => {
+            Token::GatewayType(..) => {
                 return Err(vec![(
                     "Programming error: GatewayType should be handled by the calling function."
                         .to_string(),
                     it.0,
                 )]);
             }
-            Token::DataKind(_, _) => {
+            Token::DataKind(..) => {
                 return Err(vec![(
                     "Programming error: DataKind should be handled by the calling function."
                         .to_string(),
                     it.0,
                 )]);
             }
-            Token::BoundaryEvent(_, _) => {
+            Token::BoundaryEvent(..) => {
                 return Err(vec![(
                     "Programming error: BoundaryEvent should be handled by the calling function."
+                        .to_string(),
+                    it.0,
+                )]);
+            }
+            Token::Event(..) => {
+                return Err(vec![(
+                    "Programming error: Event should be handled by the calling function."
                         .to_string(),
                     it.0,
                 )]);
@@ -856,6 +866,7 @@ pub enum Token {
     DataKind(DataType, /* is continuation */ bool),
     UsedShorthandSyntax,
     BoundaryEvent(BoundaryEventType, InterruptKind),
+    Event(EventType),
 
     // ======================
     // == Extension Tokens ==
@@ -961,6 +972,111 @@ macro_rules! maybe_parse_boundary_event {
     }};
 }
 
+macro_rules! tt_as_event_type {
+    ('.') => {
+        EventType::Blank
+    };
+    ('M') => {
+        EventType::Message
+    };
+    ('T') => {
+        EventType::Timer
+    };
+    ('C') => {
+        EventType::Conditional
+    };
+    ('>') => {
+        EventType::Link
+    };
+    ('S') => {
+        EventType::Signal
+    };
+    ('E') => {
+        EventType::Error
+    };
+    ('^') => {
+        EventType::Escalation
+    };
+    ('<') => {
+        EventType::Compensation
+    };
+    ('X') => {
+        EventType::Cancel
+    };
+    ('#') => {
+        EventType::Multiple
+    };
+    ('+') => {
+        EventType::MultipleParallel
+    };
+}
+
+macro_rules! maybe_parse_event {
+    ($a:tt, $fun:ident, $self:ident) => {{
+        if $self.current_char == Some($a) && $self.continues_with("#") {
+            let tc = $self.current_coord();
+            $self.advance(); // $a
+            $self.advance(); // $b
+
+            $self.sas.next_statement(tc, $self.position, $fun)?;
+            $self.sas.add_implicit_fragment(
+                tc,
+                $self.position,
+                Token::Event(tt_as_event_type!($a)),
+            );
+            continue;
+        }
+    }};
+}
+
+macro_rules! tt_as_event_end_type {
+    ('.') => {
+        EventType::Blank
+    };
+    ('M') => {
+        EventType::Message
+    };
+    ('S') => {
+        EventType::Signal
+    };
+    ('E') => {
+        EventType::Error
+    };
+    ('^') => {
+        EventType::Escalation
+    };
+    ('!') => {
+        EventType::Termination
+    };
+    ('<') => {
+        EventType::Compensation
+    };
+    ('X') => {
+        EventType::Cancel
+    };
+    ('#') => {
+        EventType::Multiple
+    };
+}
+
+macro_rules! maybe_parse_event_end {
+    ($a:tt, $fun:ident, $self:ident) => {{
+        if $self.current_char == Some($a) && $self.continues_with("#") {
+            let tc = $self.current_coord();
+            $self.advance(); // $a
+            $self.advance(); // $b
+
+            $self.sas.next_statement(tc, $self.position, $fun)?;
+            $self.sas.add_implicit_fragment(
+                tc,
+                $self.position,
+                Token::Event(tt_as_event_end_type!($a)),
+            );
+            continue;
+        }
+    }};
+}
+
 #[derive(Debug, Clone, Default, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct TokenCoordinate {
     pub source_file_idx: usize,
@@ -995,10 +1111,6 @@ impl StatementAssemblyState {
         tc.end = new_end;
         assert!(
             self.assemble_statement_callback.is_some(),
-            "This function should only be called immediately after a call to `next_statement`."
-        );
-        assert!(
-            self.fragments.is_empty(),
             "This function should only be called immediately after a call to `next_statement`."
         );
         self.fragments.push((tc, t));
@@ -1188,6 +1300,34 @@ impl<'a> Lexer<'a> {
 
         loop {
             if self.sas.allow_new_statement {
+                // Events
+                maybe_parse_event!('.', to_event, self);
+                maybe_parse_event!('M', to_event, self);
+                maybe_parse_event!('T', to_event, self);
+                maybe_parse_event!('C', to_event, self);
+                maybe_parse_event!('>', to_event, self);
+                maybe_parse_event!('S', to_event, self);
+                maybe_parse_event!('E', to_event, self);
+                maybe_parse_event!('^', to_event, self);
+                maybe_parse_event!('<', to_event, self);
+                maybe_parse_event!('X', to_event, self);
+                maybe_parse_event!('#', to_event, self);
+                maybe_parse_event!('+', to_event, self);
+
+                // End Events
+                maybe_parse_event_end!('.', to_event_end, self);
+                maybe_parse_event_end!('M', to_event_end, self);
+                //maybe_parse_event_end!('T', to_event_end, self); TODO diagnostics
+                //maybe_parse_event_end!('C', to_event_end, self); TODO diagnostics
+                //maybe_parse_event_end!('>', to_event_end, self); TODO diagnostics
+                maybe_parse_event_end!('S', to_event_end, self);
+                maybe_parse_event_end!('E', to_event_end, self);
+                maybe_parse_event_end!('^', to_event_end, self);
+                maybe_parse_event_end!('<', to_event_end, self);
+                maybe_parse_event_end!('X', to_event_end, self);
+                maybe_parse_event_end!('#', to_event_end, self);
+                //maybe_parse_event_end!('+', to_event_end, self); TODO diagnostics
+
                 // Interrupting Boundary Events
                 maybe_parse_boundary_event!(M!, self);
                 maybe_parse_boundary_event!(T!, self);
@@ -1274,6 +1414,11 @@ impl<'a> Lexer<'a> {
                     let tc = self.current_coord();
                     self.advance();
                     self.sas.next_statement(tc, self.position, to_event)?;
+                    self.sas.add_implicit_fragment(
+                        tc,
+                        self.position,
+                        Token::Event(EventType::Blank),
+                    );
                     self.sas
                         .add_implicit_fragment(tc, self.position, Token::UsedShorthandSyntax);
                 }
@@ -1287,6 +1432,23 @@ impl<'a> Lexer<'a> {
                     let tc = self.current_coord();
                     self.advance();
                     self.sas.next_statement(tc, self.position, to_event_end)?;
+                    self.sas.add_implicit_fragment(
+                        tc,
+                        self.position,
+                        Token::Event(EventType::Blank),
+                    );
+                    self.sas
+                        .add_implicit_fragment(tc, self.position, Token::UsedShorthandSyntax);
+                }
+                Some('!') if self.sas.allow_new_statement => {
+                    let tc = self.current_coord();
+                    self.advance();
+                    self.sas.next_statement(tc, self.position, to_event_end)?;
+                    self.sas.add_implicit_fragment(
+                        tc,
+                        self.position,
+                        Token::Event(EventType::Termination),
+                    );
                     self.sas
                         .add_implicit_fragment(tc, self.position, Token::UsedShorthandSyntax);
                 }

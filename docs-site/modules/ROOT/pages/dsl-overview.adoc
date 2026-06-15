@@ -319,6 +319,7 @@ This is the list of supported boundary events:
 ** `E.` Error
 ** `^.` Escalation
 ** `!.` Termination
+** `!` Shorthand for `!.`.
 ** `<.` Compensation
 ** `X.` Cancel
 ** `#.` Multiple
