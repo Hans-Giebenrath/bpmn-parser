@@ -9,10 +9,10 @@ use crate::lexer::GatewayType;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum BpmnNode {
-    Event(EventType, EventVisual), // Start event with label
-    Gateway(GatewayType),          // Exclusive gateway event
-    Activity(ActivityType),        // Task with label
-    Data(DataType, DataAux),       // Data store reference with label
+    Event(EventType, EventVisual),          // Start event with label
+    Gateway(GatewayType),                   // Exclusive gateway event
+    Activity(ActivityType, ActivityMarker), // Task with label
+    Data(DataType, DataAux),                // Data store reference with label
 }
 
 #[derive(Eq, Debug, Clone, PartialEq)]
@@ -38,7 +38,7 @@ pub enum BoundaryEventType {
     MultipleParallel,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ActivityType {
     // TODO missing: task markers, see bpmn p 155, note: the compensation marker can be combined
     // with the others.
@@ -49,7 +49,7 @@ pub enum ActivityType {
     Transaction,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum TaskType {
     #[default]
     None,
@@ -60,6 +60,14 @@ pub enum TaskType {
     Script,
     Service,
     Businessrule,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct ActivityMarker {
+    pub multiple: bool,
+    pub r#loop: bool,
+    pub adhoc: bool,
+    pub compensation: bool,
 }
 
 // TODO not sure if the inlined InterruptingKind is a good idea. Maybe it should be

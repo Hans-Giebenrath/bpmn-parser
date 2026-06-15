@@ -357,6 +357,9 @@ there will be more elements in a future version of BPMN. These task types also s
 * `.- ~service`: Service task type
 * `.- ~businessrule`: Business rule task type
 * `.- ~multiple`: Multiple instance task type (also works for pools!)
+* `.- ~loop`: Multiple instance task type
+* `.- ~adhoc`: Multiple instance task type
+* `.- ~compensation`: Multiple instance task type
 
 == Grouping Elements
 

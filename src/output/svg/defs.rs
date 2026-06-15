@@ -31,7 +31,7 @@ pub fn defs(stroke: &str) -> String {
 
   <symbol id="envelope-outline" viewBox="0 0 36 36" overflow="visible">
       <path
-     d="M 8,11 H 28 V 25 H 8 Z"
+         d="M 8,11 H 28 V 25 H 8 Z"
          fill="none"
          stroke="inherit"
          style="stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round;stroke-dasharray:none"
@@ -46,6 +46,8 @@ pub fn defs(stroke: &str) -> String {
 
   <symbol id="envelope-filled" viewBox="0 0 36 36" overflow="visible">
   <path
+     stroke="none"
+     fill="inherit"
      style="baseline-shift:baseline;display:inline;overflow:visible;vector-effect:none;stroke-linecap:round;stroke-linejoin:round;enable-background:accumulate;stop-color:inherit"
      d="M 8,10.150391 C 7.530883,10.150653 7.150653,10.530883 7.150391,11 V 25 C 7.150653,25.469117 7.530883,25.849347 8,25.849609 H 28 C 28.469117,25.849347 28.849347,25.469117 28.849609,25 V 11 C 28.849347,10.530883 28.469117,10.150653 28,10.150391 Z m 0.3066406,0.298828 a 0.85000002,0.85000002 0 0 1 0.4238282,0.117187 L 18,16.013672 27.269531,10.566406 a 0.85000002,0.85000002 0 0 1 1.164063,0.302735 0.85000002,0.85000002 0 0 1 -0.302735,1.164062 l -9.701172,5.699219 a 0.85008502,0.85008502 0 0 1 -0.859375,0 L 7.869141,12.033203 a 0.85000002,0.85000002 0 0 1 -0.302735,-1.164062 0.85000002,0.85000002 0 0 1 0.5195315,-0.392578 0.85000002,0.85000002 0 0 1 0.2207031,-0.02734 z" />
   </symbol>

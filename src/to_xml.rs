@@ -375,7 +375,7 @@ fn write_process_node(bpmn: &mut String, graph: &Graph, node_idx: usize, node: &
         }
 
         // Activities
-        BpmnNode::Activity(ActivityType::Task(TaskType::User)) => {
+        BpmnNode::Activity(ActivityType::Task(TaskType::User), ..) => {
             bpmn.push_str(&format!(
                 r#"    <bpmn:userTask id="Node_{node_idx}" name="{display_text}">
 {incomingoutgoing}
@@ -383,7 +383,7 @@ fn write_process_node(bpmn: &mut String, graph: &Graph, node_idx: usize, node: &
 "#,
             ));
         }
-        BpmnNode::Activity(ActivityType::Task(TaskType::Service)) => {
+        BpmnNode::Activity(ActivityType::Task(TaskType::Service), ..) => {
             bpmn.push_str(&format!(
                 r#"    <bpmn:serviceTask id="Node_{node_idx}" name="{display_text}">
 {incomingoutgoing}
@@ -391,7 +391,7 @@ fn write_process_node(bpmn: &mut String, graph: &Graph, node_idx: usize, node: &
 "#,
             ));
         }
-        BpmnNode::Activity(ActivityType::Task(TaskType::Businessrule)) => {
+        BpmnNode::Activity(ActivityType::Task(TaskType::Businessrule), ..) => {
             bpmn.push_str(&format!(
                 r#"    <bpmn:businessRuleTask id="Node_{node_idx}" name="{display_text}">
 {incomingoutgoing}
@@ -399,7 +399,7 @@ fn write_process_node(bpmn: &mut String, graph: &Graph, node_idx: usize, node: &
 "#,
             ));
         }
-        BpmnNode::Activity(ActivityType::Task(TaskType::Script)) => {
+        BpmnNode::Activity(ActivityType::Task(TaskType::Script), ..) => {
             bpmn.push_str(&format!(
                 r#"    <bpmn:scriptTask id="Node_{node_idx}" name="{display_text}">
 {incomingoutgoing}
@@ -407,7 +407,7 @@ fn write_process_node(bpmn: &mut String, graph: &Graph, node_idx: usize, node: &
 "#,
             ));
         }
-        BpmnNode::Activity(ActivityType::Task(TaskType::None)) => {
+        BpmnNode::Activity(ActivityType::Task(TaskType::None), ..) => {
             bpmn.push_str(&format!(
                 r#"    <bpmn:task id="Node_{node_idx}" name="{display_text}">
 {incomingoutgoing}
@@ -415,10 +415,10 @@ fn write_process_node(bpmn: &mut String, graph: &Graph, node_idx: usize, node: &
 "#,
             ));
         }
-        BpmnNode::Activity(ActivityType::Task(_)) => todo!(),
+        BpmnNode::Activity(ActivityType::Task(_), ..) => todo!(),
 
         // Tasks
-        BpmnNode::Activity(ActivityType::Subprocess) => {
+        BpmnNode::Activity(ActivityType::Subprocess, ..) => {
             bpmn.push_str(&format!(
                 r#"    <bpmn:subProcess id="Node_{node_idx}" name="{display_text}" triggeredByEvent="false">
 {incomingoutgoing}
@@ -426,7 +426,7 @@ fn write_process_node(bpmn: &mut String, graph: &Graph, node_idx: usize, node: &
 "#,
             ));
         }
-        BpmnNode::Activity(ActivityType::CallActivity) => {
+        BpmnNode::Activity(ActivityType::CallActivity, ..) => {
             bpmn.push_str(&format!(
                 r#"    <bpmn:callActivity id="Node_{node_idx}" name="{display_text}">
 {incomingoutgoing}
@@ -434,7 +434,7 @@ fn write_process_node(bpmn: &mut String, graph: &Graph, node_idx: usize, node: &
 "#,
             ));
         }
-        BpmnNode::Activity(ActivityType::EventSubprocess) => {
+        BpmnNode::Activity(ActivityType::EventSubprocess, ..) => {
             bpmn.push_str(&format!(
                 r#"    <bpmn:subProcess id="Node_{node_idx}" name="{display_text}" triggeredByEvent="true">
 {incomingoutgoing}
@@ -442,7 +442,7 @@ fn write_process_node(bpmn: &mut String, graph: &Graph, node_idx: usize, node: &
 "#,
             ));
         }
-        BpmnNode::Activity(ActivityType::Transaction) => {
+        BpmnNode::Activity(ActivityType::Transaction, ..) => {
             bpmn.push_str(&format!(
                 r#"    <bpmn:transaction id="Node_{node_idx}" name="{display_text}">
 {incomingoutgoing}

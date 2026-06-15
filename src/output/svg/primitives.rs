@@ -7,15 +7,16 @@
 //! reference it while drawing.
 
 use cosmic_text::{
-    Align, Attrs, Buffer, BufferLine, Command, FontSystem, LayoutRun, Metrics, Shaping, SwashCache,
-    Wrap,
+    Align, Attrs, Buffer, Command, FontSystem, LayoutRun, Metrics, Shaping, SwashCache, Wrap,
 };
 
 use std::fmt::Write as _;
 
 use crate::{
     common::{
-        bpmn_node::{ActivityType, BoundaryEventType, EventVisual, InterruptKind, TaskType},
+        bpmn_node::{
+            ActivityMarker, ActivityType, BoundaryEventType, EventVisual, InterruptKind, TaskType,
+        },
         edge::FlowType,
         graph::{
             ACTIVITY_NODE_HEIGHT, ACTIVITY_NODE_WIDTH, DATAOBJECT_NODE_HEIGHT,
@@ -198,7 +199,7 @@ impl Svg {
                 merged.fill,
             ).unwrap();
 
-        if let [(lane_title, lane_height, lane_style)] = &lanes[..]
+        if let [(lane_title, lane_height, lane_style)] = lanes
             && lane_title.is_empty()
         {
             assert_eq!(*lane_height, height);
@@ -237,7 +238,7 @@ impl Svg {
         )
         .unwrap();
 
-        if let [(lane_title, lane_height, lane_style)] = &lanes[..]
+        if let [(lane_title, lane_height, lane_style)] = lanes
             && lane_title.is_empty()
         {
             assert_eq!(*lane_height, height);
@@ -251,14 +252,12 @@ impl Svg {
         } else {
             let mut cumulative_height = 0;
             for (_lane_title, lane_height, lane_style) in lanes {
-                if let Some(stroke) = &lane_style.stroke {
-                    writeln!(
+                writeln!(
                         self.body,
-                        r#"  <rect x="{pool_header_width}" y="{cumulative_height}" width="{}" fill="none" height="{lane_height}" stroke="{}" stroke-width="{STROKE_WIDTH}"/>"#,
+                        r#"  <rect class="lane-border" x="{pool_header_width}" y="{cumulative_height}" width="{}" fill="none" height="{lane_height}" stroke="{}" stroke-width="{STROKE_WIDTH}"/>"#,
                         total_width - pool_header_width,
-                        stroke.0,
+                        lane_style.stroke.as_ref().map(|s|s.0.as_str()).unwrap_or(merged.stroke),
                     ).unwrap();
-                }
                 cumulative_height += lane_height;
             }
         }
@@ -305,7 +304,8 @@ impl Svg {
         (x, y): (usize, usize),
         text: &str,
         element_style: &ElementSvgStyle,
-        activity_type: &ActivityType,
+        activity_type: ActivityType,
+        activity_marker: ActivityMarker,
     ) {
         let merged = MergedSvgStyle::new(&self.style, element_style);
         writeln!(
@@ -334,7 +334,9 @@ impl Svg {
         if !activity_type_href.is_empty() {
             writeln!(
                 self.body,
-                r##"  <use href="#{activity_type_href}" x="8" y="8" width="20" height="20"/>"##,
+                r##"  <use href="#{activity_type_href}" x="3" y="3" width="20" height="20" stroke="{}" fill="{}" />"##,
+                merged.stroke,
+                if matches!(activity_type, ActivityType::Task(TaskType::Send)) { merged.stroke } else { merged.fill }
             )
             .unwrap();
         }
@@ -616,7 +618,7 @@ merged.stroke, merged.fill
                 &mut self.font_system,
                 mid.0,
                 mid.1.saturating_sub(merged.line_height as usize / 2),
-                &label,
+                label,
                 None,
                 false,
                 false,

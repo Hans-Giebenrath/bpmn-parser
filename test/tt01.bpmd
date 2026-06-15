@@ -1,0 +1,9 @@
+# start
+- send ~send
+- receive ~receive
+- manual ~manual
+- user ~user
+- script ~script
+- service ~service
+- businessrule ~businessrule
+. end

@@ -9,6 +9,7 @@ use core::fmt::Display;
 use itertools::Either;
 use itertools::Itertools;
 
+use crate::common::bpmn_node::ActivityMarker;
 use crate::common::bpmn_node::ActivityType;
 use crate::common::bpmn_node::BoundaryEvent;
 use crate::common::bpmn_node::BoundaryEventType;
@@ -167,6 +168,7 @@ pub(crate) struct EventMeta {
 pub(crate) struct ActivityMeta {
     pub(crate) node_meta: NodeMeta,
     pub(crate) activity_type: ActivityType,
+    pub(crate) activity_marker: ActivityMarker,
     pub(crate) sequence_flow_jump: Option<EdgeMeta>,
     pub(crate) sequence_flow_landing: Option<EdgeMeta>,
 }
@@ -253,6 +255,7 @@ struct AssemblyRequest {
     ids: ARAttribute,
     flows: ARFlowAttribute,
     task_type: AROptionalAttribute,
+    activity_marker: AROptionalAttribute,
     event_visual: AROptionalAttribute,
 }
 
@@ -263,7 +266,8 @@ struct AssembledAttributes {
     arrows_with_same_direction: Option<(Direction, Vec<EdgeMeta>)>,
     left_and_right_arrows: Vec<(Direction, EdgeMeta)>,
     task_type: TaskType,
-    event_visual: EventVisual,
+    activity_marker: ActivityMarker,
+    event_visual: (EventVisual, TokenCoordinate),
     // Parses the virtual token, as this is rather ubiquitous, so parse it centrally.
     used_shorthand_syntax: bool,
 }
@@ -285,6 +289,8 @@ fn to_pool(atts: Tokens, backup_tc: TokenCoordinate) -> AResult {
             flows: ARFlowAttribute::Forbidden,
             task_type: AROptionalAttribute::Forbidden,
             event_visual: AROptionalAttribute::Forbidden,
+            // TODO
+            activity_marker: AROptionalAttribute::Optional,
         },
         backup_tc,
     )?;
@@ -301,6 +307,8 @@ fn to_lane(atts: Tokens, backup_tc: TokenCoordinate) -> AResult {
             flows: ARFlowAttribute::Forbidden,
             task_type: AROptionalAttribute::Forbidden,
             event_visual: AROptionalAttribute::Forbidden,
+            // TODO
+            activity_marker: AROptionalAttribute::Optional,
         },
         backup_tc,
     )?;
@@ -319,7 +327,8 @@ fn to_event(mut atts: Tokens, backup_tc: TokenCoordinate) -> AResult {
             ids: ARAttribute::Optional,
             flows: ARFlowAttribute::OptionalOneLeftAndOrRightArrows,
             task_type: AROptionalAttribute::Forbidden,
-            event_visual: AROptionalAttribute::Forbidden,
+            event_visual: AROptionalAttribute::Optional,
+            activity_marker: AROptionalAttribute::Forbidden,
         },
         backup_tc,
     )?;
@@ -337,8 +346,7 @@ fn to_event(mut atts: Tokens, backup_tc: TokenCoordinate) -> AResult {
             ids: atts.ids,
         },
         event_type,
-        // TODO (Start is discovered by the parser)
-        event_visual: (EventVisual::None, Default::default()),
+        event_visual: atts.event_visual,
         shorthand_syntax: atts.used_shorthand_syntax,
         sequence_flow_jump,
         sequence_flow_landing,
@@ -357,7 +365,8 @@ fn to_event_end(mut atts: Tokens, backup_tc: TokenCoordinate) -> AResult {
             ids: ARAttribute::Optional,
             flows: ARFlowAttribute::OptionalOneLeftArrow,
             task_type: AROptionalAttribute::Forbidden,
-            event_visual: AROptionalAttribute::Forbidden,
+            event_visual: AROptionalAttribute::Optional,
+            activity_marker: AROptionalAttribute::Forbidden,
         },
         backup_tc,
     )?;
@@ -375,7 +384,7 @@ fn to_event_end(mut atts: Tokens, backup_tc: TokenCoordinate) -> AResult {
             ids: atts.ids,
         },
         event_type,
-        event_visual: (EventVisual::None, Default::default()),
+        event_visual: atts.event_visual,
         shorthand_syntax: atts.used_shorthand_syntax,
         sequence_flow_jump: None,
         sequence_flow_landing,
@@ -390,8 +399,9 @@ fn to_task_activity(atts: Tokens, backup_tc: TokenCoordinate) -> AResult {
             display_text: ARAttribute::Required,
             ids: ARAttribute::Optional,
             flows: ARFlowAttribute::OptionalOneLeftAndOrRightArrows,
-            task_type: AROptionalAttribute::Forbidden,
+            task_type: AROptionalAttribute::Optional,
             event_visual: AROptionalAttribute::Forbidden,
+            activity_marker: AROptionalAttribute::Optional,
         },
         backup_tc,
     )?;
@@ -404,7 +414,8 @@ fn to_task_activity(atts: Tokens, backup_tc: TokenCoordinate) -> AResult {
         }
     }
     Ok(Statement::Activity(ActivityMeta {
-        activity_type: ActivityType::Task(TaskType::None),
+        activity_type: ActivityType::Task(atts.task_type),
+        activity_marker: atts.activity_marker,
         node_meta: NodeMeta {
             display_text: atts.display_text.unwrap(),
             ids: atts.ids,
@@ -427,6 +438,7 @@ fn to_gateway_outer(mut atts: Tokens, backup_tc: TokenCoordinate) -> AResult {
             flows: ARFlowAttribute::RequiredLeftAndRightArrows,
             task_type: AROptionalAttribute::Forbidden,
             event_visual: AROptionalAttribute::Forbidden,
+            activity_marker: AROptionalAttribute::Forbidden,
         },
         backup_tc,
     )?;
@@ -464,6 +476,8 @@ fn to_data(mut tokens: Tokens, backup_tc: TokenCoordinate) -> AResult {
             flows: ARFlowAttribute::RequiredLeftAndRightArrows,
             task_type: AROptionalAttribute::Forbidden,
             event_visual: AROptionalAttribute::Forbidden,
+            // TODO Data can have the `multiple` visual.
+            activity_marker: AROptionalAttribute::Forbidden,
         },
         backup_tc,
     )?;
@@ -506,6 +520,7 @@ fn to_boundary_event(mut tokens: Tokens, backup_tc: TokenCoordinate) -> AResult 
             flows: ARFlowAttribute::RequiredExactlyOneRightArrow,
             task_type: AROptionalAttribute::Forbidden,
             event_visual: AROptionalAttribute::Forbidden,
+            activity_marker: AROptionalAttribute::Forbidden,
         },
         backup_tc,
     )?;
@@ -536,6 +551,7 @@ fn to_message_flow(atts: Tokens, backup_tc: TokenCoordinate) -> AResult {
             flows: ARFlowAttribute::RequiredExactlyOneLeftAndOneRightArrow,
             task_type: AROptionalAttribute::Forbidden,
             event_visual: AROptionalAttribute::Forbidden,
+            activity_marker: AROptionalAttribute::Forbidden,
         },
         backup_tc,
     )?;
@@ -565,6 +581,7 @@ fn assemble_attributes(
     backup_tc: TokenCoordinate,
 ) -> Result<AssembledAttributes, ParseError> {
     let mut tc = None;
+    let mut previous_task_type_tc = None;
     let mut out = AssembledAttributes::default();
     for it in atts.into_iter() {
         tc.get_or_insert(it.0).end = it.0.end;
@@ -703,6 +720,61 @@ fn assemble_attributes(
                     }
                 }
             },
+            Token::TaskType(task_type) => {
+                if matches!(request.task_type, AROptionalAttribute::Forbidden) {
+                    return Err(vec![(
+                        "A task type is not allowed for this statement.".to_string(),
+                        it.0,
+                    )]);
+                }
+                if out.task_type == TaskType::None {
+                    out.task_type = task_type;
+                    previous_task_type_tc = Some(it.0);
+                } else {
+                    return Err(vec![(
+                        "It is forbidden to specify the task type multiple times. This is the latter one.".to_string()
+                        ,
+                        it.0,
+                    ),(
+                        "This is the former one.".to_string()
+                        ,
+                        previous_task_type_tc.unwrap(),
+                    )]);
+                }
+            }
+            Token::EventVisual(event_visual) => {
+                if matches!(request.event_visual, AROptionalAttribute::Forbidden) {
+                    return Err(vec![(
+                        "An event visual is not allowed for this statement.".to_string(),
+                        it.0,
+                    )]);
+                }
+                if out.event_visual.0 == EventVisual::None {
+                    out.event_visual = (event_visual, it.0);
+                } else {
+                    return Err(vec![(
+                        "It is forbidden to specify the event visual multiple times. This is the latter one.".to_string()
+                        ,
+                        it.0,
+                    ),(
+                        "This is the former one.".to_string()
+                        ,
+                        out.event_visual.1,
+                    )]);
+                }
+            }
+            Token::ActivityMarker(activity_marker) => {
+                if matches!(request.activity_marker, AROptionalAttribute::Forbidden) {
+                    return Err(vec![(
+                        "An activity marker is not allowed for this statement.".to_string(),
+                        it.0,
+                    )]);
+                }
+                out.activity_marker.compensation |= activity_marker.compensation;
+                out.activity_marker.multiple |= activity_marker.multiple;
+                out.activity_marker.r#loop |= activity_marker.r#loop;
+                out.activity_marker.adhoc |= activity_marker.adhoc;
+            }
             Token::GatewayType(..) => {
                 return Err(vec![(
                     "Programming error: GatewayType should be handled by the calling function."
@@ -854,6 +926,9 @@ pub enum Token {
     // These are in any order
     Id(String),
     Flow(Direction, EdgeMeta), // `->label"text"`
+    TaskType(TaskType),
+    ActivityMarker(ActivityMarker),
+    EventVisual(EventVisual),
 
     // ====================
     // == Virtual Tokens ==
@@ -1352,6 +1427,77 @@ impl<'a> Lexer<'a> {
                 maybe_parse_boundary_event!(#+, self);
                 maybe_parse_boundary_event!(++, self);
             }
+
+            'tilde: {
+                if self.current_char == Some('~') {
+                    let tc = self.current_coord();
+                    let (token, advance_by) = if self.continues_with("send") {
+                        (Token::TaskType(TaskType::Send), 5)
+                    } else if self.continues_with("receive") {
+                        (Token::TaskType(TaskType::Receive), 8)
+                    } else if self.continues_with("manual") {
+                        (Token::TaskType(TaskType::Manual), 7)
+                    } else if self.continues_with("user") {
+                        (Token::TaskType(TaskType::User), 5)
+                    } else if self.continues_with("script") {
+                        (Token::TaskType(TaskType::Script), 7)
+                    } else if self.continues_with("service") {
+                        (Token::TaskType(TaskType::Service), 8)
+                    } else if self.continues_with("businessrule") {
+                        (Token::TaskType(TaskType::Businessrule), 13)
+                    } else if self.continues_with("catch") {
+                        (Token::EventVisual(EventVisual::Catch), 6)
+                    } else if self.continues_with("throw") {
+                        (Token::EventVisual(EventVisual::Throw), 6)
+                    } else if self.continues_with("multiple") {
+                        (
+                            Token::ActivityMarker(ActivityMarker {
+                                multiple: true,
+                                ..Default::default()
+                            }),
+                            9,
+                        )
+                    } else if self.continues_with("loop") {
+                        (
+                            Token::ActivityMarker(ActivityMarker {
+                                r#loop: true,
+                                ..Default::default()
+                            }),
+                            5,
+                        )
+                    } else if self.continues_with("adhoc") {
+                        (
+                            Token::ActivityMarker(ActivityMarker {
+                                adhoc: true,
+                                ..Default::default()
+                            }),
+                            6,
+                        )
+                    } else if self.continues_with("compensation") {
+                        (
+                            Token::ActivityMarker(ActivityMarker {
+                                compensation: true,
+                                ..Default::default()
+                            }),
+                            13,
+                        )
+                    } else {
+                        if self.sas.fts.active {
+                            // This might be just a regular part of the display text of this activity.
+                            break 'tilde;
+                        }
+                        return Err(vec![(
+                            "For `~` there are only the following variants: ~send, ~receive, ~manual, ~user, ~script, ~service, ~businessrule, ~throw, ~catch, ~multiple, ~loop, ~adhoc, ~compensation".to_string(),
+                            self.current_coord(),
+                        )]);
+                    };
+                    for _ in 0..advance_by {
+                        self.advance();
+                    }
+                    self.sas.add_fragment(tc, self.position, token)?;
+                }
+            }
+
             match self.current_char {
                 Some('/') if self.continues_with("/") => {
                     while self.current_char != Some('\n') {

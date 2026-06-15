@@ -642,16 +642,16 @@ pub fn node_size(node_type: &NodeType) -> (usize, usize) {
 
     match event {
         // Start Events
-        BpmnNode::Event(_, _) => (EVENT_NODE_WIDTH, EVENT_NODE_HEIGHT),
+        BpmnNode::Event(..) => (EVENT_NODE_WIDTH, EVENT_NODE_HEIGHT),
 
         // Gateways
-        BpmnNode::Gateway(_) => (GATEWAY_NODE_WIDTH, GATEWAY_NODE_HEIGHT),
+        BpmnNode::Gateway(..) => (GATEWAY_NODE_WIDTH, GATEWAY_NODE_HEIGHT),
 
         // Activities
-        BpmnNode::Activity(_) => (ACTIVITY_NODE_WIDTH, ACTIVITY_NODE_HEIGHT),
+        BpmnNode::Activity(..) => (ACTIVITY_NODE_WIDTH, ACTIVITY_NODE_HEIGHT),
 
-        BpmnNode::Data(DataType::Store, _) => (DATASTORE_NODE_WIDTH, DATASTORE_NODE_HEIGHT),
-        BpmnNode::Data(DataType::Object, _) => (DATAOBJECT_NODE_WIDTH, DATAOBJECT_NODE_HEIGHT),
+        BpmnNode::Data(DataType::Store, ..) => (DATASTORE_NODE_WIDTH, DATASTORE_NODE_HEIGHT),
+        BpmnNode::Data(DataType::Object, ..) => (DATAOBJECT_NODE_WIDTH, DATAOBJECT_NODE_HEIGHT),
     }
 }
 
@@ -1045,7 +1045,7 @@ fn check_if_valid_message_flow_start(node: &Node, errors: &mut Vec<ValidationErr
     if let NodeType::RealNode { event, tc, .. } = &node.node_type {
         match event {
             BpmnNode::Event(EventType::Message, EventVisual::Throw | EventVisual::End) => (),
-            BpmnNode::Activity(_) => (),
+            BpmnNode::Activity(..) => (),
             _ => {
                 errors.push(vec![(
                 "This node type cannot send messages. Only message events (M#) or tasks (e.g. .-) can be used as message flow starts. Note that shorthand events (#) are automatically transformed into message events when they are used in a message flow.".to_string(),
@@ -1062,7 +1062,7 @@ fn check_if_valid_message_flow_end(node: &Node, errors: &mut Vec<ValidationError
         match event {
             BpmnNode::Event(EventType::Message, EventVisual::Start(_) | EventVisual::Catch(_)) => {}
             BpmnNode::Event(EventType::Blank, _) => (),
-            BpmnNode::Activity(_) => (),
+            BpmnNode::Activity(..) => (),
             _ => {
                 errors.push(vec![(
                 "This node type cannot catch messages. Only message events (M#) or tasks (e.g. .-) can be used as message flow ends. Note that shorthand events (#) are automatically transformed into message events when they are used in a message flow.".to_string(),

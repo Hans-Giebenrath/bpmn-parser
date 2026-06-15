@@ -555,7 +555,7 @@ impl Parser {
         let ids = meta.node_meta.ids;
         let node_id = self.graph.add_node(
             NodeType::RealNode {
-                event: BpmnNode::Activity(meta.activity_type),
+                event: BpmnNode::Activity(meta.activity_type, meta.activity_marker),
                 display_text: meta.node_meta.display_text,
                 tc: self.context.current_token_coordinate,
                 transported_data: vec![],
@@ -600,10 +600,10 @@ impl Parser {
         if !matches!(
             event,
             // TODO are boundary
-            Activity(Task(_))
-                | Activity(Subprocess)
-                | Activity(CallActivity)
-                | Activity(Transaction)
+            Activity(Task(_), ..)
+                | Activity(Subprocess, ..)
+                | Activity(CallActivity, ..)
+                | Activity(Transaction, ..)
         ) {
             return Err(vec![
 (

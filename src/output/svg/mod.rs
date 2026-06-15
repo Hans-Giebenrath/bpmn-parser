@@ -67,9 +67,13 @@ pub fn to_svg(graph: &Graph, embed_font: bool) -> String {
             BpmnNode::Gateway(gateway_type) => {
                 svg.draw_gateway((node.x, node.y), display_text, &style, *gateway_type)
             }
-            BpmnNode::Activity(activity_type) => {
-                svg.draw_task((node.x, node.y), display_text, &style, activity_type)
-            }
+            BpmnNode::Activity(activity_type, activity_marker) => svg.draw_task(
+                (node.x, node.y),
+                display_text,
+                &style,
+                *activity_type,
+                *activity_marker,
+            ),
             BpmnNode::Data(data_type, ..) => {
                 svg.draw_data((node.x, node.y), display_text, *data_type, &style)
             }
