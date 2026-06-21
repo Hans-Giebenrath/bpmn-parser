@@ -1,7 +1,7 @@
 use crate::common::{
     bpmn_node::BpmnNode,
     edge::{Edge, EdgeType, RegularEdgeBendPoints},
-    graph::{EVENT_NODE_HEIGHT, EVENT_NODE_WIDTH, Graph},
+    graph::Graph,
     node::{Node, NodeType},
 };
 
@@ -9,41 +9,49 @@ pub mod defs;
 pub mod primitives;
 
 use primitives::ElementSvgStyle;
-use proc_macros::n;
 
 pub fn to_svg(graph: &Graph, embed_font: bool) -> String {
-    let mut svg = primitives::Svg::new(embed_font);
-    for pool in &graph.pools {
-        let pool_style = ElementSvgStyle {
-            stroke: pool.stroke_color.as_ref().map(Into::into),
-            fill: pool.fill_color.as_ref().map(Into::into),
-            ..Default::default()
-        };
-        let lane_info = pool
-            .lanes
-            .iter()
-            .map(|lane| {
-                (
-                    lane.name.as_deref().unwrap_or_default(),
-                    lane.height,
-                    ElementSvgStyle {
-                        stroke: lane.stroke_color.as_ref().map(Into::into),
-                        fill: lane.fill_color.as_ref().map(Into::into),
-                        ..Default::default()
-                    },
-                )
-            })
-            .collect::<Vec<_>>();
-        svg.draw_pool(
-            graph.config.pool_header_width,
-            graph.config.lane_header_width,
-            pool.height,
-            pool.width,
-            (pool.x, pool.y),
-            pool.name.as_deref().unwrap_or_default(),
-            &lane_info[..],
-            &pool_style,
-        );
+    let last_pool = &graph.pools.last().unwrap();
+    let mut svg = primitives::Svg::new(
+        embed_font,
+        last_pool.x + last_pool.width + graph.config.pool_header_width,
+        last_pool.y + last_pool.height,
+    );
+    if graph.pools[0].name.is_some() || graph.pools[0].lanes[0].name.is_some() {
+        // Only render the pools if they are not anonymous.
+        for pool in &graph.pools {
+            let pool_style = ElementSvgStyle {
+                stroke: pool.stroke_color.as_ref().map(Into::into),
+                fill: pool.fill_color.as_ref().map(Into::into),
+                ..Default::default()
+            };
+            let lane_info = pool
+                .lanes
+                .iter()
+                .map(|lane| {
+                    (
+                        lane.name.as_deref().unwrap_or_default(),
+                        lane.height,
+                        ElementSvgStyle {
+                            stroke: lane.stroke_color.as_ref().map(Into::into),
+                            fill: lane.fill_color.as_ref().map(Into::into),
+                            ..Default::default()
+                        },
+                    )
+                })
+                .collect::<Vec<_>>();
+            svg.draw_pool(
+                graph.config.pool_header_width,
+                graph.config.lane_header_width,
+                pool.height,
+                pool.width,
+                (pool.x, pool.y),
+                pool.name.as_deref().unwrap_or_default(),
+                pool.multiple,
+                &lane_info[..],
+                &pool_style,
+            );
+        }
     }
 
     for node in &graph.nodes {

@@ -146,10 +146,10 @@ pub struct Svg {
 }
 
 impl Svg {
-    pub fn new(embed_font: bool) -> Self {
+    pub fn new(embed_font: bool, width: usize, height: usize) -> Self {
         Self {
-            width: 0,
-            height: 0,
+            width,
+            height,
             body: String::new(),
             style: SvgStyle::default(),
             font_system: FontSystem::new(),
@@ -182,6 +182,7 @@ impl Svg {
         content_width: usize, // already includes lane_header_width, but not pool_header_width.
         top_left_corner_xy: (usize, usize),
         title: &str,
+        multiple: bool,
         lanes: &[(
             /* title */ &str,
             /* height */ usize,
@@ -191,8 +192,6 @@ impl Svg {
     ) {
         let (x, y) = top_left_corner_xy;
         let total_width = pool_header_width + content_width;
-        self.height = std::cmp::max(self.height, y + height);
-        self.width = std::cmp::max(self.width, x + total_width);
         let merged = MergedSvgStyle::new(&self.style, style);
 
         writeln!(self.body, r#"<g transform="translate({x},{y})">"#,).unwrap();
@@ -300,6 +299,18 @@ impl Svg {
             cumulative_height += lane_height;
         }
         writeln!(self.body, "</g>").unwrap();
+
+        if multiple {
+            let start_x = content_width / 2 + pool_header_width - ACTIVITY_MARKER_DIMENSION / 2;
+            let y_padding = 3;
+            let start_y = height - y_padding - ACTIVITY_MARKER_DIMENSION;
+            writeln!(
+                    self.body,
+                    r##"  <use href="#tm-multiple" x="{start_x}" y="{start_y}" width="{ACTIVITY_MARKER_DIMENSION}" height="{ACTIVITY_MARKER_DIMENSION}" stroke="{}" fill="none" />"##,
+                    merged.stroke
+                )
+                .unwrap();
+        }
     }
 
     pub fn draw_task(

@@ -25,7 +25,7 @@ struct StrType(String);
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum Statement {
-    Pool(String),           // `=` for pool
+    Pool(PoolMeta),         // `=` for pool
     Lane(String),           // `==` for lane
     Event(EventMeta),       // `#` for start event
     EventEnd(EventMeta),    // `.` for end event
@@ -155,9 +155,18 @@ pub enum GatewayType {
 }
 
 #[derive(Eq, Debug, Clone, PartialEq)]
+pub(crate) struct PoolMeta {
+    pub(crate) title: String,
+    /// When `#` or `.` was used.
+    pub(crate) shorthand_syntax: bool,
+    /// The three vertical bars, as in `ActivityMarker`.
+    pub(crate) multiple: bool,
+}
+
+#[derive(Eq, Debug, Clone, PartialEq)]
 pub(crate) struct EventMeta {
     pub(crate) node_meta: NodeMeta,
-    // When `#` or `.` was used.
+    /// When `#` or `.` was used.
     pub(crate) shorthand_syntax: bool,
     pub(crate) event_type: EventType,
     pub(crate) event_visual: (EventVisual, TokenCoordinate),
@@ -296,7 +305,35 @@ fn to_pool(atts: Tokens, backup_tc: TokenCoordinate) -> AResult {
         },
         backup_tc,
     )?;
-    Ok(Statement::Pool(atts.display_text.unwrap()))
+    for (active, text, tc) in [
+        (
+            atts.activity_marker.r#loop,
+            "~loop",
+            atts.activity_marker_tcs.r#loop,
+        ),
+        (
+            atts.activity_marker.adhoc,
+            "~adhoc",
+            atts.activity_marker_tcs.adhoc,
+        ),
+        (
+            atts.activity_marker.compensation,
+            "~compensation",
+            atts.activity_marker_tcs.compensation,
+        ),
+    ] {
+        if active {
+            return Err(vec![(
+                format!("A pool cannot have the {text} attribute. Remove this attribute."),
+                tc,
+            )]);
+        }
+    }
+    Ok(Statement::Pool(PoolMeta {
+        title: atts.display_text.unwrap(),
+        shorthand_syntax: atts.used_shorthand_syntax,
+        multiple: atts.activity_marker.multiple,
+    }))
 }
 
 fn to_lane(atts: Tokens, backup_tc: TokenCoordinate) -> AResult {
@@ -309,8 +346,7 @@ fn to_lane(atts: Tokens, backup_tc: TokenCoordinate) -> AResult {
             flows: ARFlowAttribute::Forbidden,
             task_type: AROptionalAttribute::Forbidden,
             event_visual: AROptionalAttribute::Forbidden,
-            // TODO
-            activity_marker: AROptionalAttribute::Optional,
+            activity_marker: AROptionalAttribute::Forbidden,
         },
         backup_tc,
     )?;

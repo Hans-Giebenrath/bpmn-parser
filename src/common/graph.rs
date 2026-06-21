@@ -183,8 +183,13 @@ impl fmt::Display for NodeId {
 }
 
 impl Graph {
-    pub fn add_pool(&mut self, pool: Option<String>, tc: TokenCoordinate) -> PoolId {
-        self.pools.push(Pool::new(pool, tc));
+    pub fn add_pool(
+        &mut self,
+        pool: Option<String>,
+        tc: TokenCoordinate,
+        multiple: bool,
+    ) -> PoolId {
+        self.pools.push(Pool::new(pool, tc, multiple));
         PoolId(self.pools.len() - 1)
     }
 

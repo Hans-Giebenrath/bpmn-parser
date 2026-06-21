@@ -23,6 +23,7 @@ use crate::lexer::EdgeMeta;
 use crate::lexer::EventType;
 use crate::lexer::GatewayNodeMeta;
 use crate::lexer::LayoutStatement;
+use crate::lexer::PoolMeta;
 use crate::lexer::lex;
 use crate::lexer::{self, MessageFlowMeta};
 use crate::lexer::{Statement, StatementStream, TokenCoordinate};
@@ -167,7 +168,7 @@ impl Parser {
         for (coordinate, token) in tokens {
             self.context.current_token_coordinate = coordinate;
             match token {
-                Statement::Pool(label) => self.parse_pool(&label)?,
+                Statement::Pool(meta) => self.parse_pool(meta)?,
                 Statement::Lane(label) => self.parse_lane(&label)?,
                 Statement::Event(meta) => self.parse_event(meta, false)?,
                 Statement::EventEnd(meta) => self.parse_event(meta, true)?,
@@ -283,7 +284,7 @@ impl Parser {
     }
 
     /// Set the current pool
-    fn parse_pool(&mut self, label: &str) -> Result<(), ParseError> {
+    fn parse_pool(&mut self, meta: PoolMeta) -> Result<(), ParseError> {
         let old_state = std::mem::replace(
             &mut self.context.lifeline_state,
             LifelineState::NoLifelineActive {
@@ -292,8 +293,9 @@ impl Parser {
         );
         err_from_unfinished_lifeline(&old_state, self.context.current_token_coordinate)?;
         let pool_id = self.graph.add_pool(
-            Some(label.to_string()),
+            Some(meta.title.clone()),
             self.context.current_token_coordinate,
+            meta.multiple,
         );
         self.context.grouping_state = GroupingState::WithinPool {
             pool_id,
@@ -303,7 +305,7 @@ impl Parser {
         // For better error reporting, reset this to "fresh".
         self.context
             .pool_id_matcher
-            .register(pool_id, Some(label.to_string()));
+            .register(pool_id, Some(meta.title));
         Ok(())
     }
 
@@ -846,9 +848,9 @@ impl Parser {
     fn manage_pool_and_lane_ids_for_new_node(&mut self) -> PoolAndLane {
         match self.context.grouping_state {
             GroupingState::Init => {
-                let pool_id = self
-                    .graph
-                    .add_pool(None, self.context.current_token_coordinate);
+                let pool_id =
+                    self.graph
+                        .add_pool(None, self.context.current_token_coordinate, false);
                 let lane_id = self.graph.pools[pool_id.0]
                     .add_lane(None, self.context.current_token_coordinate);
                 self.context.grouping_state = GroupingState::WithinAnonymousPool {

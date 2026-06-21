@@ -14,6 +14,12 @@ pub fn defs() -> String {
   <style><![CDATA[
   ]]></style>
 
+  <clipPath
+     clipPathUnits="userSpaceOnUse"
+     id="gateway-x-clippath">
+    <rect width="22" height="22" x="14" y="14" />
+  </clipPath>
+
   <marker id="sequence-flow-head" fill="context-stroke" stroke="none" markerWidth="12" markerHeight="12" refX="6" refY="6" orient="auto-start-reverse" markerUnits="userSpaceOnUse" >
     <path d="M 0 0 L 12 6 L 0 12 Z" stroke-width="{STROKE_WIDTH}" />
   </marker>
@@ -450,32 +456,20 @@ pub fn defs() -> String {
   <!-- Gateway markers. -->
 
   <symbol id="gateway-exclusive" viewBox="0 0 50 50" overflow="visible">
-  <path
-     style="fill:none;stroke:inherit;stroke-width:0.8;stroke-linecap:round;stroke-linejoin:round;stroke-dasharray:none;stroke-dashoffset:0;stroke-opacity:1"
-     d="M 25,0 0,25 25,50 50,25 Z" />
-  <path
-     style="fill:inherit;stroke:inherit;stroke-width:0.8;stroke-linecap:round;stroke-linejoin:round;stroke-dasharray:none;stroke-dashoffset:0;stroke-opacity:1"
-     d="m 15,12 h 4 l 6,11 6,-11 h 4 l -8,13 8,13 H 31 L 25,27 19,38 h -4 l 8,-13 z" />
+  <g clip-path="url(#gateway-x-clippath)">
+    <path fill="none" stroke="inherit" stroke-width="4" d="M 10,47 40,3" />
+    <path fill="none" stroke="inherit" stroke-width="4" d="M 10,3 40,47" />
+  </g>
   </symbol>
 
   <symbol id="gateway-inclusive" viewBox="0 0 50 50" overflow="visible">
-  <path
-     style="fill:none;stroke:inherit;stroke-width:0.8;stroke-linecap:round;stroke-linejoin:round;stroke-dasharray:none;stroke-dashoffset:0;stroke-opacity:1"
-     d="M 25,0 0,25 25,50 50,25 Z" />
-  <circle
-     style="fill:none;stroke:inherit;stroke-width:3.3;stroke-linecap:round;stroke-linejoin:round;stroke-dasharray:none;stroke-dashoffset:0;stroke-opacity:1"
-     cx="25"
-     cy="25"
-     r="13.12418" />
+  <circle fill="none" stroke="inherit" stroke-width="4"
+     cx="25" cy="25" r="12" />
   </symbol>
 
   <symbol id="gateway-parallel" viewBox="0 0 50 50" overflow="visible">
-  <path
-     style="fill:none;stroke:inherit;stroke-width:0.8;stroke-linecap:round;stroke-linejoin:round;stroke-dasharray:none"
-     d="M 25,0 0,25 25,50 50,25 Z" />
-  <path
-     style="fill:inherit;stroke:inherit;stroke-width:0.8;stroke-linecap:round;stroke-linejoin:round;stroke-dasharray:none"
-     d="m 23,9 h 4 v 14 h 14 v 4 H 27 V 41 H 23 V 27 H 9 v -4 h 14 z" />
+    <path fill="none" stroke="inherit" stroke-width="4.5" stroke-linecap="butt" d="M 25,10 V 40" />
+    <path fill="none" stroke="inherit" stroke-width="4.5" stroke-linecap="butt" d="M 10,25 H 40" />
   </symbol>
 
   <symbol id="gateway-complex" viewBox="0 0 50 50" overflow="visible">

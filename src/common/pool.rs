@@ -25,10 +25,14 @@ pub struct Pool {
     /// If `name.is_none()`, then this is the tc of the statement which implicitly created the
     /// anonymous lane.
     pub tc: TokenCoordinate,
+
+    /// As in [ActivityMarker::multiple], i.e. the three vertical bars in the center of the bottom
+    /// side.
+    pub multiple: bool,
 }
 
 impl Pool {
-    pub fn new(name: Option<String>, tc: TokenCoordinate) -> Self {
+    pub fn new(name: Option<String>, tc: TokenCoordinate, multiple: bool) -> Self {
         Pool {
             name,
             tc,
@@ -40,6 +44,7 @@ impl Pool {
             is_right_of_the_previous_pool: false,
             stroke_color: None,
             fill_color: None,
+            multiple,
         }
     }
 
@@ -50,7 +55,7 @@ impl Pool {
 
     pub fn add_node(
         &mut self,
-        nodes: &mut Vec<Node>,
+        nodes: &[Node],
         lane: LaneId,
         node_id: NodeId,
         layer: Option<LayerId>,
