@@ -68,6 +68,16 @@ pub struct ActivityMarker {
     pub r#loop: bool,
     pub adhoc: bool,
     pub compensation: bool,
+    pub plus_in_a_box: bool,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct ActivityMarkerTokenCoordinates {
+    pub multiple: TokenCoordinate,
+    pub r#loop: TokenCoordinate,
+    pub adhoc: TokenCoordinate,
+    pub compensation: TokenCoordinate,
+    pub plus_in_a_box: TokenCoordinate,
 }
 
 // TODO not sure if the inlined InterruptingKind is a good idea. Maybe it should be

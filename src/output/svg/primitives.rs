@@ -30,6 +30,7 @@ pub const STROKE_WIDTH: f64 = 2.;
 pub const FLOW_CORNER_RADIUS: usize = 7;
 pub const MESSAGE_FLOW_START_MARKER_RADIUS: f64 = 4.;
 pub const MESSAGE_FLOW_END_MARKER_WIDTH: f64 = 10.;
+pub const ACTIVITY_MARKER_DIMENSION: usize = 20;
 
 #[derive(Debug, Clone)]
 /// TODO make this a Cow, as most of the time no escaping is needed.
@@ -161,10 +162,12 @@ impl Svg {
         let mut out = String::new();
         writeln!(
                 out,
-                r#"<svg xmlns="http://www.w3.org/2000/svg" width="{0}" height="{1}" viewBox="0 0 {0} {1}" role="img">"#,
+                r#"<svg xmlns="http://www.w3.org/2000/svg" width="{0}" height="{1}" viewBox="-{4} -{4} {2} {3}" role="img" stroke-width="{STROKE_WIDTH}" stroke-linecap="round" stroke-linejoin="round" stroke-dasharray="none" >"#,
                 self.width, self.height,
+                self.width as f64 + STROKE_WIDTH, self.height as f64 + STROKE_WIDTH,
+                STROKE_WIDTH / 2.0,
             ).unwrap();
-        writeln!(out, "{}", super::defs::defs(&self.style.stroke.0,)).unwrap();
+        writeln!(out, "{}", super::defs::defs()).unwrap();
         writeln!(out, "{}", self.body).unwrap();
         writeln!(out, "</svg>").unwrap();
         out
@@ -339,6 +342,40 @@ impl Svg {
                 if matches!(activity_type, ActivityType::Task(TaskType::Send)) { merged.stroke } else { merged.fill }
             )
             .unwrap();
+        }
+
+        {
+            // Activity Marker
+            // Rename to `am` so formatting is a bit nicer.
+            let am = &activity_marker;
+            // The order is the same as they will appear in the bottom of the activity box.
+            let arr = [
+                (am.compensation, "tm-compensation", merged.stroke, "#fff"),
+                (am.multiple, "tm-multiple", merged.stroke, "none"),
+                (am.r#loop, "tm-loop", merged.stroke, "none"),
+                (am.plus_in_a_box, "tm-plus-box", merged.stroke, "none"),
+                (am.adhoc, "tm-adhoc", "none", merged.stroke),
+            ];
+            let symbol_count = arr.iter().filter(|tpl| tpl.0).count();
+            let y_padding = 3;
+            let x_padding = 2;
+            // TODO the activity markers need to be reworked to fit into the 15 x 15 space, looks better.
+            // 20x20 is too large.
+            let box_width = ACTIVITY_MARKER_DIMENSION;
+            let box_width = 15;
+            let start_y = ACTIVITY_NODE_HEIGHT - box_width - y_padding;
+            let mut start_x = ACTIVITY_NODE_WIDTH / 2
+                - ((box_width + x_padding) * symbol_count) / 2
+                + x_padding / 2;
+
+            for (_, href, stroke, fill) in arr.iter().filter(|tpl| tpl.0) {
+                writeln!(
+                    self.body,
+                    r##"  <use href="#{href}" x="{start_x}" y="{start_y}" width="{box_width}" height="{box_width}" stroke="{stroke}" fill="{fill}" />"##,
+                )
+                .unwrap();
+                start_x += box_width + x_padding;
+            }
         }
 
         write_wrapped_text(

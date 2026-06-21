@@ -1,11 +1,12 @@
 use crate::output::svg::primitives::{
-    MESSAGE_FLOW_END_MARKER_WIDTH, MESSAGE_FLOW_START_MARKER_RADIUS, STROKE_WIDTH,
+    ACTIVITY_MARKER_DIMENSION, MESSAGE_FLOW_END_MARKER_WIDTH, MESSAGE_FLOW_START_MARKER_RADIUS,
+    STROKE_WIDTH,
 };
 
 use crate::common::graph::*;
 
 // This function is large and annoying to scroll through, so I moved it into its own file.
-pub fn defs(stroke: &str) -> String {
+pub fn defs() -> String {
     let message_flow_marker_dimension = MESSAGE_FLOW_START_MARKER_RADIUS * 2.;
     let message_flow_marker_ref_y = MESSAGE_FLOW_START_MARKER_RADIUS / 2.;
     format!(
@@ -437,11 +438,13 @@ pub fn defs(stroke: &str) -> String {
      height="{ACTIVITY_NODE_HEIGHT}"
      x="0"
      y="0"
-     ry="5" />
+     ry="5"
+     stroke-width="{STROKE_WIDTH}"
+     />
   </symbol>
 
   <symbol id="gateway-box" viewBox="0 0 {GATEWAY_NODE_WIDTH} {GATEWAY_NODE_HEIGHT}" overflow="visible" >
-  <path d="M25 0 L50 25 L25 50 L0 25 z" />
+  <path d="M25 0 L50 25 L25 50 L0 25 z" stroke-width="{STROKE_WIDTH}" />
   </symbol>
 
   <!-- Gateway markers. -->
@@ -515,17 +518,36 @@ pub fn defs(stroke: &str) -> String {
      d="m 23,15 h 4 v 8 h 8 v 4 h -8 v 8 h -4 v -8 h -8 v -4 h 8 z" />
   </symbol>
 
+  <symbol id="tm-multiple" overflow="visible" viewBox="0 0 {ACTIVITY_MARKER_DIMENSION} {ACTIVITY_MARKER_DIMENSION}">
+  <path fill="none" stroke="inherit" d="M 3,0 V 20" />
+  <path fill="none" stroke="inherit" d="M 17,0 V 20" />
+  <path fill="none" stroke="inherit" d="M 10,0 V 20" />
+  </symbol>
 
-  <symbol id="three-stripes" overflow="visible">
-  <path
-     style="fill:none;stroke:inherit;stroke-width:0.8;stroke-linecap:round;stroke-linejoin:round;stroke-dasharray:none"
-     d="M 0.4,0.40000001 V 6.4" />
-  <path
-     style="fill:none;stroke:inherit;stroke-width:0.8;stroke-linecap:round;stroke-linejoin:round;stroke-dasharray:none"
-     d="M 1.9,0.40000001 V 6.4" />
-  <path
-     style="fill:none;stroke:inherit;stroke-width:0.8;stroke-linecap:round;stroke-linejoin:round;stroke-dasharray:none"
-     d="M 3.4,0.40000001 V 6.4" />
+  <symbol id="tm-loop" overflow="visible" viewBox="0 0 {ACTIVITY_MARKER_DIMENSION} {ACTIVITY_MARKER_DIMENSION}">
+  <path fill="none" stroke="inherit" d="m 11.093792,-14.750938 a 9.1923876,9.1923876 0 0 1 -6.7910132,8.8731834 9.1923876,9.1923876 0 0 1 -10.3391154,-4.2372094 9.1923876,9.1923876 0 0 1 1.389134,-11.087 9.1923876,9.1923876 0 0 1 11.0648964,-1.555417" transform="rotate(126.12164)" />
+  <path fill="none" stroke="inherit" d="M 0.20754269,18.223762 6.572799,18.91911 5.8539361,12.556466" />
+  </symbol>
+
+  <symbol id="tm-compensation" overflow="visible" viewBox="0 0 {ACTIVITY_MARKER_DIMENSION} {ACTIVITY_MARKER_DIMENSION}">
+  <path fill="none" stroke="inherit" d="M 10,2 V 18 L 2,10 Z" />
+  <path fill="none" stroke="inherit" d="m 18.7,2 v 16 l -8,-8 z" />
+  </symbol>
+
+  <symbol id="tm-adhoc" overflow="visible" viewBox="0 0 {ACTIVITY_MARKER_DIMENSION} {ACTIVITY_MARKER_DIMENSION}">
+  <path fill="inherit" stroke="none" d="m 18,9.8639019 c -2,1.5082241 -6,2.4844491 -8.0000002,0.9999991 -2.0000002,-1.4844491 -5.9999998,-1.5082241 -8,0 L 2,6.8639019 c 2,-1.438125 6,-1.447185 8,0 2,1.447185 6,0.52575 8,-1 z" />
+  </symbol>
+
+  <symbol id="tm-plus-box" overflow="visible" viewBox="0 0 {ACTIVITY_MARKER_DIMENSION} {ACTIVITY_MARKER_DIMENSION}">
+  <rect
+     stroke-width="1.7"
+     fill="none"
+     width="20"
+     height="20"
+     x="0"
+     y="0" />
+  <path d="M 10,4 V 16" />
+  <path d="M 4,10 H 16" />
   </symbol>
 
   <!-- Data shapes authored in a 60x70 viewport. -->

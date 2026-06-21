@@ -1,0 +1,4 @@
+# Start
+// Only sub-processes can have the ~adhoc marker.
+- Forbidden Attribute ~adhoc
+. End

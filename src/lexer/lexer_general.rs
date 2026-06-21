@@ -10,6 +10,7 @@ use itertools::Either;
 use itertools::Itertools;
 
 use crate::common::bpmn_node::ActivityMarker;
+use crate::common::bpmn_node::ActivityMarkerTokenCoordinates;
 use crate::common::bpmn_node::ActivityType;
 use crate::common::bpmn_node::BoundaryEvent;
 use crate::common::bpmn_node::BoundaryEventType;
@@ -267,6 +268,7 @@ struct AssembledAttributes {
     left_and_right_arrows: Vec<(Direction, EdgeMeta)>,
     task_type: TaskType,
     activity_marker: ActivityMarker,
+    activity_marker_tcs: ActivityMarkerTokenCoordinates,
     event_visual: (EventVisual, TokenCoordinate),
     // Parses the virtual token, as this is rather ubiquitous, so parse it centrally.
     used_shorthand_syntax: bool,
@@ -413,9 +415,24 @@ fn to_task_activity(atts: Tokens, backup_tc: TokenCoordinate) -> AResult {
             Direction::Outgoing => sequence_flow_jump = Some(edge_meta),
         }
     }
+    if atts.activity_marker.adhoc {
+        return Err(vec![(
+            "An activity cannot have the ~adhoc attribute. Remove this attribute.".to_string(),
+            atts.activity_marker_tcs.adhoc,
+        )]);
+    }
+    if atts.activity_marker.r#loop && atts.activity_marker.multiple {
+        return Err(vec![(
+            "An activity cannot have both the ~multiple and ~loop attributes. Remove either this, ...".to_string(),
+            atts.activity_marker_tcs.r#loop,
+        ),(
+            "... or this attribute".to_string(),
+            atts.activity_marker_tcs.multiple,
+        )]);
+    }
     Ok(Statement::Activity(ActivityMeta {
         activity_type: ActivityType::Task(atts.task_type),
-        activity_marker: atts.activity_marker,
+        activity_marker: dbg!(atts.activity_marker),
         node_meta: NodeMeta {
             display_text: atts.display_text.unwrap(),
             ids: atts.ids,
@@ -770,10 +787,19 @@ fn assemble_attributes(
                         it.0,
                     )]);
                 }
-                out.activity_marker.compensation |= activity_marker.compensation;
-                out.activity_marker.multiple |= activity_marker.multiple;
-                out.activity_marker.r#loop |= activity_marker.r#loop;
-                out.activity_marker.adhoc |= activity_marker.adhoc;
+                if activity_marker.compensation {
+                    out.activity_marker.compensation = true;
+                    out.activity_marker_tcs.compensation = it.0;
+                } else if activity_marker.multiple {
+                    out.activity_marker.multiple = true;
+                    out.activity_marker_tcs.multiple = it.0;
+                } else if activity_marker.r#loop {
+                    out.activity_marker.r#loop = true;
+                    out.activity_marker_tcs.r#loop = it.0;
+                } else if activity_marker.adhoc {
+                    out.activity_marker.adhoc = true;
+                    out.activity_marker_tcs.adhoc = it.0;
+                }
             }
             Token::GatewayType(..) => {
                 return Err(vec![(
@@ -1373,7 +1399,7 @@ impl<'a> Lexer<'a> {
     pub fn run(mut self) -> Result<StatementStream, ParseError> {
         self.skip_whitespace(); // Skip any unnecessary whitespace
 
-        loop {
+        'parse: loop {
             if self.sas.allow_new_statement {
                 // Events
                 maybe_parse_event!('.', to_event, self);
@@ -1494,7 +1520,9 @@ impl<'a> Lexer<'a> {
                     for _ in 0..advance_by {
                         self.advance();
                     }
+                    self.skip_whitespace();
                     self.sas.add_fragment(tc, self.position, token)?;
+                    continue 'parse;
                 }
             }
 
