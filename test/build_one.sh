@@ -11,6 +11,7 @@ f="$(realpath -e "$f")"
 cd "$(git rev-parse --show-toplevel)"
 release="${release:-false}"
 failed=false
+out_format=svg
 run() {
     local dir=debug
 
@@ -46,10 +47,10 @@ correct_csv_file="$dir/${basename}.csv.correct"
 vis_table=false
 
 if grep -q '// GENERATE VISIBILITY TABLE' "$f"; then
-    run -i "$f" -o "${f%.bpmd}.xml" -f bpmn -v "$csv_file"
+    run -i "$f" -o "${f%.bpmd}.$out_format" -f svg -v "$csv_file"
     vis_table=true
 else
-    run -i "$f" -o "${f%.bpmd}.xml" -f bpmn
+    run -i "$f" -o "${f%.bpmd}.$out_format" -f svg
 fi
 
 cat <<EOF >>"$tmp_adoc_file"
@@ -65,13 +66,46 @@ WARNING: Build Failure.
 
 EOF
 elif ! [[ "$basename" =~ ^ERR ]]; then
-    echo "finished generating ${f%.bpmd}.xml, now generating the png"
-    test/node_modules/.bin/bpmn-to-image "${f%.bpmd}.xml":"${f%.bpmd}.png"
-    rm "${f%.bpmd}.xml"
-    cat <<EOF >>"$tmp_adoc_file"
+    case "$out_format" in
+    bpmn)
+        echo "finished generating ${f%.bpmd}.$out_format, now generating the png"
+        test/node_modules/.bin/bpmn-to-image "${f%.bpmd}.$out_format":"${f%.bpmd}.png"
+        rm "${f%.bpmd}.$out_format"
+        cat <<EOF >>"$tmp_adoc_file"
 image::$(basename "$f" .bpmd).png[width=60%]
 
 EOF
+        ;;
+    svg)
+        echo "finished generating ${f%.bpmd}.svg"
+        if ! [ -f "$(basename "$f" .bpmd).correct.svg" ]; then
+            cat <<EOF >>"$tmp_adoc_file"
+ERROR: Reference .svg does not exist.
+
+image::$(basename "$f" .bpmd).svg[width=60%]
+
+EOF
+        elif cmp --silend "$(basename "$f" .bpmd).svg" "$(basename "$f" .bpmd).correct.svg"; then
+            cat <<EOF >>"$tmp_adoc_file"
+image::$(basename "$f" .bpmd).svg[width=60%]
+
+EOF
+        else
+            cat <<EOF >>"$tmp_adoc_file"
+ERROR: Reference .svg has different contents.
+
+.New
+image::$(basename "$f" .bpmd).svg[width=60%]
+
+.Old
+image::$(basename "$f" .bpmd).correct.svg[width=60%]
+
+EOF
+
+        fi
+        ;;
+
+    esac
 fi
 
 if $vis_table && ! $failed; then

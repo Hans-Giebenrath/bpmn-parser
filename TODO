@@ -1,4 +1,7 @@
 * First: Need to have svg export, because I don't really understand if existing tests get subtle errors in their layout. Further, the png generation is just rather annoyingly slow - while layout takes less than a second, the bpmn-to-image takes ages, and this stops me from just re-generating all images upon code changes (i.e. spotting changes in behaviour only later).
+* gateway labels are at the wrong position
+* Fix node labels above/left/right shifting if edges are in the way
+* label on the edge must be set! different for MF vs gateway SF.
 * cons012, t0030: Problem is that port_assignment should account for the situation that if the top side of a gateway is blocked, then a dummy node should not be moved into a higher lane at all.
 * Need to identify situation where loop edge into gateway would actually cross a gateway sequence flow (likely because it goes into another lane), in which case the edge should not loop into the gateway but instead enter the gateway from the other side. Should be done after port assignment. And then, then back edge corner dummy needs to be changed into a bend dummy.
 * [lone edge of @gateway leaves left] [lone edge of @gateway enters right] [lone edge of @gateway loops above] [lone edge of @gateway loops below] [incoming back edge of @node enters from below|above] [outgoing back edge of @node leaves from top|bottom]
@@ -10,6 +13,7 @@
 * data elements need to be placed in accordance to above/same layer constraints. But this should also be verified: imagine data above gw above incoming node. Then multiple outgoing to the right. No way to layout because all outgoing must emerge from the right. Instead, forbid that data is above gw in the first place. And data should be either a bit above gw or below gw (at least the data node which is directly close to the target node)
 * Lone-data elements need to be ensured to be moved to the left if a node already has two vertical connected nodes. Otherwise the data node placement logic would put it also vertically on the same layer and there is chaos.
 * Unify back edge corner dummies and bend dummies. They should be the same (though depends on whether they go left or right) - gateways have their bend dummies created in a later phase compared to back edge nodes. Also, do a write-up (paper-like) for how this works, I will forget it myself at some point.
+* SVG pathify fonts to circumvent compatibility problems.
 
 * PE-BPMN tee-external-root-access in a tee-pool should not name itself (@tee-pool)
 * PE-BPMN tee-software-operators should have a similar `on-premises` placeholder as tee-hardware-operators. `local`? as `on-premises` seems weird. (ChatGPT recommends replacing existing 'on-premises' with 'local' as well, not sure if I agree, must sleep over that suggestion)

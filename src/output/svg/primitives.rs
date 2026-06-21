@@ -160,10 +160,11 @@ impl Svg {
     /// Returns complete SVG file content.
     pub fn finish(self) -> String {
         let mut out = String::new();
+        // XXX Omit width and height, so the renderer can decide how to display it.
+        // (Recommended by asciidoctor, and it also looks nicer in the browser this way)
         writeln!(
                 out,
-                r#"<svg xmlns="http://www.w3.org/2000/svg" width="{0}" height="{1}" viewBox="-{4} -{4} {2} {3}" role="img" stroke-width="{STROKE_WIDTH}" stroke-linecap="round" stroke-linejoin="round" stroke-dasharray="none" >"#,
-                self.width, self.height,
+                r#"<svg xmlns="http://www.w3.org/2000/svg" viewBox="-{2} -{2} {0} {1}" role="img" stroke-width="{STROKE_WIDTH}" stroke-linecap="round" stroke-linejoin="round" stroke-dasharray="none" >"#,
                 self.width as f64 + STROKE_WIDTH, self.height as f64 + STROKE_WIDTH,
                 STROKE_WIDTH / 2.0,
             ).unwrap();
