@@ -551,8 +551,8 @@ merged.stroke, merged.fill
             write_wrapped_text(
                 &mut self.body,
                 &mut self.font_system,
-                x + GATEWAY_NODE_WIDTH / 2,
-                y + GATEWAY_NODE_HEIGHT + 10,
+                GATEWAY_NODE_WIDTH / 2,
+                GATEWAY_NODE_HEIGHT + 10,
                 text,
                 Some(MAX_NODE_WIDTH),
                 false,
