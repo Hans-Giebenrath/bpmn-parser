@@ -5,3 +5,5 @@ generated_bpmn*
 /input
 *.drawio.bkp
 failed_runs_output
+*.svg
+!*.correct.svg

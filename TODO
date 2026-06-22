@@ -2,6 +2,7 @@
 * gateway labels are at the wrong position
 * Fix node labels above/left/right shifting if edges are in the way
 * label on the edge must be set! different for MF vs gateway SF.
+* ActivityMarkers should just be 15x15, looks better than 20x20.
 * cons012, t0030: Problem is that port_assignment should account for the situation that if the top side of a gateway is blocked, then a dummy node should not be moved into a higher lane at all.
 * Need to identify situation where loop edge into gateway would actually cross a gateway sequence flow (likely because it goes into another lane), in which case the edge should not loop into the gateway but instead enter the gateway from the other side. Should be done after port assignment. And then, then back edge corner dummy needs to be changed into a bend dummy.
 * [lone edge of @gateway leaves left] [lone edge of @gateway enters right] [lone edge of @gateway loops above] [lone edge of @gateway loops below] [incoming back edge of @node enters from below|above] [outgoing back edge of @node leaves from top|bottom]

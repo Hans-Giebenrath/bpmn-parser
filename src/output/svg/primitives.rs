@@ -832,10 +832,10 @@ fn write_wrapped_text(
     let mut buffer = Buffer::new(font_system, metrics);
 
     buffer.set_wrap(Wrap::Word);
-    buffer.set_size(dbg!(max_width.map(|width| width as f32)), None);
+    buffer.set_size(max_width.map(|width| width as f32), None);
     buffer.set_text(
         // Don't escape just yet. We want to first inspect the text that will be visible.
-        dbg!(text),
+        text,
         &Attrs::new().family(cosmic_text::Family::Name(merged.font_family)),
         Shaping::Advanced,
         Some(Align::Center),

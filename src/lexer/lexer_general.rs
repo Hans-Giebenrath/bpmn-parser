@@ -468,7 +468,7 @@ fn to_task_activity(atts: Tokens, backup_tc: TokenCoordinate) -> AResult {
     }
     Ok(Statement::Activity(ActivityMeta {
         activity_type: ActivityType::Task(atts.task_type),
-        activity_marker: dbg!(atts.activity_marker),
+        activity_marker: atts.activity_marker,
         node_meta: NodeMeta {
             display_text: atts.display_text.unwrap(),
             ids: atts.ids,

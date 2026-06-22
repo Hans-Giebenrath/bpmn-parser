@@ -19,11 +19,11 @@ run() {
         dir=release
     fi
     set -x
-    printf "\nOUTPUT FOR %s:\n" "$basename" >"$TMPDIR/$basename.output"
-    if ! time timeout 3s "${CARGO_TARGET_DIR:-./target}"/$dir/bpmn-parser "$@" 2>&1 | tee -a "$TMPDIR/$basename.output"; then
+    printf "\nOUTPUT FOR %s:\n" "$stem" >"$TMPDIR/$stem.output"
+    if ! time timeout 3s "${CARGO_TARGET_DIR:-./target}"/$dir/bpmn-parser "$@" 2>&1 | tee -a "$TMPDIR/$stem.output"; then
         failed=true
     fi
-    if [[ "$basename" =~ ^ERR ]]; then
+    if [[ "$stem" =~ ^ERR ]]; then
         # The ERR* files test that an error actually happens.
         if $failed; then
             failed=false
@@ -34,16 +34,17 @@ run() {
     fi
 
     if ! $failed; then
-        rm "$TMPDIR/$basename.output"
+        rm "$TMPDIR/$stem.output"
     fi
     set +x
 }
 
-basename=$(basename "$f" .bpmd)
-failed_filename="error in $basename"
-tmp_adoc_file="$TMPDIR/$basename.tmp.adoc"
-csv_file="$dir/${basename}.csv"
-correct_csv_file="$dir/${basename}.csv.correct"
+stem=$(basename "$f" .bpmd)
+failed_filename="error in $stem"
+tmp_adoc_file="$TMPDIR/$stem.tmp.adoc"
+csv_file="$dir/${stem}.csv"
+correct_csv_file="$dir/${stem}.csv.correct"
+correct_svg_file="$dir/${stem}.correct.svg"
 vis_table=false
 
 if grep -q '// GENERATE VISIBILITY TABLE' "$f"; then
@@ -59,46 +60,46 @@ cat <<EOF >>"$tmp_adoc_file"
 EOF
 
 if $failed; then
-    echo "$basename" >"$TMPDIR/$failed_filename"
+    echo "$stem" >"$TMPDIR/$failed_filename"
 
     cat <<EOF >>"$tmp_adoc_file"
 WARNING: Build Failure.
 
 EOF
-elif ! [[ "$basename" =~ ^ERR ]]; then
+elif ! [[ "$stem" =~ ^ERR ]]; then
     case "$out_format" in
     bpmn)
-        echo "finished generating ${f%.bpmd}.$out_format, now generating the png"
-        test/node_modules/.bin/bpmn-to-image "${f%.bpmd}.$out_format":"${f%.bpmd}.png"
-        rm "${f%.bpmd}.$out_format"
+        echo "finished generating $stem.$out_format, now generating the png"
+        test/node_modules/.bin/bpmn-to-image "$dir/$stem.$out_format":"$dir/$stem.png"
+        rm "$dir/$stem.$out_format"
         cat <<EOF >>"$tmp_adoc_file"
 image::$(basename "$f" .bpmd).png[width=60%]
 
 EOF
         ;;
     svg)
-        echo "finished generating ${f%.bpmd}.svg"
-        if ! [ -f "$(basename "$f" .bpmd).correct.svg" ]; then
+        echo "finished generating $stem.$out_format"
+        if ! [ -f "$correct_svg_file" ]; then
             cat <<EOF >>"$tmp_adoc_file"
-ERROR: Reference .svg does not exist.
+WARNING: Reference .svg does not exist.
 
-image::$(basename "$f" .bpmd).svg[width=60%]
+image::$stem.svg[width=60%]
 
 EOF
-        elif cmp --silend "$(basename "$f" .bpmd).svg" "$(basename "$f" .bpmd).correct.svg"; then
+        elif cmp --silent "$dir/$stem.svg" "$correct_svg_file"; then
             cat <<EOF >>"$tmp_adoc_file"
-image::$(basename "$f" .bpmd).svg[width=60%]
+image::$stem.svg[width=60%]
 
 EOF
         else
             cat <<EOF >>"$tmp_adoc_file"
-ERROR: Reference .svg has different contents.
+WARNING: Reference .svg has different contents.
 
 .New
-image::$(basename "$f" .bpmd).svg[width=60%]
+image::$stem.svg[width=60%]
 
 .Old
-image::$(basename "$f" .bpmd).correct.svg[width=60%]
+image::$stem.correct.svg[width=60%]
 
 EOF
 
@@ -111,9 +112,9 @@ fi
 if $vis_table && ! $failed; then
     if [[ -f "$correct_csv_file" ]]; then
         if diff -q "$csv_file" "$correct_csv_file" >/dev/null; then
-            echo "✓ Visibility table for $basename matches reference."
+            echo "✓ Visibility table for $stem matches reference."
         else
-            echo "⚠ Visibility table for $basename differs from reference!"
+            echo "⚠ Visibility table for $stem differs from reference!"
             cat <<EOF >>"$tmp_adoc_file"
 [WARNING]
 ====
