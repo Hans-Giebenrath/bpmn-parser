@@ -24,6 +24,7 @@ pub enum NodeType {
         /// Is data node -> DataStoreReference or DataObjectReference
         event: BpmnNode,
         display_text: String,
+        display_text_location: DisplayTextLocation,
         /// The node, but also a sequence flow jump or landing associated with this node.
         tc: TokenCoordinate,
         /// Invariant: Contains only unique elements. By coincidence it is also sorted, but don't
@@ -123,6 +124,19 @@ pub enum NodePhaseAuxData {
 
 #[derive(PartialEq, PartialOrd, Ord, Eq, Debug, Clone, Copy, Hash)]
 pub struct LayerId(pub usize);
+
+#[derive(PartialEq, Eq, Debug, Clone, Copy)]
+pub enum DisplayTextLocation {
+    Middle,
+    Below,
+    Left,
+    Above,
+    Right,
+    BelowLeft,
+    AboveLeft,
+    BelowRight,
+    AboveRight,
+}
 
 #[derive(Debug)]
 pub struct Node {

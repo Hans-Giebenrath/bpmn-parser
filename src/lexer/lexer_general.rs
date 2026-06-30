@@ -1948,7 +1948,7 @@ mod tests {
     #[test]
     fn basic_pool() -> Result<(), ParseError> {
         let mut result = lex("= Pool".to_string(), 0)?;
-        assert!(matches!(result.next().unwrap().1, Statement::Pool(a) if a == "Pool"));
+        assert!(matches!(result.next().unwrap().1, Statement::Pool(a) if a.title == "Pool"));
         Ok(())
     }
 

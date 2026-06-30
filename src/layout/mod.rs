@@ -10,6 +10,8 @@ pub mod fix_boundary_event_connections;
 pub mod introduce_snake_edge_bisect_dummies;
 pub mod port_assignment;
 pub mod postprocess_ports_and_vertical_edges;
+mod quad_tree;
+pub mod set_display_text_locations;
 pub mod solve_layer_assignment;
 pub mod sort_incoming_and_outgoing;
 pub mod straight_edge_routing;
