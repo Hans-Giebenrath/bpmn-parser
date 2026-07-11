@@ -631,6 +631,14 @@ impl Graph {
                     }),
             )
     }
+
+    pub fn total_width_height(&self) -> (usize, usize) {
+        let last_pool = &self.pools.last().unwrap();
+        (
+            last_pool.x + last_pool.width + self.config.pool_header_width,
+            last_pool.y + last_pool.height,
+        )
+    }
 }
 
 pub fn node_size(node_type: &NodeType) -> (usize, usize) {

@@ -147,7 +147,17 @@ impl Parser {
     /// Create a new parser from a lexer
     fn new() -> Self {
         Parser {
-            graph: Graph::default(),
+            graph: Graph {
+                nodes: Default::default(),
+                edges: Default::default(),
+                pools: Default::default(),
+                data_elements: Default::default(),
+                config: Default::default(),
+                num_layers: Default::default(),
+                pe_bpmd_definitions: Default::default(),
+                layout_constraints: Default::default(),
+                computed_back_edges: Default::default(),
+            },
             context: ParseContext {
                 last_node_id: None,
                 grouping_state: GroupingState::Init,

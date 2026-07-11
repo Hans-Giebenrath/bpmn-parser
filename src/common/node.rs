@@ -185,6 +185,14 @@ pub struct XY {
 }
 
 #[derive(Debug)]
+pub struct Dimension {
+    pub x: usize,
+    pub y: usize,
+    pub width: usize,
+    pub height: usize,
+}
+
+#[derive(Debug)]
 // Relative to the node's size.
 pub struct RelativePort {
     pub x: usize,
@@ -465,6 +473,15 @@ impl Node {
         XY {
             x: self.x,
             y: self.y,
+        }
+    }
+
+    pub fn dimension(&self) -> Dimension {
+        Dimension {
+            x: self.x,
+            y: self.y,
+            width: self.width,
+            height: self.height,
         }
     }
 }

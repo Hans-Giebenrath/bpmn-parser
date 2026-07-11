@@ -85,6 +85,14 @@ define_config!(
     message_edge_weight: f64 = 0.015625,
     min_vertical_space_between_gateway_bendpoints: usize = 110,
 
+    display_text_margin: usize = 10,
+    display_text_edge_x_step_size: u32 = 30,
+    display_text_edge_y_step_size: u32 = 30,
+    display_text_edge_x_margin_to_ends: u32 = 40,
+    display_text_edge_y_margin_to_ends: u32 = 20,
+    display_text_edge_x_min_distance_to_center_or_else_collapse_into_center: u32 = 40,
+    display_text_edge_y_min_distance_to_center_or_else_collapse_into_center: u32 = 20,
+
     /// TODO The heuristic moves data nodes just at a good place according to the average distance of
     /// the recipients. Edge case: This could result in a large amount of data objects in the same
     /// (half)layer. In the future a postprocessing step should evenly distribute them to neighboring

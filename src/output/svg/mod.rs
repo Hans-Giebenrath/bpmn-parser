@@ -11,12 +11,8 @@ pub mod primitives;
 use primitives::ElementSvgStyle;
 
 pub fn to_svg(graph: &Graph, embed_font: bool) -> String {
-    let last_pool = &graph.pools.last().unwrap();
-    let mut svg = primitives::Svg::new(
-        embed_font,
-        last_pool.x + last_pool.width + graph.config.pool_header_width,
-        last_pool.y + last_pool.height,
-    );
+    let (total_width, total_height) = graph.total_width_height();
+    let mut svg = primitives::Svg::new(embed_font, total_width, total_height);
     if graph.pools[0].name.is_some() || graph.pools[0].lanes[0].name.is_some() {
         // Only render the pools if they are not anonymous.
         for pool in &graph.pools {

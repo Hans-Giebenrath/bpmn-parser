@@ -15,6 +15,7 @@
 * Lone-data elements need to be ensured to be moved to the left if a node already has two vertical connected nodes. Otherwise the data node placement logic would put it also vertically on the same layer and there is chaos.
 * Unify back edge corner dummies and bend dummies. They should be the same (though depends on whether they go left or right) - gateways have their bend dummies created in a later phase compared to back edge nodes. Also, do a write-up (paper-like) for how this works, I will forget it myself at some point.
 * SVG pathify fonts to circumvent compatibility problems.
+* Coordinates should be u32 instead of usize.
 
 * PE-BPMN tee-external-root-access in a tee-pool should not name itself (@tee-pool)
 * PE-BPMN tee-software-operators should have a similar `on-premises` placeholder as tee-hardware-operators. `local`? as `on-premises` seems weird. (ChatGPT recommends replacing existing 'on-premises' with 'local' as well, not sure if I agree, must sleep over that suggestion)
