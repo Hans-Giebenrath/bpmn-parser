@@ -2,7 +2,7 @@ pub mod all_crossing_minimization_common;
 pub mod all_crossing_minimization_ilp;
 pub mod all_crossing_minimization_sweep;
 pub mod back_edge_removal;
-mod collision_grid;
+pub mod collision_grid;
 pub mod constraint;
 pub mod dummy_node_generation;
 pub mod dummy_node_removal;

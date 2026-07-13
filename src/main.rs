@@ -1,4 +1,5 @@
 #![allow(clippy::too_many_arguments)]
+#![feature(gen_blocks)]
 
 mod analysis;
 mod common;
@@ -13,7 +14,6 @@ mod to_xml;
 use crate::layout::all_crossing_minimization_sweep::reduce_all_crossings_sweep;
 use crate::layout::back_edge_removal::back_edge_removal;
 use crate::layout::fix_boundary_event_connections::fix_boundary_event_connections;
-use crate::layout::set_display_text_locations::set_display_text_locations;
 use crate::layout::sort_incoming_and_outgoing::sort_incoming_and_outgoing;
 use crate::lexer::TokenCoordinate;
 use crate::output::svg::to_svg;
@@ -216,9 +216,6 @@ fn layout_graph(
     timer.time_it("dummy_node_removal", || dummy_node_removal(graph));
     timer.time_it("fix_boundary_event_connections", || {
         fix_boundary_event_connections(graph)
-    });
-    timer.time_it("set_display_text_locations", || {
-        set_display_text_locations(graph)
     });
 
     Ok(())

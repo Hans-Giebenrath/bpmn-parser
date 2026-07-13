@@ -2,6 +2,7 @@
 
 use super::macros::impl_index;
 use crate::common::bpmn_node::*;
+use crate::common::edge::Edge;
 use crate::common::graph::Coord3;
 use crate::common::graph::EdgeId;
 use crate::common::graph::Graph;
@@ -24,7 +25,6 @@ pub enum NodeType {
         /// Is data node -> DataStoreReference or DataObjectReference
         event: BpmnNode,
         display_text: String,
-        display_text_location: DisplayTextLocation,
         /// The node, but also a sequence flow jump or landing associated with this node.
         tc: TokenCoordinate,
         /// Invariant: Contains only unique elements. By coincidence it is also sorted, but don't
@@ -125,23 +125,18 @@ pub enum NodePhaseAuxData {
 #[derive(PartialEq, PartialOrd, Ord, Eq, Debug, Clone, Copy, Hash)]
 pub struct LayerId(pub usize);
 
-#[derive(PartialEq, Eq, Debug, Clone, Copy)]
-pub enum DisplayTextLocation {
-    Middle,
-    Below,
-    Left,
-    Above,
+pub enum Side {
+    Top,
     Right,
-    BelowLeft,
-    AboveLeft,
-    BelowRight,
-    AboveRight,
+    Bottom,
+    Left,
 }
 
 #[derive(Debug)]
 pub struct Node {
     pub id: NodeId,
     pub node_type: NodeType,
+    /// TODO should use u32 instead.
     pub x: usize,
     pub y: usize,
     pub width: usize,
@@ -482,6 +477,28 @@ impl Node {
             y: self.y,
             width: self.width,
             height: self.height,
+        }
+    }
+
+    pub fn side_of_first_incoming_flow(&self, graph: &Graph, edge_type: fn(&Edge) -> bool) -> Side {
+        let Some((port, _)) = self
+            .incoming_ports
+            .iter()
+            .zip(self.incoming.iter())
+            .filter(|&(_, e)| edge_type(&e!(*e)))
+            .next()
+        else {
+            return Side::Left;
+        };
+        if port.x == 0 {
+            Side::Left
+        } else if port.x == self.width {
+            Side::Right
+        } else if port.y == 0 {
+            Side::Top
+        } else {
+            assert!(port.y == self.height);
+            Side::Bottom
         }
     }
 }

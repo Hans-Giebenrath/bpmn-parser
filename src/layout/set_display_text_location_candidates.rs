@@ -1,233 +1,114 @@
 use std::{num::NonZero, ops::ControlFlow};
 
-use crate::{
-    common::{
-        bpmn_node::BpmnNode,
-        edge::{EdgeType, RegularEdgeBendPoints},
-        graph::Graph,
-        node::{Dimension, NodeType},
-    },
-    layout::collision_grid::{Grid, Line},
+use crate::common::{
+    config::Config,
+    node::{Dimension, Side},
 };
 
+struct DisplayTextLocationCandidateInner {
+    pub alignment: Alignment,
+    pub reference_point: ReferencePoint,
+    pub x: usize,
+    pub y: usize,
+}
+
+impl DisplayTextLocationCandidateInner {
+    fn materialize(&self, (width, height): (usize, usize)) -> DisplayTextLocationCandidate {
+        let x = match self.reference_point {
+            ReferencePoint::Center | ReferencePoint::CenterTop | ReferencePoint::CenterBottom => {
+                self.x + width / 2
+            }
+            ReferencePoint::LeftTop | ReferencePoint::LeftCenter | ReferencePoint::LeftBottom => {
+                self.x
+            }
+            ReferencePoint::RightTop
+            | ReferencePoint::RightCenter
+            | ReferencePoint::RightBottom => self.x + width,
+        };
+
+        let y = match self.reference_point {
+            ReferencePoint::LeftTop | ReferencePoint::CenterTop | ReferencePoint::RightTop => {
+                self.y
+            }
+            ReferencePoint::LeftCenter | ReferencePoint::Center | ReferencePoint::RightCenter => {
+                self.y + height / 2
+            }
+            ReferencePoint::LeftBottom
+            | ReferencePoint::CenterBottom
+            | ReferencePoint::RightBottom => self.y + height,
+        };
+
+        DisplayTextLocationCandidate {
+            alignment: self.alignment,
+            x,
+            y,
+        }
+    }
+}
+
 pub struct DisplayTextLocationCandidate {
-    alignment: Alignment,
-    reference_point: ReferencePoint,
-    /// In reference to the x,y coordinates of the [Node] itself, to be multiplied with the display
-    /// text margin value of the graph config.
-    x_margin_multiplier: f32,
-    y_margin_multiplier: f32,
+    pub alignment: Alignment,
+    pub x: usize,
+    pub y: usize,
 }
 
-pub struct EdgeDisplayTextLocationCandidate {
-    alignment: Alignment,
-    reference_point: ReferencePoint,
-    x: usize,
-    y: usize,
+struct CandidateTracker<'a> {
+    score: u32,
+    candidate: DisplayTextLocationCandidate,
+    textbox_wh: (usize, usize),
+    callback: &'a DisplayLocationCallback<'a>,
 }
 
-// Indices for the display text location candidates. The arrays are laid out as such.
-// Nodes contain then a list of
-const TOP_LEFT: usize = 0;
-const TOP: usize = 1;
-const TOP_RIGHT: usize = 2;
-const RIGHT: usize = 3;
-const BOTTOM_RIGHT: usize = 4;
-const BOTTOM: usize = 5;
-const BOTTOM_LEFT: usize = 6;
-const LEFT: usize = 7;
+impl<'a> CandidateTracker<'a> {
+    fn call_and_maybe_update(
+        &mut self,
+        candidate: &DisplayTextLocationCandidateInner,
+    ) -> ControlFlow<()> {
+        let candidate = candidate.materialize(self.textbox_wh);
+        let score = (*self.callback)(&candidate);
 
-pub struct PackedIndicesForDisplayTextLocation {
-    /// Since every index is just 0..=7, we can put it into 3 bits. At 8 numbers, we have
-    /// just 8 * 3 = 24 bits, so it fits into a regular u32 number. Genius!
-    bits: u32,
-}
-
-///      ABC     ABC    ABC    ABC     ABC         ^
-///  ---------------------------------------->     v `margin` distance between edge and display text
-///  |<-->| <- margin to ends
-///       X       X       X       X       X   <- if just applying steps
-///                      C <- The actual center of the edge. The ABC was collapsed here because
-///                           it would otherwise be too close to the center, resulting in weird
-///                           visuals.
-///                             ^ on this side we try mirror the modified step size around the center,
-///                               so that we reach the farthest end of the edge (otherwise would
-///                               overrun since step size is probably not a perfect multiple of the
-///                               `edge length - 2*margin_to_ends`)
-struct Config {
-    margin: u32,
-    edge_x_step_size: NonZero<u32>,
-    edge_y_step_size: NonZero<u32>,
-    edge_x_margin_to_ends: u32,
-    edge_y_margin_to_ends: u32,
-    edge_x_min_distance_to_center_or_else_collapse_into_center: NonZero<u32>,
-    edge_y_min_distance_to_center_or_else_collapse_into_center: NonZero<u32>,
-}
-
-impl PackedIndicesForDisplayTextLocation {
-    fn new(indices: [usize; 8]) -> PackedIndicesForDisplayTextLocation {
-        let mut bits: u32 = 0;
-        for index in indices.iter().rev() {
-            bits |= *index as u32;
-            bits <<= 3;
+        if score < self.score {
+            self.score = score;
+            self.candidate = candidate;
         }
-        Self { bits }
-    }
 
-    /// Use the result as indices into either [GATEWAY_CANDIDATES] or [EVENT_CANDIDATES].
-    fn unpack(&self) -> [usize; 8] {
-        let mut indices = [0, 0, 0, 0, 0, 0, 0, 0];
-        let mut bits = self.bits;
-        for index in indices.iter_mut() {
-            *index = (bits & 0b111) as usize;
-            bits >>= 3;
+        if self.score == 0 {
+            ControlFlow::Break(())
+        } else {
+            ControlFlow::Continue(())
         }
-        indices
     }
 }
-
-type DisplayLocationCallback = dyn Fn(&EdgeDisplayTextLocationCandidate) -> ControlFlow<(), f64>;
+type DisplayLocationCallback<'a> = dyn Fn(&DisplayTextLocationCandidate) -> u32 + 'a;
 
 /// So the text is a bit moved closer to the gateway if it is placed in a corner,
 /// otherwise I believe it is just appearing a little detached.
 const GATEWAY_CORNER_FRACTIONAL_MARGIN: f32 = 0.8;
-
-pub const GATEWAY_CANDIDATES: [DisplayTextLocationCandidate; 8] = [
-    // Top Left
-    DisplayTextLocationCandidate {
-        alignment: Alignment::Right,
-        reference_point: ReferencePoint::RightBottom,
-        x_margin_multiplier: -GATEWAY_CORNER_FRACTIONAL_MARGIN,
-        y_margin_multiplier: -GATEWAY_CORNER_FRACTIONAL_MARGIN,
-    },
-    // Top
-    DisplayTextLocationCandidate {
-        alignment: Alignment::Center,
-        reference_point: ReferencePoint::CenterBottom,
-        x_margin_multiplier: 0.,
-        y_margin_multiplier: -1.,
-    },
-    // Top Right
-    DisplayTextLocationCandidate {
-        alignment: Alignment::Left,
-        reference_point: ReferencePoint::LeftBottom,
-        x_margin_multiplier: GATEWAY_CORNER_FRACTIONAL_MARGIN,
-        y_margin_multiplier: -GATEWAY_CORNER_FRACTIONAL_MARGIN,
-    },
-    // Right
-    DisplayTextLocationCandidate {
-        alignment: Alignment::Left,
-        reference_point: ReferencePoint::LeftCenter,
-        x_margin_multiplier: 1.,
-        y_margin_multiplier: 0.,
-    },
-    // Bottom Right
-    DisplayTextLocationCandidate {
-        alignment: Alignment::Left,
-        reference_point: ReferencePoint::LeftTop,
-        x_margin_multiplier: GATEWAY_CORNER_FRACTIONAL_MARGIN,
-        y_margin_multiplier: GATEWAY_CORNER_FRACTIONAL_MARGIN,
-    },
-    // Bottom
-    DisplayTextLocationCandidate {
-        alignment: Alignment::Center,
-        reference_point: ReferencePoint::CenterTop,
-        x_margin_multiplier: 0.,
-        y_margin_multiplier: 1.,
-    },
-    // Bottom Left
-    DisplayTextLocationCandidate {
-        alignment: Alignment::Right,
-        reference_point: ReferencePoint::RightTop,
-        x_margin_multiplier: -GATEWAY_CORNER_FRACTIONAL_MARGIN,
-        y_margin_multiplier: GATEWAY_CORNER_FRACTIONAL_MARGIN,
-    },
-    // Left
-    DisplayTextLocationCandidate {
-        alignment: Alignment::Right,
-        reference_point: ReferencePoint::RightCenter,
-        x_margin_multiplier: -1.,
-        y_margin_multiplier: 0.,
-    },
-];
 
 /// So the text is a bit moved closer to the gateway if it is placed in a corner,
 /// otherwise I believe it is just appearing a little detached. A little less
 /// extreme than the gateway, since for events there is rounding.
 const EVENT_CORNER_FRACTIONAL_MARGIN: f32 = 0.93;
 
-pub const EVENT_CANDIDATES: [DisplayTextLocationCandidate; 8] = [
-    // Top Left
-    DisplayTextLocationCandidate {
-        alignment: Alignment::Right,
-        reference_point: ReferencePoint::RightBottom,
-        x_margin_multiplier: -EVENT_CORNER_FRACTIONAL_MARGIN,
-        y_margin_multiplier: -EVENT_CORNER_FRACTIONAL_MARGIN,
-    },
-    // Top
-    DisplayTextLocationCandidate {
-        alignment: Alignment::Center,
-        reference_point: ReferencePoint::CenterBottom,
-        x_margin_multiplier: 0.,
-        y_margin_multiplier: -1.,
-    },
-    // Top Right
-    DisplayTextLocationCandidate {
-        alignment: Alignment::Left,
-        reference_point: ReferencePoint::LeftBottom,
-        x_margin_multiplier: EVENT_CORNER_FRACTIONAL_MARGIN,
-        y_margin_multiplier: -EVENT_CORNER_FRACTIONAL_MARGIN,
-    },
-    // Right
-    DisplayTextLocationCandidate {
-        alignment: Alignment::Left,
-        reference_point: ReferencePoint::LeftCenter,
-        x_margin_multiplier: 1.,
-        y_margin_multiplier: 0.,
-    },
-    // Bottom Right
-    DisplayTextLocationCandidate {
-        alignment: Alignment::Left,
-        reference_point: ReferencePoint::LeftTop,
-        x_margin_multiplier: EVENT_CORNER_FRACTIONAL_MARGIN,
-        y_margin_multiplier: EVENT_CORNER_FRACTIONAL_MARGIN,
-    },
-    // Bottom
-    DisplayTextLocationCandidate {
-        alignment: Alignment::Center,
-        reference_point: ReferencePoint::CenterTop,
-        x_margin_multiplier: 0.,
-        y_margin_multiplier: 1.,
-    },
-    // Bottom Left
-    DisplayTextLocationCandidate {
-        alignment: Alignment::Right,
-        reference_point: ReferencePoint::RightTop,
-        x_margin_multiplier: -EVENT_CORNER_FRACTIONAL_MARGIN,
-        y_margin_multiplier: EVENT_CORNER_FRACTIONAL_MARGIN,
-    },
-    // Left
-    DisplayTextLocationCandidate {
-        alignment: Alignment::Right,
-        reference_point: ReferencePoint::RightCenter,
-        x_margin_multiplier: -1.,
-        y_margin_multiplier: 0.,
-    },
-];
-
 pub fn edge_display_text_location_candidates(
     config: &Config,
+    textbox_wh: (usize, usize),
     line_points: &[(usize, usize)],
     // A gen fn would be cooler, but then again I maybe need to rotate the start
     callback: &DisplayLocationCallback,
-) -> EdgeDisplayTextLocationCandidate {
+) -> DisplayTextLocationCandidate {
     let mut it = line_points.iter().cloned().peekable();
-    let mut best_candidate_score = f64::MAX;
-    let mut best_candidate = EdgeDisplayTextLocationCandidate {
-        alignment: Alignment::Center,
-        reference_point: ReferencePoint::Center,
-        x: 0,
-        y: 0,
+    let mut best_candidate = CandidateTracker {
+        score: u32::MAX,
+        candidate: DisplayTextLocationCandidateInner {
+            alignment: Alignment::Center,
+            reference_point: ReferencePoint::Center,
+            x: line_points.first().cloned().unwrap_or_default().0,
+            y: line_points.first().cloned().unwrap_or_default().1,
+        }
+        .materialize(textbox_wh),
+        textbox_wh,
+        callback,
     };
 
     // The most natural position for the label would be on the first horizontal edge segment. So
@@ -239,11 +120,9 @@ pub fn edge_display_text_location_candidates(
             config,
             *second,
             *third,
-            callback,
-            &mut best_candidate_score,
             &mut best_candidate,
         ) {
-            ControlFlow::Break(candidate) => return candidate,
+            ControlFlow::Break(()) => return best_candidate.candidate,
             ControlFlow::Continue(()) => (),
         }
         Some(1)
@@ -260,11 +139,9 @@ pub fn edge_display_text_location_candidates(
                 config,
                 cur,
                 next,
-                callback,
-                &mut best_candidate_score,
                 &mut best_candidate,
             ) {
-                ControlFlow::Break(candidate) => return candidate,
+                ControlFlow::Break(()) => return best_candidate.candidate,
                 ControlFlow::Continue(()) => (),
             }
         }
@@ -274,11 +151,9 @@ pub fn edge_display_text_location_candidates(
                 cur,
                 next,
                 *peeked,
-                callback,
-                &mut best_candidate_score,
                 &mut best_candidate,
             ) {
-                ControlFlow::Break(candidate) => return candidate,
+                ControlFlow::Break(()) => return best_candidate.candidate,
                 ControlFlow::Continue(()) => (),
             }
         }
@@ -286,7 +161,7 @@ pub fn edge_display_text_location_candidates(
         cur_opt = next_opt;
         next_opt = it.next();
     }
-    best_candidate
+    best_candidate.candidate
 }
 
 /// Goes from start to end, always oscillating above->below->above or left->right->left (depending
@@ -295,43 +170,36 @@ pub fn edge_segment_display_text_location_candidates(
     config: &Config,
     start: (usize, usize),
     end: (usize, usize),
-    callback: &DisplayLocationCallback,
-    best_candidate_score: &mut f64,
-    best_candidate: &mut EdgeDisplayTextLocationCandidate,
-) -> ControlFlow<EdgeDisplayTextLocationCandidate> {
+    best_candidate: &mut CandidateTracker,
+) -> ControlFlow<()> {
     if start.0 == end.0 {
         // Going up or down.
         let it = iterate_edge_points(
             start.1 as u32,
             end.1 as u32,
-            config.edge_y_margin_to_ends,
-            config.edge_y_step_size,
-            config.edge_y_min_distance_to_center_or_else_collapse_into_center,
+            config.display_text_edge_y_margin_to_ends,
+            config.display_text_edge_y_step_size.try_into().unwrap(),
+            config
+                .display_text_edge_y_min_distance_to_center_or_else_collapse_into_center
+                .try_into()
+                .unwrap(),
         );
         for y in it {
             for candidate in [
-                EdgeDisplayTextLocationCandidate {
+                DisplayTextLocationCandidateInner {
                     alignment: Alignment::Right,
                     reference_point: ReferencePoint::RightCenter,
-                    x: start.0.saturating_sub(config.margin as usize),
+                    x: start.0.saturating_sub(config.display_text_margin as usize),
                     y: y as usize,
                 },
-                EdgeDisplayTextLocationCandidate {
+                DisplayTextLocationCandidateInner {
                     alignment: Alignment::Left,
                     reference_point: ReferencePoint::LeftCenter,
-                    x: start.0.saturating_add(config.margin as usize),
+                    x: start.0.saturating_add(config.display_text_margin as usize),
                     y: y as usize,
                 },
             ] {
-                match callback(&candidate) {
-                    ControlFlow::Break(()) => return ControlFlow::Break(candidate),
-                    ControlFlow::Continue(score) => {
-                        if score < *best_candidate_score {
-                            *best_candidate_score = score;
-                            *best_candidate = candidate;
-                        }
-                    }
-                }
+                best_candidate.call_and_maybe_update(&candidate)?;
             }
         }
     } else if start.1 == end.1 {
@@ -339,34 +207,29 @@ pub fn edge_segment_display_text_location_candidates(
         let it = iterate_edge_points(
             start.0 as u32,
             end.0 as u32,
-            config.edge_x_margin_to_ends,
-            config.edge_x_step_size,
-            config.edge_x_min_distance_to_center_or_else_collapse_into_center,
+            config.display_text_edge_x_margin_to_ends,
+            config.display_text_edge_x_step_size.try_into().unwrap(),
+            config
+                .display_text_edge_x_min_distance_to_center_or_else_collapse_into_center
+                .try_into()
+                .unwrap(),
         );
         for x in it {
             for candidate in [
-                EdgeDisplayTextLocationCandidate {
+                DisplayTextLocationCandidateInner {
                     alignment: Alignment::Center,
                     reference_point: ReferencePoint::CenterBottom,
-                    y: start.1.saturating_sub(config.margin as usize),
+                    y: start.1.saturating_sub(config.display_text_margin as usize),
                     x: x as usize,
                 },
-                EdgeDisplayTextLocationCandidate {
+                DisplayTextLocationCandidateInner {
                     alignment: Alignment::Center,
                     reference_point: ReferencePoint::CenterTop,
-                    y: start.1.saturating_add(config.margin as usize),
+                    y: start.1.saturating_add(config.display_text_margin as usize),
                     x: x as usize,
                 },
             ] {
-                match callback(&candidate) {
-                    ControlFlow::Break(()) => return ControlFlow::Break(candidate),
-                    ControlFlow::Continue(score) => {
-                        if score < *best_candidate_score {
-                            *best_candidate_score = score;
-                            *best_candidate = candidate;
-                        }
-                    }
-                }
+                best_candidate.call_and_maybe_update(&candidate)?;
             }
         }
     } else {
@@ -437,10 +300,206 @@ pub fn edge_corner_display_text_location_candidates(
     start: (usize, usize),
     middle: (usize, usize),
     end: (usize, usize),
-    callback: &DisplayLocationCallback,
-    best_candidate_score: &mut f64,
-    best_candidate: &mut EdgeDisplayTextLocationCandidate,
-) -> ControlFlow<EdgeDisplayTextLocationCandidate> {
+    best_candidate: &mut CandidateTracker,
+) -> ControlFlow<()> {
+    use std::cmp::Ordering::{Equal, Greater, Less};
+    let candidates_to_try = match (
+        start.0.cmp(&middle.0),
+        start.1.cmp(&middle.1),
+        middle.0.cmp(&end.0),
+        middle.1.cmp(&end.1),
+    ) {
+        (Equal, Greater, Greater, Equal) => {
+            // up-left
+            [
+                DisplayTextLocationCandidateInner {
+                    alignment: Alignment::Center,
+                    reference_point: ReferencePoint::CenterBottom,
+                    x: middle.0,
+                    y: middle.1.saturating_sub(config.display_text_margin as usize),
+                },
+                DisplayTextLocationCandidateInner {
+                    alignment: Alignment::Left,
+                    reference_point: ReferencePoint::LeftCenter,
+                    x: middle.0 + config.display_text_margin as usize,
+                    y: middle.1,
+                },
+                DisplayTextLocationCandidateInner {
+                    alignment: Alignment::Left,
+                    reference_point: ReferencePoint::LeftBottom,
+                    x: middle.0 + config.display_text_margin as usize,
+                    y: middle.1.saturating_sub(config.display_text_margin as usize),
+                },
+            ]
+        }
+        (Equal, Greater, Less, Equal) => {
+            // up-right
+            [
+                DisplayTextLocationCandidateInner {
+                    alignment: Alignment::Center,
+                    reference_point: ReferencePoint::CenterBottom,
+                    x: middle.0,
+                    y: middle.1.saturating_sub(config.display_text_margin as usize),
+                },
+                DisplayTextLocationCandidateInner {
+                    alignment: Alignment::Right,
+                    reference_point: ReferencePoint::RightCenter,
+                    x: middle.0.saturating_sub(config.display_text_margin as usize),
+                    y: middle.1,
+                },
+                DisplayTextLocationCandidateInner {
+                    alignment: Alignment::Right,
+                    reference_point: ReferencePoint::RightBottom,
+                    x: middle.0.saturating_sub(config.display_text_margin as usize),
+                    y: middle.1.saturating_sub(config.display_text_margin as usize),
+                },
+            ]
+        }
+        (Less, Equal, Equal, Greater) => {
+            // right-up
+            [
+                DisplayTextLocationCandidateInner {
+                    alignment: Alignment::Left,
+                    reference_point: ReferencePoint::LeftCenter,
+                    x: middle.0 + config.display_text_margin as usize,
+                    y: middle.1,
+                },
+                DisplayTextLocationCandidateInner {
+                    alignment: Alignment::Center,
+                    reference_point: ReferencePoint::CenterTop,
+                    x: middle.0,
+                    y: middle.1 + config.display_text_margin as usize,
+                },
+                DisplayTextLocationCandidateInner {
+                    alignment: Alignment::Left,
+                    reference_point: ReferencePoint::LeftTop,
+                    x: middle.0 + config.display_text_margin as usize,
+                    y: middle.1 + config.display_text_margin as usize,
+                },
+            ]
+        }
+        (Less, Equal, Equal, Less) => {
+            // right-down
+            [
+                DisplayTextLocationCandidateInner {
+                    alignment: Alignment::Left,
+                    reference_point: ReferencePoint::LeftCenter,
+                    x: middle.0 + config.display_text_margin as usize,
+                    y: middle.1,
+                },
+                DisplayTextLocationCandidateInner {
+                    alignment: Alignment::Center,
+                    reference_point: ReferencePoint::CenterBottom,
+                    x: middle.0,
+                    y: middle.1.saturating_sub(config.display_text_margin as usize),
+                },
+                DisplayTextLocationCandidateInner {
+                    alignment: Alignment::Left,
+                    reference_point: ReferencePoint::LeftBottom,
+                    x: middle.0 + config.display_text_margin as usize,
+                    y: middle.1.saturating_sub(config.display_text_margin as usize),
+                },
+            ]
+        }
+        (Equal, Less, Greater, Equal) => {
+            // down-right
+            [
+                DisplayTextLocationCandidateInner {
+                    alignment: Alignment::Center,
+                    reference_point: ReferencePoint::CenterTop,
+                    x: middle.0,
+                    y: middle.1 + config.display_text_margin as usize,
+                },
+                DisplayTextLocationCandidateInner {
+                    alignment: Alignment::Right,
+                    reference_point: ReferencePoint::RightCenter,
+                    x: middle.0.saturating_sub(config.display_text_margin as usize),
+                    y: middle.1,
+                },
+                DisplayTextLocationCandidateInner {
+                    alignment: Alignment::Right,
+                    reference_point: ReferencePoint::RightTop,
+                    x: middle.0.saturating_sub(config.display_text_margin as usize),
+                    y: middle.1 + config.display_text_margin as usize,
+                },
+            ]
+        }
+        (Equal, Less, Less, Equal) => {
+            // down-left
+            [
+                DisplayTextLocationCandidateInner {
+                    alignment: Alignment::Center,
+                    reference_point: ReferencePoint::CenterTop,
+                    x: middle.0,
+                    y: middle.1 + config.display_text_margin as usize,
+                },
+                DisplayTextLocationCandidateInner {
+                    alignment: Alignment::Left,
+                    reference_point: ReferencePoint::LeftCenter,
+                    x: middle.0 + config.display_text_margin as usize,
+                    y: middle.1,
+                },
+                DisplayTextLocationCandidateInner {
+                    alignment: Alignment::Left,
+                    reference_point: ReferencePoint::LeftTop,
+                    x: middle.0 + config.display_text_margin as usize,
+                    y: middle.1 + config.display_text_margin as usize,
+                },
+            ]
+        }
+        (Greater, Equal, Equal, Less) => {
+            // left-down
+            [
+                DisplayTextLocationCandidateInner {
+                    alignment: Alignment::Right,
+                    reference_point: ReferencePoint::RightCenter,
+                    x: middle.0.saturating_sub(config.display_text_margin as usize),
+                    y: middle.1,
+                },
+                DisplayTextLocationCandidateInner {
+                    alignment: Alignment::Center,
+                    reference_point: ReferencePoint::CenterBottom,
+                    x: middle.0,
+                    y: middle.1.saturating_sub(config.display_text_margin as usize),
+                },
+                DisplayTextLocationCandidateInner {
+                    alignment: Alignment::Right,
+                    reference_point: ReferencePoint::RightBottom,
+                    x: middle.0.saturating_sub(config.display_text_margin as usize),
+                    y: middle.1.saturating_sub(config.display_text_margin as usize),
+                },
+            ]
+        }
+        (Greater, Equal, Equal, Greater) => {
+            // left-up
+            [
+                DisplayTextLocationCandidateInner {
+                    alignment: Alignment::Right,
+                    reference_point: ReferencePoint::RightCenter,
+                    x: middle.0.saturating_sub(config.display_text_margin as usize),
+                    y: middle.1,
+                },
+                DisplayTextLocationCandidateInner {
+                    alignment: Alignment::Center,
+                    reference_point: ReferencePoint::CenterTop,
+                    x: middle.0,
+                    y: middle.1 + config.display_text_margin as usize,
+                },
+                DisplayTextLocationCandidateInner {
+                    alignment: Alignment::Right,
+                    reference_point: ReferencePoint::RightTop,
+                    x: middle.0.saturating_sub(config.display_text_margin as usize),
+                    y: middle.1 + config.display_text_margin as usize,
+                },
+            ]
+        }
+        _ => unreachable!("The edge has some fake-bendpoint? {start:?} {middle:?} {end:?}"),
+    };
+
+    for candidate in candidates_to_try {
+        best_candidate.call_and_maybe_update(&candidate)?;
+    }
+    ControlFlow::Continue(())
 }
 
 pub enum ReferencePoint {
@@ -457,140 +516,349 @@ pub enum ReferencePoint {
     LeftCenter,
 }
 
+#[derive(Clone, Copy)]
 pub enum Alignment {
     Left,
     Center,
     Right,
 }
 
-enum Side {
-    Top,
-    Right,
-    Bottom,
-    Left,
-}
+//pub fn real_node_display_text_location_candidates(
+//    graph: &Graph,
+//    node: &Node,
+//    callback: &DisplayLocationCallback,
+//) -> EdgeDisplayTextLocationCandidate {
+//    let dim = node.dimension();
+//    let NodeType::RealNode { event, .. } = &node.node_type else {
+//        unreachable!("This function should only be called with RealNodes.");
+//    };
+//    match &event {
+//        BpmnNode::Gateway(..) => gateway_display_text_location_candidates(
+//            &Config::new(&graph.config),
+//            dim,
+//            Side::new(graph, node),
+//            callback,
+//        ),
+//        BpmnNode::Event(..) => event_or_data_display_text_location_candidates(
+//            &Config::new(&graph.config),
+//            EVENT_CORNER_FRACTIONAL_MARGIN,
+//            dim,
+//            Side::new(graph, node),
+//            callback,
+//        ),
+//        BpmnNode::Data(..) => event_or_data_display_text_location_candidates(
+//            &Config::new(&graph.config),
+//            1.0,
+//            dim,
+//            Side::new(graph, node),
+//            callback,
+//        ),
+//        BpmnNode::Activity(..) => activity_display_text_location_candidates(dim),
+//    }
+//}
 
-struct SideFreedom {
-    left_free: bool,
-    left_top_free: bool,
-    top_free: bool,
-    right_top_free: bool,
-    right_free: bool,
-    bottom_right_free: bool,
-    bottom_free: bool,
-    bottom_left_free: bool,
-}
-
-pub fn set_display_text_location_candidates(graph: &mut Graph) {
-    let grid = prepare_collision_grid(graph);
-
-    for node in &graph.nodes {
-        let dim = node.dimension();
-        let NodeType::RealNode {
-            event,
-            display_text_location_candidate_indices,
-            ..
-        } = &mut node.node_type
-        else {
-            continue;
-        };
-        let old_len = graph.display_text_location_candidates.len();
-        if matches!(event, BpmnNode::Gateway(..)) {
-            find_gateway_label_position(dim, &mut graph)
-        } else {
-            find_non_gateway_label_position(dim, &mut graph)
-        }
-        let new_len = graph.display_text_location_candidates.len();
-        *display_text_location_candidate_indices = std::range::Range::from(old_len..new_len);
-    }
-}
-
-struct CandidateBuffer {
-    free_candidates_buffer: Vec<DisplayTextLocationCandidate>,
-    obstructed_candidates_buffer: Vec<DisplayTextLocationCandidate>,
-}
-
-impl CandidateBuffer {
-    fn new() -> Self {
-        Self {
-            free_candidates_buffer: Default::default(),
-            obstructed_candidates_buffer: Default::default(),
-        }
-    }
-
-    fn drain<'a>(&'a mut self) -> impl Iterator<Item = DisplayTextLocationCandidate> + 'a {
-        self.free_candidates_buffer
-            .drain(..)
-            .chain(self.obstructed_candidates_buffer.drain(..))
-    }
-
-    fn insert(&mut self, candidate: DisplayTextLocationCandidate, free: bool) {
-        if free {
-            self.free_candidates_buffer.push(candidate);
-        } else {
-            self.obstructed_candidates_buffer.push(candidate);
-        }
-    }
-}
-
-fn find_gateway_label_position(
+pub fn gateway_display_text_location_candidates(
+    config: &Config,
+    textbox_wh: (usize, usize),
     dim: Dimension,
-    graph: &mut Graph,
-    side_freedom: SideFreedom,
     incoming_from: Side,
-    candidates_buffer: &mut CandidateBuffer,
-) {
-    let margin = graph.config.display_text_margin;
-    const LEN: usize = 8;
+    callback: &DisplayLocationCallback,
+) -> DisplayTextLocationCandidate {
+    let full_margin = config.display_text_margin as usize;
+    let fract_margin = (full_margin as f32 * GATEWAY_CORNER_FRACTIONAL_MARGIN).round() as usize;
 
-    graph.display_text_location_candidates.extend();
+    let mut best_candidate = CandidateTracker {
+        score: u32::MAX,
+        candidate: DisplayTextLocationCandidateInner {
+            alignment: Alignment::Center,
+            reference_point: ReferencePoint::Center,
+            x: dim.x.saturating_add(dim.width / 2),
+            y: dim.y.saturating_add(dim.height / 2),
+        }
+        .materialize(textbox_wh),
+        textbox_wh,
+        callback,
+    };
+    let top_left = DisplayTextLocationCandidateInner {
+        alignment: Alignment::Right,
+        reference_point: ReferencePoint::RightBottom,
+        x: dim.x.saturating_sub(fract_margin),
+        y: dim.y.saturating_sub(fract_margin),
+    };
+    let top = DisplayTextLocationCandidateInner {
+        alignment: Alignment::Center,
+        reference_point: ReferencePoint::CenterBottom,
+        x: dim.x.saturating_add(dim.width / 2),
+        y: dim.y.saturating_sub(full_margin),
+    };
+    let top_right = DisplayTextLocationCandidateInner {
+        alignment: Alignment::Left,
+        reference_point: ReferencePoint::LeftBottom,
+        x: dim.x.saturating_add(dim.width).saturating_add(fract_margin),
+        y: dim.y.saturating_sub(fract_margin),
+    };
+    let right = DisplayTextLocationCandidateInner {
+        alignment: Alignment::Left,
+        reference_point: ReferencePoint::LeftCenter,
+        x: dim.x.saturating_add(dim.width).saturating_add(full_margin),
+        y: dim.y.saturating_add(dim.height / 2),
+    };
+    let bottom_right = DisplayTextLocationCandidateInner {
+        alignment: Alignment::Left,
+        reference_point: ReferencePoint::LeftTop,
+        x: dim.x.saturating_add(dim.width).saturating_add(fract_margin),
+        y: dim
+            .y
+            .saturating_add(dim.height)
+            .saturating_add(fract_margin),
+    };
+    let bottom = DisplayTextLocationCandidateInner {
+        alignment: Alignment::Center,
+        reference_point: ReferencePoint::CenterTop,
+        x: dim.x.saturating_add(dim.width / 2),
+        y: dim.y.saturating_add(dim.height).saturating_add(full_margin),
+    };
+    let bottom_left = DisplayTextLocationCandidateInner {
+        alignment: Alignment::Right,
+        reference_point: ReferencePoint::RightTop,
+        x: dim.x.saturating_sub(fract_margin),
+        y: dim
+            .y
+            .saturating_add(dim.height)
+            .saturating_add(fract_margin),
+    };
+    let left = DisplayTextLocationCandidateInner {
+        alignment: Alignment::Right,
+        reference_point: ReferencePoint::RightCenter,
+        x: dim.x.saturating_sub(full_margin),
+        y: dim.y.saturating_add(dim.height / 2),
+    };
+
+    let candidates: [DisplayTextLocationCandidateInner; 8] = match incoming_from {
+        Side::Left => [
+            top_left,
+            right,
+            bottom_left,
+            top,
+            bottom,
+            top_right,
+            bottom_right,
+            left,
+        ],
+        Side::Right => [
+            top_right,
+            left,
+            bottom_right,
+            top,
+            bottom,
+            top_left,
+            bottom_left,
+            right,
+        ],
+        Side::Top => [
+            top_left,
+            bottom,
+            top_right,
+            left,
+            right,
+            bottom_left,
+            bottom_right,
+            top,
+        ],
+        Side::Bottom => [
+            bottom_left,
+            top,
+            bottom_right,
+            left,
+            right,
+            top_left,
+            top_right,
+            bottom,
+        ],
+    };
+
+    for candidate in candidates {
+        if let ControlFlow::Break(()) = best_candidate.call_and_maybe_update(&candidate) {
+            return best_candidate.candidate;
+        }
+    }
+
+    best_candidate.candidate
 }
 
-fn prepare_collision_grid(graph: &Graph) -> Grid {
-    let (total_width, total_height) = graph.total_width_height();
-    let mut quad_tree = Grid::new(total_width, total_height);
+fn event_or_data_display_text_location_candidates(
+    config: &Config,
+    corner_fractional_margin: f32,
+    textbox_wh: (usize, usize),
+    dim: Dimension,
+    incoming_from: Side,
+    callback: &DisplayLocationCallback,
+) -> DisplayTextLocationCandidate {
+    let full_margin = config.display_text_margin as usize;
+    let fract_margin = (full_margin as f32 * corner_fractional_margin).round() as usize;
 
-    for edge in &graph.edges {
-        let EdgeType::Regular {
-            bend_points: RegularEdgeBendPoints::FullyRouted(bend_points),
-            ..
-        } = &edge.edge_type
-        else {
-            unreachable!("Only regular edges at this point");
-        };
-        for [start, end] in bend_points.array_windows() {
-            quad_tree.insert(&Line::new(start, end));
+    let mut best_candidate = CandidateTracker {
+        score: u32::MAX,
+        candidate: DisplayTextLocationCandidateInner {
+            alignment: Alignment::Center,
+            reference_point: ReferencePoint::Center,
+            x: dim.x.saturating_add(dim.width / 2),
+            y: dim.y.saturating_add(dim.height / 2),
+        }
+        .materialize(textbox_wh),
+        textbox_wh,
+        callback,
+    };
+    let top_left = DisplayTextLocationCandidateInner {
+        alignment: Alignment::Right,
+        reference_point: ReferencePoint::RightBottom,
+        x: dim.x.saturating_sub(fract_margin),
+        y: dim.y.saturating_sub(fract_margin),
+    };
+    let top = DisplayTextLocationCandidateInner {
+        alignment: Alignment::Center,
+        reference_point: ReferencePoint::CenterBottom,
+        x: dim.x.saturating_add(dim.width / 2),
+        y: dim.y.saturating_sub(full_margin),
+    };
+    let top_right = DisplayTextLocationCandidateInner {
+        alignment: Alignment::Left,
+        reference_point: ReferencePoint::LeftBottom,
+        x: dim.x.saturating_add(dim.width).saturating_add(fract_margin),
+        y: dim.y.saturating_sub(fract_margin),
+    };
+    let right = DisplayTextLocationCandidateInner {
+        alignment: Alignment::Left,
+        reference_point: ReferencePoint::LeftCenter,
+        x: dim.x.saturating_add(dim.width).saturating_add(full_margin),
+        y: dim.y.saturating_add(dim.height / 2),
+    };
+    let bottom_right = DisplayTextLocationCandidateInner {
+        alignment: Alignment::Left,
+        reference_point: ReferencePoint::LeftTop,
+        x: dim.x.saturating_add(dim.width).saturating_add(fract_margin),
+        y: dim
+            .y
+            .saturating_add(dim.height)
+            .saturating_add(fract_margin),
+    };
+    let bottom = DisplayTextLocationCandidateInner {
+        alignment: Alignment::Center,
+        reference_point: ReferencePoint::CenterTop,
+        x: dim.x.saturating_add(dim.width / 2),
+        y: dim.y.saturating_add(dim.height).saturating_add(full_margin),
+    };
+    let bottom_left = DisplayTextLocationCandidateInner {
+        alignment: Alignment::Right,
+        reference_point: ReferencePoint::RightTop,
+        x: dim.x.saturating_sub(fract_margin),
+        y: dim
+            .y
+            .saturating_add(dim.height)
+            .saturating_add(fract_margin),
+    };
+    let left = DisplayTextLocationCandidateInner {
+        alignment: Alignment::Right,
+        reference_point: ReferencePoint::RightCenter,
+        x: dim.x.saturating_sub(full_margin),
+        y: dim.y.saturating_add(dim.height / 2),
+    };
+
+    let candidates: [DisplayTextLocationCandidateInner; 8] = match incoming_from {
+        Side::Left => [
+            bottom,
+            top,
+            right,
+            top_left,
+            bottom_left,
+            top_right,
+            bottom_right,
+            left,
+        ],
+        Side::Right => [
+            bottom,
+            top,
+            left,
+            top_right,
+            bottom_right,
+            top_left,
+            bottom_left,
+            right,
+        ],
+        Side::Top => [
+            bottom,
+            left,
+            right,
+            top_left,
+            top_right,
+            bottom_left,
+            bottom_right,
+            top,
+        ],
+        Side::Bottom => [
+            top,
+            left,
+            right,
+            bottom_left,
+            bottom_right,
+            top_left,
+            top_right,
+            bottom,
+        ],
+    };
+
+    for candidate in candidates {
+        if let ControlFlow::Break(()) = best_candidate.call_and_maybe_update(&candidate) {
+            return best_candidate.candidate;
         }
     }
 
-    for node in &graph.nodes {
-        if node.is_gateway() {
-            #[rustfmt::skip]
-            let (top, right, bottom, left)   = (
-                (node.x + node.width / 2, node.y                  ),
-                (node.x + node.width    , node.y + node.height / 2),
-                (node.x + node.width / 2, node.y + node.height    ),
-                (node.x                 , node.y + node.height / 2)
-             );
+    best_candidate.candidate
+}
 
-            quad_tree.insert(&Line::new(&top, &right));
-            quad_tree.insert(&Line::new(&top, &left));
-            quad_tree.insert(&Line::new(&bottom, &right));
-            quad_tree.insert(&Line::new(&bottom, &left));
-        } else {
-            let tl = (node.x, node.y);
-            let tr = (node.x + node.width, node.y);
-            let br = (node.x + node.width, node.y + node.height);
-            let bl = (node.x, node.y + node.height);
+pub fn event_display_text_location_candidates(
+    config: &Config,
+    textbox_wh: (usize, usize),
+    dim: Dimension,
+    incoming_from: Side,
+    callback: &DisplayLocationCallback,
+) -> DisplayTextLocationCandidate {
+    event_or_data_display_text_location_candidates(
+        config,
+        EVENT_CORNER_FRACTIONAL_MARGIN,
+        textbox_wh,
+        dim,
+        incoming_from,
+        callback,
+    )
+}
 
-            quad_tree.insert(&Line::new(&tl, &tr));
-            quad_tree.insert(&Line::new(&tl, &bl));
-            quad_tree.insert(&Line::new(&br, &tr));
-            quad_tree.insert(&Line::new(&br, &bl));
-        }
+pub fn data_display_text_location_candidates(
+    config: &Config,
+    textbox_wh: (usize, usize),
+    dim: Dimension,
+    incoming_from: Side,
+    callback: &DisplayLocationCallback,
+) -> DisplayTextLocationCandidate {
+    event_or_data_display_text_location_candidates(
+        config,
+        1.0,
+        textbox_wh,
+        dim,
+        incoming_from,
+        callback,
+    )
+}
+
+pub fn activity_display_text_location_candidates(
+    textbox_wh: (usize, usize),
+    dim: Dimension,
+) -> DisplayTextLocationCandidate {
+    DisplayTextLocationCandidateInner {
+        alignment: Alignment::Center,
+        reference_point: ReferencePoint::Center,
+        x: dim.x.saturating_add(dim.width / 2),
+        y: dim.y.saturating_add(dim.height / 2),
     }
-
-    // At this point I ignore the pool and lane edges. I probably regret it very quickly.
-
-    quad_tree
+    .materialize(textbox_wh)
 }

@@ -10,8 +10,15 @@ pub struct Grid {
     num_cells_horizontally: u16,
 }
 
+#[derive(Clone)]
+struct WeightedLine {
+    line: Line,
+    /// Higher is worse.
+    weight: u32,
+}
+
 struct CellData {
-    lines: Vec<Line>,
+    lines: Vec<WeightedLine>,
 }
 
 #[derive(Clone, Copy)]
@@ -49,16 +56,45 @@ impl Grid {
         }
     }
 
-    pub fn insert(&mut self, line: &Line) {
+    pub fn insert(&mut self, line: &Line, weight: u32) {
         for index in cells_under_line(line, self.num_cells_vertically) {
-            self.cells[index].lines.push(line.clone());
+            self.cells[index].lines.push(WeightedLine {
+                line: line.clone(),
+                weight,
+            });
         }
     }
 
-    pub fn box_intersects_any_line(&self, bounding_box: &BoundingBox) -> bool {
-        self.iterate_indices(bounding_box)
+    pub fn insert_quadrangle(
+        &mut self,
+        p1: (usize, usize),
+        p2: (usize, usize),
+        p3: (usize, usize),
+        p4: (usize, usize),
+        weight: u32,
+    ) {
+        self.insert(&Line::new(&p1, &p2), weight);
+        self.insert(&Line::new(&p2, &p3), weight);
+        self.insert(&Line::new(&p3, &p4), weight);
+        self.insert(&Line::new(&p4, &p1), weight);
+    }
+
+    pub fn box_intersection_weight(
+        &self,
+        (x, y): (usize, usize),
+        (width, height): (usize, usize),
+    ) -> u32 {
+        let bounding_box = BoundingBox {
+            left: x as i32,
+            right: (x + width) as i32,
+            top: y as i32,
+            bottom: (y + height) as i32,
+        };
+        self.iterate_indices(&bounding_box)
             .flat_map(|index| &self.cells[index as usize].lines)
-            .any(|line| bounding_box.intersect(line))
+            .filter(|wl| bounding_box.intersect(&wl.line))
+            .map(|wl| wl.weight)
+            .sum()
     }
 
     pub fn iterate_indices(&self, bounding_box: &BoundingBox) -> impl Iterator<Item = u16> {

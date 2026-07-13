@@ -17,11 +17,21 @@ use crate::{
         bpmn_node::{
             ActivityMarker, ActivityType, BoundaryEventType, EventVisual, InterruptKind, TaskType,
         },
+        config::Config,
         edge::FlowType,
         graph::{
             ACTIVITY_NODE_HEIGHT, ACTIVITY_NODE_WIDTH, DATAOBJECT_NODE_HEIGHT,
             DATAOBJECT_NODE_WIDTH, DATASTORE_NODE_HEIGHT, DATASTORE_NODE_WIDTH, EVENT_NODE_HEIGHT,
             EVENT_NODE_WIDTH, GATEWAY_NODE_HEIGHT, GATEWAY_NODE_WIDTH, MAX_NODE_WIDTH,
+        },
+        node::{Dimension, Side},
+    },
+    layout::{
+        collision_grid::Grid,
+        set_display_text_location_candidates::{
+            DisplayTextLocationCandidate, activity_display_text_location_candidates,
+            data_display_text_location_candidates, edge_display_text_location_candidates,
+            event_display_text_location_candidates, gateway_display_text_location_candidates,
         },
     },
     lexer::{DataType, EventType, GatewayType},
@@ -143,10 +153,12 @@ pub struct Svg {
     style: SvgStyle,
     font_system: FontSystem,
     embed_font: bool,
+    grid: Grid,
+    config: Config,
 }
 
 impl Svg {
-    pub fn new(embed_font: bool, width: usize, height: usize) -> Self {
+    pub fn new(embed_font: bool, width: usize, height: usize, grid: Grid, config: &Config) -> Self {
         Self {
             width,
             height,
@@ -154,6 +166,9 @@ impl Svg {
             style: SvgStyle::default(),
             font_system: FontSystem::new(),
             embed_font,
+            grid,
+            // Just clone it to avoid lifetimes. It is big, but whatever. Just one clone.
+            config: config.clone(),
         }
     }
 
@@ -265,16 +280,11 @@ impl Svg {
             }
         }
 
-        // Rotation is done via CSS, hence the "pool-title" class.
-        write_wrapped_text(
+        write_rotated_text(
             &mut self.body,
-            &mut self.font_system,
             pool_header_width / 2,
             height / 2,
-            title,
-            Some(height),
-            true,
-            true,
+            PreparedText::new(&mut self.font_system, title, Some(height), &merged),
             &merged,
             "pool-title",
         );
@@ -285,15 +295,16 @@ impl Svg {
                 continue;
             }
             let merged = MergedSvgStyle::new(&self.style, lane_style);
-            write_wrapped_text(
+            write_rotated_text(
                 &mut self.body,
-                &mut self.font_system,
                 pool_header_width + lane_header_width / 2,
                 cumulative_height + lane_height / 2,
-                lane_title,
-                Some(*lane_height),
-                true,
-                true,
+                PreparedText::new(
+                    &mut self.font_system,
+                    lane_title,
+                    Some(*lane_height),
+                    &merged,
+                ),
                 &merged,
                 "lane-title",
             );
@@ -325,8 +336,8 @@ impl Svg {
         let merged = MergedSvgStyle::new(&self.style, element_style);
         writeln!(
             self.body,
-            r##"<g class="task" transform="translate({x},{y})">
-            <use href="#task-box" x="0" y="0" stroke="{}" fill="{}" width="{ACTIVITY_NODE_WIDTH}" height="{ACTIVITY_NODE_HEIGHT}" stroke-width="{STROKE_WIDTH}" />
+            r##"<g class="task">
+            <use href="#task-box" x="{x}" y="{y}" stroke="{}" fill="{}" width="{ACTIVITY_NODE_WIDTH}" height="{ACTIVITY_NODE_HEIGHT}" stroke-width="{STROKE_WIDTH}" />
             "##,
             merged.stroke, merged.fill
         )
@@ -349,7 +360,8 @@ impl Svg {
         if !activity_type_href.is_empty() {
             writeln!(
                 self.body,
-                r##"  <use href="#{activity_type_href}" x="3" y="3" width="20" height="20" stroke="{}" fill="{}" />"##,
+                r##"  <use href="#{activity_type_href}" x="{}" y="{}" width="20" height="20" stroke="{}" fill="{}" />"##,
+                x + 3, y + 3,
                 merged.stroke,
                 if matches!(activity_type, ActivityType::Task(TaskType::Send)) { merged.stroke } else { merged.fill }
             )
@@ -375,8 +387,8 @@ impl Svg {
             // 20x20 is too large.
             let box_width = ACTIVITY_MARKER_DIMENSION;
             let box_width = 15;
-            let start_y = ACTIVITY_NODE_HEIGHT - box_width - y_padding;
-            let mut start_x = ACTIVITY_NODE_WIDTH / 2
+            let start_y = y + ACTIVITY_NODE_HEIGHT - box_width - y_padding;
+            let mut start_x = x + ACTIVITY_NODE_WIDTH / 2
                 - ((box_width + x_padding) * symbol_count) / 2
                 + x_padding / 2;
 
@@ -390,18 +402,31 @@ impl Svg {
             }
         }
 
-        write_wrapped_text(
-            &mut self.body,
-            &mut self.font_system,
-            ACTIVITY_NODE_WIDTH / 2,
-            ACTIVITY_NODE_HEIGHT / 2,
-            text,
-            Some((ACTIVITY_NODE_WIDTH - STROKE_WIDTH as usize) - 4),
-            true,
-            false,
-            &merged,
-            "",
-        );
+        if !text.is_empty() {
+            let text = PreparedText::new(
+                &mut self.font_system,
+                text,
+                Some((ACTIVITY_NODE_WIDTH - STROKE_WIDTH as usize) - 4),
+                &merged,
+            );
+            let text_dims = text.dims();
+            write_text_at(
+                &mut self.body,
+                activity_display_text_location_candidates(
+                    text_dims,
+                    Dimension {
+                        x,
+                        y,
+                        width: ACTIVITY_NODE_WIDTH,
+                        height: ACTIVITY_NODE_HEIGHT,
+                    },
+                ),
+                &mut self.grid,
+                text,
+                &merged,
+                "",
+            );
+        }
         writeln!(self.body, "</g>").unwrap();
     }
 
@@ -413,6 +438,7 @@ impl Svg {
         event_type: EventType,
         event_visual: EventVisual,
         style: &ElementSvgStyle,
+        sequence_flow_coming_in_from: Side,
     ) {
         let merged = MergedSvgStyle::new(&self.style, style);
 
@@ -461,18 +487,24 @@ merged.stroke, merged.fill
         .unwrap();
 
         if !text.is_empty() {
-            write_wrapped_text(
-                &mut self.body,
-                &mut self.font_system,
-                x + EVENT_NODE_WIDTH / 2,
-                y + EVENT_NODE_HEIGHT + 10,
-                text,
-                Some(MAX_NODE_WIDTH),
-                false,
-                false,
-                &merged,
-                "",
+            let text =
+                PreparedText::new(&mut self.font_system, text, Some(MAX_NODE_WIDTH), &merged);
+            let text_dims = text.dims();
+            let position = event_display_text_location_candidates(
+                &self.config,
+                text_dims,
+                Dimension {
+                    x,
+                    y,
+                    width: EVENT_NODE_WIDTH,
+                    height: EVENT_NODE_HEIGHT,
+                },
+                sequence_flow_coming_in_from,
+                &|e: &DisplayTextLocationCandidate| {
+                    self.grid.box_intersection_weight((e.x, e.y), text_dims)
+                },
             );
+            write_text_at(&mut self.body, position, &mut self.grid, text, &merged, "");
         }
         writeln!(self.body, "</g>").unwrap();
     }
@@ -522,6 +554,7 @@ merged.stroke, merged.fill
         text: &str,
         element_style: &ElementSvgStyle,
         gateway_type: GatewayType,
+        sequence_flow_coming_in_from: Side,
     ) {
         let merged = MergedSvgStyle::new(&self.style, element_style);
 
@@ -532,34 +565,36 @@ merged.stroke, merged.fill
             GatewayType::Event => "event",
         };
 
-        writeln!(
-            self.body,
-            r##"<g class="gateway gateway-{symbol}" transform="translate({x},{y})">"##,
-        )
-        .unwrap();
+        writeln!(self.body, r##"<g class="gateway gateway-{symbol}">"##,).unwrap();
         writeln!(
             self.body,
             r##"
-<use href="#gateway-box" x="0" y="0" stroke="{0}" fill="{1}" width="{GATEWAY_NODE_WIDTH}" height="{GATEWAY_NODE_HEIGHT}" stroke-width="{STROKE_WIDTH}" />
-<use href="#gateway-{symbol}" x="0" y="0" stroke="{0}" fill="{0}" width="{GATEWAY_NODE_WIDTH}" height="{GATEWAY_NODE_HEIGHT}" stroke-width="{STROKE_WIDTH}" />
+<use href="#gateway-box" x="{x}" y="{y}" stroke="{0}" fill="{1}" width="{GATEWAY_NODE_WIDTH}" height="{GATEWAY_NODE_HEIGHT}" stroke-width="{STROKE_WIDTH}" />
+<use href="#gateway-{symbol}" x="{x}" y="{y}" stroke="{0}" fill="{0}" width="{GATEWAY_NODE_WIDTH}" height="{GATEWAY_NODE_HEIGHT}" stroke-width="{STROKE_WIDTH}" />
 "##,
 merged.stroke, merged.fill
         )
         .unwrap();
 
         if !text.is_empty() {
-            write_wrapped_text(
-                &mut self.body,
-                &mut self.font_system,
-                GATEWAY_NODE_WIDTH / 2,
-                GATEWAY_NODE_HEIGHT + 10,
-                text,
-                Some(MAX_NODE_WIDTH),
-                false,
-                false,
-                &merged,
-                "",
+            let text =
+                PreparedText::new(&mut self.font_system, text, Some(MAX_NODE_WIDTH), &merged);
+            let text_dims = text.dims();
+            let position = gateway_display_text_location_candidates(
+                &self.config,
+                text_dims,
+                Dimension {
+                    x,
+                    y,
+                    width: GATEWAY_NODE_WIDTH,
+                    height: GATEWAY_NODE_HEIGHT,
+                },
+                sequence_flow_coming_in_from,
+                &|e: &DisplayTextLocationCandidate| {
+                    self.grid.box_intersection_weight((e.x, e.y), text_dims)
+                },
             );
+            write_text_at(&mut self.body, position, &mut self.grid, text, &merged, "");
         }
         writeln!(self.body, "</g>").unwrap();
     }
@@ -571,6 +606,7 @@ merged.stroke, merged.fill
         text: &str,
         data_type: DataType,
         style: &ElementSvgStyle,
+        data_flow_coming_in_from: Side,
     ) {
         let merged = MergedSvgStyle::new(&self.style, style);
         let (symbol, width, height) = match data_type {
@@ -578,32 +614,34 @@ merged.stroke, merged.fill
             DataType::Object => ("data-object", DATAOBJECT_NODE_WIDTH, DATAOBJECT_NODE_HEIGHT),
         };
 
-        writeln!(
-            self.body,
-            r#"<g class="{symbol}" transform="translate({x},{y})">"#,
-        )
-        .unwrap();
+        writeln!(self.body, r#"<g class="{symbol}">"#,).unwrap();
 
         writeln!(
             self.body,
-            r##"  <use href="#{symbol}" x="0" y="0" stroke-width="{STROKE_WIDTH}" width="{width}" height="{height}" fill="{}" stroke="{}" />"##,
+            r##"  <use href="#{symbol}" x="{x}" y="{y}" stroke-width="{STROKE_WIDTH}" width="{width}" height="{height}" fill="{}" stroke="{}" />"##,
             merged.fill, merged.stroke,
         )
         .unwrap();
 
         if !text.is_empty() {
-            write_wrapped_text(
-                &mut self.body,
-                &mut self.font_system,
-                width / 2,
-                height + 10,
-                text,
-                Some(MAX_NODE_WIDTH),
-                false,
-                false,
-                &merged,
-                "",
+            let text =
+                PreparedText::new(&mut self.font_system, text, Some(MAX_NODE_WIDTH), &merged);
+            let text_dims = text.dims();
+            let position = data_display_text_location_candidates(
+                &self.config,
+                text_dims,
+                Dimension {
+                    x,
+                    y,
+                    width,
+                    height,
+                },
+                data_flow_coming_in_from,
+                &|e: &DisplayTextLocationCandidate| {
+                    self.grid.box_intersection_weight((e.x, e.y), text_dims)
+                },
             );
+            write_text_at(&mut self.body, position, &mut self.grid, text, &merged, "");
         }
 
         writeln!(self.body, "</g>").unwrap();
@@ -654,26 +692,42 @@ merged.stroke, merged.fill
         .unwrap();
 
         if let Some(label) = label.as_ref().filter(|s| !s.is_empty()) {
-            let mid = if (points.len() & 1) == 1 {
-                // Uneven, so just take middle point.
-                points[points.len() / 2]
+            if matches!(flow_type, FlowType::DataFlow(..)) {
+                // Data flows are ideally straight, so the fine logic for orthogonal edges won't work.
+                let mid = if (points.len() & 1) == 1 {
+                    // Uneven, so just take middle point.
+                    points[points.len() / 2]
+                } else {
+                    let a = points[points.len() / 2];
+                    let b = points[(points.len() / 2) + 1];
+                    ((a.0 + b.0) / 2, (a.1 + b.1) / 2)
+                };
+                write_wrapped_text(
+                    &mut self.body,
+                    &mut self.font_system,
+                    mid.0,
+                    mid.1.saturating_sub(merged.line_height as usize / 2),
+                    label,
+                    None,
+                    false,
+                    false,
+                    &merged,
+                    "",
+                );
             } else {
-                let a = points[points.len() / 2];
-                let b = points[(points.len() / 2) + 1];
-                ((a.0 + b.0) / 2, (a.1 + b.1) / 2)
-            };
-            write_wrapped_text(
-                &mut self.body,
-                &mut self.font_system,
-                mid.0,
-                mid.1.saturating_sub(merged.line_height as usize / 2),
-                label,
-                None,
-                false,
-                false,
-                &merged,
-                "",
-            );
+                let text =
+                    PreparedText::new(&mut self.font_system, label, Some(MAX_NODE_WIDTH), &merged);
+                let text_dims = text.dims();
+                let position = edge_display_text_location_candidates(
+                    &self.config,
+                    text_dims,
+                    points,
+                    &|e: &DisplayTextLocationCandidate| {
+                        self.grid.box_intersection_weight((e.x, e.y), text_dims)
+                    },
+                );
+                write_text_at(&mut self.body, position, &mut self.grid, text, &merged, "");
+            }
         }
     }
 }
@@ -815,6 +869,7 @@ fn esc_attr(s: &str) -> String {
     esc_text(s).replace('"', "&quot;").replace('\'', "&apos;")
 }
 
+// TODO keep this for the rotated text, maybe. This is always super centered.
 fn write_wrapped_text(
     body: &mut String,
     font_system: &mut FontSystem,
@@ -891,6 +946,128 @@ fn write_wrapped_text(
         .unwrap();
     }
     writeln!(body, "</text>").unwrap();
+}
+
+fn write_rotated_text(
+    body: &mut String,
+    x: usize,
+    y: usize,
+    text: PreparedText,
+    merged: &MergedSvgStyle,
+    class: &str,
+) {
+    write!(
+                body,
+                r#"<text class="{class}" transform="translate({x}, {y}) rotate(-90)" text-anchor="middle" dominant-baseline="middle" font-family="{}" font-size="{}" fill="{}">"#,
+                merged.font_family,
+                merged.font_size,
+                merged.font_color
+            ).unwrap();
+
+    for (i, line) in text.buffer.layout_runs().enumerate() {
+        let dy = if i == 0 { 0.0 } else { merged.line_height };
+        let start = line.glyphs.first().map(|g| g.start).unwrap_or(0);
+        let end = line.glyphs.last().map(|g| g.end).unwrap_or(start);
+        write!(
+            body,
+            r#"<tspan x="0" dy="{dy}">{}</tspan>"#,
+            esc_text(&line.text[start..end])
+        )
+        .unwrap();
+    }
+    writeln!(body, "</text>").unwrap();
+}
+
+struct PreparedText {
+    buffer: Buffer,
+    height: f32,
+    width: f32,
+    count: usize,
+}
+
+impl PreparedText {
+    fn new(
+        font_system: &mut FontSystem,
+        text: &str,
+        max_width: Option<usize>,
+        merged: &MergedSvgStyle,
+    ) -> Self {
+        let metrics = Metrics::new(merged.font_size, merged.line_height);
+
+        let mut buffer = Buffer::new(font_system, metrics);
+
+        buffer.set_wrap(Wrap::Word);
+        buffer.set_size(max_width.map(|width| width as f32), None);
+        buffer.set_text(
+            // Don't escape just yet. We want to first inspect the text that will be visible.
+            text,
+            &Attrs::new().family(cosmic_text::Family::Name(merged.font_family)),
+            Shaping::Advanced,
+            Some(Align::Center),
+        );
+
+        // Perform shaping as desired
+        buffer.shape_until_scroll(font_system, false /* not sure? */);
+        let count = buffer.layout_runs().count().max(1); // Always have a least 1.
+        let height = count as f32 * merged.line_height;
+        let width = buffer.layout_runs().fold(0.0, |state, line| {
+            if state < line.line_w {
+                line.line_w
+            } else {
+                state
+            }
+        });
+        PreparedText {
+            buffer,
+            height,
+            width,
+            count,
+        }
+    }
+
+    fn dims(&self) -> (usize, usize) {
+        (self.width as usize, self.height as usize)
+    }
+}
+
+fn write_text_at(
+    body: &mut String,
+    candidate: DisplayTextLocationCandidate,
+    grid: &mut Grid,
+    text: PreparedText,
+    merged: &MergedSvgStyle,
+    class: &str,
+) {
+    let x = candidate.x;
+    let y = candidate.y;
+
+    write!(
+                body,
+                r#"<text class="{class}" x="{x}" y="{y}" text-anchor="start" dominant-baseline="hanging" font-family="{}" font-size="{}" fill="{}">"#,
+                merged.font_family,
+                merged.font_size,
+                merged.font_color
+            ).unwrap();
+
+    for (i, line) in text.buffer.layout_runs().enumerate() {
+        let dy = if i == 0 { 0.0 } else { merged.line_height };
+        let start = line.glyphs.first().map(|g| g.start).unwrap_or(0);
+        let end = line.glyphs.last().map(|g| g.end).unwrap_or(start);
+        write!(
+            body,
+            r#"<tspan x="{x}" dy="{dy}">{}</tspan>"#,
+            esc_text(&line.text[start..end])
+        )
+        .unwrap();
+    }
+    writeln!(body, "</text>").unwrap();
+    grid.insert_quadrangle(
+        (x, y),
+        (x + text.width as usize, y),
+        (x + text.width as usize, y + text.height as usize),
+        (x, y + text.height as usize),
+        10,
+    );
 }
 
 /// TODO! Untested, received form ChatGPT.

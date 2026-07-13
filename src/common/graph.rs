@@ -8,9 +8,11 @@ use crate::common::node::{Node, NodeType};
 use crate::common::pool::Pool;
 use crate::common::vecset::VecSet;
 use crate::layout::constraint::LayoutConstraints;
+use crate::layout::set_display_text_location_candidates::DisplayTextLocationCandidate;
 use crate::lexer::{DataType, EventType, PeBpmdProtection, TokenCoordinate};
 use crate::parser::ParseError;
 use crate::pe_bpmd::parser::PeBpmd;
+use cosmic_text::FontSystem;
 use proc_macros::{e, from, n, to};
 use std::fmt::{self, Debug};
 use std::iter::from_fn;
@@ -60,7 +62,6 @@ pub const DUMMY_NODE_WIDTH: usize = MAX_NODE_WIDTH;
 pub const DUMMY_NODE_HEIGHT: usize = 0;
 
 /// Represents a graph consisting of nodes and edges.
-#[derive(Default)]
 pub struct Graph {
     /// Nodes shall only be added to this Vec, but the order shall not be modified.
     /// Otherwise, NodeIds will point to the wrong nodes.
@@ -634,6 +635,11 @@ impl Graph {
 
     pub fn total_width_height(&self) -> (usize, usize) {
         let last_pool = &self.pools.last().unwrap();
+        // A safety measure, to ensure that during our calculations we didn't got a underflow and as
+        // such some enormous coordinate. But I think that we could even cap it to something like
+        // 10^6, since that would likely already OOM the collision grid.
+        assert!(last_pool.x + last_pool.width <= (u32::MAX / 4) as usize);
+        assert!(last_pool.y + last_pool.height <= (u32::MAX / 4) as usize);
         (
             last_pool.x + last_pool.width + self.config.pool_header_width,
             last_pool.y + last_pool.height,

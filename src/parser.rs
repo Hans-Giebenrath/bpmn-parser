@@ -10,7 +10,6 @@ use crate::common::graph::PoolAndLane;
 use crate::common::graph::{Graph, SdeId};
 use crate::common::graph::{LaneId, NodeId, PoolId};
 use crate::common::node::DataAux;
-use crate::common::node::DisplayTextLocation;
 use crate::common::node::NodeType;
 use crate::layout::constraint::Above;
 use crate::layout::constraint::LeftOf;
@@ -402,7 +401,6 @@ impl Parser {
             NodeType::RealNode {
                 event: BpmnNode::Gateway(meta.gateway_type),
                 display_text: meta.node_meta.display_text,
-                display_text_location: DisplayTextLocation::AboveLeft,
                 tc: self.context.current_token_coordinate,
                 transported_data: vec![],
                 pe_bpmd_hides_protection_operations: false,
@@ -539,7 +537,6 @@ impl Parser {
             NodeType::RealNode {
                 event: BpmnNode::Event(meta.event_type, event_visual),
                 display_text: meta.node_meta.display_text,
-                display_text_location: DisplayTextLocation::Below,
                 tc: self.context.current_token_coordinate,
                 transported_data: vec![],
                 pe_bpmd_hides_protection_operations: false,
@@ -572,7 +569,6 @@ impl Parser {
             NodeType::RealNode {
                 event: BpmnNode::Activity(meta.activity_type, meta.activity_marker),
                 display_text: meta.node_meta.display_text,
-                display_text_location: DisplayTextLocation::Middle,
                 tc: self.context.current_token_coordinate,
                 transported_data: vec![],
                 pe_bpmd_hides_protection_operations: false,
@@ -781,7 +777,6 @@ impl Parser {
             NodeType::RealNode {
                 event,
                 display_text: meta.node_meta.display_text,
-                display_text_location: DisplayTextLocation::Below,
                 tc: self.context.current_token_coordinate,
                 transported_data: vec![],
                 pe_bpmd_hides_protection_operations: false,
