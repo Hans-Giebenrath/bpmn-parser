@@ -55,7 +55,7 @@ macro_rules! define_config {
 
 define_config!(
     /// Space between the lane border and nodes/edges inside of the lane.
-    lane_y_padding: usize = 40,
+    lane_y_padding: usize = 45,
     lane_header_width: usize = 30,
     lane_x_padding: usize = 60,
     pool_header_width: usize = 30,
@@ -99,12 +99,12 @@ define_config!(
     ///                               so that we reach the farthest end of the edge (otherwise would
     ///                               overrun since step size is probably not a perfect multiple of the
     ///                               `edge length - 2*margin_to_ends`)
-    display_text_margin: usize = 10,
+    display_text_margin: usize = 8,
     display_text_edge_x_step_size: u32 = 30,
     display_text_edge_y_step_size: u32 = 30,
-    display_text_edge_x_margin_to_ends: u32 = 40,
+    display_text_edge_x_margin_to_ends: u32 = 30,
     display_text_edge_y_margin_to_ends: u32 = 20,
-    display_text_edge_x_min_distance_to_center_or_else_collapse_into_center: u32 = 40,
+    display_text_edge_x_min_distance_to_center_or_else_collapse_into_center: u32 = 25,
     display_text_edge_y_min_distance_to_center_or_else_collapse_into_center: u32 = 20,
 
     /// TODO The heuristic moves data nodes just at a good place according to the average distance of

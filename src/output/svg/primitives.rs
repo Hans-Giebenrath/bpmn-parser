@@ -29,7 +29,7 @@ use crate::{
     layout::{
         collision_grid::Grid,
         set_display_text_location_candidates::{
-            DisplayTextLocationCandidate, activity_display_text_location_candidates,
+            Alignment, DisplayTextLocationCandidate, activity_display_text_location_candidates,
             data_display_text_location_candidates, edge_display_text_location_candidates,
             event_display_text_location_candidates, gateway_display_text_location_candidates,
         },
@@ -133,7 +133,7 @@ impl<'a> MergedSvgStyle<'a> {
 impl Default for SvgStyle {
     fn default() -> Self {
         Self {
-            font_family: EscapedSvgAttribute::new("Arial, Helvetica, sans-serif"),
+            font_family: EscapedSvgAttribute::new("sans-serif"),
             font_size: 12.0,
             line_height: 14.0,
             font_color: EscapedSvgAttribute::new("#111"),
@@ -159,6 +159,16 @@ pub struct Svg {
 
 impl Svg {
     pub fn new(embed_font: bool, width: usize, height: usize, grid: Grid, config: &Config) -> Self {
+        let mut font_system = FontSystem::new();
+        font_system
+            .db_mut()
+            .load_font_data(include_bytes!("../../../inter-font/Inter-Regular.ttf").to_vec());
+        font_system
+            .db_mut()
+            .load_font_data(include_bytes!("../../../inter-font/Inter-SemiBold.ttf").to_vec());
+        font_system
+            .db_mut()
+            .load_font_data(include_bytes!("../../../inter-font/Inter-Italic.ttf").to_vec());
         Self {
             width,
             height,
@@ -702,15 +712,17 @@ merged.stroke, merged.fill
                     let b = points[(points.len() / 2) + 1];
                     ((a.0 + b.0) / 2, (a.1 + b.1) / 2)
                 };
-                write_wrapped_text(
+                let text =
+                    PreparedText::new(&mut self.font_system, label, Some(MAX_NODE_WIDTH), &merged);
+                write_text_at(
                     &mut self.body,
-                    &mut self.font_system,
-                    mid.0,
-                    mid.1.saturating_sub(merged.line_height as usize / 2),
-                    label,
-                    None,
-                    false,
-                    false,
+                    DisplayTextLocationCandidate {
+                        alignment: Alignment::Center,
+                        x: mid.0,
+                        y: mid.1.saturating_sub(merged.line_height as usize / 2),
+                    },
+                    &mut self.grid,
+                    text,
                     &merged,
                     "",
                 );
@@ -869,85 +881,6 @@ fn esc_attr(s: &str) -> String {
     esc_text(s).replace('"', "&quot;").replace('\'', "&apos;")
 }
 
-// TODO keep this for the rotated text, maybe. This is always super centered.
-fn write_wrapped_text(
-    body: &mut String,
-    font_system: &mut FontSystem,
-    x: usize,
-    y: usize,
-    text: &str,
-    max_width: Option<usize>,
-    center_vertically: bool,
-    rotate: bool,
-    merged: &MergedSvgStyle,
-    class: &str,
-) {
-    let metrics = Metrics::new(merged.font_size, merged.line_height);
-
-    let mut buffer = Buffer::new(font_system, metrics);
-
-    buffer.set_wrap(Wrap::Word);
-    buffer.set_size(max_width.map(|width| width as f32), None);
-    buffer.set_text(
-        // Don't escape just yet. We want to first inspect the text that will be visible.
-        text,
-        &Attrs::new().family(cosmic_text::Family::Name(merged.font_family)),
-        Shaping::Advanced,
-        Some(Align::Center),
-    );
-
-    // Perform shaping as desired
-    buffer.shape_until_scroll(font_system, false /* not sure? */);
-    let count = buffer.layout_runs().count();
-    let lines = buffer.layout_runs();
-    if count == 0 {
-        return;
-    }
-    let (start_y, dominant_baseline) = if center_vertically {
-        (
-            y as f32 - ((count - 1) as f32 * merged.line_height) / 2.0,
-            "middle",
-        )
-    } else {
-        (y as f32, "hanging")
-    };
-
-    if rotate {
-        assert!(center_vertically); // Otherwise, the center rotation center is wrong
-        write!(
-                body,
-                r#"<text class="{class}" transform="translate({x}, {y}) rotate(-90)" text-anchor="middle" dominant-baseline="middle" font-family="{}" font-size="{}" fill="{}">"#,
-                merged.font_family,
-                merged.font_size,
-                merged.font_color
-            ).unwrap();
-    } else {
-        write!(
-                body,
-                r#"<text class="{class}" x="{x}" y="{start_y}" text-anchor="middle" dominant-baseline="{dominant_baseline}" font-family="{}" font-size="{}" fill="{}">"#,
-                merged.font_family,
-                merged.font_size,
-                merged.font_color
-            ).unwrap();
-    }
-
-    // When rotating, the `x` transformation is already applied. In that case only `0` needs to be
-    // hardcoded to reset the x state.
-    let tspan_x = if rotate { 0 } else { x };
-    for (i, line) in lines.enumerate() {
-        let dy = if i == 0 { 0.0 } else { merged.line_height };
-        let start = line.glyphs.first().map(|g| g.start).unwrap_or(0);
-        let end = line.glyphs.last().map(|g| g.end).unwrap_or(start);
-        write!(
-            body,
-            r#"<tspan x="{tspan_x}" dy="{dy}">{}</tspan>"#,
-            esc_text(&line.text[start..end])
-        )
-        .unwrap();
-    }
-    writeln!(body, "</text>").unwrap();
-}
-
 fn write_rotated_text(
     body: &mut String,
     x: usize,
@@ -982,7 +915,6 @@ struct PreparedText {
     buffer: Buffer,
     height: f32,
     width: f32,
-    count: usize,
 }
 
 impl PreparedText {
@@ -1021,7 +953,6 @@ impl PreparedText {
             buffer,
             height,
             width,
-            count,
         }
     }
 
@@ -1053,6 +984,11 @@ fn write_text_at(
         let dy = if i == 0 { 0.0 } else { merged.line_height };
         let start = line.glyphs.first().map(|g| g.start).unwrap_or(0);
         let end = line.glyphs.last().map(|g| g.end).unwrap_or(start);
+        let x = match candidate.alignment {
+            Alignment::Left => x,
+            Alignment::Center => x + ((text.width - line.line_w) / 2.) as usize,
+            Alignment::Right => x + (text.width - line.line_w) as usize,
+        };
         write!(
             body,
             r#"<tspan x="{x}" dy="{dy}">{}</tspan>"#,

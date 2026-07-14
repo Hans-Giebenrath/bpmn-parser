@@ -16,14 +16,14 @@ impl DisplayTextLocationCandidateInner {
     fn materialize(&self, (width, height): (usize, usize)) -> DisplayTextLocationCandidate {
         let x = match self.reference_point {
             ReferencePoint::Center | ReferencePoint::CenterTop | ReferencePoint::CenterBottom => {
-                self.x + width / 2
+                self.x.saturating_sub(width / 2)
             }
             ReferencePoint::LeftTop | ReferencePoint::LeftCenter | ReferencePoint::LeftBottom => {
                 self.x
             }
             ReferencePoint::RightTop
             | ReferencePoint::RightCenter
-            | ReferencePoint::RightBottom => self.x + width,
+            | ReferencePoint::RightBottom => self.x.saturating_sub(width),
         };
 
         let y = match self.reference_point {
@@ -31,11 +31,11 @@ impl DisplayTextLocationCandidateInner {
                 self.y
             }
             ReferencePoint::LeftCenter | ReferencePoint::Center | ReferencePoint::RightCenter => {
-                self.y + height / 2
+                self.y.saturating_sub(height / 2)
             }
             ReferencePoint::LeftBottom
             | ReferencePoint::CenterBottom
-            | ReferencePoint::RightBottom => self.y + height,
+            | ReferencePoint::RightBottom => self.y.saturating_sub(height),
         };
 
         DisplayTextLocationCandidate {
@@ -80,15 +80,6 @@ impl<'a> CandidateTracker<'a> {
     }
 }
 type DisplayLocationCallback<'a> = dyn Fn(&DisplayTextLocationCandidate) -> u32 + 'a;
-
-/// So the text is a bit moved closer to the gateway if it is placed in a corner,
-/// otherwise I believe it is just appearing a little detached.
-const GATEWAY_CORNER_FRACTIONAL_MARGIN: f32 = 0.8;
-
-/// So the text is a bit moved closer to the gateway if it is placed in a corner,
-/// otherwise I believe it is just appearing a little detached. A little less
-/// extreme than the gateway, since for events there is rounding.
-const EVENT_CORNER_FRACTIONAL_MARGIN: f32 = 0.93;
 
 pub fn edge_display_text_location_candidates(
     config: &Config,
@@ -523,40 +514,6 @@ pub enum Alignment {
     Right,
 }
 
-//pub fn real_node_display_text_location_candidates(
-//    graph: &Graph,
-//    node: &Node,
-//    callback: &DisplayLocationCallback,
-//) -> EdgeDisplayTextLocationCandidate {
-//    let dim = node.dimension();
-//    let NodeType::RealNode { event, .. } = &node.node_type else {
-//        unreachable!("This function should only be called with RealNodes.");
-//    };
-//    match &event {
-//        BpmnNode::Gateway(..) => gateway_display_text_location_candidates(
-//            &Config::new(&graph.config),
-//            dim,
-//            Side::new(graph, node),
-//            callback,
-//        ),
-//        BpmnNode::Event(..) => event_or_data_display_text_location_candidates(
-//            &Config::new(&graph.config),
-//            EVENT_CORNER_FRACTIONAL_MARGIN,
-//            dim,
-//            Side::new(graph, node),
-//            callback,
-//        ),
-//        BpmnNode::Data(..) => event_or_data_display_text_location_candidates(
-//            &Config::new(&graph.config),
-//            1.0,
-//            dim,
-//            Side::new(graph, node),
-//            callback,
-//        ),
-//        BpmnNode::Activity(..) => activity_display_text_location_candidates(dim),
-//    }
-//}
-
 pub fn gateway_display_text_location_candidates(
     config: &Config,
     textbox_wh: (usize, usize),
@@ -564,8 +521,8 @@ pub fn gateway_display_text_location_candidates(
     incoming_from: Side,
     callback: &DisplayLocationCallback,
 ) -> DisplayTextLocationCandidate {
-    let full_margin = config.display_text_margin as usize;
-    let fract_margin = (full_margin as f32 * GATEWAY_CORNER_FRACTIONAL_MARGIN).round() as usize;
+    let full_margin = config.display_text_margin;
+    let fract_margin = ((full_margin * full_margin) / 2).isqrt();
 
     let mut best_candidate = CandidateTracker {
         score: u32::MAX,
@@ -582,8 +539,14 @@ pub fn gateway_display_text_location_candidates(
     let top_left = DisplayTextLocationCandidateInner {
         alignment: Alignment::Right,
         reference_point: ReferencePoint::RightBottom,
-        x: dim.x.saturating_sub(fract_margin),
-        y: dim.y.saturating_sub(fract_margin),
+        x: dim
+            .x
+            .saturating_add(dim.width / 4)
+            .saturating_sub(fract_margin),
+        y: dim
+            .y
+            .saturating_add(dim.height / 4)
+            .saturating_sub(fract_margin),
     };
     let top = DisplayTextLocationCandidateInner {
         alignment: Alignment::Center,
@@ -594,8 +557,15 @@ pub fn gateway_display_text_location_candidates(
     let top_right = DisplayTextLocationCandidateInner {
         alignment: Alignment::Left,
         reference_point: ReferencePoint::LeftBottom,
-        x: dim.x.saturating_add(dim.width).saturating_add(fract_margin),
-        y: dim.y.saturating_sub(fract_margin),
+        x: dim
+            .x
+            .saturating_add(dim.width)
+            .saturating_sub(dim.width / 4)
+            .saturating_add(fract_margin),
+        y: dim
+            .y
+            .saturating_add(dim.height / 4)
+            .saturating_sub(fract_margin),
     };
     let right = DisplayTextLocationCandidateInner {
         alignment: Alignment::Left,
@@ -606,10 +576,15 @@ pub fn gateway_display_text_location_candidates(
     let bottom_right = DisplayTextLocationCandidateInner {
         alignment: Alignment::Left,
         reference_point: ReferencePoint::LeftTop,
-        x: dim.x.saturating_add(dim.width).saturating_add(fract_margin),
+        x: dim
+            .x
+            .saturating_add(dim.width)
+            .saturating_sub(dim.width / 4)
+            .saturating_add(fract_margin),
         y: dim
             .y
             .saturating_add(dim.height)
+            .saturating_sub(dim.height / 4)
             .saturating_add(fract_margin),
     };
     let bottom = DisplayTextLocationCandidateInner {
@@ -621,10 +596,14 @@ pub fn gateway_display_text_location_candidates(
     let bottom_left = DisplayTextLocationCandidateInner {
         alignment: Alignment::Right,
         reference_point: ReferencePoint::RightTop,
-        x: dim.x.saturating_sub(fract_margin),
+        x: dim
+            .x
+            .saturating_add(dim.width / 4)
+            .saturating_sub(fract_margin),
         y: dim
             .y
             .saturating_add(dim.height)
+            .saturating_sub(dim.height / 4)
             .saturating_add(fract_margin),
     };
     let left = DisplayTextLocationCandidateInner {
@@ -688,14 +667,14 @@ pub fn gateway_display_text_location_candidates(
 
 fn event_or_data_display_text_location_candidates(
     config: &Config,
-    corner_fractional_margin: f32,
+    corner_offset: usize,
     textbox_wh: (usize, usize),
     dim: Dimension,
     incoming_from: Side,
     callback: &DisplayLocationCallback,
 ) -> DisplayTextLocationCandidate {
     let full_margin = config.display_text_margin as usize;
-    let fract_margin = (full_margin as f32 * corner_fractional_margin).round() as usize;
+    let fract_margin = ((full_margin * full_margin) / 2).isqrt();
 
     let mut best_candidate = CandidateTracker {
         score: u32::MAX,
@@ -712,8 +691,14 @@ fn event_or_data_display_text_location_candidates(
     let top_left = DisplayTextLocationCandidateInner {
         alignment: Alignment::Right,
         reference_point: ReferencePoint::RightBottom,
-        x: dim.x.saturating_sub(fract_margin),
-        y: dim.y.saturating_sub(fract_margin),
+        x: dim
+            .x
+            .saturating_add(corner_offset / 4)
+            .saturating_sub(fract_margin),
+        y: dim
+            .y
+            .saturating_add(corner_offset / 4)
+            .saturating_sub(fract_margin),
     };
     let top = DisplayTextLocationCandidateInner {
         alignment: Alignment::Center,
@@ -724,8 +709,15 @@ fn event_or_data_display_text_location_candidates(
     let top_right = DisplayTextLocationCandidateInner {
         alignment: Alignment::Left,
         reference_point: ReferencePoint::LeftBottom,
-        x: dim.x.saturating_add(dim.width).saturating_add(fract_margin),
-        y: dim.y.saturating_sub(fract_margin),
+        x: dim
+            .x
+            .saturating_add(dim.width)
+            .saturating_sub(corner_offset / 4)
+            .saturating_add(fract_margin),
+        y: dim
+            .y
+            .saturating_add(corner_offset / 4)
+            .saturating_sub(fract_margin),
     };
     let right = DisplayTextLocationCandidateInner {
         alignment: Alignment::Left,
@@ -736,10 +728,15 @@ fn event_or_data_display_text_location_candidates(
     let bottom_right = DisplayTextLocationCandidateInner {
         alignment: Alignment::Left,
         reference_point: ReferencePoint::LeftTop,
-        x: dim.x.saturating_add(dim.width).saturating_add(fract_margin),
+        x: dim
+            .x
+            .saturating_add(dim.width)
+            .saturating_sub(corner_offset / 4)
+            .saturating_add(fract_margin),
         y: dim
             .y
             .saturating_add(dim.height)
+            .saturating_sub(corner_offset / 4)
             .saturating_add(fract_margin),
     };
     let bottom = DisplayTextLocationCandidateInner {
@@ -751,10 +748,14 @@ fn event_or_data_display_text_location_candidates(
     let bottom_left = DisplayTextLocationCandidateInner {
         alignment: Alignment::Right,
         reference_point: ReferencePoint::RightTop,
-        x: dim.x.saturating_sub(fract_margin),
+        x: dim
+            .x
+            .saturating_add(corner_offset / 4)
+            .saturating_sub(fract_margin),
         y: dim
             .y
             .saturating_add(dim.height)
+            .saturating_sub(corner_offset / 4)
             .saturating_add(fract_margin),
     };
     let left = DisplayTextLocationCandidateInner {
@@ -825,7 +826,7 @@ pub fn event_display_text_location_candidates(
 ) -> DisplayTextLocationCandidate {
     event_or_data_display_text_location_candidates(
         config,
-        EVENT_CORNER_FRACTIONAL_MARGIN,
+        5,
         textbox_wh,
         dim,
         incoming_from,
@@ -842,7 +843,7 @@ pub fn data_display_text_location_candidates(
 ) -> DisplayTextLocationCandidate {
     event_or_data_display_text_location_candidates(
         config,
-        1.0,
+        0,
         textbox_wh,
         dim,
         incoming_from,
