@@ -80,14 +80,10 @@ Layout (probably not a good first issue):
   layers if they would otherwise go through a half layer with a data node, similar mechanism for
   when the message flow ends in the same lane, to ensure the crossing minimization phase accounts
   for that)
-* Layout-Instructions (`@a above @b` etc)
-* Labels could be positioned a tidbit more intelligently to not cross outgoing/incoming edges
-  (probably an easy issue). Currently no coordinates for labels are generated at all, they are
-  positioned automatically by the external `bpmn-to-image` tool.
+* Label positioning in the xml export (only manually done in svg export right now).
 
 Non-Layout (good for contributors):
 
-* SVG Export (in addition to XML export)
 * SVG-Based Image Export (in addition to XML export)
 * Interactive SVG Export (hovering over a data object highlights the full data traversal path, etc)
 * LSP/treesitter/...
