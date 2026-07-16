@@ -717,11 +717,6 @@ fn partition_ports<'a>(ports: &'a mut [PortInfo]) -> PartitionedPortInfo<'a> {
 
 // TODO This does not support data associations connected to gateway nodes.
 fn handle_gateway_node(this_node_id: NodeId, graph: &mut Graph) {
-    // See comment at the end of the function.
-    let (above, below) = (
-        n!(this_node_id).node_above_in_same_lane,
-        n!(this_node_id).node_below_in_same_lane,
-    );
     for direction in [Direction::Outgoing, Direction::Incoming] {
         let this_node = &mut graph.nodes[this_node_id];
         let (incoming_or_outgoing, ports, x) = match direction {
@@ -878,6 +873,26 @@ fn handle_gateway_node_one_side(this_node_id: NodeId, graph: &mut Graph, directi
         pool_and_lane: this_pool_and_lane,
         layer: this_layer,
     } = n!(this_node_id).coord3();
+    let (top_is_blocked, bottom_is_blocked) = (match direction {
+        Direction::Outgoing => &n!(this_node_id).incoming,
+        Direction::Incoming => &n!(this_node_id).outgoing,
+    })
+    .iter()
+    .fold(
+        (false, false),
+        |(top_is_blocked, bottom_is_blocked), edge_id| {
+            let edge = &e!(*edge_id);
+            let other_poolane = match direction {
+                Direction::Incoming => n!(edge.to).pool_and_lane(),
+                Direction::Outgoing => n!(edge.from).pool_and_lane(),
+            };
+            (
+                top_is_blocked || (edge.is_vertical && other_poolane < this_pool_and_lane),
+                bottom_is_blocked || (edge.is_vertical && other_poolane > this_pool_and_lane),
+            )
+        },
+    );
+
     // The x is relative to the created bend dummies.
     let relative_port_x = node_size(&NodeType::BendDummy {
         originating_node: Default::default(),
@@ -911,10 +926,18 @@ fn handle_gateway_node_one_side(this_node_id: NodeId, graph: &mut Graph, directi
         Direction::Outgoing => &to!(first_edge),
         Direction::Incoming => &from!(first_edge),
     };
-    let top_most_pool_lane = other_topmost_node.pool_and_lane();
-    let bottom_most_pool_lane = match direction {
-        Direction::Outgoing => to!(last_edge).pool_and_lane(),
-        Direction::Incoming => from!(last_edge).pool_and_lane(),
+    let top_most_pool_lane = if top_is_blocked {
+        this_pool_and_lane
+    } else {
+        other_topmost_node.pool_and_lane()
+    };
+    let bottom_most_pool_lane = if bottom_is_blocked {
+        this_pool_and_lane
+    } else {
+        match direction {
+            Direction::Outgoing => to!(last_edge).pool_and_lane(),
+            Direction::Incoming => from!(last_edge).pool_and_lane(),
+        }
     };
 
     // First we search a regular (or dummy-(loop-connected)-to-regular) node as the top barrier.
