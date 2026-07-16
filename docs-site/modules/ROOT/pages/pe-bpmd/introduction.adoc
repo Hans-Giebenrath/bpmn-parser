@@ -5,7 +5,7 @@
 Before we jump into a wall of text, here is the output of the PE-BPMD analysis for a trivial example.
 
 .Alice sends a message to Bob via Eve through a secure channel. The color annotates that a piece of data is protected and how it travels.
-image::generated/pebpmd-introduction.png[]
+image::generated/pebpmd-introduction.svg[]
 
 .The visibility table shows who can see what. Alice and Bob see the plaintext data (__V__isible), but Eve and whoever controls the network only see a ciphertext (__H__idden).
 [%header,format=csv]

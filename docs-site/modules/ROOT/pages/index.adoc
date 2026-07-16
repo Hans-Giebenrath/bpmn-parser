@@ -13,7 +13,7 @@ of what this tool wants to become. Some things will also stay wonky for some def
 some things are simply subjective and I try to do what is reasonable within the bounds of the layout
 algorithm.
 
-image::generated/welcome.png[]
+image::generated/welcome.svg[]
 
 [,bpmd]
 ----

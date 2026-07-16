@@ -6,7 +6,7 @@ Depending on the specific kind of secure channel they have even more security fe
 
 == Simple Example
 
-image::generated/pebpmd-sc-simple.png[]
+image::generated/pebpmd-sc-simple.svg[]
 
 [%header,format=csv]
 |===
@@ -28,7 +28,7 @@ Dedicated syntax to specify multiple entry points or ends of a secure channel ma
 You might want to model only a subprocess where the encryption is omitted and only the decryption part is present.
 In this case you can specify via the `pre-sent` key word that sending happened in advance to the start of this process.
 
-image::generated/pebpmd-sc-pre-sent.png[]
+image::generated/pebpmd-sc-pre-sent.svg[]
 
 [%header,format=csv]
 |===
@@ -46,7 +46,7 @@ include::example$pebpmd-sc-pre-sent.bpmd[]
 As in the previous example, you can model only the encryption part and omit the decryption part.
 The respective key word is `post-received`.
 
-image::generated/pebpmd-sc-post-received.png[]
+image::generated/pebpmd-sc-post-received.svg[]
 
 [%header,format=csv]
 |===
@@ -65,7 +65,7 @@ You can use `pre-sent` and `post-received` at the same time for cases where you 
 Now, in that case the algorithm has no task to look for which data to protect.
 Hence, you must manually specify the list of data objects that shall be protected via this secure channel.
 
-image::generated/pebpmd-sc-both.png[]
+image::generated/pebpmd-sc-both.svg[]
 
 [%header,format=csv]
 |===
@@ -84,7 +84,7 @@ The additional list of optional data IDs, as seen in the previous section, can u
 (Whether it is good style to transport multiple data objects at the same time is a question of style, probably?)
 
 .The data associations (dotted edges) here look quite funky. This is on the TODO list.
-image::generated/pebpmd-sc-prot-and-unprot.png[]
+image::generated/pebpmd-sc-prot-and-unprot.svg[]
 
 [%header,format=csv]
 |===

@@ -1,14 +1,9 @@
 = Installation
 
 The tool is in an early stage and is not yet available on crates.io or as a pre-built binary.
-Further, since the tool only supports XML export at the moment (which is planned to change), you
-need a further tool to convert that to an actual image. I think the tool is primarily then ready for
-publishing to crates.io when a built-in `.svg` exporter is present, such that the tool is usable
-without further external tools.
 
 . Clone the repository, and
     link:https://doc.rust-lang.org/cargo/getting-started/installation.html[get `cargo`].
-. Install link:https://github.com/bpmn-io/bpmn-to-image[bpmn-to-image] if you want to convert BPMN .xml files to image files (or import the `.xml` files into your BPMN editing tool of choice).
 
-You can compile a `file.bpmd` via `cargo run --build release -i file.bpmd -o file.xml`. Refer to the
-documentation of `bpmn-to-image` for how to turn that into a `.png` file.
+You can compile a `file.bpmd` via `cargo run --build release -i file.bpmd -o file.svg -f svg`. The .svg file is the final image.
+You can also create a BPMN file by using `-o file.xml -f xml` (instead of `-o file.svg -f svg). These you can then import into your regular BPMN editor. However, my focus is currently on the SVG export, hence not all features might be present in the BPMN exporter.

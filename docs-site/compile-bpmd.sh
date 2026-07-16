@@ -20,16 +20,15 @@ dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 images_dir="$dir/modules/ROOT/images/generated"
 csv_dir="$dir/modules/ROOT/examples/generated"
 mkdir -p "$images_dir" "$csv_dir"
-xml_file="$dir/${bpmd_file%.bpmd}.xml"
 csv_file="$csv_dir${bpmd_file#modules/ROOT/examples}"
 csv_file="${csv_file%.bpmd}.csv"
-png_file="$images_dir${bpmd_file#modules/ROOT/examples}"
-png_file="${png_file%.bpmd}.png"
+svg_file="$images_dir${bpmd_file#modules/ROOT/examples}"
+svg_file="${svg_file%.bpmd}.svg"
 bpmd_file="$dir/$bpmd_file"
 cd "$dir"
 
-if [ "${force_build:-}" != "true" ] && [ -e "$png_file" ] && [ -e "$csv_file" ] && [ "$png_file" -nt "$bpmd_file" ] && [ "$csv_file" -nt "$bpmd_file" ]; then
-    echo "Skipping build for $1, since the png and csv are newer"
+if [ "${force_build:-}" != "true" ] && [ -e "$svg_file" ] && [ -e "$csv_file" ] && [ "$svg_file" -nt "$bpmd_file" ] && [ "$csv_file" -nt "$bpmd_file" ]; then
+    echo "Skipping build for $1, since the svg and csv are newer"
     exit 0
 fi
 
@@ -54,11 +53,8 @@ else
     fi
 fi
 run() {
-    time "${CARGO_TARGET_DIR:-./target}"/${release_dir}/bpmn-parser "$@"
+    time timeout 3s "${CARGO_TARGET_DIR:-./target}"/${release_dir}/bpmn-parser "$@"
 }
 
 echo "generating "
-run -i "$bpmd_file" -o "$xml_file" -v "$csv_file"
-echo "finished generating $xml_file, now generating the png"
-test/node_modules/.bin/bpmn-to-image "$xml_file":"$png_file"
-rm "$xml_file"
+run -i "$bpmd_file" -o "$svg_file" -v "$csv_file" -f svg

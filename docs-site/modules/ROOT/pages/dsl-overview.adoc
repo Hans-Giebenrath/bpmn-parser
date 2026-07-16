@@ -13,7 +13,7 @@ makes more use of it.
 
 Let's look as this tiny example:
 
-image::generated/overview-tiny.png[]
+image::generated/overview-tiny.svg[]
 
 [,bpmd]
 ----
@@ -54,7 +54,7 @@ constructive suggestion.
 
 == Gateways - Shorthand Syntax
 
-image::generated/overview-gateway.png[]
+image::generated/overview-gateway.svg[]
 
 [,bpmd]
 ----
@@ -73,7 +73,7 @@ rendering is still waiting on the roadmap.
 As you see, labels don't need to be unique. The `end` label is reused, and this is possible as well
 with on the branching gateway node:
 
-image::generated/overview-gateway2.png[]
+image::generated/overview-gateway2.svg[]
 
 [,bpmd]
 ----
@@ -106,7 +106,7 @@ pass:[<del>]#G and +G can be the start of a business process{empty}pass:[</del>]
 
 The examples above omitted pools and lanes to focus on the sequence flows and nodes. Here they are:
 
-image::generated/overview-pool-lane.png[]
+image::generated/overview-pool-lane.svg[]
 
 [,bpmd]
 ----
@@ -129,7 +129,7 @@ pass:[<del>]A pool can be marked as multiple with the `~multiple` attribute.{emp
 
 You can use the `->label` and `<-label` on non-gateways to transition from one lane to another lane (but this can of course also be done when gateways are involved).
 
-image::generated/overview-lane-crossing.png[]
+image::generated/overview-lane-crossing.svg[]
 
 [,bpmd]
 ----
@@ -148,7 +148,7 @@ Inter-pool communication is done via message flows. Those are added as dedicated
 MF <-from ->to
 ----
 
-image::generated/overview-message-flow.png[]
+image::generated/overview-message-flow.svg[]
 
 [,bpmd]
 ----
@@ -192,7 +192,7 @@ MF <-abc ->def // Uses identifiers, not the display text
 Data elements use the statment type `OD` for data object and `SD` for data store. They use incoming
 `<-label` and outgoing `->label` arrows to connect data associations with activities.
 
-image::generated/overview-data.png[]
+image::generated/overview-data.svg[]
 
 [,bpmd]
 ----
@@ -212,7 +212,7 @@ that they are the same data object. For these situations, there is the data cont
 (with friends `O&` and `S&`) to create a new data icon in the layouted diagram, but communicate to
 the reader (and to possible analysis extensions) that they are _actually_ the same piece of data.
 
-image::generated/overview-data-continuations.png[]
+image::generated/overview-data-continuations.svg[]
 
 [,bpmd]
 ----
@@ -266,7 +266,7 @@ objects or message flows at the very top, as then no events / tasks have been de
 Boundary events are added through their own statements right below the task which they are attached
 to.
 
-image::generated/overview-boundary-events.png[]
+image::generated/overview-boundary-events.svg[]
 
 [,bpmd]
 ----
