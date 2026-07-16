@@ -48,10 +48,10 @@ correct_svg_file="$dir/${stem}.correct.svg"
 vis_table=false
 
 if grep -q '// GENERATE VISIBILITY TABLE' "$f"; then
-    run -i "$f" -o "${f%.bpmd}.$out_format" -f svg -v "$csv_file"
+    run -i "$f" -o "${f%.bpmd}.$out_format" -f "$out_format" -v "$csv_file"
     vis_table=true
 else
-    run -i "$f" -o "${f%.bpmd}.$out_format" -f svg
+    run -i "$f" -o "${f%.bpmd}.$out_format" -f "$out_format"
 fi
 
 cat <<EOF >>"$tmp_adoc_file"
