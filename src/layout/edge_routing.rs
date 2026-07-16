@@ -1278,14 +1278,12 @@ impl LogicalIdx {
 fn finish_straight_vertical_message_flow(graph: &mut Graph, edge_id: EdgeId) {
     // TODO this is present as `from_and_to_xy` in `dummy_node_removal`, should be moved to
     // `graph` and return an array instead of vector.
-    let mut bend_points = vec![
+    let bend_points = vec![
         from!(edge_id).port_of_outgoing(edge_id).as_pair(),
         to!(edge_id).port_of_incoming(edge_id).as_pair(),
     ];
 
-    if e!(edge_id).is_reversed {
-        bend_points.reverse();
-    }
+    assert!(!e!(edge_id).is_reversed);
 
     let EdgeType::Regular {
         bend_points: out_bend_points,
