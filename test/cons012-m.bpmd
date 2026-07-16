@@ -1,0 +1,17 @@
+= Pool
+
+== Lane 1
+
+X Gateway <-inc ->outg
+
+== Lane 2
+
+# Start
+- Task ->inc
+
+. End <-outg
+
+// The point is that gateway should now not shove the bend dummy for `outg` into `Lane 1`, since
+// this would mean that we have conflicting edge directions at the top slot.
+[place @task below @gateway]
+
