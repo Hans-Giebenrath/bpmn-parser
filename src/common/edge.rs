@@ -82,8 +82,7 @@ pub struct Edge {
     pub from: NodeId,
     pub to: NodeId,
     pub edge_type: EdgeType,
-    /// This is *only* used for data flows.
-    /// TODO move this into the `DataFlowAux` type to ensure this on a type level.
+    /// This is used for data flows and sequence flows.
     pub is_reversed: bool,
     pub flow_type: FlowType,
     pub stays_within_lane: bool,
