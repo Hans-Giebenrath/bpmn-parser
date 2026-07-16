@@ -6,7 +6,6 @@ const CELL_SIZE: u16 = 100;
 // It's not _The Grid_, just a grid.
 pub struct Grid {
     cells: Box<[CellData]>,
-    num_cells_vertically: u16,
     num_cells_horizontally: u16,
 }
 
@@ -21,7 +20,7 @@ struct CellData {
     lines: Vec<WeightedLine>,
 }
 
-#[derive(Clone, Copy)]
+#[derive(Debug, Clone, Copy)]
 pub struct Line {
     pub start: Point,
     pub end: Point,
@@ -45,21 +44,20 @@ pub struct BoundingBox {
 
 impl Grid {
     pub fn new(min_width: usize, min_height: usize) -> Self {
-        let num_cells_horizontally = (min_width as u16 + CELL_SIZE - 1) / CELL_SIZE;
-        let num_cells_vertically = (min_height as u16 + CELL_SIZE - 1) / CELL_SIZE;
+        let num_cells_horizontally = (min_width as u16 + 1).div_ceil(CELL_SIZE);
+        let num_cells_vertically = (min_height as u16 + 1).div_ceil(CELL_SIZE);
         Self {
             cells: (0..num_cells_vertically * num_cells_horizontally)
                 .map(|_| CellData { lines: Vec::new() })
                 .collect(),
-            num_cells_vertically,
             num_cells_horizontally,
         }
     }
 
     pub fn insert(&mut self, line: &Line, weight: u32) {
-        for index in cells_under_line(line, self.num_cells_vertically) {
+        for index in cells_under_line(line, self.num_cells_horizontally) {
             self.cells[index].lines.push(WeightedLine {
-                line: line.clone(),
+                line: *line,
                 weight,
             });
         }
@@ -102,7 +100,7 @@ impl Grid {
         let right = bounding_box.right as u16 / CELL_SIZE;
         let top = bounding_box.top as u16 / CELL_SIZE;
         let bottom = bounding_box.bottom as u16 / CELL_SIZE;
-        let row_width = self.num_cells_vertically;
+        let row_width = self.num_cells_horizontally;
 
         (left..=right)
             .flat_map(move |x| (top..=bottom).map(move |y| (x, y)))
@@ -200,13 +198,6 @@ impl BoundingBox {
 
     fn contains(&self, p: Point) -> bool {
         self.left <= p.x && p.x <= self.right && self.top <= p.y && p.y <= self.bottom
-    }
-
-    fn overlaps(&self, other: &BoundingBox) -> bool {
-        self.left < other.right
-            && self.right > other.left
-            && self.top < other.bottom
-            && self.bottom > other.top
     }
 }
 
