@@ -779,6 +779,8 @@ fn bottom_barrier(graph: &Graph, this_node_id: NodeId) -> Option<BarrierInfo> {
 
 fn classify_barrier_node(this_node_id: NodeId, node: &Node) -> Option<BarrierInfo> {
     match &node.node_type {
+        // We are not a barrier for ourself.
+        _ if node.id == this_node_id => None,
         // The back edge corner dummy is detached from its originating node - the whole point is
         // that it can move more freely, to make looping possible around above nodes (see cons007
         // where the back edge corner dummy is above n1, not directly next to the gateway node).
@@ -860,6 +862,16 @@ fn maybe_update_best_position(
     }
 }
 
+#[derive(Clone)]
+enum LookingForAPlace {
+    Node {
+        encountered_node: NodeId,
+        at_pool_lane: PoolAndLane,
+        is_bottom_barrier: bool,
+    },
+    EndOfSearch,
+}
+
 // Try to push the dummy bend points as far outside as
 // possible, i.e. until the crossing count increases. The goal is to "eat" as meany dummy nodes as
 // possible (without moving into the "wrong" lane)
@@ -883,8 +895,8 @@ fn handle_gateway_node_one_side(this_node_id: NodeId, graph: &mut Graph, directi
         |(top_is_blocked, bottom_is_blocked), edge_id| {
             let edge = &e!(*edge_id);
             let other_poolane = match direction {
-                Direction::Incoming => n!(edge.to).pool_and_lane(),
                 Direction::Outgoing => n!(edge.from).pool_and_lane(),
+                Direction::Incoming => n!(edge.to).pool_and_lane(),
             };
             (
                 top_is_blocked || (edge.is_vertical && other_poolane < this_pool_and_lane),
@@ -926,38 +938,25 @@ fn handle_gateway_node_one_side(this_node_id: NodeId, graph: &mut Graph, directi
         Direction::Outgoing => &to!(first_edge),
         Direction::Incoming => &from!(first_edge),
     };
-    let top_most_pool_lane = if top_is_blocked {
-        this_pool_and_lane
-    } else {
-        other_topmost_node.pool_and_lane()
-    };
-    let bottom_most_pool_lane = if bottom_is_blocked {
-        this_pool_and_lane
-    } else {
-        match direction {
-            Direction::Outgoing => to!(last_edge).pool_and_lane(),
-            Direction::Incoming => from!(last_edge).pool_and_lane(),
-        }
+    let bottom_most_pool_lane = match direction {
+        Direction::Outgoing => to!(last_edge).pool_and_lane(),
+        Direction::Incoming => from!(last_edge).pool_and_lane(),
     };
 
     // First we search a regular (or dummy-(loop-connected)-to-regular) node as the top barrier.
     // Later `current_top_barrier` becomes, one by one, our own newly inserted dummy nodes.
-    let mut current_top_barrier = graph
-        .iter_upwards_same_pool(
-            StartAt::Node(this_node_id),
-            // Might be that the other top-most node is on a _lower_ pool_lane.
-            Some(this_pool_and_lane.min(top_most_pool_lane)),
-        )
-        .find_map(|node| classify_barrier_node_for_gateway(this_node_id, node));
-
-    // This is always the same. We iterate always until we hit this one.
-    let bottom_barrier = graph
-        .iter_downwards_same_pool(
-            StartAt::Node(this_node_id),
-            // Might be that the other bottom-most node is on a _higher_ pool_lane.
-            Some(this_pool_and_lane.max(bottom_most_pool_lane)),
-        )
-        .find_map(|node| classify_barrier_node_for_gateway(this_node_id, node));
+    let mut current_top_barrier = if top_is_blocked {
+        // If the top is blocked, then we start just under the gateway node itself. The sequence
+        // flows are now only allowed to leave to the right direction.
+        Some(this_node_id)
+    } else {
+        graph
+            .iter_upwards_same_pool(
+                StartAt::Node(this_node_id),
+                Some(this_pool_and_lane.min(other_topmost_node.pool_and_lane())),
+            )
+            .find_map(|node| classify_barrier_node_for_gateway(this_node_id, node))
+    };
 
     // This one is used to count the number of crossings.
     let mut above_nodes_in_other_layer = HashSet::<NodeId>::from_iter(
@@ -966,7 +965,10 @@ fn handle_gateway_node_one_side(this_node_id: NodeId, graph: &mut Graph, directi
             .map(|node| node.id),
     );
 
-    let mut has_crossed_gateway = false;
+    // If the top is blocked, then we start behind the gateway. I.e. it is already crossed.
+    // Otherwise, it is `false`. Now, if in addition to that, `bottom_is_blocked` is true as well,
+    // then the respective condition in the inner loop body immediately breaks.
+    let mut has_crossed_gateway = top_is_blocked;
     let mut previous_other_node_id = None;
     for edge_id in sideways_edges.iter().cloned() {
         let other_node = match direction {
@@ -1001,46 +1003,56 @@ fn handle_gateway_node_one_side(this_node_id: NodeId, graph: &mut Graph, directi
         let mut local_has_crossed_gateway = has_crossed_gateway;
         // Lower is better.
         let mut crossing_number = 0i32;
-        let (mut best_position, iteration_start) =
-            if let Some(current_top_barrier) = current_top_barrier {
-                let best_position = (
-                    local_has_crossed_gateway,
-                    n!(current_top_barrier).pool_and_lane(),
-                    PlaceForBendDummy::Below(current_top_barrier),
-                    crossing_number,
-                );
-                let iteration_start = StartAt::Node(current_top_barrier);
-                (best_position, iteration_start)
-            } else {
-                let best_position = (
-                    local_has_crossed_gateway,
-                    top_most_pool_lane,
-                    PlaceForBendDummy::AtTheTop,
-                    crossing_number,
-                );
-                let iteration_start = StartAt::PoolLane(Coord3 {
-                    pool_and_lane: top_most_pool_lane,
-                    layer: this_layer,
-                });
-                (best_position, iteration_start)
-            };
+        let at_pool_lane = other_node.pool_and_lane().min(this_pool_and_lane);
+        let (mut best_position, iteration_start) = if let Some(current_top_barrier) =
+            current_top_barrier
+            // Short-circuit if the top-barrier is at an obviously worse location (though this only
+            // works while we are in a higher lane than the gateway node).
+            && !(n!(current_top_barrier).pool_and_lane() < at_pool_lane)
+        {
+            let best_position = (
+                local_has_crossed_gateway,
+                n!(current_top_barrier).pool_and_lane(),
+                PlaceForBendDummy::Below(current_top_barrier),
+                crossing_number,
+            );
+            let iteration_start = StartAt::Node(current_top_barrier);
+            (best_position, iteration_start)
+        } else {
+            let best_position = (
+                local_has_crossed_gateway,
+                at_pool_lane,
+                PlaceForBendDummy::AtTheTop,
+                crossing_number,
+            );
+            let iteration_start = StartAt::PoolLane(Coord3 {
+                pool_and_lane: at_pool_lane,
+                layer: this_layer,
+            });
+            (best_position, iteration_start)
+        };
 
         // This loop finds the best location for the current to-be-added bend dummy.
         for crossable_node_or_bottom_barrier_or_none in graph
             .iter_downwards_same_pool(
                 iteration_start,
-                Some(std::cmp::max(this_pool_and_lane, bottom_most_pool_lane)),
+                Some(this_pool_and_lane.max(bottom_most_pool_lane)),
             )
-            .take_while(|&crossable_node| Some(crossable_node.id) != bottom_barrier)
+            .map(|node| {
+                let is_bottom_barrier =
+                    classify_barrier_node_for_gateway(this_node_id, node).is_some();
+                (node, is_bottom_barrier)
+            })
+            .take_while_inclusive(|(_, is_bottom_barrier)| *is_bottom_barrier)
             .map(Some)
-            .chain(std::iter::once(bottom_barrier.map(|node_id| &n!(node_id))))
+            .chain(std::iter::once(None))
         {
-            let crossable_node_or_bottom_barrier = match crossable_node_or_bottom_barrier_or_none {
-                Some(crossable_node_or_bottom_barrier)
-                    if crossable_node_or_bottom_barrier.pool_and_lane() <= other_node_pool_lane =>
-                {
-                    crossable_node_or_bottom_barrier
-                }
+            if bottom_is_blocked && local_has_crossed_gateway {
+                break;
+            }
+            let (crossable_node, is_bottom_barrier) = match crossable_node_or_bottom_barrier_or_none
+            {
+                Some(result @ (node, _)) if node.pool_and_lane() <= other_node_pool_lane => result,
                 _ => {
                     // No more nodes, or the crossing node is further downwards, so we can stop
                     // searching here.
@@ -1057,12 +1069,12 @@ fn handle_gateway_node_one_side(this_node_id: NodeId, graph: &mut Graph, directi
                 }
             };
 
-            if best_position.1 < crossable_node_or_bottom_barrier.pool_and_lane() {
+            if best_position.1 < crossable_node.pool_and_lane() {
                 // Move the best position into the current lane (which is also closer to
                 // `other_node_pool_lane`).
                 best_position = (
                     local_has_crossed_gateway,
-                    crossable_node_or_bottom_barrier.pool_and_lane(),
+                    crossable_node.pool_and_lane(),
                     PlaceForBendDummy::AtTheTop,
                     crossing_number,
                 );
@@ -1070,12 +1082,9 @@ fn handle_gateway_node_one_side(this_node_id: NodeId, graph: &mut Graph, directi
                 // nodes.
             }
 
-            let crossable_node = if Some(crossable_node_or_bottom_barrier.id) != bottom_barrier {
-                // Continue only if this is not the bottom barrier. And rename for clarity.
-                crossable_node_or_bottom_barrier
-            } else {
+            if is_bottom_barrier {
                 break;
-            };
+            }
             if crossable_node.id == this_node_id {
                 // We found the gateway node that we analyse in this function. This one will not be
                 // further analysed, so continue.
