@@ -157,24 +157,27 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         pebpmd_analysis(&mut graph, visibility_path, &bpmd_source_files, &mut timer)?;
     };
 
-    let result = catch_unwind(AssertUnwindSafe(|| {
-        layout_graph(&mut graph, &mut timer, &bpmd_source_files)
-    }));
+    let result = catch_unwind(AssertUnwindSafe(
+        || -> Result<String, Box<dyn std::error::Error>> {
+            layout_graph(&mut graph, &mut timer, &bpmd_source_files)?;
+            Ok(match cli.output_format {
+                OutputFormat::Bpmn => timer.time_it("XML export", || to_xml::generate_bpmn(&graph)),
+                OutputFormat::Svg => {
+                    timer.time_it("SVG export", || to_svg(&graph, cli.svg_embed_font))
+                }
+                OutputFormat::Png => {
+                    let _svg = timer.time_it("SVG export", || to_svg(&graph, true));
+                    timer.time_it("Png export", || todo!())
+                }
+            })
+        },
+    ));
 
-    match result {
+    let output_data = match result {
         Ok(r) => r?, // propagate Result errors as before
         Err(payload) => {
             eprintln!("Panic! Debug-printing the graph: {graph:#?}");
             std::panic::resume_unwind(payload);
-        }
-    }
-
-    let output_data = match cli.output_format {
-        OutputFormat::Bpmn => timer.time_it("XML export", || to_xml::generate_bpmn(&graph)),
-        OutputFormat::Svg => timer.time_it("SVG export", || to_svg(&graph, cli.svg_embed_font)),
-        OutputFormat::Png => {
-            let _svg = timer.time_it("SVG export", || to_svg(&graph, true));
-            timer.time_it("Png export", || todo!())
         }
     };
 
