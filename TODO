@@ -1,22 +1,20 @@
 * ActivityMarkers should just be 15x15, looks better than 20x20.
-* cons012, t0030: Problem is that port_assignment should account for the situation that if the top side of a gateway is blocked, then a dummy node should not be moved into a higher lane at all.
-* Need to identify situation where loop edge into gateway would actually cross a gateway sequence flow (likely because it goes into another lane), in which case the edge should not loop into the gateway but instead enter the gateway from the other side. Should be done after port assignment. And then, then back edge corner dummy needs to be changed into a bend dummy.
-* Gateway edges which are recognized as back edges must be temporarily reversed (and moved from inc to outg, + vice versa), i.e. they *do not* go through the reverse node corner dummy transformation. This is done because they should be positioned next to the gateway (subject to regular rules in the dummy node placement logic). So from the right gateway, the edge going left, should actually be stored as an *incoming* edge with *is_reversed* set to true. For the left gateway, the incoming edge from the right side should temporarily be stored in the *outcoming* edges. However, during the port assignment phase, when bend dummies are added, this is ultimately restored, and then the bend dummy is actually converted into a back edge corner dummy.
-* g0013.bpmd fails
-* t0012.bpmn etc (also t0021.bpmd) has disappeared message flows? They are going straight up/down without bend points, so I might have forgotton handling that case.
+* data store symbol is weird
+* Inter font loading in Firefox is somehow not really correct? But just saying 'sans-serif' seems to be good enough for now.
+* Edge label positioning: Add a "left-Align - leftlower/leftupper corner" as the first thing, I think this looks overall more pleasing, also better aligning text of gateway decisions.
+* README DSL site should be extended, some new stuff is present now.
+* extend on cons012(-m) to also have gateway successors within the same lane, or other lanes. Also mirror them (also cons013) to check incoming vs outgoing correctness, and order of their processing in port assignment.
+* cons013: The backedgecornerdummy shoult be merged into the gateway during xy-ilp phase.
 * Data edges should always go diagonally into a gateway. This also means, if it can't go straight from data node to gateway, then the last step (long edge dummy <-> gateway) needs to be straight, not routed).
 * data elements need to be placed in accordance to above/same layer constraints. But this should also be verified: imagine data above gw above incoming node. Then multiple outgoing to the right. No way to layout because all outgoing must emerge from the right. Instead, forbid that data is above gw in the first place. And data should be either a bit above gw or below gw (at least the data node which is directly close to the target node)
 * Lone-data elements need to be ensured to be moved to the left if a node already has two vertical connected nodes. Otherwise the data node placement logic would put it also vertically on the same layer and there is chaos.
-* Unify back edge corner dummies and bend dummies. They should be the same (though depends on whether they go left or right) - gateways have their bend dummies created in a later phase compared to back edge nodes. Also, do a write-up (paper-like) for how this works, I will forget it myself at some point.
+* Unify back edge corner dummies and bend dummies. They should be the same (though depends on whether they go left or right) - gateways have their bend dummies created in a later phase compared to back edge nodes. Also, do a write-up (paper-like) for how this works, I will forget it myself at some point. (actually not sure about this one, since the gateway barrier classification makes a difference between these two)
 * SVG pathify fonts to circumvent compatibility problems.
 * Coordinates should be u32 instead of usize.
-* Inter font loading in Firefox is somehow not really correct? But just saying 'sans-serif' seems to be good enough for now.
-* data store symbol is weird
 
 * PE-BPMN tee-external-root-access in a tee-pool should not name itself (@tee-pool)
 * PE-BPMN tee-software-operators should have a similar `on-premises` placeholder as tee-hardware-operators. `local`? as `on-premises` seems weird. (ChatGPT recommends replacing existing 'on-premises' with 'local' as well, not sure if I agree, must sleep over that suggestion)
 * is `on-premises` for hardware-access doing the wrong thing?
-* pe0001 end events are not drawn as end events (the message event)
 * PE-BPMN the selectors (e.g. secure-channel begin and end) should better filter their node types. Right now one can accidentally select data nodes which doesn't make sense and results in a non-helpful assertion error.
 * error in pe bpmd tool should result in error of test suite.
 * D1.1, page 53 figure 12 subprocess P5, is a good diagram that should be layoutable now.
