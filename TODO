@@ -1,7 +1,10 @@
+* pe0003: DO between two tasks is not centered.
+* pe0003: DO between event and task should be shifted towards the event to have equal gap sizes, instead of centering wrt to the center of the elements.
+* pe0003: DO arrows to tasks are anchored at weird locations. Should instead probably focus the corner or so? But I think I understand where this is coming from ...
+* data elements have wonky y-coordinate differences, although it looks like they should all be at the same height. Also, they are oftentimes not put into the next halflayer, even though there is enough room.
 * ActivityMarkers should just be 15x15, looks better than 20x20.
 * data store symbol is weird
-* Inter font loading in Firefox is somehow not really correct? But just saying 'sans-serif' seems to be good enough for now.
-* Edge label positioning: Add a "left-Align - leftlower/leftupper corner" as the first thing, I think this looks overall more pleasing, also better aligning text of gateway decisions.
+* O&, S&, <&, >& support
 * README DSL site should be extended, some new stuff is present now.
 * extend on cons012(-m) to also have gateway successors within the same lane, or other lanes. Also mirror them (also cons013) to check incoming vs outgoing correctness, and order of their processing in port assignment.
 * cons013: The backedgecornerdummy shoult be merged into the gateway during xy-ilp phase.
@@ -9,8 +12,11 @@
 * data elements need to be placed in accordance to above/same layer constraints. But this should also be verified: imagine data above gw above incoming node. Then multiple outgoing to the right. No way to layout because all outgoing must emerge from the right. Instead, forbid that data is above gw in the first place. And data should be either a bit above gw or below gw (at least the data node which is directly close to the target node)
 * Lone-data elements need to be ensured to be moved to the left if a node already has two vertical connected nodes. Otherwise the data node placement logic would put it also vertically on the same layer and there is chaos.
 * Unify back edge corner dummies and bend dummies. They should be the same (though depends on whether they go left or right) - gateways have their bend dummies created in a later phase compared to back edge nodes. Also, do a write-up (paper-like) for how this works, I will forget it myself at some point. (actually not sure about this one, since the gateway barrier classification makes a difference between these two)
-* SVG pathify fonts to circumvent compatibility problems.
 * Coordinates should be u32 instead of usize.
+* edges should use the INCOMING=0 and OUTGOING=1 thing, so that the whole direction handling becomes easier.
+* model the diagrams from https://thesis.cs.ut.ee/82dce7c0-0318-4c55-b1a8-e3d28cd170cf, see if they spark some ideas.
+* Parse config values from the .bpmd file (see common/config.rs which is already macro-ified for this purpose).
+* `import` statement
 
 * PE-BPMN tee-external-root-access in a tee-pool should not name itself (@tee-pool)
 * PE-BPMN tee-software-operators should have a similar `on-premises` placeholder as tee-hardware-operators. `local`? as `on-premises` seems weird. (ChatGPT recommends replacing existing 'on-premises' with 'local' as well, not sure if I agree, must sleep over that suggestion)
@@ -27,18 +33,13 @@
 * Add more checks for the correctness of the BPMN semantics:
   * Check that the gateway branching and joining nodes match (use a dedicated graph analysis phase, not in the parser)
 * Saw some youtuber who talks about generating BPMNs via ChatGPT. I guess I should write him when the tool is in a more usable state, then he can evaluate that: https://www.youtube.com/watch?v=StqnUeWv6Lc
-* Check whether t0033.bpmd can be fixed or is too weird a situation.
 * Add `Edge::is_detached`: For DF edges which will be directly routed (TODO direct routing check should include that it does not add intersections with other edges of the same node). They should ideally only leave or enter at the edges, as this will be the least interruptive? But not sure about this.
 * pe-bpmn MPC should be able to be in multiple pools, or at least in multiple lanes. And then specify multiple admins.
 * pe-bpmn data_already_protected is not used anywhere, yet.
 * pe-bpmn TEEs could be in a cyclic dependency of being each other's admin. This is currently reported as an error but in principle is solvable.
 * Use a more performance hasher for all the hash maps.
-* docsite, secure channel prot and unprot data associations are quite funky. Maybe the ad-hoc solution is to tackle the problem of distributing data objects better (or, at all) across layers?
 * Expand the secure-channel shorthand
-* Parse config values from the .bpmd file (see common/config.rs which is already macro-ified for this purpose).
-* Try to help the crossing reduction phase by solving some variables, if the order can be answered for some nodes trivially (just one node in a given pool/lane/layer coordinate). Some larger diagrams with mostly trivial ordering have rather high ILP solving times. The solver is not very optimized, hence we better help it.
 * Support data associations for Gateways.
-* data elements have wonky y-coordinate differences, although it looks like they should all be at the same height. Also, they are oftentimes not put into the next halflayer, even though there is enough room.
 
 
 Something from chatgpt 5.5, being mostly focused on the parser side:

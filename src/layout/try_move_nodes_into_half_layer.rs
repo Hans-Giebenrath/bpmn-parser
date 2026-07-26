@@ -1,4 +1,4 @@
-use crate::common::graph::Graph;
+use crate::common::graph::{DATAOBJECT_NODE_HEIGHT, Graph};
 use crate::common::node::LayerId;
 use proc_macros::to;
 use std::collections::HashMap;
@@ -19,13 +19,11 @@ pub fn try_move_nodes_into_half_layer(graph: &mut Graph) {
     let mut vertical_segments_per_layer: HashMap<LayerId, Vec<RangeInclusive<usize>>> =
         HashMap::new();
 
-    // TODO needs testing
     let white_spacing = 5; // air between the elements
-    let label_spacing = 35; // room for the label under the node. TODO with longer labels there
-    // will be linebreaks, so needs multiplication (and know the size of the font). Probably not
-    // worth the effort, let's see.
-    let dat_node_height = 50;
-    let top_padding = dat_node_height + label_spacing + white_spacing;
+    let data_node_height = DATAOBJECT_NODE_HEIGHT;
+    // XXX Don't reserve additional space for the label, as that can simply be moved around to a
+    // vacant location.
+    let top_padding = data_node_height + white_spacing;
     let bottom_padding = white_spacing;
 
     // Go through the nodes on regular layers.
@@ -49,7 +47,8 @@ pub fn try_move_nodes_into_half_layer(graph: &mut Graph) {
 
         // Approximately correct `y` value. It just needs to be *some* `y` value across the sides of
         // the node. Could also use the port.
-        let start_y = left_node.y;
+        let start_top = left_node.y;
+        let start_bottom = left_node.y + left_node.height;
         let vertical_segments: &mut Vec<_> = vertical_segments_per_layer
             .entry(left_node.layer_id)
             .or_default();
@@ -64,10 +63,11 @@ pub fn try_move_nodes_into_half_layer(graph: &mut Graph) {
                 continue;
             }
 
-            let end_y = to_node.y;
+            let end_top = to_node.y;
+            let end_bottom = to_node.y + to_node.height;
             vertical_segments.push(
-                start_y.min(end_y).saturating_sub(top_padding)
-                    ..=start_y.max(end_y).saturating_add(bottom_padding),
+                start_top.min(end_top).saturating_sub(top_padding)
+                    ..=start_bottom.max(end_bottom).saturating_add(bottom_padding),
             );
         }
     }

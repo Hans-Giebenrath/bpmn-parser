@@ -1,11 +1,11 @@
 = BPMD - **BPM**N **D**SL (link:https://hans-giebenrath.github.io/bpmd-antora/bpmd/index.html[Standalone Docs])
 :toc:
 
-Create BPMN diagrams from text files. Similar to Mermaid/PlantUML/... but for BPMN.
+Create BPMN diagrams from text files. Similar to Mermaid/PlantUML/... but for BPMN. Primarily targeting .svg, but a less tested .bpmn (i.e. XML) export is present as well.
 
 *This project is in an early development stage and is missing features which are required for serious usage.*
 
-BPMD is a tool which takes as input a text file in the BPMD format (`.bpmd`) and outputs a layouted BPMN (`.xml`).
+BPMD is a tool which takes as input a text file in the BPMD format (`.bpmd`) and outputs a layouted BPMN diagram (`.svg` or `.bpmn`).
 The goal is to enable the author of a diagram to focus on the semantics of a diagram.
 However, when creating a diagram by moving boxes and arrows, the author needs to focus at the same time on the presentation.
 Simply put, this tool determines the `x`, `y`, `width` and `height` values of all the elements in your diagram, you just describe your process.
@@ -73,7 +73,6 @@ Layout (probably not a good first issue):
   *happy path* and this should go straight out. Non-happy path edges lead to tasks to handle
   exceptional situations, so they should branch out off sight (harshly spoken).
 * Marking a pool as black box (or hiding them altogether)
-* Handling sequence flow cycles
 * Nested states
 * Separate Interrupt States
 * Make data nodes in half-layers more integrated (force message flow endpoint nodes into other
@@ -81,6 +80,7 @@ Layout (probably not a good first issue):
   when the message flow ends in the same lane, to ensure the crossing minimization phase accounts
   for that)
 * Label positioning in the xml export (only manually done in svg export right now).
+* Data nodes and gateways cannot be connected.
 
 Non-Layout (good for contributors):
 

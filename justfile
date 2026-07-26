@@ -8,7 +8,7 @@ accept-svg image:
     cd test/
     if [ "{{ image }}" = "all" ]; then
       for f in *.svg; do
-        just accept "$f"
+        just accept-svg "$f"
       done
       exit 0
     fi
