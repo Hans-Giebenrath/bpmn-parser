@@ -46,6 +46,7 @@ impl DisplayTextLocationCandidateInner {
     }
 }
 
+#[derive(Debug)]
 pub struct DisplayTextLocationCandidate {
     pub alignment: Alignment,
     pub x: usize,
@@ -157,7 +158,7 @@ pub fn edge_display_text_location_candidates(
 
 /// Goes from start to end, always oscillating above->below->above or left->right->left (depending
 /// on whether the segment is horizontal or vertical).
-pub fn edge_segment_display_text_location_candidates(
+fn edge_segment_display_text_location_candidates(
     config: &Config,
     start: (usize, usize),
     end: (usize, usize),
@@ -195,6 +196,37 @@ pub fn edge_segment_display_text_location_candidates(
         }
     } else if start.1 == end.1 {
         // Going right or left.
+
+        // These first ones are meant to allow rough alignment, especially for gateway labels to
+        // look more uniform.
+        if start.0 < end.0 {
+            best_candidate.call_and_maybe_update(&DisplayTextLocationCandidateInner {
+                alignment: Alignment::Center,
+                reference_point: ReferencePoint::LeftBottom,
+                y: start.1.saturating_sub(config.display_text_margin as usize),
+                x: start.0.saturating_add(config.display_text_margin as usize),
+            })?;
+            best_candidate.call_and_maybe_update(&DisplayTextLocationCandidateInner {
+                alignment: Alignment::Center,
+                reference_point: ReferencePoint::LeftTop,
+                y: start.1.saturating_add(config.display_text_margin as usize),
+                x: start.0.saturating_add(config.display_text_margin as usize),
+            })?;
+        } else {
+            best_candidate.call_and_maybe_update(&DisplayTextLocationCandidateInner {
+                alignment: Alignment::Center,
+                reference_point: ReferencePoint::RightBottom,
+                y: start.1.saturating_sub(config.display_text_margin as usize),
+                x: start.0.saturating_sub(config.display_text_margin as usize),
+            })?;
+            best_candidate.call_and_maybe_update(&DisplayTextLocationCandidateInner {
+                alignment: Alignment::Center,
+                reference_point: ReferencePoint::RightTop,
+                y: start.1.saturating_add(config.display_text_margin as usize),
+                x: start.0.saturating_sub(config.display_text_margin as usize),
+            })?;
+        }
+
         let it = iterate_edge_points(
             start.0 as u32,
             end.0 as u32,
@@ -286,7 +318,7 @@ fn iterate_edge_points(
         )
 }
 
-pub fn edge_corner_display_text_location_candidates(
+fn edge_corner_display_text_location_candidates(
     config: &Config,
     start: (usize, usize),
     middle: (usize, usize),
@@ -507,7 +539,7 @@ pub enum ReferencePoint {
     LeftCenter,
 }
 
-#[derive(Clone, Copy)]
+#[derive(Debug, Clone, Copy)]
 pub enum Alignment {
     Left,
     Center,
@@ -521,7 +553,7 @@ pub fn gateway_display_text_location_candidates(
     incoming_from: Side,
     callback: &DisplayLocationCallback,
 ) -> DisplayTextLocationCandidate {
-    let full_margin = config.display_text_margin;
+    let full_margin = config.display_text_margin as usize;
     let fract_margin = ((full_margin * full_margin) / 2).isqrt();
 
     let mut best_candidate = CandidateTracker {

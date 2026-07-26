@@ -99,7 +99,7 @@ define_config!(
     ///                               so that we reach the farthest end of the edge (otherwise would
     ///                               overrun since step size is probably not a perfect multiple of the
     ///                               `edge length - 2*margin_to_ends`)
-    display_text_margin: usize = 8,
+    display_text_margin: u32 = 8,
     display_text_edge_x_step_size: u32 = 30,
     display_text_edge_y_step_size: u32 = 30,
     display_text_edge_x_margin_to_ends: u32 = 30,
