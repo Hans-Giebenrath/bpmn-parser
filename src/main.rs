@@ -57,8 +57,10 @@ struct Cli {
     #[arg(short = 'f', long, value_name = "FORMAT", default_value_t = OutputFormat::Svg)]
     output_format: OutputFormat,
 
-    #[arg(short = 'e', long, default_value_t = false)]
-    svg_embed_font: bool,
+    /// By default, SVG fonts are embedded for maximum portability. The result is that text cannot
+    /// be copied from the SVG, but this should usually not be necessary anyway.
+    #[arg(short = 'E', long, default_value_t = false)]
+    no_svg_embed_font: bool,
 
     /// Output visibility table to this file (CSV format).
     #[arg(short, long, value_name = "VISIBILITY_FILE")]
@@ -163,7 +165,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             Ok(match cli.output_format {
                 OutputFormat::Bpmn => timer.time_it("XML export", || to_xml::generate_bpmn(&graph)),
                 OutputFormat::Svg => {
-                    timer.time_it("SVG export", || to_svg(&graph, cli.svg_embed_font))
+                    timer.time_it("SVG export", || to_svg(&graph, !cli.no_svg_embed_font))
                 }
                 OutputFormat::Png => {
                     let _svg = timer.time_it("SVG export", || to_svg(&graph, true));

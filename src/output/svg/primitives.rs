@@ -152,6 +152,7 @@ pub struct Svg {
     body: String,
     style: SvgStyle,
     font_system: FontSystem,
+    swash_cache: SwashCache,
     embed_font: bool,
     grid: Grid,
     config: Config,
@@ -160,6 +161,7 @@ pub struct Svg {
 impl Svg {
     pub fn new(embed_font: bool, width: usize, height: usize, grid: Grid, config: &Config) -> Self {
         let mut font_system = FontSystem::new();
+        let mut swash_cache = SwashCache::new();
         font_system
             .db_mut()
             .load_font_data(include_bytes!("../../../inter-font/Inter-Regular.ttf").to_vec());
@@ -174,7 +176,8 @@ impl Svg {
             height,
             body: String::new(),
             style: SvgStyle::default(),
-            font_system: FontSystem::new(),
+            font_system,
+            swash_cache,
             embed_font,
             grid,
             // Just clone it to avoid lifetimes. It is big, but whatever. Just one clone.
@@ -294,7 +297,14 @@ impl Svg {
             &mut self.body,
             pool_header_width / 2,
             height / 2,
-            PreparedText::new(&mut self.font_system, title, Some(height), &merged),
+            PreparedText::new(
+                &mut self.font_system,
+                &mut self.swash_cache,
+                title,
+                Some(height),
+                &merged,
+                self.embed_font,
+            ),
             &merged,
             "pool-title",
         );
@@ -311,9 +321,11 @@ impl Svg {
                 cumulative_height + lane_height / 2,
                 PreparedText::new(
                     &mut self.font_system,
+                    &mut self.swash_cache,
                     lane_title,
                     Some(*lane_height),
                     &merged,
+                    self.embed_font,
                 ),
                 &merged,
                 "lane-title",
@@ -415,9 +427,11 @@ impl Svg {
         if !text.is_empty() {
             let text = PreparedText::new(
                 &mut self.font_system,
+                &mut self.swash_cache,
                 text,
                 Some((ACTIVITY_NODE_WIDTH - STROKE_WIDTH as usize) - 4),
                 &merged,
+                self.embed_font,
             );
             let text_dims = text.dims();
             write_text_at(
@@ -497,8 +511,14 @@ merged.stroke, merged.fill
         .unwrap();
 
         if !text.is_empty() {
-            let text =
-                PreparedText::new(&mut self.font_system, text, Some(MAX_NODE_WIDTH), &merged);
+            let text = PreparedText::new(
+                &mut self.font_system,
+                &mut self.swash_cache,
+                text,
+                Some(MAX_NODE_WIDTH),
+                &merged,
+                self.embed_font,
+            );
             let text_dims = text.dims();
             let position = event_display_text_location_candidates(
                 &self.config,
@@ -587,8 +607,14 @@ merged.stroke, merged.fill
         .unwrap();
 
         if !text.is_empty() {
-            let text =
-                PreparedText::new(&mut self.font_system, text, Some(MAX_NODE_WIDTH), &merged);
+            let text = PreparedText::new(
+                &mut self.font_system,
+                &mut self.swash_cache,
+                text,
+                Some(MAX_NODE_WIDTH),
+                &merged,
+                self.embed_font,
+            );
             let text_dims = text.dims();
             let position = gateway_display_text_location_candidates(
                 &self.config,
@@ -634,8 +660,14 @@ merged.stroke, merged.fill
         .unwrap();
 
         if !text.is_empty() {
-            let text =
-                PreparedText::new(&mut self.font_system, text, Some(MAX_NODE_WIDTH), &merged);
+            let text = PreparedText::new(
+                &mut self.font_system,
+                &mut self.swash_cache,
+                text,
+                Some(MAX_NODE_WIDTH),
+                &merged,
+                self.embed_font,
+            );
             let text_dims = text.dims();
             let position = data_display_text_location_candidates(
                 &self.config,
@@ -712,8 +744,14 @@ merged.stroke, merged.fill
                     let b = points[(points.len() / 2) + 1];
                     ((a.0 + b.0) / 2, (a.1 + b.1) / 2)
                 };
-                let text =
-                    PreparedText::new(&mut self.font_system, label, Some(MAX_NODE_WIDTH), &merged);
+                let text = PreparedText::new(
+                    &mut self.font_system,
+                    &mut self.swash_cache,
+                    label,
+                    Some(MAX_NODE_WIDTH),
+                    &merged,
+                    self.embed_font,
+                );
                 write_text_at(
                     &mut self.body,
                     DisplayTextLocationCandidate {
@@ -727,8 +765,14 @@ merged.stroke, merged.fill
                     "",
                 );
             } else {
-                let text =
-                    PreparedText::new(&mut self.font_system, label, Some(MAX_NODE_WIDTH), &merged);
+                let text = PreparedText::new(
+                    &mut self.font_system,
+                    &mut self.swash_cache,
+                    label,
+                    Some(MAX_NODE_WIDTH),
+                    &merged,
+                    self.embed_font,
+                );
                 let text_dims = text.dims();
                 let position = edge_display_text_location_candidates(
                     &self.config,
@@ -889,16 +933,48 @@ fn write_rotated_text(
     merged: &MergedSvgStyle,
     class: &str,
 ) {
-    write!(
-                body,
-                r#"<text class="{class}" transform="translate({x}, {y}) rotate(-90)" text-anchor="middle" dominant-baseline="middle" font-family="{}" font-size="{}" fill="{}">"#,
-                merged.font_family,
-                merged.font_size,
-                merged.font_color
-            ).unwrap();
+    if text.embed {
+        for line in text.buffer.layout_runs() {
+            // Came up with this using trial and error. No idea why it works but it works.
+            let y_offset = y as f32 + {
+                if let Some(max_width) = text.max_width {
+                    max_width / 2.
+                } else {
+                    text.width / 2.
+                }
+            };
+            let x_offset = x as f32 - text.height / 2.;
 
-    for (i, line) in text.buffer.layout_runs().enumerate() {
-        let dy = if i == 0 { 0.0 } else { merged.line_height };
+            writeln!(
+            body,
+            r#"
+            <path transform="translate({x_offset}, {y_offset}) rotate(-90)" d="{}" fill="{}" stroke="none" />
+            "#,
+            run_to_svg_path(text.font_system, text.swash_cache, &line, 0.0, 0.0),
+            merged.font_color
+        )
+        .unwrap();
+        }
+    }
+
+    let fill_opacity = if text.embed {
+        " fill-opacity=\"0\""
+    } else {
+        ""
+    };
+
+    write!(
+        body,
+        r#"<text class="{class}" transform="translate({}, {}) rotate(-90)" text-anchor="middle" dominant-baseline="middle" font-family="{}" fill="{}" font-size="{}"{fill_opacity}>"#,
+        x as f32 - text.height / 2. - merged.line_height / 2., // So `dy` in the loop above can always be line height.
+        y as f32,
+        merged.font_family,
+        merged.font_color,
+        merged.font_size,
+    ).unwrap();
+
+    for line in text.buffer.layout_runs() {
+        let dy = merged.line_height;
         let start = line.glyphs.first().map(|g| g.start).unwrap_or(0);
         let end = line.glyphs.last().map(|g| g.end).unwrap_or(start);
         write!(
@@ -911,18 +987,26 @@ fn write_rotated_text(
     writeln!(body, "</text>").unwrap();
 }
 
-struct PreparedText {
+struct PreparedText<'a> {
     buffer: Buffer,
     height: f32,
     width: f32,
+    font_system: &'a mut FontSystem,
+    swash_cache: &'a mut SwashCache,
+    max_width: Option<f32>,
+    /// If true, the text will be inserted as pre-rendered <path ...>, and overlaid transparently
+    /// with an invisible <text ...> for copy support.
+    embed: bool,
 }
 
-impl PreparedText {
+impl<'a> PreparedText<'a> {
     fn new(
-        font_system: &mut FontSystem,
+        font_system: &'a mut FontSystem,
+        swash_cache: &'a mut SwashCache,
         text: &str,
         max_width: Option<usize>,
         merged: &MergedSvgStyle,
+        embed: bool,
     ) -> Self {
         let metrics = Metrics::new(merged.font_size, merged.line_height);
 
@@ -935,12 +1019,13 @@ impl PreparedText {
             text,
             &Attrs::new().family(cosmic_text::Family::Name(merged.font_family)),
             Shaping::Advanced,
+            // Can only have Center here, since we don't know where it will be finally positioned at.
             Some(Align::Center),
         );
 
         // Perform shaping as desired
         buffer.shape_until_scroll(font_system, false /* not sure? */);
-        let count = buffer.layout_runs().count().max(1); // Always have a least 1.
+        let count = buffer.layout_runs().count().max(1); // Always have at least one.
         let height = count as f32 * merged.line_height;
         let width = buffer.layout_runs().fold(0.0, |state, line| {
             if state < line.line_w {
@@ -953,6 +1038,10 @@ impl PreparedText {
             buffer,
             height,
             width,
+            font_system,
+            swash_cache,
+            max_width: max_width.map(|x| x as f32),
+            embed,
         }
     }
 
@@ -961,6 +1050,8 @@ impl PreparedText {
     }
 }
 
+/// Writes both the pathified text for display, and an invisible <text> on top of it, so
+/// one can select and copy it. Done for portability and user experience (at the cost of file size).
 fn write_text_at(
     body: &mut String,
     candidate: DisplayTextLocationCandidate,
@@ -969,51 +1060,100 @@ fn write_text_at(
     merged: &MergedSvgStyle,
     class: &str,
 ) {
-    let x = candidate.x;
-    let y = candidate.y;
+    let x = candidate.x as f32;
+    let y = candidate.y as f32;
 
-    write!(
+    if text.embed {
+        for line in text.buffer.layout_runs() {
+            // Came up with this using trial and error. No idea why it works but it works.
+            let x = match candidate.alignment {
+                Alignment::Left => x,
+                Alignment::Center => {
+                    if let Some(max_width) = text.max_width {
+                        (x + text.width / 2.) - max_width / 2.
+                    } else {
+                        x - text.width / 2.
+                    }
+                }
+                Alignment::Right => {
+                    (if let Some(max_width) = text.max_width {
+                        (x + text.width / 2.) - max_width / 2.
+                    } else {
+                        x - text.width / 2.
+                    }) + (text.width - line.line_w) / 2.
+                }
+            };
+
+            writeln!(
                 body,
-                r#"<text class="{class}" x="{x}" y="{y}" text-anchor="start" dominant-baseline="hanging" font-family="{}" font-size="{}" fill="{}">"#,
-                merged.font_family,
-                merged.font_size,
+                r#"<path d="{}" fill="{}" stroke="none" />"#,
+                run_to_svg_path(text.font_system, text.swash_cache, &line, x, y),
                 merged.font_color
-            ).unwrap();
+            )
+            .unwrap();
+        }
+    }
 
-    for (i, line) in text.buffer.layout_runs().enumerate() {
-        let dy = if i == 0 { 0.0 } else { merged.line_height };
-        let start = line.glyphs.first().map(|g| g.start).unwrap_or(0);
-        let end = line.glyphs.last().map(|g| g.end).unwrap_or(start);
-        let x = match candidate.alignment {
-            Alignment::Left => x,
-            Alignment::Center => x + ((text.width - line.line_w) / 2.) as usize,
-            Alignment::Right => x + (text.width - line.line_w) as usize,
+    {
+        let fill_opacity = if text.embed {
+            " fill-opacity=\"0\""
+        } else {
+            ""
         };
+        // Write the invisible text, so it can be selected.
+        // This does mean that text is duplicated, but should provide maximum portability and
+        // usability.
         write!(
             body,
-            r#"<tspan x="{x}" dy="{dy}">{}</tspan>"#,
-            esc_text(&line.text[start..end])
-        )
-        .unwrap();
+            r#"<text class="{class}" x="{x}" y="{}" text-anchor="start" dominant-baseline="hanging" font-family="{}" fill="{}" font-size="{}"{fill_opacity}>"#,
+            y - merged.line_height, // subtract line height here, so in the loop we can
+                                    // unconditionally set `dy` to line height (otherwise first
+                                    // iteration must use 0.0).
+            merged.font_family,
+            merged.font_color,
+            merged.font_size,
+        ).unwrap();
+
+        for line in text.buffer.layout_runs() {
+            let start = line.glyphs.first().map(|g| g.start).unwrap_or(0);
+            let end = line.glyphs.last().map(|g| g.end).unwrap_or(start);
+            let dy = merged.line_height;
+            let x = match candidate.alignment {
+                Alignment::Left => x,
+                Alignment::Center => x + (text.width - line.line_w) / 2.,
+                Alignment::Right => x + (text.width - line.line_w),
+            };
+            write!(
+                body,
+                r#"<tspan x="{x}" dy="{dy}">{}</tspan>"#,
+                esc_text(&line.text[start..end])
+            )
+            .unwrap();
+        }
+        writeln!(body, "</text>").unwrap();
     }
-    writeln!(body, "</text>").unwrap();
+
     grid.insert_quadrangle(
-        (x, y),
-        (x + text.width as usize, y),
-        (x + text.width as usize, y + text.height as usize),
-        (x, y + text.height as usize),
+        (x.trunc() as usize, y.trunc() as usize),
+        ((x + text.width).ceil() as usize, y.trunc() as usize),
+        (
+            (x + text.width).ceil() as usize,
+            (y + text.height).ceil() as usize,
+        ),
+        (x.trunc() as usize, (y + text.height).ceil() as usize),
         10,
     );
 }
 
-/// TODO! Untested, received form ChatGPT.
 fn run_to_svg_path(
     font_system: &mut FontSystem,
     swash_cache: &mut SwashCache,
     run: &LayoutRun<'_>,
+    x: f32,
+    y: f32,
 ) -> String {
+    // Generated by ChatGPT, some smaller additions made manually.
     let mut d = String::new();
-
     for glyph in run.glyphs.iter() {
         let physical = glyph.physical((0.0, 0.0), 1.0);
 
@@ -1022,35 +1162,35 @@ fn run_to_svg_path(
             continue;
         };
 
-        let dx = glyph.x + glyph.x_offset;
-        let dy = run.line_y + glyph.y + glyph.y_offset;
+        let dx = x + glyph.x + glyph.x_offset;
+        let dy = y + run.line_y + glyph.y + glyph.y_offset;
 
         for cmd in commands {
             match *cmd {
                 Command::MoveTo(p) => {
-                    d.push_str(&format!("M {} {} ", p.x + dx, p.y + dy));
+                    d.push_str(&format!("M {} {} ", p.x + dx, -p.y + dy));
                 }
                 Command::LineTo(p) => {
-                    d.push_str(&format!("L {} {} ", p.x + dx, p.y + dy));
+                    d.push_str(&format!("L {} {} ", p.x + dx, -p.y + dy));
                 }
                 Command::QuadTo(p1, p2) => {
                     d.push_str(&format!(
                         "Q {} {} {} {} ",
                         p1.x + dx,
-                        p1.y + dy,
+                        -p1.y + dy,
                         p2.x + dx,
-                        p2.y + dy,
+                        -p2.y + dy,
                     ));
                 }
                 Command::CurveTo(p1, p2, p3) => {
                     d.push_str(&format!(
                         "C {} {} {} {} {} {} ",
                         p1.x + dx,
-                        p1.y + dy,
+                        -p1.y + dy,
                         p2.x + dx,
-                        p2.y + dy,
+                        -p2.y + dy,
                         p3.x + dx,
-                        p3.y + dy,
+                        -p3.y + dy,
                     ));
                 }
                 Command::Close => {
