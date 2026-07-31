@@ -1,5 +1,3 @@
-* pe0003: DO between two tasks is not centered.
-* pe0003: DO between event and task should be shifted towards the event to have equal gap sizes, instead of centering wrt to the center of the elements.
 * pe0003: DO arrows to tasks are anchored at weird locations. Should instead probably focus the corner or so? But I think I understand where this is coming from ...
 * data elements have wonky y-coordinate differences, although it looks like they should all be at the same height. Also, they are oftentimes not put into the next halflayer, even though there is enough room.
 * ActivityMarkers should just be 15x15, looks better than 20x20.
