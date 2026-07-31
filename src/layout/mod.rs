@@ -14,6 +14,7 @@ pub mod postprocess_ports_and_vertical_edges;
 pub mod set_display_text_location_candidates;
 pub mod solve_layer_assignment;
 pub mod sort_incoming_and_outgoing;
+pub mod straight_edge_math;
 pub mod straight_edge_routing;
 pub mod try_move_nodes_into_half_layer;
 pub mod xy_ilp;
