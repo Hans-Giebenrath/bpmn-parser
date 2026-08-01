@@ -145,8 +145,7 @@ fn node_style(node: &Node) -> ElementSvgStyle {
 }
 
 fn prepare_collision_grid(graph: &Graph) -> Grid {
-    let (total_width, total_height) = graph.total_width_height();
-    let mut quad_tree = Grid::new(total_width, total_height);
+    let mut quad_tree = Grid::new(graph.total_width_height());
 
     for edge in &graph.edges {
         let EdgeType::Regular {

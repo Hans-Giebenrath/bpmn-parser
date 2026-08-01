@@ -43,7 +43,7 @@ pub struct BoundingBox {
 }
 
 impl Grid {
-    pub fn new(min_width: usize, min_height: usize) -> Self {
+    pub fn new((min_width, min_height): (usize, usize)) -> Self {
         let num_cells_horizontally = (min_width as u16 + 1).div_ceil(CELL_SIZE);
         let num_cells_vertically = (min_height as u16 + 1).div_ceil(CELL_SIZE);
         Self {
@@ -91,6 +91,28 @@ impl Grid {
         self.iterate_indices(&bounding_box)
             .flat_map(|index| &self.cells[index as usize].lines)
             .filter(|wl| bounding_box.intersect(&wl.line))
+            .map(|wl| wl.weight)
+            .sum()
+    }
+
+    pub fn line_intersection_weight(
+        &self,
+        (from_x, from_y): (u32, u32),
+        (to_x, to_y): (u32, u32),
+    ) -> u32 {
+        let line = Line {
+            start: Point {
+                x: from_x as i32,
+                y: from_y as i32,
+            },
+            end: Point {
+                x: to_x as i32,
+                y: to_y as i32,
+            },
+        };
+        cells_under_line(&line, self.num_cells_horizontally)
+            .flat_map(|index| &self.cells[index as usize].lines)
+            .filter(|wl| segments_intersect(line, wl.line))
             .map(|wl| wl.weight)
             .sum()
     }

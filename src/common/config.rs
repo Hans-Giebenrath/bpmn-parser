@@ -107,6 +107,10 @@ define_config!(
     display_text_edge_x_min_distance_to_center_or_else_collapse_into_center: u32 = 25,
     display_text_edge_y_min_distance_to_center_or_else_collapse_into_center: u32 = 20,
 
+    /// When checking whether a straight data edge crosses a node boundary, this margin is applied
+    /// around nodes. The goal is that edges don't go very close by a node.
+    data_edge_node_collision_margin: u32 = 4,
+
     /// TODO The heuristic moves data nodes just at a good place according to the average distance of
     /// the recipients. Edge case: This could result in a large amount of data objects in the same
     /// (half)layer. In the future a postprocessing step should evenly distribute them to neighboring

@@ -161,7 +161,7 @@ pub struct Svg {
 impl Svg {
     pub fn new(embed_font: bool, width: usize, height: usize, grid: Grid, config: &Config) -> Self {
         let mut font_system = FontSystem::new();
-        let mut swash_cache = SwashCache::new();
+        let swash_cache = SwashCache::new();
         font_system
             .db_mut()
             .load_font_data(include_bytes!("../../../inter-font/Inter-Regular.ttf").to_vec());

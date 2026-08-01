@@ -5,12 +5,14 @@ name = "bpmn-parser"
 version = "0.1.0"
 edition = "2024"
 
+[[bin]]
+name = "boundary-lookuptable"
+path = "src/boundary-lookuptable.rs"
+
 [dependencies]
 clap = { version = "4", features = ["derive"] }
 good_lp = { version = "1", features = [
     "microlp",
-    #"scip",
-    #"highs",
 ], default-features = false }
 resvg = "0.47"
 annotate-snippets = "0.12"

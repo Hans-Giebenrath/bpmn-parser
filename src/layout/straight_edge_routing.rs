@@ -1,74 +1,57 @@
+use crate::common::bpmn_node::BpmnNode;
 use crate::common::edge::Edge;
 use crate::common::edge::EdgeType;
 use crate::common::edge::RegularEdgeBendPoints;
 use crate::common::graph::EdgeId;
 use crate::common::graph::Graph;
 use crate::common::graph::NodeId;
+use crate::common::index_iter::IterIndices;
 use crate::common::node::Node;
+use crate::common::node::NodeType;
+use crate::layout::collision_grid::Grid;
+use crate::layout::straight_edge_math;
+use crate::lexer::DataType;
 use proc_macros::e;
-use proc_macros::from;
-use proc_macros::to;
-use std::collections::HashMap;
-
-const NODE_MARGIN: usize = 5;
+use proc_macros::n;
 
 pub fn find_straight_edges(graph: &mut Graph) {
-    // HashMap to store coordinates of obstacles with node id and is_datanode as key
-    // HashMap stores tuples of top left and bottom right coordinates of obstacles
-    // TODO filter this more by pools and possibly layers, as a sort of quad tree (not by lanes
-    // since data edges can span lanes). Currently this function is very slow.
-    let mut matrix: HashMap<usize, (usize, usize, usize, usize)> = HashMap::new();
+    let mut grid = Grid::new(graph.total_width_height());
 
+    let margin = graph.config.data_edge_node_collision_margin;
     for node in &graph.nodes {
-        if node.is_any_dummy() {
-            continue;
+        let node_weight = 10;
+        let margin = margin as usize;
+        if node.is_gateway() {
+            #[rustfmt::skip]
+            let (top, right, bottom, left)   = (
+        ( node.x + node.width / 2                       , node.y                  .saturating_sub(margin)),
+        ((node.x + node.width)   .saturating_add(margin), node.y + node.height / 2         ),
+        ( node.x + node.width / 2                       ,(node.y + node.height)   .saturating_add( margin)),
+        ( node.x                 .saturating_sub(margin), node.y + node.height / 2         )
+             );
+
+            grid.insert_quadrangle(top, right, bottom, left, node_weight);
+        } else {
+            let tl = (node.x.saturating_sub(margin), node.y.saturating_sub(margin));
+            let tr = (
+                (node.x + node.width).saturating_add(margin),
+                node.y.saturating_sub(margin),
+            );
+            let br = (
+                (node.x + node.width).saturating_add(margin),
+                (node.y + node.height).saturating_add(margin),
+            );
+            let bl = (
+                node.x.saturating_sub(margin),
+                (node.y + node.height).saturating_add(margin),
+            );
+
+            grid.insert_quadrangle(tl, tr, br, bl, node_weight);
         }
-        add_to_matrix(
-            &mut matrix,
-            &node.id.0,
-            node.width,
-            node.height,
-            node.x,
-            node.y,
-        );
     }
 
-    data_edge_routing(&matrix, graph);
+    data_edge_routing(graph, &grid, margin);
     sequence_edge_routing(graph);
-}
-
-fn add_to_matrix(
-    matrix: &mut HashMap<usize, (usize, usize, usize, usize)>,
-    node_id: &usize,
-    width: usize,
-    height: usize,
-    x: usize,
-    y: usize,
-) {
-    matrix.insert(*node_id, (x, y, x + width, y + height));
-}
-
-fn is_in_obstacle_ignore_self(
-    x: usize,
-    y: usize,
-    from_id: usize,
-    to_id: usize,
-    matrix: &HashMap<usize, (usize, usize, usize, usize)>,
-) -> bool {
-    for (id, (x1, y1, x2, y2)) in matrix.iter() {
-        if (*id == from_id) || (*id == to_id) {
-            if x > *x1 && x < *x2 && y > *y1 && y < *y2 {
-                return true;
-            }
-        } else if x >= *x1 - NODE_MARGIN
-            && x <= *x2 + NODE_MARGIN
-            && y >= *y1 - NODE_MARGIN
-            && y <= *y2 + NODE_MARGIN
-        {
-            return true;
-        }
-    }
-    false
 }
 
 fn sequence_edge_routing(graph: &mut Graph) {
@@ -100,81 +83,48 @@ fn sequence_edge_routing(graph: &mut Graph) {
             vec![start, end]
         };
         *out_bend_points = RegularEdgeBendPoints::FullyRouted(bend_points);
-        /*
-        } else {
-            let from = &n!(edge.from);
-            let further_to = &n!(to
-                .hop_to_next_node(graph, NodeIdOrEdgeId::EdgeId(edge_id))
-                .1);
-            let EdgeType::DummyEdge { original_edge, .. } = &edge.edge_type else {
-                unreachable!("This is definitely a dummy edge");
-            };
-            let original_edge = *original_edge;
-            let (start_y, end_y) = if from.y < further_to.y {
-                (from.y + from.height, further_to.y)
-            } else {
-                (from.y, to.y + to.height)
-            };
-            let EdgeType::ReplacedByDummies { text, .. } = &mut e!(original_edge).edge_type else {
-                unreachable!();
-            };
-            let text = std::mem::take(text);
-            let x = from.x + from.width / 2;
-            e!(original_edge).edge_type = EdgeType::Regular {
-                text,
-                bend_points: RegularEdgeBendPoints::FullyRouted(vec![(x, start_y), (x, end_y)]),
-            };
-        }*/
     }
 }
 
-fn data_edge_routing(matrix: &HashMap<usize, (usize, usize, usize, usize)>, graph: &mut Graph) {
-    let mut start_point_buffer = vec![];
-    let mut end_point_buffer = vec![];
-    for data_edge_idx in 0..graph.edges.len() {
-        let data_edge = &mut graph.edges[data_edge_idx];
-        if !Edge::is_data_flow(data_edge) {
+fn data_edge_routing(graph: &mut Graph, grid: &Grid, margin: u32) {
+    'next_edge: for edge_id in graph.edges.len().iter_indices(true).map(EdgeId) {
+        let edge = &graph.edges[edge_id];
+        if !edge.is_data_flow() {
             continue;
         }
 
-        let text = match &data_edge.edge_type {
+        let text = match &edge.edge_type {
             EdgeType::Regular { text, .. } => text,
             EdgeType::ReplacedByDummies { text, .. } => text,
             EdgeType::DummyEdge { .. } => continue,
         };
         // Note: This looks at the original, ReplacedByDummies edges as well!
-        start_point_buffer.clear();
-        end_point_buffer.clear();
-        find_start_and_end_points(
-            &graph.nodes[data_edge.from],
-            &graph.nodes[data_edge.to],
-            &mut start_point_buffer,
-            &mut end_point_buffer,
-        );
+        let (from_boundary, (from_x, from_y), (from_center_x, from_center_y)) =
+            prepare_data(&n!(edge.from));
+        let (to_boundary, (to_x, to_y), (to_center_x, to_center_y)) = prepare_data(&n!(edge.to));
+        assert_ne!((from_center_x, from_center_y), (to_center_x, to_center_y));
+        let degree = ((to_center_y as f64 - from_center_y as f64)
+            .atan2(to_center_x as f64 - from_center_x as f64))
+        .to_degrees()
+        .round() as isize;
+        for offset_degrees in [0_isize, 12, -12, 18, -18] {
+            let start_idx = (degree + offset_degrees).rem_euclid(360) as usize;
+            let end_idx = (degree - offset_degrees + 180).rem_euclid(360) as usize;
+            let (start_collision, start_endpoint) =
+                endpoints(from_boundary, (from_x, from_y), start_idx, margin);
+            let (end_collision, end_endpoint) =
+                endpoints(to_boundary, (to_x, to_y), end_idx, margin);
 
-        let mut bend_points = Vec::new();
-        for start_points in start_point_buffer.iter() {
-            for end_points in end_point_buffer.iter() {
-                if possible_direct(
-                    matrix,
-                    start_points,
-                    end_points,
-                    data_edge.from,
-                    data_edge.to,
-                ) {
-                    bend_points.push((*start_points, *end_points));
-                }
+            if grid.line_intersection_weight(start_collision, end_collision) > 0 {
+                continue;
             }
-        }
-        if !bend_points.is_empty() {
-            let edge = find_shortest_path(&bend_points);
-            let mut bend_points = vec![edge.0, edge.1];
-            if data_edge.is_reversed {
+            let mut bend_points = vec![start_endpoint, end_endpoint];
+            if edge.is_reversed {
                 bend_points.reverse();
             }
 
             // It no longer is replaced by dummies.
-            graph.edges[data_edge_idx].edge_type = EdgeType::Regular {
+            graph.edges[edge_id].edge_type = EdgeType::Regular {
                 text: text.clone(),
                 bend_points: RegularEdgeBendPoints::FullyRouted(bend_points),
             };
@@ -182,117 +132,67 @@ fn data_edge_routing(matrix: &HashMap<usize, (usize, usize, usize, usize)>, grap
             // The dummy edges are not explicitly iterated in the upcoming edge routing phase,
             // so we can just leave them in the state which they are. Also no need to
             // touch the outgoing/incoming fields as they are no longer looked at.
+            continue 'next_edge;
         }
     }
 }
 
-fn possible_direct(
-    matrix: &HashMap<usize, (usize, usize, usize, usize)>,
-    start_xy: &(usize, usize),
-    end_xy: &(usize, usize),
-    from_id: NodeId,
-    to_id: NodeId,
-) -> bool {
-    let dx = end_xy.0 as f64 - start_xy.0 as f64;
-    let dy = end_xy.1 as f64 - start_xy.1 as f64;
-
-    let steps = dx.abs().max(dy.abs()) as usize;
-    let step_x = dx / steps as f64;
-    let step_y = dy / steps as f64;
-
-    let mut x = start_xy.0 as f64;
-    let mut y = start_xy.1 as f64;
-
-    for _ in 0..=steps {
-        if is_in_obstacle_ignore_self(
-            x.round() as usize,
-            y.round() as usize,
-            from_id.0,
-            to_id.0,
-            matrix,
-        ) {
-            return false;
-        }
-        x += step_x;
-        y += step_y;
-    }
-
-    true
+fn prepare_data(node: &Node) -> (&[(u8, u8); 360], (u32, u32), (u32, u32)) {
+    let boundary_data = match &node.node_type {
+        NodeType::RealNode {
+            event: BpmnNode::Gateway(..),
+            ..
+        } => &straight_edge_math::boundary_lookuptable::GATEWAY,
+        NodeType::RealNode {
+            event: BpmnNode::Event(..),
+            ..
+        } => &straight_edge_math::boundary_lookuptable::EVENT,
+        NodeType::RealNode {
+            event: BpmnNode::Activity(..),
+            ..
+        } => &straight_edge_math::boundary_lookuptable::ACTIVITY,
+        NodeType::RealNode {
+            event: BpmnNode::Data(DataType::Store, ..),
+            ..
+        } => &straight_edge_math::boundary_lookuptable::DATASTORE,
+        NodeType::RealNode {
+            event: BpmnNode::Data(DataType::Object, ..),
+            ..
+        } => &straight_edge_math::boundary_lookuptable::DATAOBJECT,
+        _ => unreachable!("An original data edge should only be connected to real nodes."),
+    };
+    (
+        boundary_data,
+        (node.x as u32, node.y as u32),
+        (
+            (node.x + node.width / 2) as u32,
+            (node.y + node.height / 2) as u32,
+        ),
+    )
 }
 
-fn find_start_and_end_points(
-    from_node: &Node,
-    to_node: &Node,
-    start_point_buffer: &mut Vec<(usize, usize)>,
-    end_point_buffer: &mut Vec<(usize, usize)>,
+fn endpoints(
+    boundary: &[(u8, u8); 360],
+    (x, y): (u32, u32),
+    degrees: usize,
+    margin: u32,
+) -> (
+    /* collision endpoint */ (u32, u32),
+    /* result / display end point */ (usize, usize),
 ) {
-    let (dn_x, dn_y, dn_width, dn_height) =
-        (from_node.x, from_node.y, from_node.width, from_node.height);
-    let (node_x, node_y, node_width, node_height) =
-        (to_node.x, to_node.y, to_node.width, to_node.height);
-
-    // left
-    start_point_buffer.push((dn_x, dn_y + dn_height / 2));
-    // left_up
-    start_point_buffer.push((dn_x, dn_y + dn_height / 4));
-    // left_down
-    start_point_buffer.push((dn_x, dn_y + dn_height * 3 / 4));
-    // right
-    start_point_buffer.push((dn_x + dn_width, dn_y + dn_height / 2));
-    // right_up
-    start_point_buffer.push((dn_x + dn_width, dn_y + dn_height / 4));
-    // right_down
-    start_point_buffer.push((dn_x + dn_width, dn_y + dn_height * 3 / 4));
-    // top
-    start_point_buffer.push((dn_x + dn_width / 2, dn_y));
-    // top_left
-    start_point_buffer.push((dn_x + dn_width / 4, dn_y));
-    // top_right
-    start_point_buffer.push((dn_x + dn_width * 3 / 4, dn_y));
-    // bottom
-    start_point_buffer.push((dn_x + dn_width / 2, dn_y + dn_height));
-    // bottom_left
-    start_point_buffer.push((dn_x + dn_width / 4, dn_y + dn_height));
-    // bottom_right
-    start_point_buffer.push((dn_x + dn_width * 3 / 4, dn_y + dn_height));
-
-    // left_up
-    end_point_buffer.push((node_x, node_y + node_height / 4));
-    // left_down
-    end_point_buffer.push((node_x, node_y + node_height * 3 / 4));
-    // right_up
-    end_point_buffer.push((node_x + node_width, node_y + node_height / 4));
-    // right_down
-    end_point_buffer.push((node_x + node_width, node_y + node_height * 3 / 4));
-    // top
-    end_point_buffer.push((node_x + node_width / 2, node_y));
-    // top_left
-    end_point_buffer.push((node_x + node_width / 4, node_y));
-    // top_right
-    end_point_buffer.push((node_x + node_width * 3 / 4, node_y));
-    // bottom
-    end_point_buffer.push((node_x + node_width / 2, node_y + node_height));
-    // bottom_left
-    end_point_buffer.push((node_x + node_width / 4, node_y + node_height));
-    // bottom_right
-    end_point_buffer.push((node_x + node_width * 3 / 4, node_y + node_height));
-}
-
-fn find_shortest_path(
-    bend_points: &[((usize, usize), (usize, usize))],
-) -> ((usize, usize), (usize, usize)) {
-    let mut min_distance = usize::MAX;
-    let mut start_xy: (usize, usize) = (0, 0);
-    let mut end_xy: (usize, usize) = (0, 0);
-    for (start, end) in bend_points.iter() {
-        let distance = ((start.0 as isize - end.0 as isize).abs()
-            + (start.1 as isize - end.1 as isize).abs()) as usize;
-        if distance < min_distance {
-            min_distance = distance;
-            start_xy = *start;
-            end_xy = *end;
-        }
-    }
-
-    (start_xy, end_xy)
+    let (offset_x, offset_y) = boundary[degrees];
+    let (collision_offset_x, collision_offset_y) =
+        straight_edge_math::boundary_lookuptable::OFFSET[degrees];
+    (
+        (
+            (x + offset_x as u32)
+                .saturating_add_signed((collision_offset_x as i32) * (margin + 1) as i32),
+            (y + offset_y as u32)
+                .saturating_add_signed((collision_offset_y as i32) * (margin + 1) as i32),
+        ),
+        (
+            (x + offset_x as u32) as usize,
+            (y + offset_y as u32) as usize,
+        ),
+    )
 }
