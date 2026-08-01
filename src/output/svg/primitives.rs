@@ -197,6 +197,7 @@ impl Svg {
                 STROKE_WIDTH / 2.0,
             ).unwrap();
         writeln!(out, "{}", super::defs::defs()).unwrap();
+        writeln!(out, r#"<rect x="0" y="0" width="{}" height="{}" fill="white" stroke="white" stroke-width="{STROKE_WIDTH}" />"#, self.width, self.height).unwrap();
         writeln!(out, "{}", self.body).unwrap();
         writeln!(out, "</svg>").unwrap();
         out
