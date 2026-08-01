@@ -10,7 +10,7 @@ fn main() {
     println!(
         "/// To ensure that the ends of the rays don't intersect with the connected nodes themselves, apply an additional offset for testing purposes."
     );
-    for_shape(2, 2, "OFFSET", true, "i8");
+    for_shape(2, 2, "OFFSET", true, "f32");
 }
 
 // AI generated, after I presented AI a version of my own which was rather worse.
@@ -50,11 +50,19 @@ fn for_shape(max_x: usize, max_y: usize, name: &str, center: bool, datatype: &st
 
         let distance = distance_to_vertical_edge.min(distance_to_horizontal_edge);
 
-        let x = (center_x + dx * distance).round().clamp(0.0, max_x) as isize - offset_x;
+        if datatype == "f32" {
+            let x = ((center_x + dx * distance).clamp(0.0, max_x) - offset_x as f64) as f32;
 
-        let y = (center_y + dy * distance).round().clamp(0.0, max_y) as isize - offset_y;
+            let y = ((center_y + dy * distance).clamp(0.0, max_y) - offset_y as f64) as f32;
 
-        println!("({x}, {y}),");
+            println!("({x}_f32, {y}_f32),");
+        } else {
+            let x = (center_x + dx * distance).round().clamp(0.0, max_x) as isize - offset_x;
+
+            let y = (center_y + dy * distance).round().clamp(0.0, max_y) as isize - offset_y;
+
+            println!("({x}, {y}),");
+        }
     }
 
     println!("];");

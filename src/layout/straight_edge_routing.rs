@@ -19,6 +19,9 @@ pub fn find_straight_edges(graph: &mut Graph) {
 
     let margin = graph.config.data_edge_node_collision_margin;
     for node in &graph.nodes {
+        if node.is_any_dummy() {
+            continue;
+        }
         let node_weight = 10;
         let margin = margin as usize;
         if node.is_gateway() {
@@ -186,9 +189,9 @@ fn endpoints(
     (
         (
             (x + offset_x as u32)
-                .saturating_add_signed((collision_offset_x as i32) * (margin + 1) as i32),
+                .saturating_add_signed((collision_offset_x * (margin + 1) as f32) as i32),
             (y + offset_y as u32)
-                .saturating_add_signed((collision_offset_y as i32) * (margin + 1) as i32),
+                .saturating_add_signed((collision_offset_y * (margin + 1) as f32) as i32),
         ),
         (
             (x + offset_x as u32) as usize,
