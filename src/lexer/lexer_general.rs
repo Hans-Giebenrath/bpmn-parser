@@ -1916,7 +1916,7 @@ impl<'a> Lexer<'a> {
                         break;
                     }
                     return Err(vec![(
-                        "Invalid extension".to_string(),
+                        "Invalid extension. Valid extensions are: 'place', 'pe-bpmd'".to_string(),
                         TokenCoordinate {
                             start: tc.start,
                             end: tc_end.end,
