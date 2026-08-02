@@ -88,6 +88,7 @@ define_config!(
     message_edge_weight: f64 = 0.015625,
     min_vertical_space_between_gateway_bendpoints: usize = 110,
 
+    /// ```
     ///      ABC     ABC    ABC    ABC     ABC         ^
     ///  ---------------------------------------->     v `margin` distance between edge and display text
     ///  |<-->| <- margin to ends
@@ -99,6 +100,7 @@ define_config!(
     ///                               so that we reach the farthest end of the edge (otherwise would
     ///                               overrun since step size is probably not a perfect multiple of the
     ///                               `edge length - 2*margin_to_ends`)
+    /// ```
     display_text_margin: u32 = 8,
     display_text_edge_x_step_size: u32 = 30,
     display_text_edge_y_step_size: u32 = 30,
