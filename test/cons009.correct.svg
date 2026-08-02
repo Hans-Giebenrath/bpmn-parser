@@ -652,7 +652,7 @@
 <path d="M188 140 L298 140 " fill="none" stroke="#222" stroke-width="2" class="sequence-flow" marker-end="url(#sequence-flow-head)" />
 <path d="M330 165 L330 188 A 7 7 0 0 0 337 195 L433 195 " fill="none" stroke="#222" stroke-width="2" class="sequence-flow" marker-end="url(#sequence-flow-head)" />
 <path d="M330 115 L330 92 A 7 7 0 0 1 337 85L593 85 " fill="none" stroke="#222" stroke-width="2" class="sequence-flow" marker-end="url(#sequence-flow-head)" />
-<path d="M650 125 L650 318 " fill="none" stroke="#222" stroke-width="2" class="sequence-flow" marker-end="url(#sequence-flow-head)" />
 <path d="M490 235 L490 318 " fill="none" stroke="#222" stroke-width="2" class="sequence-flow" marker-end="url(#sequence-flow-head)" />
+<path d="M650 125 L650 318 " fill="none" stroke="#222" stroke-width="2" class="sequence-flow" marker-end="url(#sequence-flow-head)" />
 
 </svg>

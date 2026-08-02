@@ -1024,16 +1024,16 @@
 <path d="M325 1079 L325 1336 A 7 7 0 0 0 332 1343 L409 1343 A 7 7 0 0 1 416 1350 L416 1973 A 7 7 0 0 0 423 1980 L460 1980 " fill="none" stroke="#222" stroke-width="2" class="message-flow" stroke-dasharray="10 8" marker-start="url(#message-start)" marker-end="url(#message-flow-head)" />
 
 <g class="event event-solid-solid event-boundary event-timer">
-  <use href="#event-solid-solid" x="343" y="1059" width="36" height="36" stroke="#222" fill="#fff"/>
-  <use href="#event-timer-catching" x="343" y="1059" width="36" height="36" stroke="#222" fill="#fff"/>
-</g>
-<path d="M361 1095 L361 1244 A 7 7 0 0 0 368 1251 L465 1251 " fill="none" stroke="#222" stroke-width="2" class="sequence-flow" marker-end="url(#sequence-flow-head)" />
-
-<g class="event event-solid-solid event-boundary event-timer">
   <use href="#event-solid-solid" x="343" y="979" width="36" height="36" stroke="#222" fill="#fff"/>
   <use href="#event-timer-catching" x="343" y="979" width="36" height="36" stroke="#222" fill="#fff"/>
 </g>
 <path d="M361 979 L361 830 A 7 7 0 0 1 368 823L465 823 " fill="none" stroke="#222" stroke-width="2" class="sequence-flow" marker-end="url(#sequence-flow-head)" />
+
+<g class="event event-solid-solid event-boundary event-timer">
+  <use href="#event-solid-solid" x="352" y="979" width="36" height="36" stroke="#222" fill="#fff"/>
+  <use href="#event-timer-catching" x="352" y="979" width="36" height="36" stroke="#222" fill="#fff"/>
+</g>
+<path d="M370 979 L370 896 A 7 7 0 0 1 377 889L465 889 " fill="none" stroke="#222" stroke-width="2" class="sequence-flow" marker-end="url(#sequence-flow-head)" />
 
 <g class="event event-solid-solid event-boundary event-timer">
   <use href="#event-solid-solid" x="352" y="1059" width="36" height="36" stroke="#222" fill="#fff"/>
@@ -1042,9 +1042,9 @@
 <path d="M370 1095 L370 1178 A 7 7 0 0 0 377 1185 L465 1185 " fill="none" stroke="#222" stroke-width="2" class="sequence-flow" marker-end="url(#sequence-flow-head)" />
 
 <g class="event event-solid-solid event-boundary event-timer">
-  <use href="#event-solid-solid" x="352" y="979" width="36" height="36" stroke="#222" fill="#fff"/>
-  <use href="#event-timer-catching" x="352" y="979" width="36" height="36" stroke="#222" fill="#fff"/>
+  <use href="#event-solid-solid" x="343" y="1059" width="36" height="36" stroke="#222" fill="#fff"/>
+  <use href="#event-timer-catching" x="343" y="1059" width="36" height="36" stroke="#222" fill="#fff"/>
 </g>
-<path d="M370 979 L370 896 A 7 7 0 0 1 377 889L465 889 " fill="none" stroke="#222" stroke-width="2" class="sequence-flow" marker-end="url(#sequence-flow-head)" />
+<path d="M361 1095 L361 1244 A 7 7 0 0 0 368 1251 L465 1251 " fill="none" stroke="#222" stroke-width="2" class="sequence-flow" marker-end="url(#sequence-flow-head)" />
 
 </svg>

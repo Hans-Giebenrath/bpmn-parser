@@ -647,9 +647,9 @@
 </g>
 <path d="M188 255 L298 255 " fill="none" stroke="#222" stroke-width="2" class="sequence-flow" marker-end="url(#sequence-flow-head)" />
 <path d="M675 255 L785 255 " fill="none" stroke="#222" stroke-width="2" class="sequence-flow" marker-end="url(#sequence-flow-head)" />
-<path d="M330 230 L330 92 A 7 7 0 0 1 337 85L433 85 " fill="none" stroke="#222" stroke-width="2" class="sequence-flow" marker-end="url(#sequence-flow-head)" />
-<path d="M355 255 L433 255 " fill="none" stroke="#222" stroke-width="2" class="sequence-flow" marker-end="url(#sequence-flow-head)" />
 <path d="M540 85 L643 85 A 7 7 0 0 1 650 92 L650 223 " fill="none" stroke="#222" stroke-width="2" class="sequence-flow" marker-end="url(#sequence-flow-head)" />
 <path d="M540 255 L618 255 " fill="none" stroke="#222" stroke-width="2" class="sequence-flow" marker-end="url(#sequence-flow-head)" />
+<path d="M330 230 L330 92 A 7 7 0 0 1 337 85L433 85 " fill="none" stroke="#222" stroke-width="2" class="sequence-flow" marker-end="url(#sequence-flow-head)" />
+<path d="M355 255 L433 255 " fill="none" stroke="#222" stroke-width="2" class="sequence-flow" marker-end="url(#sequence-flow-head)" />
 
 </svg>

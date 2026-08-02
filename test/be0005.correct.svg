@@ -1060,16 +1060,16 @@
 <path d="M325 1287 L325 1532 A 7 7 0 0 0 332 1539 L405 1539 A 7 7 0 0 1 412 1546 L412 2389 A 7 7 0 0 0 419 2396 L460 2396 " fill="none" stroke="#222" stroke-width="2" class="message-flow" stroke-dasharray="10 8" marker-start="url(#message-start)" marker-end="url(#message-flow-head)" />
 
 <g class="event event-solid-solid event-boundary event-timer">
-  <use href="#event-solid-solid" x="343" y="1267" width="36" height="36" stroke="#222" fill="#fff"/>
-  <use href="#event-timer-catching" x="343" y="1267" width="36" height="36" stroke="#222" fill="#fff"/>
-</g>
-<path d="M361 1303 L361 1452 A 7 7 0 0 0 368 1459 L465 1459 " fill="none" stroke="#222" stroke-width="2" class="sequence-flow" marker-end="url(#sequence-flow-head)" />
-
-<g class="event event-solid-solid event-boundary event-timer">
   <use href="#event-solid-solid" x="343" y="1187" width="36" height="36" stroke="#222" fill="#fff"/>
   <use href="#event-timer-catching" x="343" y="1187" width="36" height="36" stroke="#222" fill="#fff"/>
 </g>
 <path d="M361 1187 L361 1038 A 7 7 0 0 1 368 1031L465 1031 " fill="none" stroke="#222" stroke-width="2" class="sequence-flow" marker-end="url(#sequence-flow-head)" />
+
+<g class="event event-solid-solid event-boundary event-timer">
+  <use href="#event-solid-solid" x="352" y="1187" width="36" height="36" stroke="#222" fill="#fff"/>
+  <use href="#event-timer-catching" x="352" y="1187" width="36" height="36" stroke="#222" fill="#fff"/>
+</g>
+<path d="M370 1187 L370 1104 A 7 7 0 0 1 377 1097L465 1097 " fill="none" stroke="#222" stroke-width="2" class="sequence-flow" marker-end="url(#sequence-flow-head)" />
 
 <g class="event event-solid-solid event-boundary event-timer">
   <use href="#event-solid-solid" x="352" y="1267" width="36" height="36" stroke="#222" fill="#fff"/>
@@ -1078,9 +1078,9 @@
 <path d="M370 1303 L370 1386 A 7 7 0 0 0 377 1393 L465 1393 " fill="none" stroke="#222" stroke-width="2" class="sequence-flow" marker-end="url(#sequence-flow-head)" />
 
 <g class="event event-solid-solid event-boundary event-timer">
-  <use href="#event-solid-solid" x="352" y="1187" width="36" height="36" stroke="#222" fill="#fff"/>
-  <use href="#event-timer-catching" x="352" y="1187" width="36" height="36" stroke="#222" fill="#fff"/>
+  <use href="#event-solid-solid" x="343" y="1267" width="36" height="36" stroke="#222" fill="#fff"/>
+  <use href="#event-timer-catching" x="343" y="1267" width="36" height="36" stroke="#222" fill="#fff"/>
 </g>
-<path d="M370 1187 L370 1104 A 7 7 0 0 1 377 1097L465 1097 " fill="none" stroke="#222" stroke-width="2" class="sequence-flow" marker-end="url(#sequence-flow-head)" />
+<path d="M361 1303 L361 1452 A 7 7 0 0 0 368 1459 L465 1459 " fill="none" stroke="#222" stroke-width="2" class="sequence-flow" marker-end="url(#sequence-flow-head)" />
 
 </svg>

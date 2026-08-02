@@ -641,16 +641,16 @@
 </g>
 <path d="M355 143 L355 148 A 7 7 0 0 0 362 155 L465 155 " fill="none" stroke="#222" stroke-width="2" class="sequence-flow" marker-end="url(#sequence-flow-head)" />
 
-<g class="event event-solid-solid event-boundary event-conditional">
-  <use href="#event-solid-solid" x="287" y="107" width="36" height="36" stroke="#222" fill="#fff"/>
-  <use href="#event-conditional-catching" x="287" y="107" width="36" height="36" stroke="#222" fill="#fff"/>
-</g>
-<path d="M305 143 L305 280 A 7 7 0 0 0 312 287 L465 287 " fill="none" stroke="#222" stroke-width="2" class="sequence-flow" marker-end="url(#sequence-flow-head)" />
-
 <g class="event event-solid-solid event-boundary event-timer">
   <use href="#event-solid-solid" x="312" y="107" width="36" height="36" stroke="#222" fill="#fff"/>
   <use href="#event-timer-catching" x="312" y="107" width="36" height="36" stroke="#222" fill="#fff"/>
 </g>
 <path d="M330 143 L330 214 A 7 7 0 0 0 337 221 L465 221 " fill="none" stroke="#222" stroke-width="2" class="sequence-flow" marker-end="url(#sequence-flow-head)" />
+
+<g class="event event-solid-solid event-boundary event-conditional">
+  <use href="#event-solid-solid" x="287" y="107" width="36" height="36" stroke="#222" fill="#fff"/>
+  <use href="#event-conditional-catching" x="287" y="107" width="36" height="36" stroke="#222" fill="#fff"/>
+</g>
+<path d="M305 143 L305 280 A 7 7 0 0 0 312 287 L465 287 " fill="none" stroke="#222" stroke-width="2" class="sequence-flow" marker-end="url(#sequence-flow-head)" />
 
 </svg>

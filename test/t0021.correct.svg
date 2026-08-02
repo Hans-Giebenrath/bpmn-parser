@@ -881,9 +881,9 @@
 <path d="M810 895 L810 866 " fill="none" stroke="#222" stroke-width="1.6"  class="data-association" stroke-dasharray="1 7" stroke-linecap="round" marker-end="url(#data-association-head)"  />
 <path d="M330 525 L330 502 A 7 7 0 0 1 337 495L465 495 " fill="none" stroke="#222" stroke-width="2" class="sequence-flow" marker-end="url(#sequence-flow-head)" />
 <path d="M330 575 L330 598 A 7 7 0 0 0 337 605 L465 605 " fill="none" stroke="#222" stroke-width="2" class="sequence-flow" marker-end="url(#sequence-flow-head)" />
-<path d="M970 575 L970 598 A 7 7 0 0 0 977 605 L1105 605 " fill="none" stroke="#222" stroke-width="2" class="sequence-flow" marker-end="url(#sequence-flow-head)" />
 <path d="M508 495 L643 495 A 7 7 0 0 1 650 502 L650 518 " fill="none" stroke="#222" stroke-width="2" class="sequence-flow" marker-end="url(#sequence-flow-head)" />
 <path d="M508 605 L643 605 A 7 7 0 0 0 650 598 L650 582 " fill="none" stroke="#222" stroke-width="2" class="sequence-flow" marker-end="url(#sequence-flow-head)" />
 <path d="M970 525 L970 502 A 7 7 0 0 1 977 495L1105 495 " fill="none" stroke="#222" stroke-width="2" class="sequence-flow" marker-end="url(#sequence-flow-head)" />
+<path d="M970 575 L970 598 A 7 7 0 0 0 977 605 L1105 605 " fill="none" stroke="#222" stroke-width="2" class="sequence-flow" marker-end="url(#sequence-flow-head)" />
 
 </svg>

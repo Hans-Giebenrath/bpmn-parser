@@ -636,7 +636,7 @@
 <text class="" x="480" y="237" text-anchor="start" dominant-baseline="hanging" font-family="sans-serif" fill="#111" font-size="12" fill-opacity="0"><tspan x="480" dy="14">End</tspan></text>
 </g>
 <path d="M188 225 L273 225 " fill="none" stroke="#222" stroke-width="2" class="sequence-flow" marker-end="url(#sequence-flow-head)" />
-<path d="M330 185 L330 102 " fill="none" stroke="#222" stroke-width="2" class="sequence-flow" marker-end="url(#sequence-flow-head)" />
 <path d="M355 70 L403 70 A 7 7 0 0 1 410 77 L410 218 A 7 7 0 0 0 417 225 L465 225 " fill="none" stroke="#222" stroke-width="2" class="sequence-flow" marker-end="url(#sequence-flow-head)" />
+<path d="M330 185 L330 102 " fill="none" stroke="#222" stroke-width="2" class="sequence-flow" marker-end="url(#sequence-flow-head)" />
 
 </svg>

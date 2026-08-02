@@ -757,23 +757,11 @@
 <path d="M860 85 L913 85 " fill="none" stroke="#222" stroke-width="2" class="sequence-flow" marker-end="url(#sequence-flow-head)" />
 <path d="M1020 85 L1105 85 " fill="none" stroke="#222" stroke-width="2" class="sequence-flow" marker-end="url(#sequence-flow-head)" />
 
-<g class="event event-dashed-dashed event-boundary event-signal">
-  <use href="#event-dashed-dashed" x="767" y="107" width="36" height="36" stroke="#222" fill="#fff"/>
-  <use href="#event-signal-catching" x="767" y="107" width="36" height="36" stroke="#222" fill="#fff"/>
+<g class="event event-solid-solid event-boundary event-message">
+  <use href="#event-solid-solid" x="337" y="107" width="36" height="36" stroke="#222" fill="#fff"/>
+  <use href="#event-message-catching" x="337" y="107" width="36" height="36" stroke="#222" fill="#fff"/>
 </g>
-<path d="M785 143 L785 328 A 7 7 0 0 0 792 335 L945 335 " fill="none" stroke="#222" stroke-width="2" class="sequence-flow" marker-end="url(#sequence-flow-head)" />
-
-<g class="event event-solid-solid event-boundary event-signal">
-  <use href="#event-solid-solid" x="497" y="107" width="36" height="36" stroke="#222" fill="#fff"/>
-  <use href="#event-signal-catching" x="497" y="107" width="36" height="36" stroke="#222" fill="#fff"/>
-</g>
-<path d="M515 143 L515 556 A 7 7 0 0 0 522 563 L625 563 " fill="none" stroke="#222" stroke-width="2" class="sequence-flow" marker-end="url(#sequence-flow-head)" />
-
-<g class="event event-solid-solid event-boundary event-cancel">
-  <use href="#event-solid-solid" x="632" y="107" width="36" height="36" stroke="#222" fill="#fff"/>
-  <use href="#event-cancel-catching" x="632" y="107" width="36" height="36" stroke="#222" fill="#fff"/>
-</g>
-<path d="M650 143 L650 442 A 7 7 0 0 0 657 449 L785 449 " fill="none" stroke="#222" stroke-width="2" class="sequence-flow" marker-end="url(#sequence-flow-head)" />
+<path d="M355 143 L355 736 A 7 7 0 0 0 362 743 L465 743 " fill="none" stroke="#222" stroke-width="2" class="sequence-flow" marker-end="url(#sequence-flow-head)" />
 
 <g class="event event-solid-solid event-boundary event-timer">
   <use href="#event-solid-solid" x="312" y="107" width="36" height="36" stroke="#222" fill="#fff"/>
@@ -781,11 +769,47 @@
 </g>
 <path d="M330 143 L330 802 A 7 7 0 0 0 337 809 L465 809 " fill="none" stroke="#222" stroke-width="2" class="sequence-flow" marker-end="url(#sequence-flow-head)" />
 
-<g class="event event-dashed-dashed event-boundary event-escalation">
-  <use href="#event-dashed-dashed" x="952" y="107" width="36" height="36" stroke="#222" fill="#fff"/>
-  <use href="#event-escalation-catching" x="952" y="107" width="36" height="36" stroke="#222" fill="#fff"/>
+<g class="event event-solid-solid event-boundary event-conditional">
+  <use href="#event-solid-solid" x="287" y="107" width="36" height="36" stroke="#222" fill="#fff"/>
+  <use href="#event-conditional-catching" x="287" y="107" width="36" height="36" stroke="#222" fill="#fff"/>
 </g>
-<path d="M970 143 L970 148 A 7 7 0 0 0 977 155 L1105 155 " fill="none" stroke="#222" stroke-width="2" class="sequence-flow" marker-end="url(#sequence-flow-head)" />
+<path d="M305 143 L305 868 A 7 7 0 0 0 312 875 L465 875 " fill="none" stroke="#222" stroke-width="2" class="sequence-flow" marker-end="url(#sequence-flow-head)" />
+
+<g class="event event-solid-solid event-boundary event-signal">
+  <use href="#event-solid-solid" x="497" y="107" width="36" height="36" stroke="#222" fill="#fff"/>
+  <use href="#event-signal-catching" x="497" y="107" width="36" height="36" stroke="#222" fill="#fff"/>
+</g>
+<path d="M515 143 L515 556 A 7 7 0 0 0 522 563 L625 563 " fill="none" stroke="#222" stroke-width="2" class="sequence-flow" marker-end="url(#sequence-flow-head)" />
+
+<g class="event event-solid-solid event-boundary event-error">
+  <use href="#event-solid-solid" x="472" y="107" width="36" height="36" stroke="#222" fill="#fff"/>
+  <use href="#event-error-catching" x="472" y="107" width="36" height="36" stroke="#222" fill="#fff"/>
+</g>
+<path d="M490 143 L490 622 A 7 7 0 0 0 497 629 L625 629 " fill="none" stroke="#222" stroke-width="2" class="sequence-flow" marker-end="url(#sequence-flow-head)" />
+
+<g class="event event-solid-solid event-boundary event-escalation">
+  <use href="#event-solid-solid" x="447" y="107" width="36" height="36" stroke="#222" fill="#fff"/>
+  <use href="#event-escalation-catching" x="447" y="107" width="36" height="36" stroke="#222" fill="#fff"/>
+</g>
+<path d="M465 143 L465 688 A 7 7 0 0 0 472 695 L625 695 " fill="none" stroke="#222" stroke-width="2" class="sequence-flow" marker-end="url(#sequence-flow-head)" />
+
+<g class="event event-solid-solid event-boundary event-compensation">
+  <use href="#event-solid-solid" x="657" y="107" width="36" height="36" stroke="#222" fill="#fff"/>
+  <use href="#event-compensation-catching" x="657" y="107" width="36" height="36" stroke="#222" fill="#fff"/>
+</g>
+<path d="M675 143 L675 376 A 7 7 0 0 0 682 383 L785 383 " fill="none" stroke="#222" stroke-width="2" class="sequence-flow" marker-end="url(#sequence-flow-head)" />
+
+<g class="event event-solid-solid event-boundary event-cancel">
+  <use href="#event-solid-solid" x="632" y="107" width="36" height="36" stroke="#222" fill="#fff"/>
+  <use href="#event-cancel-catching" x="632" y="107" width="36" height="36" stroke="#222" fill="#fff"/>
+</g>
+<path d="M650 143 L650 442 A 7 7 0 0 0 657 449 L785 449 " fill="none" stroke="#222" stroke-width="2" class="sequence-flow" marker-end="url(#sequence-flow-head)" />
+
+<g class="event event-dashed-dashed event-boundary event-message">
+  <use href="#event-dashed-dashed" x="607" y="107" width="36" height="36" stroke="#222" fill="#fff"/>
+  <use href="#event-message-catching" x="607" y="107" width="36" height="36" stroke="#222" fill="#fff"/>
+</g>
+<path d="M625 143 L625 508 A 7 7 0 0 0 632 515 L785 515 " fill="none" stroke="#222" stroke-width="2" class="sequence-flow" marker-end="url(#sequence-flow-head)" />
 
 <g class="event event-dashed-dashed event-boundary event-timer">
   <use href="#event-dashed-dashed" x="817" y="107" width="36" height="36" stroke="#222" fill="#fff"/>
@@ -799,40 +823,16 @@
 </g>
 <path d="M810 143 L810 262 A 7 7 0 0 0 817 269 L945 269 " fill="none" stroke="#222" stroke-width="2" class="sequence-flow" marker-end="url(#sequence-flow-head)" />
 
-<g class="event event-solid-solid event-boundary event-compensation">
-  <use href="#event-solid-solid" x="657" y="107" width="36" height="36" stroke="#222" fill="#fff"/>
-  <use href="#event-compensation-catching" x="657" y="107" width="36" height="36" stroke="#222" fill="#fff"/>
+<g class="event event-dashed-dashed event-boundary event-signal">
+  <use href="#event-dashed-dashed" x="767" y="107" width="36" height="36" stroke="#222" fill="#fff"/>
+  <use href="#event-signal-catching" x="767" y="107" width="36" height="36" stroke="#222" fill="#fff"/>
 </g>
-<path d="M675 143 L675 376 A 7 7 0 0 0 682 383 L785 383 " fill="none" stroke="#222" stroke-width="2" class="sequence-flow" marker-end="url(#sequence-flow-head)" />
+<path d="M785 143 L785 328 A 7 7 0 0 0 792 335 L945 335 " fill="none" stroke="#222" stroke-width="2" class="sequence-flow" marker-end="url(#sequence-flow-head)" />
 
-<g class="event event-solid-solid event-boundary event-message">
-  <use href="#event-solid-solid" x="337" y="107" width="36" height="36" stroke="#222" fill="#fff"/>
-  <use href="#event-message-catching" x="337" y="107" width="36" height="36" stroke="#222" fill="#fff"/>
+<g class="event event-dashed-dashed event-boundary event-escalation">
+  <use href="#event-dashed-dashed" x="952" y="107" width="36" height="36" stroke="#222" fill="#fff"/>
+  <use href="#event-escalation-catching" x="952" y="107" width="36" height="36" stroke="#222" fill="#fff"/>
 </g>
-<path d="M355 143 L355 736 A 7 7 0 0 0 362 743 L465 743 " fill="none" stroke="#222" stroke-width="2" class="sequence-flow" marker-end="url(#sequence-flow-head)" />
-
-<g class="event event-solid-solid event-boundary event-escalation">
-  <use href="#event-solid-solid" x="447" y="107" width="36" height="36" stroke="#222" fill="#fff"/>
-  <use href="#event-escalation-catching" x="447" y="107" width="36" height="36" stroke="#222" fill="#fff"/>
-</g>
-<path d="M465 143 L465 688 A 7 7 0 0 0 472 695 L625 695 " fill="none" stroke="#222" stroke-width="2" class="sequence-flow" marker-end="url(#sequence-flow-head)" />
-
-<g class="event event-dashed-dashed event-boundary event-message">
-  <use href="#event-dashed-dashed" x="607" y="107" width="36" height="36" stroke="#222" fill="#fff"/>
-  <use href="#event-message-catching" x="607" y="107" width="36" height="36" stroke="#222" fill="#fff"/>
-</g>
-<path d="M625 143 L625 508 A 7 7 0 0 0 632 515 L785 515 " fill="none" stroke="#222" stroke-width="2" class="sequence-flow" marker-end="url(#sequence-flow-head)" />
-
-<g class="event event-solid-solid event-boundary event-error">
-  <use href="#event-solid-solid" x="472" y="107" width="36" height="36" stroke="#222" fill="#fff"/>
-  <use href="#event-error-catching" x="472" y="107" width="36" height="36" stroke="#222" fill="#fff"/>
-</g>
-<path d="M490 143 L490 622 A 7 7 0 0 0 497 629 L625 629 " fill="none" stroke="#222" stroke-width="2" class="sequence-flow" marker-end="url(#sequence-flow-head)" />
-
-<g class="event event-solid-solid event-boundary event-conditional">
-  <use href="#event-solid-solid" x="287" y="107" width="36" height="36" stroke="#222" fill="#fff"/>
-  <use href="#event-conditional-catching" x="287" y="107" width="36" height="36" stroke="#222" fill="#fff"/>
-</g>
-<path d="M305 143 L305 868 A 7 7 0 0 0 312 875 L465 875 " fill="none" stroke="#222" stroke-width="2" class="sequence-flow" marker-end="url(#sequence-flow-head)" />
+<path d="M970 143 L970 148 A 7 7 0 0 0 977 155 L1105 155 " fill="none" stroke="#222" stroke-width="2" class="sequence-flow" marker-end="url(#sequence-flow-head)" />
 
 </svg>

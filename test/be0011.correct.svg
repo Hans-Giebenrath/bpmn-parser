@@ -646,16 +646,16 @@
 <path d="M188 277 L273 277 " fill="none" stroke="#222" stroke-width="2" class="sequence-flow" marker-end="url(#sequence-flow-head)" />
 <path d="M380 277 L465 277 " fill="none" stroke="#222" stroke-width="2" class="sequence-flow" marker-end="url(#sequence-flow-head)" />
 
-<g class="event event-solid-solid event-boundary event-timer">
-  <use href="#event-solid-solid" x="328" y="219" width="36" height="36" stroke="#222" fill="#fff"/>
-  <use href="#event-timer-catching" x="328" y="219" width="36" height="36" stroke="#222" fill="#fff"/>
-</g>
-<path d="M346 219 L346 136 A 7 7 0 0 1 353 129L465 129 " fill="none" stroke="#222" stroke-width="2" class="sequence-flow" marker-end="url(#sequence-flow-head)" />
-
 <g class="event event-solid-solid event-boundary event-message">
   <use href="#event-solid-solid" x="295" y="219" width="36" height="36" stroke="#222" fill="#fff"/>
   <use href="#event-message-catching" x="295" y="219" width="36" height="36" stroke="#222" fill="#fff"/>
 </g>
 <path d="M313 219 L313 70 A 7 7 0 0 1 320 63L465 63 " fill="none" stroke="#222" stroke-width="2" class="sequence-flow" marker-end="url(#sequence-flow-head)" />
+
+<g class="event event-solid-solid event-boundary event-timer">
+  <use href="#event-solid-solid" x="328" y="219" width="36" height="36" stroke="#222" fill="#fff"/>
+  <use href="#event-timer-catching" x="328" y="219" width="36" height="36" stroke="#222" fill="#fff"/>
+</g>
+<path d="M346 219 L346 136 A 7 7 0 0 1 353 129L465 129 " fill="none" stroke="#222" stroke-width="2" class="sequence-flow" marker-end="url(#sequence-flow-head)" />
 
 </svg>
