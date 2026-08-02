@@ -11,6 +11,8 @@ use crate::common::graph::{Graph, SdeId};
 use crate::common::graph::{LaneId, NodeId, PoolId};
 use crate::common::node::DataAux;
 use crate::common::node::NodeType;
+use crate::common::vecmap::VecMap;
+use crate::common::vecset::VecSet;
 use crate::layout::constraint::Above;
 use crate::layout::constraint::LeftOf;
 use crate::layout::constraint::SameLayer;
@@ -30,8 +32,6 @@ use crate::lexer::{Statement, StatementStream, TokenCoordinate};
 use crate::node_id_matcher::NodeIdMatcher;
 use crate::parser::bpmn_node::BoundaryEvent;
 use crate::pool_id_matcher::PoolIdMatcher;
-use std::collections::HashMap;
-use std::collections::HashSet;
 
 pub struct ParseContext {
     last_node_id: Option<usize>,
@@ -40,11 +40,11 @@ pub struct ParseContext {
     pub current_token_coordinate: TokenCoordinate,
     /// Sequence flows are always within a pool, so the identifiers are scoped per PoolId
     /// through this HashMap.
-    dangling_sequence_flows: HashMap<PoolId, DanglingSequenceFlows>,
+    dangling_sequence_flows: VecMap<PoolId, DanglingSequenceFlows>,
     // Shorthand blank events maybe need to be transformed into message events, such that they are
     // allowed to send or receive data. This automatic transformation is done to allow quickly
     // prototyping of the BPMD file using shorthand syntax in a first iteration.
-    shorthand_blank_events: HashSet<NodeId>,
+    shorthand_blank_events: VecSet<NodeId>,
     node_id_matcher: NodeIdMatcher,
     pub pool_id_matcher: PoolIdMatcher,
     source_file_idx: usize,
@@ -130,9 +130,9 @@ struct DanglingEdgeInfo {
 #[derive(Default)]
 struct DanglingSequenceFlows {
     /// An edge whose start is known but end is unknown: `->label`
-    dangling_end_map: HashMap<String, Vec<DanglingEdgeInfo>>,
+    dangling_end_map: VecMap<String, Vec<DanglingEdgeInfo>>,
     /// An edge whose end is known but start is unknown: `<-label`
-    dangling_start_map: HashMap<String, Vec<DanglingEdgeInfo>>,
+    dangling_start_map: VecMap<String, Vec<DanglingEdgeInfo>>,
 }
 
 pub type ParseError = Vec<(String, TokenCoordinate)>;
@@ -164,7 +164,7 @@ impl Parser {
                     previous_lifeline_termination_statement: None,
                 },
                 current_token_coordinate: TokenCoordinate::default(),
-                dangling_sequence_flows: HashMap::default(),
+                dangling_sequence_flows: VecMap::default(),
                 shorthand_blank_events: Default::default(),
                 node_id_matcher: NodeIdMatcher::new(),
                 pool_id_matcher: PoolIdMatcher::new(),
@@ -208,12 +208,12 @@ impl Parser {
         for dangling_sequence_flows in self.context.dangling_sequence_flows.values() {
             let dangling_end_map = &dangling_sequence_flows.dangling_end_map;
             let dangling_start_map = &dangling_sequence_flows.dangling_start_map;
-            let all_keys: std::collections::HashSet<_> = dangling_end_map
+            let all_keys: VecSet<_> = dangling_end_map
                 .keys()
                 .chain(dangling_start_map.keys())
                 .collect();
 
-            for key in &all_keys {
+            for key in all_keys.iter() {
                 match (dangling_end_map.get(*key), dangling_start_map.get(*key)) {
                     (Some(starts), Some(ends)) => {
                         for start in starts {
@@ -913,7 +913,7 @@ impl Parser {
     }
 
     fn process_shorthand_blank_events(&mut self) -> Result<(), ParseError> {
-        for node_id in &self.context.shorthand_blank_events {
+        for node_id in self.context.shorthand_blank_events.iter() {
             let node = &mut self.graph.nodes[*node_id];
             if node
                 .incoming

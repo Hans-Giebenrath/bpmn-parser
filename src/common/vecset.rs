@@ -51,3 +51,15 @@ impl<T: Eq> VecSet<T> {
         self.inner.iter()
     }
 }
+
+impl<T: Eq> FromIterator<T> for VecSet<T> {
+    fn from_iter<I: IntoIterator<Item = T>>(iter: I) -> Self {
+        let mut set = Self::new();
+
+        for value in iter {
+            set.insert(value);
+        }
+
+        set
+    }
+}
