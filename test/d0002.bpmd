@@ -1,0 +1,25 @@
+# Start
+X Gateway ->out
+
+- Upper 1 <-out
+- Upper 2
+- Upper 3
+- Upper 4
+. Upper End
+
+- Middle 1 <-out
+- Middle 2
+- Middle 3
+- Middle 4
+. Middle End
+
+- Lower 1 <-out
+- Lower 2
+- Lower 3
+- Lower 4
+. Lower End
+
+OD Data <-lower-1 ->upper-4
+
+[place @upper-1 above @middle-1]
+[place @middle-1 above @lower-1]

@@ -262,6 +262,21 @@ fn assign_y(graph: &mut Graph, pool: PoolId, lane: LaneId, min_y_value: usize) -
             (FlowType::SequenceFlow, true, false) => graph.config.long_sequence_flow_weight,
             (FlowType::SequenceFlow, true, true) => graph.config.same_layer_sequence_flow_weight,
             (FlowType::DataFlow(_), false, _) => graph.config.short_data_flow_weight,
+            (FlowType::DataFlow(_), true, _)
+                if n!(edge.from).is_data() && n!(edge.from).uses_half_layer =>
+            {
+                // We want to go the extra mile to ensure, if reasonable, that the next dummy edge
+                // is at the same height as the data node. Only if this is the case can the data
+                // node really be moved into the half-layer. Otherwise, it will be very awkward to
+                // route the data edge out of the data element. Possible, but nothing which I want
+                // to solve at the moment.
+                1.5 * graph
+                    .config
+                    .long_data_edge_weight
+                    .max(graph.config.short_data_flow_weight)
+                    .max(graph.config.long_sequence_flow_weight)
+                    .max(graph.config.short_sequence_flow_weight)
+            }
             (FlowType::DataFlow(_), true, _) => graph.config.long_data_edge_weight,
             (FlowType::MessageFlow(_), _, _) => graph.config.message_edge_weight,
         };

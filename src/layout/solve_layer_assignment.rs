@@ -168,7 +168,18 @@ fn solve_data_object_layers_via_arithmetic_mean(graph: &mut Graph) {
             let layer_id: usize = avg_floor as usize;
             match avg - avg_floor {
                 d if d < 0.25 => (layer_id, false),
-                d if d <= 0.75 => (layer_id, true),
+                // We *only* allow data nodes to move into the half layer if they have at most two
+                // data associations. Otherwise there is some really complicated situation what to
+                // do if it is in the halflayer, and the data edges must be routed. They then need
+                // to leave at the top or bottom maybe, but this is just something which I don't
+                // want to solve at the moment, and I wonder whether it is actually worth it.
+                // The usual case for half layers is the simple one-in-one-out-same-flow situation.
+                // Also, this is not guaranteed to happen. There is a late check which verifies
+                // that there is room at all.
+                d if d <= 0.75 && data_node.incoming.len() + data_node.outgoing.len() <= 2 => {
+                    (layer_id, true)
+                }
+                d if d <= 0.5 => (layer_id, false),
                 _ => (layer_id + 1, false),
             }
         };

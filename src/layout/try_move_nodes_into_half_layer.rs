@@ -153,30 +153,63 @@ pub fn try_move_nodes_into_half_layer(graph: &mut Graph) {
     }
 
     'outer: for node_id in graph.nodes.len().iter_indices(false).map(NodeId) {
-        if !n!(node_id).uses_half_layer {
+        let node = &n!(node_id);
+        if !node.uses_half_layer {
             continue;
         }
 
+        // No other elements were able to be moved into half layers, not sure what logic is
+        // appropriate for them.
+        assert!(node.is_data());
+        // #1: Check whether there is no conflict in the edge layer.
         let vertical_segments: &Vec<_> = vertical_segments_per_layer
-            .entry(n!(node_id).layer_id)
+            .entry(node.layer_id)
             .or_default();
 
         for vertical_segment in vertical_segments.iter() {
-            if vertical_segment.contains(&n!(node_id).y) {
+            if vertical_segment.contains(&node.y) {
                 n!(node_id).uses_half_layer = false;
                 continue 'outer;
             }
         }
 
-        // No conflict, so shift it right.
-        if let [incoming] = &n!(node_id).incoming[..]
-            && let [outgoing] = &n!(node_id).outgoing[..]
-            && (data_element_sandwiched(&from!(*incoming), &n!(node_id), &to!(*outgoing))
-                || data_element_sandwiched(&from!(*incoming), &n!(node_id), &to!(*outgoing)))
+        // #2: Check whether the next-level edge is either (1) a real node, or it is (2) a long edge
+        // dummy and is at the same height as our node.
+        let Some((next_layer_node, port)) = node
+            .outgoing
+            .iter()
+            .map(|e| &to!(*e))
+            .zip(node.outgoing_ports.iter())
+            .chain(
+                node.incoming
+                    .iter()
+                    .map(|e| &from!(*e))
+                    .zip(node.incoming_ports.iter()),
+            )
+            .find(|(n, _)| n.layer_id.0 == node.layer_id.0 + 1)
+        else {
+            continue;
+        };
+
+        if next_layer_node.is_any_dummy() && next_layer_node.y != (port + node.xy()).y {
+            // There is a y difference between the data node and the next layer's dummy node. This
+            // means we cannot move the data node into the half layer, as edge routing would be too
+            // complex atm.
+            continue;
+        }
+
+        if let [incoming] = &node.incoming[..]
+            && let [outgoing] = &node.outgoing[..]
+            && (data_element_sandwiched(&from!(*incoming), node, &to!(*outgoing))
+                || data_element_sandwiched(&from!(*incoming), node, &to!(*outgoing)))
         {
+            // The data element is directly sandwhiched between its two connected nodes. This means
+            // that we should position it not at the mathematical center of the half layer, but
+            // move it to the visual center of the gap between the two nodes. One might be an event,
+            // the other an activity, then the center of the half layer would look weird.
             let from = from!(*incoming).dimension();
             let to = to!(*outgoing).dimension();
-            let node_width = n!(node_id).width;
+            let node_width = node.width;
             if from.x < to.x {
                 n!(node_id).x = (from.x + from.width).midpoint(to.x) - node_width / 2;
             } else {
