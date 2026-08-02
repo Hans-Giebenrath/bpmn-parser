@@ -427,8 +427,28 @@ fn assign_y(graph: &mut Graph, pool: PoolId, lane: LaneId, min_y_value: usize) -
         ));
         let from_var = aux(from_node);
         let to_var = aux(to_node);
-        let from_y = from_var + (from_node.height / 2) as f64;
-        let to_y = to_var + (to_node.height / 2) as f64;
+        let from_offset = if from_node.is_real() {
+            let port = from_node.relative_port_of_outgoing(*edge_id);
+            if from_node.relative_port_is_left_or_right(&port) {
+                port.y as f64
+            } else {
+                (from_node.height / 2) as f64
+            }
+        } else {
+            (from_node.height / 2) as f64
+        };
+        let to_offset = if to_node.is_real() {
+            let port = to_node.relative_port_of_incoming(*edge_id);
+            if to_node.relative_port_is_left_or_right(&port) {
+                port.y as f64
+            } else {
+                (to_node.height / 2) as f64
+            }
+        } else {
+            (to_node.height / 2) as f64
+        };
+        let from_y = from_var + from_offset;
+        let to_y = to_var + to_offset as f64;
         c(&mut problem, (from_y.clone() - to_y.clone()).leq(diff_var));
         c(&mut problem, (to_y - from_y).leq(diff_var));
     }

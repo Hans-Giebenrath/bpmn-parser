@@ -187,7 +187,7 @@ pub struct Dimension {
     pub height: usize,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 // Relative to the node's size.
 pub struct RelativePort {
     pub x: usize,
@@ -389,24 +389,34 @@ impl Node {
         (self.width, self.height)
     }
 
-    pub fn port_of_incoming(&self, edge_id: EdgeId) -> AbsolutePort {
+    pub fn relative_port_of_incoming(&self, edge_id: EdgeId) -> RelativePort {
         self.incoming
             .iter()
             .cloned()
             .zip(self.incoming_ports.iter())
             .find(|(inner_edge_id, _)| *inner_edge_id == edge_id)
-            .map(|(_, port)| port + self.xy())
             .unwrap_or_else(|| panic!("node_id: {}, edge_id: {}", self.id.0, edge_id.0))
+            .1
+            .clone()
     }
 
-    pub fn port_of_outgoing(&self, edge_id: EdgeId) -> AbsolutePort {
+    pub fn port_of_incoming(&self, edge_id: EdgeId) -> AbsolutePort {
+        &self.relative_port_of_incoming(edge_id) + self.xy()
+    }
+
+    pub fn relative_port_of_outgoing(&self, edge_id: EdgeId) -> RelativePort {
         self.outgoing
             .iter()
             .cloned()
             .zip(self.outgoing_ports.iter())
             .find(|(inner_edge_id, _)| *inner_edge_id == edge_id)
-            .map(|(_, port)| port + self.xy())
             .unwrap_or_else(|| panic!("node_id: {}, edge_id: {}", self.id.0, edge_id.0))
+            .1
+            .clone()
+    }
+
+    pub fn port_of_outgoing(&self, edge_id: EdgeId) -> AbsolutePort {
+        &self.relative_port_of_outgoing(edge_id) + self.xy()
     }
 
     pub fn port_of_incoming_or_outgoing(&self, edge_id: EdgeId) -> AbsolutePort {
@@ -423,6 +433,14 @@ impl Node {
             .find(|(inner_edge_id, _)| *inner_edge_id == edge_id)
             .map(|(_, port)| port + self.xy())
             .unwrap_or_else(|| panic!("node_id: {}, edge_id: {}", self.id.0, edge_id.0))
+    }
+
+    pub fn relative_port_is_left_or_right(&self, port: &RelativePort) -> bool {
+        assert!(
+            !self.is_any_dummy(),
+            "In this case the heuristic is incorrect and you need to do something else. {self:#?}",
+        );
+        (1..self.height).contains(&port.y)
     }
 
     pub fn port_is_left_or_right(&self, port_y: usize) -> bool {
