@@ -8,8 +8,10 @@ accept-svg image:
     cd test/
     if [ "{{ image }}" = "all" ]; then
       for f in *.svg; do
-        just accept-svg "$f"
+        if [[ "$f" =~ \.correct\. ]]; then continue; fi
+        just accept-svg "$f" &
       done
+      wait
       exit 0
     fi
     stem="{{ image }}"

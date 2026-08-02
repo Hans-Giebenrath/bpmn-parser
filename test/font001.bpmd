@@ -1,0 +1,8 @@
+= This is a very long pool name which hopefully breaks
+== AND A VERY LONG LANE NAME WHICH HOPEFULLY BREAKS AS WELL
+
+# A start node which should have a linebreak
+X A gateway node which should have a linebreak ->out
+
+. End 1 <-out
+. End 2 <-out
