@@ -272,12 +272,12 @@ fn assign_y(graph: &mut Graph, pool: PoolId, lane: LaneId, min_y_value: usize) -
                 // to solve at the moment.
                 1.5 * graph
                     .config
-                    .long_data_edge_weight
+                    .long_data_flow_weight
                     .max(graph.config.short_data_flow_weight)
                     .max(graph.config.long_sequence_flow_weight)
                     .max(graph.config.short_sequence_flow_weight)
             }
-            (FlowType::DataFlow(_), true, _) => graph.config.long_data_edge_weight,
+            (FlowType::DataFlow(_), true, _) => graph.config.long_data_flow_weight,
             (FlowType::MessageFlow(_), _, _) => graph.config.message_edge_weight,
         };
         if edge.is_vertical && edge.is_message_flow() {

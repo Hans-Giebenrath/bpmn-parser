@@ -83,8 +83,7 @@ define_config!(
     /// 3 x short_sequence_flow_weight
     long_sequence_flow_weight: f64 = 32.0,
     /// At least spanning two layers.
-    /// 30 x short_data_flow_weight
-    long_data_edge_weight: f64 = 0.5,
+    long_data_flow_weight: f64 = 0.5,
     message_edge_weight: f64 = 0.015625,
     min_vertical_space_between_gateway_bendpoints: usize = 110,
 
