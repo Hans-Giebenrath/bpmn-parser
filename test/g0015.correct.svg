@@ -579,10 +579,10 @@
      ry="5" />
   <path
      style="fill:none;stroke:inherit;stroke-linecap:square"
-     d="M 50,7 C 50,9.7614237 38.807119,12 25,12 11.192881,12 0,9.7614237 0,7" />
+     d="M 50,8.8 C 50,11.5614237 38.807119,13.8 25,13.8 11.192881,13.8 0,11.5614237 0,8.8" />
   <path
      style="fill:none;stroke:inherit;stroke-linecap:square"
-     d="M 50,9 C 50,11.761424 38.807119,14 25,14 11.192881,14 0,11.761424 0,9" />
+     d="M 50,12.6 C 50,15.361424 38.807119,17.6 25,17.6 11.192881,17.6 0,15.361424 0,12.6" />
   </symbol>
 </defs>
 <rect x="0" y="0" width="790" height="303" fill="white" stroke="white" stroke-width="2" />
@@ -645,7 +645,7 @@
 </g>
 <path d="M188 138 L273 138 " fill="none" stroke="#222" stroke-width="2" class="sequence-flow" marker-end="url(#sequence-flow-head)" />
 <path d="M380 138 L458 138 " fill="none" stroke="#222" stroke-width="2" class="sequence-flow" marker-end="url(#sequence-flow-head)" />
-<path d="M188 150 L391 229 " fill="none" stroke="#222" stroke-width="1.6"  class="data-association" stroke-dasharray="1 7" stroke-linecap="round" marker-end="url(#data-association-head)"  />
+<path d="M185 148 L391 229 " fill="none" stroke="#222" stroke-width="1.6"  class="data-association" stroke-dasharray="1 7" stroke-linecap="round" marker-end="url(#data-association-head)"  />
 <path d="M428 231 L631 216 " fill="none" stroke="#222" stroke-width="1.6"  class="data-association" stroke-dasharray="1 7" stroke-linecap="round" marker-end="url(#data-association-head)"  />
 <path d="M490 113 L490 70 A 7 7 0 0 1 497 63L625 63 " fill="none" stroke="#222" stroke-width="2" class="sequence-flow" marker-end="url(#sequence-flow-head)" />
 <path d="M 502.10938 45.656 Q 503.26563 45.656 503.84375 46.24975 Q 504.4375 46.8435 504.4375 48.18725 L 504.4375 52.656 L 503.40625 52.656 L 503.40625 48.234123 Q 503.40625 46.577873 501.95313 46.577873 Q 500.89063 46.577873 500.48438 47.2185 Q 500.07813 47.859123 500.07813 49.077873 L 500.07813 52.656 L 499.01563 52.656 L 499.01563 45.656 L 499.875 45.656 L 500.03125 46.7185 L 500.09375 46.7185 Q 500.40625 46.18725 500.95313 45.921623 Q 501.5 45.656 502.10938 45.656 Z M 512.0254 49.140373 Q 512.0254 50.81225 511.2129 51.734123 Q 510.4004 52.656 509.0254 52.656 Q 508.18164 52.656 507.50977 52.24975 Q 506.8379 51.8435 506.44727 51.06225 Q 506.07227 50.265373 506.07227 49.140373 Q 506.07227 47.4685 506.86914 46.56225 Q 507.68164 45.656 509.05664 45.656 Q 509.94727 45.656 510.60352 46.06225 Q 511.2754 46.4685 511.6504 47.24975 Q 512.0254 48.015373 512.0254 49.140373 Z M 507.16602 49.140373 Q 507.16602 50.327873 507.61914 51.031 Q 508.07227 51.734123 509.05664 51.734123 Q 510.0254 51.734123 510.47852 51.031 Q 510.93164 50.327873 510.93164 49.140373 Q 510.93164 47.93725 510.47852 47.265373 Q 510.0254 46.577873 509.04102 46.577873 Q 508.05664 46.577873 507.60352 47.265373 Q 507.16602 47.93725 507.16602 49.140373 Z " fill="#111" stroke="none" />

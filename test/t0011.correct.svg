@@ -579,10 +579,10 @@
      ry="5" />
   <path
      style="fill:none;stroke:inherit;stroke-linecap:square"
-     d="M 50,7 C 50,9.7614237 38.807119,12 25,12 11.192881,12 0,9.7614237 0,7" />
+     d="M 50,8.8 C 50,11.5614237 38.807119,13.8 25,13.8 11.192881,13.8 0,11.5614237 0,8.8" />
   <path
      style="fill:none;stroke:inherit;stroke-linecap:square"
-     d="M 50,9 C 50,11.761424 38.807119,14 25,14 11.192881,14 0,11.761424 0,9" />
+     d="M 50,12.6 C 50,15.361424 38.807119,17.6 25,17.6 11.192881,17.6 0,15.361424 0,12.6" />
   </symbol>
 </defs>
 <rect x="0" y="0" width="790" height="542" fill="white" stroke="white" stroke-width="2" />
