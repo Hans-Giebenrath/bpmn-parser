@@ -212,6 +212,8 @@ that they are the same data object. For these situations, there is the data cont
 (with friends `O&` and `S&`) to create a new data icon in the layouted diagram, but communicate to
 the reader (and to possible analysis extensions) that they are _actually_ the same piece of data.
 
+Why would you want that? Well, if you just create a plain image, it might not be worthwhile to learn this different syntax. However, if you use some analysis which requires this information (this is the case for the PE-BPMD extension) then you need to encode it, otherwise the analysis does not work. Further, it helps you to document the intent in the text file, i.e. tell future editors of the text file that they are semantically the same element.
+
 image::generated/overview-data-continuations.svg[]
 
 [,bpmd]
@@ -223,8 +225,15 @@ In the given example you could argue whether the book that is now augmented with
 actually a new object, but this is a question which very much depends on the use case. But you get
 the idea of what you could do with the feature.
 
-In the future it will be possible to change the icon type during the continuation, e.g. in a chain
-of `OD .. S& .. D& ..`.
+Further, you might want to modify the icon of a data continuation, which is possible using `S&` and `D&` as follows:
+
+image::generated/overview-data-continuations-mod.svg[]
+
+[,bpmd]
+----
+include::example$overview-data-continuations-mod.bpmd[]
+----
+
 
 == Data - Full Syntax
 
@@ -233,8 +242,8 @@ of `OD .. S& .. D& ..`.
 * `<D` pass:[<del>]Data Input{empty}pass:[</del>]
 * `>D`  pass:[<del>]Data Output{empty}pass:[</del>]
 * `&` A continuation of the previous data object, to indicate that a new symbol should be used in the diagram but it's still part of the same semantic object.
-* `O&` pass:[<del>]Data Continuation with a Symbol Change{empty}pass:[</del>]
-* `S&` pass:[<del>]Data Continuation with a Symbol Change{empty}pass:[</del>]
+* `O&` Data Continuation with a Symbol Change
+* `S&` Data Continuation with a Symbol Change
 * `<&` pass:[<del>]Data Continuation with a Symbol Change{empty}pass:[</del>]
 * `>&` pass:[<del>]Data Continuation with a Symbol Change{empty}pass:[</del>]
 
@@ -347,8 +356,6 @@ Further, tasks can have some additional icons attached to them. This is controll
 first-letter mnemonics, as letters are clashing (service and subprocess) and might clash more if
 there will be more elements in a future version of BPMN. These task types also seem to be usually added when refining the process, so it is not necessarily a fundamental property of the thing to be a manual task type, so it does not need to be on the left hand side. Also, it might be required later to add some information to e.g. script thing, but I am not sure about that.]:
 
-*NONE OF THIS WORKS, YET*
-
 * `.- ~send`: Task with message send symbol
 * `.- ~receive`: Task with message send symbol
 * `.- ~manual`: Manual task type
@@ -360,6 +367,13 @@ there will be more elements in a future version of BPMN. These task types also s
 * `.- ~loop`: Multiple instance task type
 * `.- ~adhoc`: Multiple instance task type
 * `.- ~compensation`: Multiple instance task type
+
+image::generated/overview-activity-types.svg[]
+
+[,bpmd]
+----
+include::example$overview-activity-types.bpmd[]
+----
 
 == Grouping Elements
 
@@ -373,3 +387,25 @@ there will be more elements in a future version of BPMN. These task types also s
 * `!====` Event Subprocess Interrupting (they are put into the lane where they are defined)
 * `+====` Event Subprocess Non-Interrupting (they are put into the lane where they are defined)
 * `(In this case one can add additional `=` to allow for better visual highlighting of groups)
+
+== Placement: Steer the Layout Algorithm
+
+You will likely encounter generated diagrams where you see a potential for a better arrangement of nodes than what the algorithm was capable of producing. `bpmd` gives you a small amount of tools to tweak node positioning by using such special extension statements:
+
+* Force two nodes into the same vertical layer:
+** `[place @node-a above @node-b]`
+** `[place @node-a below @node-b]`
+** `[place @node-a above or below @node-b]`
+* Force one node into another layer than another node:
+** `[place @node-a left of @node-b]`
+
+In the future I might expand this to also exclude `right of`, `left or right of`, `higher than`, `lower than` and `higher or lower than`. Input for other ideas is welcome.
+
+Using these placement instructions, you can for example break a long sequence of statements into a new line, or you can better align critical nodes across pools.
+
+image::generated/overview-place.svg[]
+
+[,bpmd]
+----
+include::example$overview-place.bpmd[]
+----

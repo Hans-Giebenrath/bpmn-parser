@@ -1,9 +1,9 @@
-* pe0003: DO outgoing edges are wrongly ordered, especially the edge going to Upper 4 should have its port above. The reason is that sweeping (i.e. crossing reduction) puts the long edge dummies of the outgoing data edges into a non-optimal position. Not sure if backsweep misses it, or if forward sweep verschlimmbessert it again.
+* pe0003, tt01: backwords sweep seems to be broken. For pe0003 the DO outgoing edges are wrongly ordered, especially the edge going to Upper 4 should have its port above. The reason is that sweeping (i.e. crossing reduction) puts the long edge dummies of the outgoing data edges into a non-optimal position. Not sure if backsweep misses it, or if forward sweep verschlimmbessert it again.
 * data elements have wonky y-coordinate differences, although it looks like they should all be at the same height. Also, they are oftentimes not put into the next halflayer, even though there is enough room.
+* black box pools
 * ActivityMarkers should just be 15x15, looks better than 20x20.
-* README DSL site should be extended, some new stuff is present now.
 * extend on cons012(-m) to also have gateway successors within the same lane, or other lanes. Also mirror them (also cons013) to check incoming vs outgoing correctness, and order of their processing in port assignment.
-* cons013: The backedgecornerdummy shoult be merged into the gateway during xy-ilp phase.
+* cons013: The backedgecornerdummy should be merged into the gateway during xy-ilp phase.
 * Data edges should always go diagonally into a gateway. This also means, if it can't go straight from data node to gateway, then the last step (long edge dummy <-> gateway) needs to be straight, not routed).
 * data elements need to be placed in accordance to above/same layer constraints. But this should also be verified: imagine data above gw above incoming node. Then multiple outgoing to the right. No way to layout because all outgoing must emerge from the right. Instead, forbid that data is above gw in the first place. And data should be either a bit above gw or below gw (at least the data node which is directly close to the target node)
 * Lone-data elements need to be ensured to be moved to the left if a node already has two vertical connected nodes. Otherwise the data node placement logic would put it also vertically on the same layer and there is chaos.

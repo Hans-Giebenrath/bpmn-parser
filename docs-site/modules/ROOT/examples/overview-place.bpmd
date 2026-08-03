@@ -1,0 +1,17 @@
+= P1
+
+== Lane 1
+
+# Start
+X GW ->out
+
+- n1 <-out
+. done
+
+== Lane 2
+- n2 <-out
+. done
+
+[place @n1 above @gw]
+[place @n2 below @gw]
+[place @gw left of @start]

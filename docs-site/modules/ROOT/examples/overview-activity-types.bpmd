@@ -8,5 +8,6 @@
 - businessrule ~businessrule
 . end
 
+// Ignore this one for now, it is just to reduce the width of the diagram
 [place @manual below @start]
 [place @service below @manual]
