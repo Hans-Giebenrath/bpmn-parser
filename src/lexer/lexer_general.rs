@@ -131,7 +131,7 @@ pub(crate) struct DataMeta {
     pub(crate) node_meta: NodeMeta,
     pub(crate) data_type: DataType,
     pub(crate) data_flow_metas: Vec<DataFlowMeta>,
-    /// & Object [Processed] <-t1 ->t2
+    /// & Object [Processed] <-t1 ->t2 (or O&, S&)
     pub(crate) is_continuation: bool,
 }
 
@@ -1609,7 +1609,9 @@ impl<'a> Lexer<'a> {
                     )?;
                 }
 
-                // Statements
+                /********************/
+                /**** Statements ****/
+                /********************/
                 Some('=') if self.sas.allow_new_statement => {
                     let tc = self.current_coord();
                     self.advance();
@@ -1620,6 +1622,79 @@ impl<'a> Lexer<'a> {
                         self.sas.next_statement(tc, self.position, to_pool)?;
                     }
                 }
+
+                /* Data */ // Keep at the top, as `O` otherwise conflicts with gateway shorthands.
+                Some('S') if self.sas.allow_new_statement && self.continues_with("D") => {
+                    let tc = self.current_coord();
+                    self.advance(); // S
+                    self.advance(); // D
+
+                    self.sas.next_statement(tc, self.position, to_data)?;
+                    self.sas.add_implicit_fragment(
+                        tc,
+                        self.position,
+                        Token::DataKind(DataType::Store, false),
+                    );
+                }
+                Some('O') if self.sas.allow_new_statement && self.continues_with("D") => {
+                    let tc = self.current_coord();
+                    self.advance(); // O
+                    self.advance(); // D
+
+                    self.sas.next_statement(tc, self.position, to_data)?;
+                    self.sas.add_implicit_fragment(
+                        tc,
+                        self.position,
+                        Token::DataKind(DataType::Object, false),
+                    );
+                }
+                Some('&') if self.sas.allow_new_statement => {
+                    let tc = self.current_coord();
+                    self.advance();
+
+                    let previous_data_type = self.sas.previous_data_type(tc)?;
+                    self.sas.next_statement(tc, self.position, to_data)?;
+                    self.sas.add_implicit_fragment(
+                        tc,
+                        self.position,
+                        Token::DataKind(previous_data_type, true),
+                    );
+                }
+                Some('S') if self.sas.allow_new_statement && self.continues_with("&") => {
+                    let tc = self.current_coord();
+                    self.advance(); // S
+                    self.advance(); // &
+
+                    self.sas.next_statement(tc, self.position, to_data)?;
+                    self.sas.add_implicit_fragment(
+                        tc,
+                        self.position,
+                        Token::DataKind(DataType::Store, true),
+                    );
+                }
+                Some('O') if self.sas.allow_new_statement && self.continues_with("&") => {
+                    let tc = self.current_coord();
+                    self.advance(); // O
+                    self.advance(); // &
+
+                    self.sas.next_statement(tc, self.position, to_data)?;
+                    self.sas.add_implicit_fragment(
+                        tc,
+                        self.position,
+                        Token::DataKind(DataType::Object, true),
+                    );
+                }
+
+                Some('M') if self.sas.allow_new_statement && self.continues_with("F") => {
+                    let tc = self.current_coord();
+                    self.advance(); // M
+                    self.advance(); // F
+
+                    self.sas
+                        .next_statement(tc, self.position, to_message_flow)?;
+                }
+
+                /* Shorthands */
                 Some('#') if self.sas.allow_new_statement => {
                     let tc = self.current_coord();
                     self.advance();
@@ -1684,7 +1759,7 @@ impl<'a> Lexer<'a> {
                         Token::GatewayType(GatewayType::Parallel),
                     );
                 }
-                Some('O') if self.sas.allow_new_statement && !self.continues_with("D") => {
+                Some('O') if self.sas.allow_new_statement => {
                     let tc = self.current_coord();
                     self.advance();
                     self.sas
@@ -1706,51 +1781,7 @@ impl<'a> Lexer<'a> {
                         Token::GatewayType(GatewayType::Event),
                     );
                 }
-                Some('M') if self.sas.allow_new_statement && self.continues_with("F") => {
-                    let tc = self.current_coord();
-                    self.advance(); // M
-                    self.advance(); // F
 
-                    self.sas
-                        .next_statement(tc, self.position, to_message_flow)?;
-                }
-                Some('S') if self.sas.allow_new_statement && self.continues_with("D") => {
-                    let tc = self.current_coord();
-                    self.advance(); // S
-                    self.advance(); // D
-
-                    self.sas.next_statement(tc, self.position, to_data)?;
-                    self.sas.add_implicit_fragment(
-                        tc,
-                        self.position,
-                        Token::DataKind(DataType::Store, false),
-                    );
-                }
-
-                Some('O') if self.sas.allow_new_statement && self.continues_with("D") => {
-                    let tc = self.current_coord();
-                    self.advance(); // O
-                    self.advance(); // D
-
-                    self.sas.next_statement(tc, self.position, to_data)?;
-                    self.sas.add_implicit_fragment(
-                        tc,
-                        self.position,
-                        Token::DataKind(DataType::Object, false),
-                    );
-                }
-                Some('&') if self.sas.allow_new_statement => {
-                    let tc = self.current_coord();
-                    self.advance();
-
-                    let previous_data_type = self.sas.previous_data_type(tc)?;
-                    self.sas.next_statement(tc, self.position, to_data)?;
-                    self.sas.add_implicit_fragment(
-                        tc,
-                        self.position,
-                        Token::DataKind(previous_data_type, true),
-                    );
-                }
                 Some('[') if self.sas.allow_new_statement => {
                     let tc = self.current_coord();
                     self.advance();
