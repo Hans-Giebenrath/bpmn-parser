@@ -102,9 +102,14 @@ fn data_edge_routing(graph: &mut Graph, grid: &Grid, margin: u32) {
             EdgeType::DummyEdge { .. } => continue,
         };
         // Note: This looks at the original, ReplacedByDummies edges as well!
-        let (from_boundary, (from_x, from_y), (from_center_x, from_center_y)) =
-            prepare_data(&n!(edge.from));
-        let (to_boundary, (to_x, to_y), (to_center_x, to_center_y)) = prepare_data(&n!(edge.to));
+        let (
+            from_collision_boundary,
+            from_visual_boundary,
+            (from_x, from_y),
+            (from_center_x, from_center_y),
+        ) = prepare_data(&n!(edge.from));
+        let (to_collision_boundary, to_visual_boundary, (to_x, to_y), (to_center_x, to_center_y)) =
+            prepare_data(&n!(edge.to));
         assert_ne!((from_center_x, from_center_y), (to_center_x, to_center_y));
         let degree = ((to_center_y as f64 - from_center_y as f64)
             .atan2(to_center_x as f64 - from_center_x as f64))
@@ -113,10 +118,20 @@ fn data_edge_routing(graph: &mut Graph, grid: &Grid, margin: u32) {
         for offset_degrees in [0_isize, 12, -12, 18, -18] {
             let start_idx = (degree + offset_degrees).rem_euclid(360) as usize;
             let end_idx = (degree - offset_degrees + 180).rem_euclid(360) as usize;
-            let (start_collision, start_endpoint) =
-                endpoints(from_boundary, (from_x, from_y), start_idx, margin);
-            let (end_collision, end_endpoint) =
-                endpoints(to_boundary, (to_x, to_y), end_idx, margin);
+            let (start_collision, start_endpoint) = endpoints(
+                from_collision_boundary,
+                from_visual_boundary,
+                (from_x, from_y),
+                start_idx,
+                margin,
+            );
+            let (end_collision, end_endpoint) = endpoints(
+                to_collision_boundary,
+                to_visual_boundary,
+                (to_x, to_y),
+                end_idx,
+                margin,
+            );
 
             if grid.line_intersection_weight(start_collision, end_collision) > 0 {
                 continue;
@@ -140,32 +155,51 @@ fn data_edge_routing(graph: &mut Graph, grid: &Grid, margin: u32) {
     }
 }
 
-fn prepare_data(node: &Node) -> (&[(u8, u8); 360], (u32, u32), (u32, u32)) {
-    let boundary_data = match &node.node_type {
+fn prepare_data(node: &Node) -> (&[(u8, u8); 360], &[(u8, u8); 360], (u32, u32), (u32, u32)) {
+    let (collision_boundary_table, visual_boundary_table) = match &node.node_type {
         NodeType::RealNode {
             event: BpmnNode::Gateway(..),
             ..
-        } => &straight_edge_math::boundary_lookuptable::GATEWAY,
+        } => (
+            &straight_edge_math::boundary_lookuptable::GATEWAY,
+            // TODO make a custom gateway visual boundary.
+            &straight_edge_math::boundary_lookuptable::GATEWAY,
+        ),
         NodeType::RealNode {
             event: BpmnNode::Event(..),
             ..
-        } => &straight_edge_math::boundary_lookuptable::EVENT,
+        } => (
+            &straight_edge_math::boundary_lookuptable::EVENT,
+            &straight_edge_math::boundary_lookuptable::EVENT_TRUE_BOUNDARY,
+        ),
         NodeType::RealNode {
             event: BpmnNode::Activity(..),
             ..
-        } => &straight_edge_math::boundary_lookuptable::ACTIVITY,
+        } => (
+            &straight_edge_math::boundary_lookuptable::ACTIVITY,
+            &straight_edge_math::boundary_lookuptable::ACTIVITY,
+        ),
         NodeType::RealNode {
             event: BpmnNode::Data(DataType::Store, ..),
             ..
-        } => &straight_edge_math::boundary_lookuptable::DATASTORE,
+        } => (
+            &straight_edge_math::boundary_lookuptable::DATASTORE,
+            // TODO make a custom data store visual boundary.
+            &straight_edge_math::boundary_lookuptable::DATASTORE,
+        ),
         NodeType::RealNode {
             event: BpmnNode::Data(DataType::Object, ..),
             ..
-        } => &straight_edge_math::boundary_lookuptable::DATAOBJECT,
+        } => (
+            &straight_edge_math::boundary_lookuptable::DATAOBJECT,
+            // TODO make a custom data object visual boundary.
+            &straight_edge_math::boundary_lookuptable::DATAOBJECT,
+        ),
         _ => unreachable!("An original data edge should only be connected to real nodes."),
     };
     (
-        boundary_data,
+        collision_boundary_table,
+        visual_boundary_table,
         (node.x as u32, node.y as u32),
         (
             (node.x + node.width / 2) as u32,
@@ -175,7 +209,8 @@ fn prepare_data(node: &Node) -> (&[(u8, u8); 360], (u32, u32), (u32, u32)) {
 }
 
 fn endpoints(
-    boundary: &[(u8, u8); 360],
+    collision_boundary: &[(u8, u8); 360],
+    visual_boundary: &[(u8, u8); 360],
     (x, y): (u32, u32),
     degrees: usize,
     margin: u32,
@@ -183,7 +218,7 @@ fn endpoints(
     /* collision endpoint */ (u32, u32),
     /* result / display end point */ (usize, usize),
 ) {
-    let (offset_x, offset_y) = boundary[degrees];
+    let (offset_x, offset_y) = collision_boundary[degrees];
     let (collision_offset_x, collision_offset_y) =
         straight_edge_math::boundary_lookuptable::OFFSET[degrees];
     (
@@ -194,8 +229,8 @@ fn endpoints(
                 .saturating_add_signed((collision_offset_y * (margin + 1) as f32) as i32),
         ),
         (
-            (x + offset_x as u32) as usize,
-            (y + offset_y as u32) as usize,
+            (x + visual_boundary[degrees].0 as u32) as usize,
+            (y + visual_boundary[degrees].1 as u32) as usize,
         ),
     )
 }

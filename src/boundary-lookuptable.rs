@@ -7,6 +7,7 @@ fn main() {
     for_shape(50, 50, "GATEWAY", false, "u8");
     for_shape(50, 50, "DATASTORE", false, "u8");
     for_shape(36, 50, "DATAOBJECT", false, "u8");
+    circular_boundary(36, "EVENT_TRUE_BOUNDARY");
     println!(
         "/// To ensure that the ends of the rays don't intersect with the connected nodes themselves, apply an additional offset for testing purposes."
     );
@@ -55,7 +56,7 @@ fn for_shape(max_x: usize, max_y: usize, name: &str, center: bool, datatype: &st
 
             let y = ((center_y + dy * distance).clamp(0.0, max_y) - offset_y as f64) as f32;
 
-            println!("({x}_f32, {y}_f32),");
+            println!("({x:.3}, {y:.3}),");
         } else {
             let x = (center_x + dx * distance).round().clamp(0.0, max_x) as isize - offset_x;
 
@@ -63,6 +64,29 @@ fn for_shape(max_x: usize, max_y: usize, name: &str, center: bool, datatype: &st
 
             println!("({x}, {y}),");
         }
+    }
+
+    println!("];");
+}
+
+fn circular_boundary(diameter: usize, name: &str) {
+    println!("pub const {name}: [(u8, u8); 360] = [");
+
+    let diameter = diameter as f64;
+
+    let center_x = diameter / 2.0;
+    let center_y = diameter / 2.0;
+
+    for deg in 0..360 {
+        let radians = (deg as f64).to_radians();
+
+        let dx = radians.cos();
+        let dy = radians.sin();
+
+        let x = (center_x + dx * (diameter / 2.0)).round() as u32;
+        let y = (center_y + dy * (diameter / 2.0)).round() as u32;
+
+        println!("({x}, {y}),");
     }
 
     println!("];");

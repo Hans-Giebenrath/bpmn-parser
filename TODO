@@ -1,8 +1,6 @@
-* pe0003: DO arrows to tasks are anchored at weird locations. Should instead probably focus the corner or so? But I think I understand where this is coming from ...
+* pe0003: DO outgoing edges are wrongly ordered, especially the edge going to Upper 4 should have its port above. The reason is that sweeping (i.e. crossing reduction) puts the long edge dummies of the outgoing data edges into a non-optimal position. Not sure if backsweep misses it, or if forward sweep verschlimmbessert it again.
 * data elements have wonky y-coordinate differences, although it looks like they should all be at the same height. Also, they are oftentimes not put into the next halflayer, even though there is enough room.
 * ActivityMarkers should just be 15x15, looks better than 20x20.
-* data store symbol is weird
-* O&, S&, <&, >& support
 * README DSL site should be extended, some new stuff is present now.
 * extend on cons012(-m) to also have gateway successors within the same lane, or other lanes. Also mirror them (also cons013) to check incoming vs outgoing correctness, and order of their processing in port assignment.
 * cons013: The backedgecornerdummy shoult be merged into the gateway during xy-ilp phase.
@@ -15,6 +13,8 @@
 * model the diagrams from https://thesis.cs.ut.ee/82dce7c0-0318-4c55-b1a8-e3d28cd170cf, see if they spark some ideas.
 * Parse config values from the .bpmd file (see common/config.rs which is already macro-ified for this purpose).
 * `import` statement
+* <D, >D, <&, >& support (not sure if they are useful at all for non-executable BPMN)
+* g0014: why is the data edge doing such funny staircases? should go straight to the right.
 
 * PE-BPMN tee-external-root-access in a tee-pool should not name itself (@tee-pool)
 * PE-BPMN tee-software-operators should have a similar `on-premises` placeholder as tee-hardware-operators. `local`? as `on-premises` seems weird. (ChatGPT recommends replacing existing 'on-premises' with 'local' as well, not sure if I agree, must sleep over that suggestion)
