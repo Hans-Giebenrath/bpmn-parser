@@ -1,3 +1,13 @@
+Big TODOs before 1.0:
+- Black Box Pools
+- import statement
+- Fix reverse sweep phase
+- rename `left of` to `before`, and make `left of` fix the vertical alignment of the two nodes
+- forbid `[place ...]` for data nodes
+- `[color ...]` at least something (or `[style ...]`? to also have `font-family`, `font-size` etc)
+- parse config values
+- fix the smaller bugs, especially in the pe-bpmn module.
+
 * pe0003, tt01: backwords sweep seems to be broken. For pe0003 the DO outgoing edges are wrongly ordered, especially the edge going to Upper 4 should have its port above. The reason is that sweeping (i.e. crossing reduction) puts the long edge dummies of the outgoing data edges into a non-optimal position. Not sure if backsweep misses it, or if forward sweep verschlimmbessert it again.
 * data elements have wonky y-coordinate differences, although it looks like they should all be at the same height. Also, they are oftentimes not put into the next halflayer, even though there is enough room.
 * black box pools
@@ -26,7 +36,6 @@
 * Document infallability of the crate: The crate is meant to be used with catch_unwind: `assert`s are sprinkled throughout the codebase, `.unwrap()`s and index accesses are used everywhere (they are kind-of like assumptions). But the logic is complicated and I am 100% there are remaining hidden logic bugs. (well, right now it is just a binary, so one gets failure isolation "for free", but if I ever make this into a crate, then `catch_unwind`)
 * Also, make it that boundary event nodes are more likely to leave downwards. Maybe have at all just a general node ID ordering?
 * with boundary events, have their XY edge length constraint smaller? See `overview-boundary-events.bpmd`, should have nice straight regular outgoing sequence flow.
-* fix the doc/test/build.sh to use Make/parallel (or Rust threadpools - or `fd` which also has a jobqueue) so we can have bounded parallelism.
 * Also handle JXI routing: swap up-down order to down-up order (or vice versa), or if it is unavoidable then move JXIs the the IXI handling. (JXI is an edge cross where only one side (top or bottom) has the same y coordinate)
 * Add more checks for the correctness of the BPMN semantics:
   * Check that the gateway branching and joining nodes match (use a dedicated graph analysis phase, not in the parser)

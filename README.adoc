@@ -21,6 +21,8 @@ The *hope* is that this allows for:
 * An overall pleasant diagram creation experience for fans of Mermaid/PlantUML/...
 * Simple enough language that can be mastered also by non-programmers.
 
+At the very least it should make the initial process design phase quicker, and when the rough pillars are in place you can take the layouted image as a template when you finalize the diagram in a visual tool.
+
 ```bpmd
 = This is a Pool
 == This is a Lane
