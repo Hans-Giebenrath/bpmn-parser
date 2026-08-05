@@ -66,7 +66,8 @@ define_config!(
     /// `min` because nodes have varying width. So this is for two wide blocks next to each other.
     min_horizontal_space_between_nodes: usize = 60,
     max_space_between_vertical_edge_segments: usize = 6,
-    min_space_between_nodes_and_vertical_edge_segments: usize = 6,
+    /// Cannot be less than 13, otherwise the arrowheads go strange.
+    min_space_between_nodes_and_vertical_edge_segments: usize = 13,
 
     /// For empty lanes so that they don't collapse to a vertical line.
     height_of_empty_lane: usize = 40,
