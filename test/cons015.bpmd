@@ -1,0 +1,9 @@
+= Pool
+== Lane
+
+# start
+- t1
+- t2
+. end
+
+[place @t2 below @start]
