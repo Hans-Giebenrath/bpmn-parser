@@ -298,6 +298,8 @@ fn handle_nongateway_node(this_node_id: NodeId, graph: &mut Graph) {
                     if !edge.is_vertical {
                         None
                     } else {
+                        // assert: Otherwise there are more than two vertical edges attached to the
+                        // node, this is forbidden.
                         assert!(
                             to.is_right_back_edge_corner_dummy(),
                             "to: {to:?}\nedge: {edge:?},\n{graph:?}"
