@@ -361,7 +361,7 @@ fn to_event(mut atts: Tokens, backup_tc: TokenCoordinate) -> AResult {
         "Action Events",
         atts,
         AssemblyRequest {
-            display_text: ARAttribute::Required,
+            display_text: ARAttribute::Optional,
             ids: ARAttribute::Optional,
             flows: ARFlowAttribute::OptionalOneLeftAndOrRightArrows,
             task_type: AROptionalAttribute::Forbidden,
@@ -380,7 +380,7 @@ fn to_event(mut atts: Tokens, backup_tc: TokenCoordinate) -> AResult {
     }
     Ok(Statement::Event(EventMeta {
         node_meta: NodeMeta {
-            display_text: atts.display_text.unwrap(),
+            display_text: atts.display_text.unwrap_or_default(),
             ids: atts.ids,
         },
         event_type,
@@ -399,7 +399,7 @@ fn to_event_end(mut atts: Tokens, backup_tc: TokenCoordinate) -> AResult {
         "End events",
         atts,
         AssemblyRequest {
-            display_text: ARAttribute::Required,
+            display_text: ARAttribute::Optional,
             ids: ARAttribute::Optional,
             flows: ARFlowAttribute::OptionalOneLeftArrow,
             task_type: AROptionalAttribute::Forbidden,
@@ -418,7 +418,7 @@ fn to_event_end(mut atts: Tokens, backup_tc: TokenCoordinate) -> AResult {
         };
     Ok(Statement::EventEnd(EventMeta {
         node_meta: NodeMeta {
-            display_text: atts.display_text.unwrap(),
+            display_text: atts.display_text.unwrap_or_default(),
             ids: atts.ids,
         },
         event_type,
