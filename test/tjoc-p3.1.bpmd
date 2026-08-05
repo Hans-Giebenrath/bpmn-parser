@@ -1,0 +1,45 @@
+// TODO Allow events without text
+// TODO Branching Gateway UX is complicated with success cases - unneccessary outgoing branch. Maybe
+// allow for an id-less arrow? `->` or `->"label"` That should then implicitly be the right-of case as well.
+// TODO Joining Gateway UX is complicated with success cases - unneccessary additional incoming
+// branch. Just allow implicit incoming branch if the lifeline is still active, as that one usually
+// does not have any label.
+// TODO can labels be reused? Would be nice if `no` case of gateways could be reused.
+
+= Input Party
+
+# P3.1 ->ups
+X <- vno <-uno <-ups
+- A3.1.1 Prepare Input Data ~user
+- A3.1.2 Validate Input Data Quality Locally ~service
+X Validated? ->vyes"yes" ->vno"no"
+- A3.1.3 Apply Protection to Input data <-vyes ~service
+- A3.1.4 Submit Protected Input Data ~send
+# Receive Message
+X Upload succeeded? ->uno"no" ->uyes"yes"
+. Input Data submitted <-uyes
+
+= Set of Computing Parties
+
+# Receive
+- A3.1.5 Validate Input Data Quality ~service
+X Validated OK? ->oyes"yes" ->ono"no"
+- A3.1.6 Store Protected Input Data <-oyes ->merge ~service
+
+X <-ono <-merge
+. Notify Input Party about data upload status
+
+OD Signed CTS ->input-prepare-input-data
+ & Signed CTS ->set-validate-input-data
+
+OD E3.1 Input Data
+  <-input-prepare-input-data
+  ->input-validate-input-data-quality
+  ->input-apply-protection
+// TODO why does it panic with the additional one?
+ & E3.2 Protected Input Data <-input-apply ->input-submit-data //->input-data-submitted
+ & E3.2 Protected Input Data <-set-receive ->set-validate ->set-store
+ & E3.2 Protected Input Data [validated] <-set-store
+
+MF <-input-submit-protected-input-data ->set-receive
+MF <-set-notify ->input-receive
