@@ -1065,7 +1065,7 @@ fn check_if_valid_message_flow_start(node: &Node, errors: &mut Vec<ValidationErr
             BpmnNode::Activity(..) => (),
             _ => {
                 errors.push(vec![(
-                "This node type cannot send messages. Only message events (M#) or tasks (e.g. .-) can be used as message flow starts. Note that shorthand events (#) are automatically transformed into message events when they are used in a message flow.".to_string(),
+                "This node type cannot send messages. Only message events (M#, M.) or tasks (e.g. .-) can be used as message flow starts. Note that shorthand events (#) are automatically transformed into message events when they are used in a message flow.".to_string(),
                     *tc,
 
                 )]);
