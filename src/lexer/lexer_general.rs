@@ -870,11 +870,7 @@ fn assemble_attributes(
         };
     }
 
-    // TODO ensure data flow errors are triggered even when no attributes are provided with a data-statement
-    // Example: "OD" should prompt the user to add data flows.
-    let Some(tc) = tc else {
-        return Err(vec![("This statement seems to be missing attributes? Consider adding a display text, IDs (@id), flows (<-label\"Text\") etc".to_string(), backup_tc, )]);
-    };
+    let tc = tc.unwrap_or(backup_tc);
 
     if matches!(request.display_text, ARAttribute::Required if out.display_text.is_none()) {
         return Err(vec![(
