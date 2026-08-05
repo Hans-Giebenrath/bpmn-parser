@@ -448,7 +448,7 @@ fn assign_y(graph: &mut Graph, pool: PoolId, lane: LaneId, min_y_value: usize) -
             (to_node.height / 2) as f64
         };
         let from_y = from_var + from_offset;
-        let to_y = to_var + to_offset as f64;
+        let to_y = to_var + to_offset;
         c(&mut problem, (from_y.clone() - to_y.clone()).leq(diff_var));
         c(&mut problem, (to_y - from_y).leq(diff_var));
     }
@@ -465,13 +465,13 @@ fn assign_y(graph: &mut Graph, pool: PoolId, lane: LaneId, min_y_value: usize) -
         d!(eprintln!(
             "solution n({}) y: {} (non-rounded: {})",
             node_id.0,
-            solution.value(aux(&n!(node_id))) as usize,
+            solution.value(aux(&n!(node_id))).round() as usize,
             solution.value(aux(&n!(node_id))),
         ));
     }
     for node_id in node_ids_iter.clone() {
         let node = &mut n!(node_id);
-        node.y = solution.value(aux(node)) as usize;
+        node.y = solution.value(aux(node)).round() as usize;
         min_y_encountered = min_y_encountered.min(node.y);
         max_y_plus_height_encountered = max_y_plus_height_encountered.max(node.y + node.height);
     }
