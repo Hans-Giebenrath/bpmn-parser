@@ -1198,7 +1198,7 @@ macro_rules! tt_as_event_end_type {
 
 macro_rules! maybe_parse_event_end {
     ($a:tt, $fun:ident, $self:ident) => {{
-        if $self.current_char == Some($a) && $self.continues_with("#") {
+        if $self.current_char == Some($a) && $self.continues_with(".") {
             let tc = $self.current_coord();
             $self.advance(); // $a
             $self.advance(); // $b
@@ -1713,6 +1713,12 @@ impl<'a> Lexer<'a> {
                     self.sas
                         .next_statement(tc, self.position, to_task_activity)?;
                 }
+                Some('.') if self.sas.allow_new_statement && self.continues_with("-") => {
+                    let tc = self.current_coord();
+                    self.advance();
+                    self.sas
+                        .next_statement(tc, self.position, to_task_activity)?;
+                }
                 Some('.') if self.sas.allow_new_statement => {
                     let tc = self.current_coord();
                     self.advance();
@@ -1740,6 +1746,9 @@ impl<'a> Lexer<'a> {
                 Some('X') if self.sas.allow_new_statement => {
                     let tc = self.current_coord();
                     self.advance();
+                    if self.current_char == Some('G') {
+                        self.advance(); // G
+                    }
                     self.sas
                         .next_statement(tc, self.position, to_gateway_outer)?;
                     self.sas.add_implicit_fragment(
@@ -1751,6 +1760,9 @@ impl<'a> Lexer<'a> {
                 Some('+') if self.sas.allow_new_statement => {
                     let tc = self.current_coord();
                     self.advance();
+                    if self.current_char == Some('G') {
+                        self.advance(); // G
+                    }
                     self.sas
                         .next_statement(tc, self.position, to_gateway_outer)?;
                     self.sas.add_implicit_fragment(
@@ -1762,6 +1774,9 @@ impl<'a> Lexer<'a> {
                 Some('O') if self.sas.allow_new_statement => {
                     let tc = self.current_coord();
                     self.advance();
+                    if self.current_char == Some('G') {
+                        self.advance(); // G
+                    }
                     self.sas
                         .next_statement(tc, self.position, to_gateway_outer)?;
                     self.sas.add_implicit_fragment(
@@ -1773,6 +1788,9 @@ impl<'a> Lexer<'a> {
                 Some('*') if self.sas.allow_new_statement => {
                     let tc = self.current_coord();
                     self.advance();
+                    if self.current_char == Some('G') {
+                        self.advance(); // G
+                    }
                     self.sas
                         .next_statement(tc, self.position, to_gateway_outer)?;
                     self.sas.add_implicit_fragment(
