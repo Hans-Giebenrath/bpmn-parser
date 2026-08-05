@@ -1,10 +1,8 @@
 use crate::common::bpmn_node::BpmnNode;
-use crate::common::edge::Edge;
 use crate::common::edge::EdgeType;
 use crate::common::edge::RegularEdgeBendPoints;
 use crate::common::graph::EdgeId;
 use crate::common::graph::Graph;
-use crate::common::graph::NodeId;
 use crate::common::index_iter::IterIndices;
 use crate::common::node::Node;
 use crate::common::node::NodeType;
