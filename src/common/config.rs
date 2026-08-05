@@ -55,7 +55,7 @@ macro_rules! define_config {
 
 define_config!(
     /// Space between the lane border and nodes/edges inside of the lane.
-    lane_y_padding: usize = 32,
+    lane_y_padding: usize = 45,
     lane_header_width: usize = 32,
     lane_x_padding: usize = 40,
     pool_header_width: usize = 32,
