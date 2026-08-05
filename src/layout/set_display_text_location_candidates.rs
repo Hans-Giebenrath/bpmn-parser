@@ -257,7 +257,7 @@ fn edge_segment_display_text_location_candidates(
         }
     } else {
         panic!(
-            "Data flows are the only edges which are allowed to be non-vertical, and they should not have labels atm in BPMD"
+            "Data flows are the only edges which are allowed to be non-vertical, and they should not have labels atm in BPMD. Start: {start:?}, end: {end:?}"
         );
     }
     ControlFlow::Continue(())
