@@ -4,9 +4,16 @@ Big TODOs before 1.0:
 - Fix reverse sweep phase
 - rename `left of` to `before`, and make `left of` fix the vertical alignment of the two nodes
 - forbid `[place ...]` for data nodes
-- `[color ...]` at least something (or `[style ...]`? to also have `font-family`, `font-size` etc)
 - parse config values
 - fix the smaller bugs, especially in the pe-bpmn module.
+
+After 1.0:
+- Gateway Happy Path (anonymous `->"label"` being a fallthrough), fallthrough into joining nodes (- Task; X <-other)
+- Join into non-gateway nodes.
+- `[color ...]` at least something (or `[style ...]`? to also have `font-family`, `font-size` etc)
+- More intelligent placement of data elements, and support for `[place ...]`
+- Forced line break in display text, for manual collision avoidance.
+- `[compact]` which tries to remove whitespace at all kinds of locations, to make space between events less large. This is likely a mega project, but will result in even more naturally looking diagrams.
 
 * pe0003, tt01: backwords sweep seems to be broken. For pe0003 the DO outgoing edges are wrongly ordered, especially the edge going to Upper 4 should have its port above. The reason is that sweeping (i.e. crossing reduction) puts the long edge dummies of the outgoing data edges into a non-optimal position. Not sure if backsweep misses it, or if forward sweep verschlimmbessert it again.
 * data elements have wonky y-coordinate differences, although it looks like they should all be at the same height. Also, they are oftentimes not put into the next halflayer, even though there is enough room.
