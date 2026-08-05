@@ -639,7 +639,7 @@ impl Graph {
         assert!(last_pool.x + last_pool.width <= (u32::MAX / 4) as usize);
         assert!(last_pool.y + last_pool.height <= (u32::MAX / 4) as usize);
         (
-            last_pool.x + last_pool.width + self.config.pool_header_width,
+            last_pool.x + last_pool.width,
             last_pool.y + last_pool.height,
         )
     }
@@ -726,8 +726,8 @@ impl Debug for Graph {
                     .collect::<Vec<_>>();
                 writeln!(
                     f,
-                    "  pool {}/lane {} (node/layer): {:?}",
-                    pool_idx, lane_idx, nodes_and_layer
+                    "  pool {}/lane {} (node/layer): {:?} (x: {}, y: {}, width: {}, height: {})",
+                    pool_idx, lane_idx, nodes_and_layer, pool.x, pool.y, pool.width, pool.height
                 )?;
             }
         }

@@ -669,7 +669,11 @@ fn assign_the_real_x_values(
 ) {
     let segspace = graph.config.max_space_between_vertical_edge_segments;
     let horizontal_space = space.end_x.strict_sub(space.start_x);
-    let count_of_comfortably_fitting_edge_segments = (horizontal_space / segspace) - 1;
+    let Some(count_of_comfortably_fitting_edge_segments) =
+        (horizontal_space / segspace).checked_sub(1)
+    else {
+        panic!("{space:?}, horizontal_space: {horizontal_space}, segspace: {segspace}");
+    };
     if path.len() >= count_of_comfortably_fitting_edge_segments {
         // Must squeeze them all into the space. No partitioning.
         let segment_width = (horizontal_space as f64) / ((path.len() + 1) as f64);

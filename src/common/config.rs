@@ -55,10 +55,10 @@ macro_rules! define_config {
 
 define_config!(
     /// Space between the lane border and nodes/edges inside of the lane.
-    lane_y_padding: usize = 45,
-    lane_header_width: usize = 30,
-    lane_x_padding: usize = 60,
-    pool_header_width: usize = 30,
+    lane_y_padding: usize = 32,
+    lane_header_width: usize = 32,
+    lane_x_padding: usize = 40,
+    pool_header_width: usize = 32,
     vertical_space_between_pools: usize = 40,
     // Space between two pools which are on the same horizontal line.
     pool_x_margin: usize = 40,
@@ -120,6 +120,7 @@ define_config!(
     max_nodes_per_layer: usize = 3,
 );
 
+#[derive(Debug)]
 pub(crate) struct EdgeSegmentSpace {
     pub(crate) start_x: usize,
     pub(crate) end_x: usize,

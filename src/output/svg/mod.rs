@@ -49,7 +49,7 @@ pub fn to_svg(graph: &Graph, embed_font: bool) -> String {
                 graph.config.pool_header_width,
                 graph.config.lane_header_width,
                 pool.height,
-                pool.width,
+                pool.width - graph.config.pool_header_width,
                 (pool.x, pool.y),
                 pool.name.as_deref().unwrap_or_default(),
                 pool.multiple,
