@@ -1,0 +1,13 @@
+// TODO broken because the data elements result in >2 vertical edges per node. They need to be
+// better spread out across the layers in this case.
+= Set of Computing Parties
+
+.# P3.2
+.- A3.21 Execute Multi-Party Computation
+.- A3.2.2 Delete Protected Input and Interim Data
+.. Execution finished
+
+OD E2.3 Signed CTS ->a321
+OD E3.2 Protected Input Data [Validated] <-a322 ->a321
+OD E3.3 Interim Data <-a321 <-a322
+OD E3.4 Protected Output Data <-a321

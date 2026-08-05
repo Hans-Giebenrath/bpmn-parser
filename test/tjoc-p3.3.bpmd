@@ -1,0 +1,27 @@
+= Set of Computing Parties
+
+M# @socp-recv
+.- A3.3.2 Send Protected Output Data ~service
+XG Have all OPs downloaded? ->yes"yes" ->no"no"
+
+.- A3.3.3 Delete Protected Output Data <-yes ~service
+..
+
+.. <-no
+
+= Output Party
+
+.# P3.3
+.- A3.3.1 Retrieve Protected Output Data ~user
+M# Receive Protected Output Data
+.- A3.3.4 Remove protection of the Output Data ~service
+..
+
+OD E2.3 Signed CTS ->a332
+ & E2.3 Signed CTS ->a331
+OD E3.4 Protected Output Data ->a332
+ & E3.4 Protected Output Data <-receive ->a334
+ & E3.5 Output Data <-a334
+
+MF Request for Protected Output Data <-a331 ->socp-recv
+MF <-a332 ->receive
