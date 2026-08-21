@@ -1,4 +1,3 @@
-use crate::BpmdSourceFile;
 use crate::common::bpmn_node;
 use crate::common::bpmn_node::ActivityType;
 use crate::common::bpmn_node::BpmnNode;
@@ -26,7 +25,6 @@ use crate::lexer::EventType;
 use crate::lexer::GatewayNodeMeta;
 use crate::lexer::LayoutStatement;
 use crate::lexer::PoolMeta;
-use crate::lexer::lex;
 use crate::lexer::{self, MessageFlowMeta};
 use crate::lexer::{Statement, StatementStream, TokenCoordinate};
 use crate::node_id_matcher::NodeIdMatcher;
@@ -144,7 +142,7 @@ pub struct Parser {
 
 impl Parser {
     /// Create a new parser from a lexer
-    fn new() -> Self {
+    pub fn new() -> Self {
         Parser {
             graph: Graph {
                 nodes: Default::default(),
@@ -173,7 +171,7 @@ impl Parser {
         }
     }
 
-    fn parse(mut self, tokens: StatementStream) -> Result<Graph, ParseError> {
+    pub fn parse(mut self, tokens: StatementStream) -> Result<Graph, ParseError> {
         // Parse the input
         for (coordinate, token) in tokens {
             self.context.current_token_coordinate = coordinate;
@@ -305,6 +303,7 @@ impl Parser {
         let pool_id = self.graph.add_pool(
             Some(meta.title.clone()),
             self.context.current_token_coordinate,
+            meta.is_blackbox,
             meta.multiple,
         );
         self.context.grouping_state = GroupingState::WithinPool {
@@ -846,11 +845,6 @@ impl Parser {
                     self.find_node_id(&node_b.1).ok_or_else(|| err(node_b.0))?,
                 ));
             }
-            LayoutStatement::BackEdge(_node_a, _node_b) => {
-                eprintln!(
-                    "LayoutStatement::BackEdge is unsupported at the moment. This statement is ignored."
-                );
-            }
         }
         Ok(())
     }
@@ -860,7 +854,7 @@ impl Parser {
             GroupingState::Init => {
                 let pool_id =
                     self.graph
-                        .add_pool(None, self.context.current_token_coordinate, false);
+                        .add_pool(None, self.context.current_token_coordinate, false, false);
                 let lane_id = self.graph.pools[pool_id.0]
                     .add_lane(None, self.context.current_token_coordinate);
                 self.context.grouping_state = GroupingState::WithinAnonymousPool {
@@ -996,157 +990,5 @@ fn err_from_unfinished_lifeline(
             ),
         ]),
         LifelineState::NoLifelineActive { .. } => Ok(()),
-    }
-}
-
-pub fn parse(
-    input: String,
-    _bpmd_input_sources: &mut Vec<BpmdSourceFile>,
-) -> Result<Graph, ParseError> {
-    let source_file_idx = 0;
-    Parser::new().parse(lex(input, source_file_idx)?)
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn basic() -> Result<(), ParseError> {
-        let input = r#"
-# Start Event
-- Middle Event
-. End Event
-"#;
-
-        let graph = parse(input.to_string(), &mut Vec::new())?;
-        assert!(
-            graph.edges.len() == 2,
-            "Edge count is wrong, should be: {}",
-            graph.edges.len()
-        );
-        Ok(())
-    }
-
-    #[test]
-    fn gateway() -> Result<(), ParseError> {
-        let input = r#"
-# Start Event
-X ->Branch1 "Condition 1" ->Branch2 "Cond 2"
-
-G <- Branch1
-- Task B1
-G ->JoinPoint "Joining Branches"
-
-G <- Branch2
-- Task B1
-G ->JoinPoint "Joining Branches"
-
-X<-JoinPoint
-. End Event
-"#;
-
-        let graph = parse(input.to_string(), &mut Vec::new())?;
-        assert!(
-            graph.edges.len() == 6,
-            "Edge count is wrong, should be: {}",
-            graph.edges.len()
-        );
-        Ok(())
-    }
-
-    #[test]
-    fn pool() -> Result<(), ParseError> {
-        let input = r#"
-= Pool
-== Lane1
-# Start Event
-- Task1
-. End Event
-== Lane2
-# Start Event2
-- Task2
-. End Event 2
-"#;
-
-        let graph = parse(input.to_string(), &mut Vec::new())?;
-        assert!(
-            graph.edges.len() == 4,
-            "Edge count is wrong, should be: {}",
-            graph.edges.len()
-        );
-        Ok(())
-    }
-
-    #[test]
-    fn jump() -> Result<(), ParseError> {
-        let input = r#"
-= Pool
-== Lane1
-# Start Event
-- Task ->jump
-== Lane2
-- Task <-jump
-. End Event
-"#;
-
-        let graph = parse(input.to_string(), &mut Vec::new())?;
-        assert!(
-            graph.edges.len() == 3,
-            "Edge count is wrong, should be: {}",
-            graph.edges.len()
-        );
-        Ok(())
-    }
-
-    #[test]
-    fn message_flow() -> Result<(), ParseError> {
-        let input = r#"
-= Pool 1
-# Start Event
-- Task @sender
-. End Event
-= Pool 2
-# Start Event
-- Task @receiver
-. End Event
-
-MF <-sender ->receiver
-"#;
-
-        let graph = parse(input.to_string(), &mut Vec::new())?;
-        assert!(
-            graph.edges.len() == 5,
-            "Edge count is wrong, should be: {}",
-            graph.edges.len()
-        );
-
-        assert!(
-            graph.edges.iter().any(|x| x.from.0 == 1 && x.to.0 == 4),
-            "No edge found for the message flow between node ids 1 to 4"
-        );
-        Ok(())
-    }
-
-    #[test]
-    fn illegal_message_flow_between_lanes() -> Result<(), ParseError> {
-        let input = r#"
-= Pool
-== Lane1
-# Start Event
-- Task @sender
-. End Event
-== Lane2
-# Start Event
-- Task @receiver
-. End Event
-MF <-sender ->receiver
-"#;
-        let result = parse(input.to_string(), &mut Vec::new());
-        assert!(
-            result.is_err(),
-            "Expected an error for illegal message flow between lanes"
-        );
-        Ok(())
     }
 }

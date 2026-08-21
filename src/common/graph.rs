@@ -186,9 +186,10 @@ impl Graph {
         &mut self,
         pool: Option<String>,
         tc: TokenCoordinate,
+        is_blackbox: bool,
         multiple: bool,
     ) -> PoolId {
-        self.pools.push(Pool::new(pool, tc, multiple));
+        self.pools.push(Pool::new(pool, tc, is_blackbox, multiple));
         PoolId(self.pools.len() - 1)
     }
 
@@ -649,7 +650,8 @@ pub fn node_size(node_type: &NodeType) -> (usize, usize) {
     let event = match &node_type {
         NodeType::LongEdgeDummy
         | NodeType::BackEdgeCornerDummy { .. }
-        | NodeType::BendDummy { .. } => {
+        | NodeType::BendDummy { .. }
+        | NodeType::BlackBox { .. } => {
             // Height of 0 so there is just padding between the lines.
             // Otherwise, there would be too much whitespace between lines.
             return (DUMMY_NODE_WIDTH, DUMMY_NODE_HEIGHT);
@@ -726,8 +728,15 @@ impl Debug for Graph {
                     .collect::<Vec<_>>();
                 writeln!(
                     f,
-                    "  pool {}/lane {} (node/layer): {:?} (x: {}, y: {}, width: {}, height: {})",
-                    pool_idx, lane_idx, nodes_and_layer, pool.x, pool.y, pool.width, pool.height
+                    "  pool {}/lane {} (node/layer): {:?} (x: {}, y: {}, width: {}, height: {}, is_bb: {})",
+                    pool_idx,
+                    lane_idx,
+                    nodes_and_layer,
+                    pool.x,
+                    pool.y,
+                    pool.width,
+                    pool.height,
+                    pool.is_blackbox
                 )?;
             }
         }
@@ -1158,6 +1167,14 @@ pub(crate) fn add_node(
 
     // Add node ID to the pool and lane stuff
     pools[pool].add_node(nodes, lane, node_id, layer);
+    let node_type = if pools[pool].is_blackbox {
+        let NodeType::RealNode { display_text, .. } = node_type else {
+            unreachable!();
+        };
+        NodeType::BlackBox { display_text }
+    } else {
+        node_type
+    };
 
     let (width, height) = node_size(&node_type);
 

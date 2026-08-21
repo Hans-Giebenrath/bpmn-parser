@@ -60,6 +60,10 @@ pub fn to_svg(graph: &Graph, embed_font: bool) -> String {
     }
 
     for node in &graph.nodes {
+        if node.is_blackbox_node() {
+            // TODO this is a bit ugly, combine the next `let NodeType::RealNode` with a match.
+            continue;
+        }
         let NodeType::RealNode {
             display_text,
             event,

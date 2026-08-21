@@ -4,7 +4,6 @@ use crate::common::edge::EdgeType;
 use crate::common::edge::RegularEdgeBendPoints;
 use crate::common::graph::EdgeId;
 use crate::common::graph::Graph;
-use crate::common::graph::MAX_NODE_WIDTH;
 use crate::common::node::AbsolutePort;
 use crate::common::node::NodeIdOrEdgeId;
 use proc_macros::e;

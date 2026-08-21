@@ -1,0 +1,16 @@
+= Pool 1 ~blackbox
+
+# Start
+- Send
+- Receive
+. End
+
+= Pool 2
+
+# Start
+- Receive
+- Send
+. End
+
+MF <-p1-send ->p2-receive
+MF <-p2-send ->p1-receive

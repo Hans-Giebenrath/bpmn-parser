@@ -79,6 +79,8 @@ pub enum NodeType {
         originating_node: NodeId,
         kind: BendDummyKind,
     },
+    /// Part of a blackbox pool, i.e. won't be displayed.
+    BlackBox { display_text: String },
 }
 
 /// This is primarily used to make some Y-ILP stuff easier.
@@ -355,6 +357,10 @@ impl Node {
         matches!(self.node_type, NodeType::LongEdgeDummy)
     }
 
+    pub fn is_blackbox_node(&self) -> bool {
+        matches!(self.node_type, NodeType::BlackBox { .. })
+    }
+
     pub fn is_bend_dummy(&self) -> bool {
         matches!(self.node_type, NodeType::BendDummy { .. })
     }
@@ -452,10 +458,11 @@ impl Node {
     }
 
     pub fn display_text(&self) -> Option<&str> {
-        if let NodeType::RealNode { display_text, .. } = &self.node_type {
-            Some(display_text.as_str())
-        } else {
-            None
+        match &self.node_type {
+            NodeType::RealNode { display_text, .. } | NodeType::BlackBox { display_text, .. } => {
+                Some(display_text.as_str())
+            }
+            _ => None,
         }
     }
 
@@ -465,6 +472,7 @@ impl Node {
             NodeType::LongEdgeDummy => "(-)".to_string(),
             NodeType::BackEdgeCornerDummy { .. } => "(])".to_string(),
             NodeType::BendDummy { .. } => "(┌)".to_string(),
+            NodeType::BlackBox { display_text, .. } => format!("(B - {display_text})"),
         }
     }
 

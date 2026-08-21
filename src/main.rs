@@ -15,7 +15,9 @@ use crate::layout::all_crossing_minimization_sweep::reduce_all_crossings_sweep;
 use crate::layout::back_edge_removal::back_edge_removal;
 use crate::layout::fix_boundary_event_connections::fix_boundary_event_connections;
 use crate::layout::sort_incoming_and_outgoing::sort_incoming_and_outgoing;
+use crate::lexer::ImportData;
 use crate::lexer::TokenCoordinate;
+use crate::lexer::lex;
 use crate::output::svg::to_svg;
 use annotate_snippets::AnnotationKind;
 use annotate_snippets::Level;
@@ -23,6 +25,7 @@ use std::fmt::Display;
 use std::panic::AssertUnwindSafe;
 use std::panic::catch_unwind;
 use std::path::PathBuf;
+use std::str::FromStr;
 
 use annotate_snippets::Snippet;
 use annotate_snippets::renderer::{DecorStyle, Renderer};
@@ -53,6 +56,10 @@ struct Cli {
     /// Output file. If missing, the data will be written to standard output.
     #[arg(short, long, value_name = "OUT_FILE")]
     output: Option<std::path::PathBuf>,
+
+    /// Root directory for importing.
+    #[arg(short, long, value_name = "ROOT_DIRECTORY")]
+    root: Option<std::path::PathBuf>,
 
     #[arg(short = 'f', long, value_name = "FORMAT", default_value_t = OutputFormat::Svg)]
     output_format: OutputFormat,
@@ -87,6 +94,7 @@ impl Display for OutputFormat {
 pub struct BpmdSourceFile {
     // Standard input, file path, or URL in include, or whatever.
     location: String,
+    canonicalized_location: PathBuf,
     content: String,
 }
 
@@ -140,15 +148,35 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         std::fs::read_to_string,
     )?;
 
-    let mut bpmd_source_files = vec![BpmdSourceFile {
-        location: cli.input.map_or_else(
-            || "(source read from standard input)".to_string(),
-            |pathbuf| pathbuf.to_string_lossy().to_string(),
-        ),
-        content: bpmd.clone(),
-    }];
+    let root = if let Some(root) = cli.root {
+        Some(root)
+    } else if let Some(input) = &cli.input {
+        input.parent().map(|p| p.to_owned())
+    } else {
+        None
+    };
+    let mut import_data = ImportData::new(root);
+    match &cli.input {
+        None => import_data.push_from_stdin(bpmd),
+        Some(input) => match import_data.push(
+            &PathBuf::from_str(".").unwrap(),
+            input.to_string_lossy().to_string(),
+            TokenCoordinate::default(),
+        ) {
+            Ok(stack) => stack,
+            Err(e) => {
+                Result::<(), ParseError>::Err(e).bpmd_format_err(&import_data.bpmd_source_files)?;
+                unreachable!();
+            }
+        },
+    }
+
+    let stream = lex(&mut import_data).bpmd_format_err(&import_data.bpmd_source_files)?;
+    import_data.pop();
     let mut graph: Graph = timer.time_it("Parsing", || {
-        parser::parse(bpmd, &mut bpmd_source_files).bpmd_format_err(&bpmd_source_files)
+        parser::Parser::new()
+            .parse(stream)
+            .bpmd_format_err(&import_data.bpmd_source_files)
     })?;
 
     timer.time_it("Create transported data", || {
@@ -156,12 +184,17 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     });
 
     if let Some(visibility_path) = &cli.visibility_table {
-        pebpmd_analysis(&mut graph, visibility_path, &bpmd_source_files, &mut timer)?;
+        pebpmd_analysis(
+            &mut graph,
+            visibility_path,
+            &import_data.bpmd_source_files,
+            &mut timer,
+        )?;
     };
 
     let result = catch_unwind(AssertUnwindSafe(
         || -> Result<String, Box<dyn std::error::Error>> {
-            layout_graph(&mut graph, &mut timer, &bpmd_source_files)?;
+            layout_graph(&mut graph, &mut timer, &import_data.bpmd_source_files)?;
             Ok(match cli.output_format {
                 OutputFormat::Bpmn => timer.time_it("XML export", || to_xml::generate_bpmn(&graph)),
                 OutputFormat::Svg => {

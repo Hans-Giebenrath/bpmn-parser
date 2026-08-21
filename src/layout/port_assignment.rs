@@ -37,6 +37,7 @@ use proc_macros::{e, from, n, to};
 use std::collections::HashSet;
 
 pub fn port_assignment(graph: &mut Graph) {
+    dbg!(&graph);
     // First handle non-gateway nodes and then gateway nodes in two separate loops. This way,
     // `is_vertical_edge` is easier as it does not need to account for gateway bend dummies which
     // make everything harder (since the gateway node "disappears").
@@ -473,7 +474,7 @@ fn handle_nongateway_node(this_node_id: NodeId, graph: &mut Graph) {
     let bend_dummy_order_split_point_position = |port_info: &&mut PortInfo| {
         if matches!(
             port_info.flow_type,
-            PortFlowType::MessageAbove { .. } | PortFlowType::MessageAbove { .. }
+            PortFlowType::MessageAbove { .. } | PortFlowType::MessageBelow { .. }
         ) && !port_info.is_incoming
         {
             port_info.other_layer > this_layer
@@ -787,7 +788,9 @@ fn classify_barrier_node(this_node_id: NodeId, node: &Node) -> Option<BarrierInf
         // that it can move more freely, to make looping possible around above nodes (see cons007
         // where the back edge corner dummy is above n1, not directly next to the gateway node).
         // Hence it is not a barrier.
-        NodeType::LongEdgeDummy | NodeType::BackEdgeCornerDummy { .. } => None,
+        NodeType::LongEdgeDummy
+        | NodeType::BackEdgeCornerDummy { .. }
+        | NodeType::BlackBox { .. } => None,
         // The bend dummy on the other hand is specifically meant to be next to the originating node,
         // so it must be considered a barrier.
         NodeType::BendDummy {

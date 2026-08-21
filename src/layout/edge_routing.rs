@@ -25,6 +25,7 @@
 //! TODO Right now the following are not handled:
 //! - JXI crossings where it is not a perfect swap
 //! - Staircase crossing where only the ends are exactly overlapping
+//!   (TODO test this when we have true `left of` constraints which also lock the height)
 //!
 //! Both can be handled in the same sphere as the IXI crossings, and it should be easy to do so,
 //! just there are more relevant topics I believe. But they have the interesting property that if
@@ -41,6 +42,7 @@
 
 use crate::common::config::{EdgeSegmentSpace, EdgeSegmentSpaceLocation};
 use crate::common::graph::PoolId;
+use crate::common::index_iter::IterIndices;
 use crate::common::node::{LayerId, NodeType};
 use proc_macros::e;
 use proc_macros::from;
@@ -132,6 +134,8 @@ impl<'a> SegmentGraph<'a> {
 
 #[derive(Clone, Debug)]
 enum MessageFlowBendState {
+    BlackboxVerHor,
+    HorVerBlackbox,
     // Starts in layer `k`, goes right, then up or down, then again right and ends in layer `k + 1`.
     HorVerHor,
     VerHorVer {
@@ -250,6 +254,12 @@ impl MessageFlowBendPointStore {
 
         use MessageFlowBendState::*;
         match state {
+            BlackboxVerHor => {
+                bend_points = vec![p1, p2, to_xy];
+            }
+            HorVerBlackbox => {
+                bend_points = vec![from_xy, p1, p2];
+            }
             HorVerHor => {
                 assert!(is_right);
                 bend_points = vec![from_xy, p1, p2, to_xy];
@@ -397,7 +407,6 @@ struct SegmentsOfSameLayer {
     right_loops: Vec<VerticalSegment>,
 }
 
-// TODO left and right loops are not handled at all right now.
 #[derive(Debug, Clone, PartialEq)]
 enum Alignment {
     Left,
@@ -416,6 +425,7 @@ struct VerticalSegment {
     /// one (with `idx + 1`).
     /// Not using an enum here (`enum { Vertical(usize), Diagonal(usize, usize) }`) since this makes
     /// usage rather tiresome.
+    /// TODO does this work at all at the moment?
     ixi_diagonalizer: Option<usize>,
 
     is_message_flow: bool,
@@ -858,14 +868,13 @@ fn get_layered_edges(graph: &mut Graph) -> (Vec<SegmentsOfSameLayer>, MessageFlo
     let mut mf_store = MessageFlowBendPointStore::default();
     let mut edge_layers = Vec::<Vec<VerticalSegment>>::new();
     edge_layers.resize_with(graph.num_layers + 1, Default::default);
-    let mut vertical_message_flows = Vec::new();
 
-    for (edge_idx, edge) in graph.edges.iter().enumerate() {
+    for edge_id in graph.edges.len().iter_indices(false).map(EdgeId) {
+        let edge = &graph.edges[edge_id];
         if edge.is_vertical {
             // Should already be caught in the straight_edge_routing phase.
             continue;
         }
-        let edge_id = EdgeId(edge_idx);
         match edge.edge_type {
             EdgeType::Regular {
                 bend_points: RegularEdgeBendPoints::FullyRouted(_),
@@ -942,7 +951,42 @@ fn get_layered_edges(graph: &mut Graph) -> (Vec<SegmentsOfSameLayer>, MessageFlo
         let from_hor = from_node.is_bend_dummy() || from_node.port_is_left_or_right(start_y);
         let to_hor = to_node.is_bend_dummy() || to_node.port_is_left_or_right(end_y);
         let (bends_after_pool, interpool_y) = graph.interpool_y(from_node.pool, to_node.pool);
-        if from_hor && to_hor {
+        if from_node.is_blackbox_node() && to_node.is_blackbox_node() {
+            // The interactions between blackbox pools is hidden.
+            continue;
+        } else if (from_node.is_blackbox_node() && !to_hor)
+            || (to_node.is_blackbox_node() && !from_hor)
+        {
+            finish_straight_vertical_message_flow(graph, edge_id);
+        } else if from_node.is_blackbox_node() {
+            assert!(to_hor);
+            let segment_vec = &mut edge_layers[to_node.layer_id.0];
+            segment_vec.push(VerticalSegment {
+                id: edge_id,
+                start_y: pool_border_coming_from(graph, from_node.pool, to_node.pool),
+                end_y,
+                idx: 0,
+                ixi_diagonalizer: None,
+                alignment: Alignment::Center,
+                is_message_flow: true,
+                x_coordinate: Default::default(),
+            });
+            mf_store.register_edge(edge_id, MessageFlowBendState::BlackboxVerHor);
+        } else if to_node.is_blackbox_node() {
+            assert!(from_hor);
+            let segment_vec = &mut edge_layers[from_node.layer_id.0 + 1];
+            segment_vec.push(VerticalSegment {
+                id: edge_id,
+                start_y,
+                end_y: pool_border_coming_from(graph, to_node.pool, from_node.pool),
+                idx: 0,
+                ixi_diagonalizer: None,
+                alignment: Alignment::Center,
+                is_message_flow: true,
+                x_coordinate: Default::default(),
+            });
+            mf_store.register_edge(edge_id, MessageFlowBendState::HorVerBlackbox);
+        } else if from_hor && to_hor {
             if from_node.layer_id.0 + 1 == to_node.layer_id.0 {
                 // The edge goes to the next layer, so there is just one vertical segment. No
                 // inter-pool horizontal segment required.
@@ -1035,7 +1079,9 @@ fn get_layered_edges(graph: &mut Graph) -> (Vec<SegmentsOfSameLayer>, MessageFlo
         } else {
             assert!(!to_hor);
             assert!(!from_hor);
-            if start_x != end_x {
+            if start_x == end_x {
+                finish_straight_vertical_message_flow(graph, edge_id);
+            } else {
                 mf_store.register_edge(
                     edge_id,
                     MessageFlowBendState::VerHorVer {
@@ -1044,15 +1090,9 @@ fn get_layered_edges(graph: &mut Graph) -> (Vec<SegmentsOfSameLayer>, MessageFlo
                         interpool_bendpoint2_x: end_x,
                     },
                 );
-            } else {
-                vertical_message_flows.push(edge_id);
             }
         }
     }
-
-    vertical_message_flows
-        .into_iter()
-        .for_each(|edge_id| finish_straight_vertical_message_flow(graph, edge_id));
 
     let mut result: Vec<SegmentsOfSameLayer> = vec![];
     for mut edge_layer in edge_layers.into_iter() {
@@ -1280,12 +1320,36 @@ impl LogicalIdx {
 }
 
 fn finish_straight_vertical_message_flow(graph: &mut Graph, edge_id: EdgeId) {
-    // TODO this is present as `from_and_to_xy` in `dummy_node_removal`, should be moved to
-    // `graph` and return an array instead of vector.
-    let bend_points = vec![
-        from!(edge_id).port_of_outgoing(edge_id).as_pair(),
-        to!(edge_id).port_of_incoming(edge_id).as_pair(),
-    ];
+    let from_node = &from!(edge_id);
+    let to_node = &to!(edge_id);
+    graph.pools[to_node.pool].x;
+    let bend_points = match (from_node.is_blackbox_node(), to_node.is_blackbox_node()) {
+        (true, true) => unreachable!("handled outside"),
+        (false, false) => vec![
+            from_node.port_of_outgoing(edge_id).as_pair(),
+            to_node.port_of_incoming(edge_id).as_pair(),
+        ],
+        (false, true) => {
+            let from_port = from_node.port_of_outgoing(edge_id).as_pair();
+            vec![
+                from_port,
+                (
+                    from_port.0,
+                    pool_border_coming_from(graph, to_node.pool, from_node.pool),
+                ),
+            ]
+        }
+        (true, false) => {
+            let to_port = to_node.port_of_incoming(edge_id).as_pair();
+            vec![
+                (
+                    to_port.0,
+                    pool_border_coming_from(graph, from_node.pool, to_node.pool),
+                ),
+                to_port,
+            ]
+        }
+    };
 
     assert!(!e!(edge_id).is_reversed);
 
@@ -1298,4 +1362,14 @@ fn finish_straight_vertical_message_flow(graph: &mut Graph, edge_id: EdgeId) {
     };
 
     *out_bend_points = RegularEdgeBendPoints::FullyRouted(bend_points);
+}
+
+fn pool_border_coming_from(graph: &Graph, target_pool: PoolId, other_pool: PoolId) -> usize {
+    let pool = &graph.pools[target_pool];
+    if other_pool < target_pool {
+        pool.y
+    } else {
+        assert!(other_pool > target_pool);
+        pool.y + pool.height
+    }
 }

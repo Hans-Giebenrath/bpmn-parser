@@ -614,6 +614,7 @@ fn debug_print_graph(v: &Vars, ig: &IlpGraph, g: &Graph) {
             NodeType::LongEdgeDummy => "(dummy node)",
             NodeType::BendDummy { .. } => "(bend dummy - IMPOSSIBLE HERE?)",
             NodeType::BackEdgeCornerDummy { .. } => "(back edge corner dummy - IMPOSSIBLE HERE?)",
+            NodeType::BlackBox { .. } => "(black box node - IMPOSSIBLE HERE?)",
         };
         format!("nid({}) {what} ilpn({aux}) - Lyr({layer})", n.id)
     };

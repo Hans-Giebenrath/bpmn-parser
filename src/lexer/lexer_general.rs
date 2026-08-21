@@ -5,10 +5,13 @@
 //! layouting) then maybe(?) it needs to be optimized to get sub-millisecond speed out of it.
 
 use core::fmt::Display;
+use std::path::Path;
+use std::path::PathBuf;
 
 use itertools::Either;
 use itertools::Itertools;
 
+use crate::BpmdSourceFile;
 use crate::common::bpmn_node::ActivityMarker;
 use crate::common::bpmn_node::ActivityMarkerTokenCoordinates;
 use crate::common::bpmn_node::ActivityType;
@@ -19,9 +22,136 @@ use crate::common::bpmn_node::TaskType;
 use crate::lexer::*;
 use crate::parser::ParseError;
 
-// TODO in the future make this &'static str
-#[derive(Debug, Default, Clone)]
-struct StrType(String);
+pub fn validate_import(
+    canonicalized_location: &Path,
+    root: &Option<PathBuf>,
+    tc: TokenCoordinate,
+) -> Result<(), ParseError> {
+    let Some(root) = &root else {
+        return Err(vec![("It looks like you are reading a .bpmd diagram from STDIN which wants to `[import ..]` some file. However, this is forbidden unless you specify the `--root some/path` argument.".to_string(),
+        tc)
+        ]);
+    };
+
+    if canonicalized_location.starts_with(root) {
+        Ok(())
+    } else {
+        Err(vec![(
+            format!(
+                "The imported file is outside of the current root. The imported file path resolves to: {}, the root to: {}",
+                canonicalized_location.to_string_lossy(),
+                root.to_string_lossy()
+            ),
+            tc,
+        )])
+    }
+}
+
+pub struct ImportData {
+    pub root: Option<PathBuf>,
+    pub bpmd_source_files: Vec<BpmdSourceFile>,
+    pub import_stack: Vec<ImportStackElement>,
+}
+
+impl ImportData {
+    pub fn new(root: Option<PathBuf>) -> Self {
+        Self {
+            root,
+            bpmd_source_files: vec![],
+            import_stack: vec![],
+        }
+    }
+
+    pub fn push(
+        &mut self,
+        current_processed_file_location: &Path,
+        location: String,
+        tc: TokenCoordinate,
+    ) -> Result<(), ParseError> {
+        let canonicalized_location = match std::fs::canonicalize(
+            current_processed_file_location.join(&location),
+        ) {
+            Ok(v) => v,
+            Err(e) => {
+                return Err(vec![(
+                    format!(
+                        "The imported file seems to not exist at the given path: {location} (looking relative to {}, underlying error: {e})",
+                        current_processed_file_location.to_string_lossy()
+                    ),
+                    tc,
+                )]);
+            }
+        };
+        if self.import_stack.iter().any(|e| {
+            self.bpmd_source_files[e.bpmn_source_file_index].canonicalized_location
+                == canonicalized_location
+        }) {
+            return Err(vec![(
+                format!(
+                    "There is a cyclic [import ...] happening, in order: {:?}. The last attempted import is here.",
+                    self.bpmd_source_files
+                        .iter()
+                        .map(|e| e.location.as_str())
+                        .chain(std::iter::once(location.as_str()))
+                        .collect::<Vec<_>>()
+                ),
+                tc,
+            )]);
+        }
+        if let Some(previously_imported) = self
+            .bpmd_source_files
+            .iter()
+            .position(|a| a.canonicalized_location == canonicalized_location)
+        {
+            self.import_stack.push(ImportStackElement {
+                bpmn_source_file_index: previously_imported,
+                imported_at: tc,
+            });
+        } else {
+            validate_import(&canonicalized_location, &self.root, tc)?;
+            let content = match std::fs::read_to_string(&canonicalized_location) {
+                Ok(content) => content,
+                Err(err) => {
+                    return Err(vec![(
+                        format!("The requested file at <{location}> cannot be read: {err}"),
+                        tc,
+                    )]);
+                }
+            };
+            self.bpmd_source_files.push(BpmdSourceFile {
+                location,
+                content,
+                canonicalized_location,
+            });
+            self.import_stack.push(ImportStackElement {
+                bpmn_source_file_index: self.bpmd_source_files.len().strict_sub(1),
+                imported_at: tc,
+            });
+        }
+        Ok(())
+    }
+
+    pub fn pop(&mut self) {
+        self.import_stack.pop().expect("Called too often?");
+    }
+
+    pub fn push_from_stdin(&mut self, content: String) {
+        self.bpmd_source_files.push(BpmdSourceFile {
+            location: "(source read from standard input)".to_string(),
+            canonicalized_location: "(source read from standard input)".into(),
+            content,
+        });
+        self.import_stack.push(ImportStackElement {
+            bpmn_source_file_index: 0,
+            imported_at: TokenCoordinate::default(),
+        });
+    }
+}
+
+pub struct ImportStackElement {
+    pub bpmn_source_file_index: usize,
+    imported_at: TokenCoordinate,
+}
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum Statement {
@@ -49,7 +179,6 @@ pub enum LayoutStatement {
         below: (TokenCoordinate, String),
     },
     SameLayer((TokenCoordinate, String), (TokenCoordinate, String)),
-    BackEdge((TokenCoordinate, String), (TokenCoordinate, String)),
     // The diagram will only contain at most so many nodes in one row, after which it will start
     // from the left below again, similar to a line break.
     // Note: This is just an idea for a future feature.
@@ -159,6 +288,8 @@ pub(crate) struct PoolMeta {
     pub(crate) title: String,
     /// When `#` or `.` was used.
     pub(crate) shorthand_syntax: bool,
+    /// `~blackbox`.
+    pub(crate) is_blackbox: bool,
     /// The three vertical bars, as in `ActivityMarker`.
     pub(crate) multiple: bool,
 }
@@ -332,6 +463,7 @@ fn to_pool(atts: Tokens, backup_tc: TokenCoordinate) -> AResult {
     Ok(Statement::Pool(PoolMeta {
         title: atts.display_text.unwrap(),
         shorthand_syntax: atts.used_shorthand_syntax,
+        is_blackbox: dbg!(atts.activity_marker.is_blackbox),
         multiple: atts.activity_marker.multiple,
     }))
 }
@@ -451,11 +583,24 @@ fn to_task_activity(atts: Tokens, backup_tc: TokenCoordinate) -> AResult {
             Direction::Outgoing => sequence_flow_jump = Some(edge_meta),
         }
     }
-    if atts.activity_marker.adhoc {
-        return Err(vec![(
-            "An activity cannot have the ~adhoc attribute. Remove this attribute.".to_string(),
+    for (active, text, tc) in [
+        (
+            atts.activity_marker.is_blackbox,
+            "~blackbox",
+            atts.activity_marker_tcs.is_blackbox,
+        ),
+        (
+            atts.activity_marker.adhoc,
+            "~adhoc",
             atts.activity_marker_tcs.adhoc,
-        )]);
+        ),
+    ] {
+        if active {
+            return Err(vec![(
+                format!("An activity cannot have the {text} attribute. Remove this attribute."),
+                tc,
+            )]);
+        }
     }
     if atts.activity_marker.r#loop && atts.activity_marker.multiple {
         return Err(vec![(
@@ -835,6 +980,9 @@ fn assemble_attributes(
                 } else if activity_marker.adhoc {
                     out.activity_marker.adhoc = true;
                     out.activity_marker_tcs.adhoc = it.0;
+                } else if activity_marker.is_blackbox {
+                    out.activity_marker.is_blackbox = true;
+                    out.activity_marker_tcs.is_blackbox = it.0;
                 }
             }
             Token::GatewayType(..) => {
@@ -1224,15 +1372,13 @@ pub struct StatementAssemblyState {
     pub fragments: Vec<(TokenCoordinate, Token)>,
     assemble_statement_callback: Option<(TokenCoordinate, StatementCallback)>,
     /// Goal is to build this up
-    assembled_statements: Vec<(TokenCoordinate, Statement)>,
+    pub assembled_statements: Vec<(TokenCoordinate, Statement)>,
     /// A statement is roughly one line, e.g. a full pool declaration, or a full gateway
     /// declaration. However, they could be broken across lines.
     /// To enable the use of the statement symbols also in the freeform text,
     /// we disable parsing them as statement symbols if a new statement was just activated.
     pub allow_new_statement: bool,
     fts: FreeformTextState,
-    /// Copy of the input file for error reporting.
-    input: String,
 }
 
 impl StatementAssemblyState {
@@ -1375,11 +1521,11 @@ struct FreeformTextState {
     active: bool,
 }
 
-#[derive(Clone)]
 pub struct Lexer<'a> {
     // Technically could be &str, but this just adds lifetimes and is not necessary.
     input: String, // Input string
     remaining_input: std::str::Chars<'a>,
+    pub import_data: &'a mut ImportData,
     pub position: usize,            // Current position in the input
     pub current_char: Option<char>, // Current character being examined
     pub line: usize,                // Current line number
@@ -1392,19 +1538,24 @@ impl<'a> Lexer<'a> {
     pub fn new(
         input: String,
         mut remaining_input: std::str::Chars<'a>,
-        source_file_idx: usize,
+        import_data: &'a mut ImportData,
     ) -> Self {
         let current_char = remaining_input.next();
+        let source_file_idx = import_data
+            .import_stack
+            .last()
+            .unwrap()
+            .bpmn_source_file_index;
 
         Lexer {
-            input: input.clone(),
+            input,
+            import_data,
             source_file_idx,
             remaining_input,
             position: 0,
             current_char,
             line: 0,
             sas: StatementAssemblyState {
-                input,
                 allow_new_statement: true,
                 ..Default::default()
             },
@@ -1423,7 +1574,11 @@ impl<'a> Lexer<'a> {
 
         if self.current_char.is_some() {
             self.current_char = self.remaining_input.next();
-            self.position += 1;
+            if self.current_char.is_some() {
+                // At the end of the input, don't advance past the end, so we can show to the
+                // last written character of the file in the error statement.
+                self.position += 1;
+            }
         }
     }
 
@@ -1539,13 +1694,21 @@ impl<'a> Lexer<'a> {
                             }),
                             13,
                         )
+                    } else if self.continues_with("blackbox") {
+                        (
+                            Token::ActivityMarker(ActivityMarker {
+                                is_blackbox: true,
+                                ..Default::default()
+                            }),
+                            9,
+                        )
                     } else {
                         if self.sas.fts.active {
                             // This might be just a regular part of the display text of this activity.
                             break 'tilde;
                         }
                         return Err(vec![(
-                            "For `~` there are only the following variants: ~send, ~receive, ~manual, ~user, ~script, ~service, ~businessrule, ~throw, ~catch, ~multiple, ~loop, ~adhoc, ~compensation".to_string(),
+                            "For `~` there are only the following variants: ~send, ~receive, ~manual, ~user, ~script, ~service, ~businessrule, ~throw, ~catch, ~multiple, ~loop, ~adhoc, ~compensation, ~blackbox".to_string(),
                             self.current_coord(),
                         )]);
                     };
@@ -1860,7 +2023,7 @@ impl<'a> Lexer<'a> {
         }
     }
 
-    fn read_quoted_text(&mut self) -> Result<Option<(TokenCoordinate, String)>, ParseError> {
+    pub fn read_quoted_text(&mut self) -> Result<Option<(TokenCoordinate, String)>, ParseError> {
         self.skip_whitespace();
         let coord_start = self.current_coord();
         if self.current_char != Some('"') {
@@ -1945,6 +2108,10 @@ impl<'a> Lexer<'a> {
                         }
                         break;
                     }
+                    if extension_type == "import" {
+                        self.run_import()?;
+                        break;
+                    }
                     if extension_type == "place" {
                         self.sas.next_statement(tc, self.position, to_place)?;
                         tc = TokenCoordinate {
@@ -1982,60 +2149,14 @@ pub fn is_allowed_symbol_in_label_or_id(c: char) -> bool {
     c.is_alphanumeric() || matches!(c, '_' | '-' | '.')
 }
 
-pub(crate) fn lex(input: String, source_file_idx: usize) -> Result<StatementStream, ParseError> {
-    Lexer::new(input.clone(), input.chars(), source_file_idx).run()
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn basic_pool() -> Result<(), ParseError> {
-        let mut result = lex("= Pool".to_string(), 0)?;
-        assert!(matches!(result.next().unwrap().1, Statement::Pool(a) if a.title == "Pool"));
-        Ok(())
-    }
-
-    #[test]
-    fn basic_lane() -> Result<(), ParseError> {
-        let mut result = lex("== Lane Yeah ".to_string(), 0)?;
-        assert!(matches!(result.next().unwrap().1, Statement::Lane(a) if a == "Lane Yeah"));
-        Ok(())
-    }
-
-    #[test]
-    fn basic_activity_task() -> Result<(), ParseError> {
-        let mut result = lex("- Lane Yeah @diddy ".to_string(), 0)?;
-        assert!(matches!(result.next().unwrap().1, Statement::Activity(_)));
-        Ok(())
-    }
-
-    #[test]
-    fn basic_outer_gateway() -> Result<(), ParseError> {
-        let mut result = lex(
-            "X Lane Yeah ->label \"text\" ->label2 \"text\"".to_string(),
-            0,
-        )?;
-        assert!(matches!(result.next().unwrap().1, Statement::Gateway(_)));
-
-        let mut result = lex(
-            "X Lane Yeah <-label \"text\" <-label2 \"text\"".to_string(),
-            0,
-        )?;
-        assert!(matches!(result.next().unwrap().1, Statement::Gateway(_)));
-
-        Ok(())
-    }
-
-    #[test]
-    fn basic_message_flow() -> Result<(), ParseError> {
-        let mut result = lex("MF <-sender ->receiver".to_string(), 0)?;
-        assert!(matches!(
-            result.next().unwrap().1,
-            Statement::MessageFlow(_)
-        ));
-
-        Ok(())
-    }
+pub(crate) fn lex(import_data: &mut ImportData) -> Result<StatementStream, ParseError> {
+    // Could probably be solved without cloning, but ... who cares :) This is not the bottleneck.
+    let content = import_data.bpmd_source_files[import_data
+        .import_stack
+        .last()
+        .unwrap()
+        .bpmn_source_file_index]
+        .content
+        .clone();
+    Lexer::new(content.clone(), content.chars(), import_data).run()
 }

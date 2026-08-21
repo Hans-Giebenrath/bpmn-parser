@@ -13,6 +13,7 @@ pub struct Pool {
     /// only lane must have a None name as well.
     pub name: Option<String>,
     pub lanes: Vec<Lane>,
+    pub is_blackbox: bool,
     /// Pools can be put on one vertical line. In this case, this is set to true.
     /// Note: This is not yet integrated correctly, only in the xy_ilp function.
     pub is_right_of_the_previous_pool: bool,
@@ -32,10 +33,16 @@ pub struct Pool {
 }
 
 impl Pool {
-    pub fn new(name: Option<String>, tc: TokenCoordinate, multiple: bool) -> Self {
+    pub fn new(
+        name: Option<String>,
+        tc: TokenCoordinate,
+        is_blackbox: bool,
+        multiple: bool,
+    ) -> Self {
         Pool {
             name,
             tc,
+            is_blackbox,
             lanes: Vec::new(),
             x: 0,
             y: 0,
