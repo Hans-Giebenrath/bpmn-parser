@@ -43,6 +43,10 @@ pub fn dummy_node_generation(graph: &mut Graph) {
         let to = &graph.nodes[to_id];
         let pool = from.pool;
 
+        if from.is_blackbox_node() {
+            continue;
+        }
+
         // The edge is a message edge that spans across pools, this is handled differently.
         if from.pool != to.pool {
             assert!(edge.is_message_flow());

@@ -176,7 +176,7 @@ fn analyse_cycle(cycle: &[PathSegment]) -> Result<Option<EdgeId>, String> {
 fn iterate_all_cycles(callback: &mut dyn FnMut(&[PathSegment]), graph: &Graph) {
     let mut path = Vec::new();
     for node in &graph.nodes {
-        if !node.incoming.is_empty() {
+        if !node.incoming.is_empty() || node.is_blackbox_node() {
             continue;
         }
         traverse_path(callback, graph, node, &mut path);

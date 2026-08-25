@@ -7,6 +7,9 @@ use crate::common::{
 
 pub fn fix_boundary_event_connections(graph: &mut Graph) {
     for edge in &mut graph.edges {
+        if n!(edge.from).is_blackbox_node() {
+            continue;
+        }
         let Some(boundary_event) = &mut edge.attached_to_boundary_event else {
             continue;
         };

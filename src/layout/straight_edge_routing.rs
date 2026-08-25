@@ -65,6 +65,7 @@ fn sequence_edge_routing(graph: &mut Graph) {
         let [start @ (_, start_y), end @ (_, end_y)] = graph.start_and_end_ports(edge_id);
         let is_reversed = edge.is_reversed;
         let is_vertical = edge.is_vertical;
+        let from = &n!(edge.from);
         let EdgeType::Regular {
             bend_points: out_bend_points,
             ..
@@ -74,6 +75,15 @@ fn sequence_edge_routing(graph: &mut Graph) {
             // phase, hence they are skipped here.
             continue;
         };
+
+        if from.is_blackbox_node() {
+            // Route blackbox edges here, so they don't need to be handled later in
+            // the edge routing phase anymore. There should not be any dummy edges
+            // in the blackbox, so it is just about regular edges.
+            *out_bend_points = RegularEdgeBendPoints::FullyRouted(vec![]);
+            continue;
+        }
+
         if start_y != end_y && !is_vertical {
             // Not a straight edge.
             continue;
@@ -99,6 +109,17 @@ fn data_edge_routing(graph: &mut Graph, grid: &Grid, margin: u32) {
             EdgeType::ReplacedByDummies { text, .. } => text,
             EdgeType::DummyEdge { .. } => continue,
         };
+
+        if n!(edge.from).is_blackbox_node() {
+            // It no longer is replaced by dummies.
+            graph.edges[edge_id].edge_type = EdgeType::Regular {
+                text: text.clone(),
+                bend_points: RegularEdgeBendPoints::FullyRouted(vec![]),
+            };
+
+            continue 'next_edge;
+        }
+
         // Note: This looks at the original, ReplacedByDummies edges as well!
         let (
             from_collision_boundary,

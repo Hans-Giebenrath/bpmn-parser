@@ -49,7 +49,15 @@ pub fn try_move_nodes_into_half_layer(graph: &mut Graph) {
                 continue;
             }
             FlowType::MessageFlow(..) => {
-                let pool = &graph.pools[left_node.pool];
+                let pool = if right_node.is_blackbox_node() {
+                    // If the right node is in the blackbox pool, then we don't have any bendpoints,
+                    // and we go straight up to the pool.
+                    // TODO this means the port order calculation is actually not correct for
+                    // those edges.
+                    &graph.pools[right_node.pool]
+                } else {
+                    &graph.pools[left_node.pool]
+                };
                 // The midpoint is enforced by edge routing as well. It is an invariant of this tool
                 // that message flows go horizontal (if necessary) in the very first inter-pool space,
                 // i.e. after leaving the starting pool.
@@ -59,6 +67,9 @@ pub fn try_move_nodes_into_half_layer(graph: &mut Graph) {
                     pool.y
                 };
                 'first: {
+                    if left_node.is_blackbox_node() {
+                        break 'first;
+                    }
                     let port_of_outgoing = left_node.port_of_outgoing(edge_id);
                     let layer_id = if left_node.is_any_dummy() {
                         // This is a bend dummy, where the flow leaves the node at the top or
@@ -91,6 +102,9 @@ pub fn try_move_nodes_into_half_layer(graph: &mut Graph) {
                     );
                 }
                 'last: {
+                    if right_node.is_blackbox_node() {
+                        break 'last;
+                    }
                     let port_of_incoming = right_node.port_of_incoming(edge_id);
                     let layer_id = if right_node.is_any_dummy() {
                         // This is a bend dummy, where the flow enters the node at the top or
@@ -131,7 +145,7 @@ pub fn try_move_nodes_into_half_layer(graph: &mut Graph) {
                 // Segments are added, the rest of the logic is for the case where we have a sequence flow.
             }
             FlowType::SequenceFlow => {
-                if edge.is_vertical {
+                if edge.is_vertical || n!(edge.from).is_blackbox_node() {
                     // This does not block the half-layer space.
                     continue;
                 }
@@ -154,9 +168,13 @@ pub fn try_move_nodes_into_half_layer(graph: &mut Graph) {
 
     'outer: for node_id in graph.nodes.len().iter_indices(false).map(NodeId) {
         let node = &n!(node_id);
-        if !node.uses_half_layer {
+        if !node.uses_half_layer
+        /* this already covers blackbox nodes */
+        {
             continue;
         }
+
+        assert!(!node.is_blackbox_node());
 
         // No other elements were able to be moved into half layers, not sure what logic is
         // appropriate for them.
@@ -194,7 +212,7 @@ pub fn try_move_nodes_into_half_layer(graph: &mut Graph) {
         if next_layer_node.is_any_dummy() && next_layer_node.y != (port + node.xy()).y {
             // There is a y difference between the data node and the next layer's dummy node. This
             // means we cannot move the data node into the half layer, as edge routing would be too
-            // complex atm.
+            // complex at the moment.
             continue;
         }
 

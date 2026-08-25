@@ -84,23 +84,25 @@ pub fn assign_xy_ilp(graph: &mut Graph) {
         graph.pools[pool_idx].y = pool_y;
         graph.pools[pool_idx].x = pool_x;
         min_x_value += graph.config.pool_header_width;
-        for lane_idx in 0..graph.pools[pool_idx].lanes.len() {
-            let lane_y = min_y_value;
-            graph.pools[pool_idx].lanes[lane_idx].y = lane_y;
+        if !graph.pools[pool_idx].is_blackbox {
+            for lane_idx in 0..graph.pools[pool_idx].lanes.len() {
+                let lane_y = min_y_value;
+                graph.pools[pool_idx].lanes[lane_idx].y = lane_y;
 
-            // Call the ILP to assign y values to nodes of this lane
-            min_y_value += graph.config.lane_y_padding;
-            let lane_internal_height =
-                assign_y(graph, PoolId(pool_idx), LaneId(lane_idx), min_y_value);
+                // Call the ILP to assign y values to nodes of this lane
+                min_y_value += graph.config.lane_y_padding;
+                let lane_internal_height =
+                    assign_y(graph, PoolId(pool_idx), LaneId(lane_idx), min_y_value);
 
-            let lane_height = if lane_internal_height == 0 {
-                graph.config.height_of_empty_lane
-            } else {
-                lane_internal_height + 2 * graph.config.lane_y_padding
-            };
+                let lane_height = if lane_internal_height == 0 {
+                    graph.config.height_of_empty_lane
+                } else {
+                    lane_internal_height + 2 * graph.config.lane_y_padding
+                };
 
-            graph.pools[pool_idx].lanes[lane_idx].height = lane_height;
-            min_y_value = lane_y + lane_height;
+                graph.pools[pool_idx].lanes[lane_idx].height = lane_height;
+                min_y_value = lane_y + lane_height;
+            }
         }
         assert!(min_y_value >= pool_y);
         if min_y_value == pool_y {

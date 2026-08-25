@@ -18,7 +18,7 @@ use proc_macros::n;
 pub fn postprocess_ports_and_vertical_edges(graph: &mut Graph) {
     for node_id in (0..graph.nodes.len()).map(NodeId) {
         let node = &mut n!(node_id);
-        if node.is_any_dummy() {
+        if node.is_any_dummy() || node.is_blackbox_node() {
             continue;
         }
         // XXX make sure there is no `continue` down from here, otherwise these values are lost.

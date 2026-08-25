@@ -622,6 +622,9 @@ pub fn reduce_all_crossings_sweep(graph: &mut Graph) -> Result<(), ParseError> {
     let mut debug_output = String::new();
     let mut all_best_versions = Vec::new();
     for pool_idx in 0..graph.pools.len() {
+        if graph.pools[pool_idx].is_blackbox {
+            continue;
+        }
         for lane_idx in 0..graph.pools[pool_idx].lanes.len() {
             let pool_lane = PoolAndLane {
                 pool: PoolId(pool_idx),
@@ -648,6 +651,9 @@ pub fn reduce_all_crossings_sweep(graph: &mut Graph) -> Result<(), ParseError> {
 
     let mut best_it = all_best_versions.iter();
     for (pool_idx, pool) in graph.pools.iter().enumerate() {
+        if graph.pools[pool_idx].is_blackbox {
+            continue;
+        }
         for (lane_idx, lane) in pool.lanes.iter().enumerate() {
             let best_solutions = best_it.next().unwrap();
             if best_solutions.solutions.len() > 1 {

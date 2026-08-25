@@ -40,7 +40,11 @@ fn solve_layers(graph: &mut Graph) {
     let mut vars = variables!();
 
     let num_nodes = graph.nodes.len();
-    for node in graph.nodes.iter_mut().filter(|node| !node.is_data()) {
+    for node in graph
+        .nodes
+        .iter_mut()
+        .filter(|node| !node.is_data() && !node.is_blackbox_node())
+    {
         node.aux = NodePhaseAuxData::LayerAssignmentData(LayerAssignmentData(
             vars.add(variable().integer().min(0).max(num_nodes as f64)),
         ));
@@ -51,7 +55,11 @@ fn solve_layers(graph: &mut Graph) {
 
     // Try to pull start nodes to the left. But only starts, let the rest be placed however the
     // algorithm thinks. Not sure yet whether this is good.
-    for node in graph.nodes.iter().filter(|node| !node.is_data()) {
+    for node in graph
+        .nodes
+        .iter()
+        .filter(|node| !node.is_data() && !node.is_blackbox_node())
+    {
         if node
             .incoming
             .iter()
@@ -76,7 +84,9 @@ fn solve_layers(graph: &mut Graph) {
         .iter_mut()
         .enumerate()
         .filter(|(edge_idx, edge)| {
-            edge.is_sequence_flow() && !graph.computed_back_edges.contains(&EdgeId(*edge_idx))
+            edge.is_sequence_flow()
+                && !graph.computed_back_edges.contains(&EdgeId(*edge_idx))
+                && !n!(edge.from).is_blackbox_node()
         })
         .map(|(_, edge)| (edge.from, edge.to, true, "regular edge"))
         .chain(graph.layout_constraints.left_of.iter().map(|constraint| {
@@ -130,7 +140,11 @@ fn solve_layers(graph: &mut Graph) {
     let solution = problem.solve().unwrap();
     graph.num_layers = usize::MIN;
 
-    for node in graph.nodes.iter_mut().filter(|node| !node.is_data()) {
+    for node in graph
+        .nodes
+        .iter_mut()
+        .filter(|node| !node.is_data() && !node.is_blackbox_node())
+    {
         node.layer_id.0 = solution.value(aux(node)) as usize;
         graph.num_layers = graph.num_layers.max(node.layer_id.0 + 1);
     }
@@ -301,6 +315,8 @@ fn force_different_layers(
     constraints: &mut Vec<Constraint>,
     total_num_nodes: usize,
 ) {
+    assert!(!a.is_blackbox_node());
+    assert!(!b.is_blackbox_node());
     // We want: a != b.
     //  <==> a < b || a > b
     // So we have a boolean `z`, and an `M` which is larger than any value which `a` or `b` can ever

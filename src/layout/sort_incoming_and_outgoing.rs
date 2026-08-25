@@ -84,6 +84,9 @@ pub fn sort_incoming_and_outgoing(graph: &mut Graph) {
     }
     for node_id in (0..graph.nodes.len()).map(NodeId) {
         let node = &mut graph.nodes[node_id];
+        if node.is_blackbox_node() {
+            continue;
+        }
         if node.incoming.len() > 1 {
             let mut incoming_cpy = std::mem::take(&mut node.incoming);
             incoming_cpy.sort_by_cached_key(|edge_id| {

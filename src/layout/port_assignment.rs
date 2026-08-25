@@ -42,7 +42,7 @@ pub fn port_assignment(graph: &mut Graph) {
     // `is_vertical_edge` is easier as it does not need to account for gateway bend dummies which
     // make everything harder (since the gateway node "disappears").
     for node_id in (0..graph.nodes.len()).map(NodeId) {
-        if !n!(node_id).is_gateway() {
+        if !n!(node_id).is_gateway() && !n!(node_id).is_blackbox_node() {
             handle_nongateway_node(node_id, graph);
         }
     }

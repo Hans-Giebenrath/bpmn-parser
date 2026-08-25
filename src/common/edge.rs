@@ -61,6 +61,7 @@ pub enum EdgeType {
 pub enum RegularEdgeBendPoints {
     ToBeDetermined,
     SegmentEndpoints((usize, usize), (usize, usize)),
+    /// Edges in blackbox pools are FullyRouted with an empty vec.
     FullyRouted(Vec<(usize, usize)>),
 }
 

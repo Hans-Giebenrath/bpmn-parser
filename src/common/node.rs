@@ -395,28 +395,41 @@ impl Node {
         (self.width, self.height)
     }
 
+    // For blackbox nodes, this returns its left-upper coordinate.
     pub fn relative_port_of_incoming(&self, edge_id: EdgeId) -> RelativePort {
         self.incoming
             .iter()
             .cloned()
-            .zip(self.incoming_ports.iter())
+            .zip(self.incoming_ports.iter().cloned())
             .find(|(inner_edge_id, _)| *inner_edge_id == edge_id)
-            .unwrap_or_else(|| panic!("node_id: {}, edge_id: {}", self.id.0, edge_id.0))
+            .unwrap_or_else(|| {
+                if self.is_blackbox_node() {
+                    (EdgeId(0), RelativePort { x: 0, y: 0 })
+                } else {
+                    panic!("node_id: {}, edge_id: {}", self.id.0, edge_id.0)
+                }
+            })
             .1
-            .clone()
     }
 
     pub fn port_of_incoming(&self, edge_id: EdgeId) -> AbsolutePort {
         &self.relative_port_of_incoming(edge_id) + self.xy()
     }
 
+    // For blackbox nodes, this returns its left-upper coordinate.
     pub fn relative_port_of_outgoing(&self, edge_id: EdgeId) -> RelativePort {
         self.outgoing
             .iter()
             .cloned()
-            .zip(self.outgoing_ports.iter())
+            .zip(self.outgoing_ports.iter().cloned())
             .find(|(inner_edge_id, _)| *inner_edge_id == edge_id)
-            .unwrap_or_else(|| panic!("node_id: {}, edge_id: {}", self.id.0, edge_id.0))
+            .unwrap_or_else(|| {
+                if self.is_blackbox_node() {
+                    (EdgeId(0), RelativePort { x: 0, y: 0 })
+                } else {
+                    panic!("node_id: {}, edge_id: {}", self.id.0, edge_id.0)
+                }
+            })
             .1
             .clone()
     }

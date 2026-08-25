@@ -231,10 +231,10 @@ impl Svg {
                 merged.fill,
             ).unwrap();
 
-        if let [(lane_title, lane_height, lane_style)] = lanes
+        if let [(lane_title, _lane_height, lane_style)] = lanes
             && lane_title.is_empty()
         {
-            assert_eq!(*lane_height, height);
+            //assert_eq!(*lane_height, height); not true for blackbox pools.
             if let Some(fill) = &lane_style.fill {
                 writeln!(
                         self.body,
@@ -270,10 +270,9 @@ impl Svg {
         )
         .unwrap();
 
-        if let [(lane_title, lane_height, lane_style)] = lanes
+        if let [(lane_title, _lane_height, lane_style)] = lanes
             && lane_title.is_empty()
         {
-            assert_eq!(*lane_height, height);
             if let Some(stroke) = &lane_style.stroke {
                 writeln!(
                         self.body,

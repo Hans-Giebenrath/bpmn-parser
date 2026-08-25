@@ -285,7 +285,7 @@ impl Parser {
 
         self.process_shorthand_blank_events()?;
 
-        crate::layout::constraint::compute_same_layer_clusters(&mut self.graph.layout_constraints);
+        self.graph.layout_constraints.finish(&self.graph.nodes);
         crate::common::graph::validate_invariants(&self.graph)?;
 
         Ok(self.graph)
