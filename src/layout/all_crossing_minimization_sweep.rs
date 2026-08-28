@@ -16,6 +16,7 @@ use crate::common::graph::Coord3;
 use crate::common::graph::LaneId;
 use crate::common::graph::PoolId;
 use crate::common::graph::{EdgeId, Graph, NodeId, PoolAndLane};
+use crate::common::index_iter::IterIndices;
 use crate::common::lane::Lane;
 use crate::common::macros::impl_index;
 use crate::common::node::LayerId;
@@ -774,11 +775,7 @@ fn one_direction_sweep(
 ) -> bool {
     let mut something_changed = false;
     let lane = &lane!(pool_lane);
-    let layer_idx_iter = if is_right_sweep {
-        Either::Left(0..sweep_graph.layers.len())
-    } else {
-        Either::Right((0..sweep_graph.layers.len()).rev())
-    };
+    let layer_idx_iter = sweep_graph.layers.len().iter_indices(!is_right_sweep);
     sweep_buffers.new_sweep_direction();
     for i in layer_idx_iter {
         let current_position = Coord3 {
