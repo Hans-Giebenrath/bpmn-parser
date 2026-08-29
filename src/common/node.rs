@@ -80,7 +80,12 @@ pub enum NodeType {
         kind: BendDummyKind,
     },
     /// Part of a blackbox pool, i.e. won't be displayed.
-    BlackBox { display_text: String },
+    /// Every blackbox pool which is otherwise empty (no non-data nodes as per the diagram),
+    /// gets a dummy blackbox node, such that message flows have a target to attach to.
+    BlackBox {
+        display_text: String,
+        tc: TokenCoordinate,
+    },
 }
 
 /// This is primarily used to make some Y-ILP stuff easier.
@@ -245,7 +250,7 @@ impl Node {
 
     pub fn tc(&self) -> TokenCoordinate {
         match &self.node_type {
-            NodeType::RealNode { tc, .. } => *tc,
+            NodeType::RealNode { tc, .. } | NodeType::BlackBox { tc, .. } => *tc,
             _ => unreachable!(),
         }
     }

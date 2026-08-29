@@ -98,7 +98,7 @@ impl Parser {
                     .sender
                     .as_ref()
                     .map_or(Ok(None), |(sender_name, tc)| {
-                        self.find_node_id(sender_name).map(|sender_id| Some((sender_id, *tc))).ok_or(vec![(
+                        self.context.id_matcher.find_nondata_node_id(sender_name, None).map(|sender_id| Some((sender_id, *tc))).ok_or(vec![(
                             format!("Sender node with ID ({sender_name}) was not found. Have you defined it?"),
                             *tc,
 
@@ -109,7 +109,7 @@ impl Parser {
                     .receiver
                     .as_ref()
                     .map_or(Ok(None), |(receiver_name, tc)| {
-                        self.find_node_id(receiver_name).map(|receiver_id| Some((receiver_id, *tc))).ok_or(vec![(
+                        self.context.id_matcher.find_nondata_node_id(receiver_name, None).map(|receiver_id| Some((receiver_id, *tc))).ok_or(vec![(
                             format!("Receiver node with ID ({receiver_name}) was not found. Have you defined it?"),
                             *tc,
 
@@ -120,7 +120,7 @@ impl Parser {
                     .argument_ids
                     .iter()
                     .map(|(string_id, tc)| {
-                        let node_id = self.find_node_id(string_id).ok_or(vec![(
+                        let node_id = self.context.id_matcher.find_data_node_id(string_id, None).ok_or(vec![(
                             format!("Data element with ID ({string_id}) was not found. Have you defined it?"),
                             *tc,
 
@@ -258,7 +258,7 @@ impl Parser {
                 )
             }
             lexer::PeBpmdSubType::Lane(lane_str, lane_tc) => {
-                let (pool_id, lane_id) = self.context.pool_id_matcher.find_pool_and_lane_id_by_lane_name_fuzzy(&self.graph, &lane_str).ok_or_else(|| vec![(
+                let (pool_id, lane_id) = self.context.id_matcher.find_lane_id(&lane_str).ok_or_else(|| vec![(
                     format!("Lane with name {lane_str} was not found in any pool. Have you defined it?"),
                     lane_tc,
 
@@ -310,8 +310,12 @@ impl Parser {
                 let task_ids: Vec<(NodeId, TokenCoordinate)> = tasks
                     .iter()
                     .map(|(task_str, tc)| {
-                        self.find_node_id_or_error(task_str, &format!("{tee_or_mpc}-tasks"), *tc)
-                            .map(|node_id| (node_id, *tc))
+                        self.find_nondata_node_id_or_error(
+                            task_str,
+                            &format!("{tee_or_mpc}-tasks"),
+                            *tc,
+                        )
+                        .map(|node_id| (node_id, *tc))
                     })
                     .collect::<Result<Vec<_>, _>>()?;
 
@@ -377,7 +381,7 @@ impl Parser {
             self.parse_data_nodes(&lexer.data_already_protected, "data-already-protected")?;
 
         let external_root_access = lexer.external_root_access.iter().map(|(pool_str, pool_tc)| {
-                    self.context.pool_id_matcher.find_pool_id(pool_str).ok_or_else(|| vec![(
+                    self.context.id_matcher.find_pool_id(pool_str).ok_or_else(|| vec![(
                         format!("external_root_access pool with ID ({pool_str}) was not found. Have you defined it?"),
                         *pool_tc,
 
@@ -432,10 +436,10 @@ impl Parser {
         entries
             .iter()
             .map(|entry| {
-                let node_id = self.find_node_id_or_error(&entry.node, label, entry.tc)?;
+                let node_id = self.find_nondata_node_id_or_error(&entry.node, label, entry.tc)?;
 
                 let rv_source = if let Some(rv_str) = &entry.rv {
-                    Some(self.context.pool_id_matcher.find_pool_id(rv_str).ok_or_else(|| vec![(
+                    Some(self.context.id_matcher.find_pool_id(rv_str).ok_or_else(|| vec![(
                         format!(
                             "ID of the pool ({rv_str}) which created the reference value was not found. Have you defined it?"
                         ),
@@ -451,23 +455,26 @@ impl Parser {
             .collect()
     }
 
-    fn find_node_id_or_error(
+    fn find_nondata_node_id_or_error(
         &mut self,
         node_str: &str,
         label: &str,
         tc: TokenCoordinate,
     ) -> Result<NodeId, ParseError> {
-        self.find_node_id(node_str).ok_or_else(|| {
-            vec![(
-                format!("{label} node with ID {node_str} was not found. Have you defined it?"),
-                tc,
-            )]
-        })
+        self.context
+            .id_matcher
+            .find_nondata_node_id(node_str, None)
+            .ok_or_else(|| {
+                vec![(
+                    format!("{label} node with ID {node_str} was not found. Have you defined it?"),
+                    tc,
+                )]
+            })
     }
 
     fn find_pool_id_or_error(&self, pool_str: &str) -> Result<PoolId, ParseError> {
         self.context
-            .pool_id_matcher
+            .id_matcher
             .find_pool_id(pool_str)
             .ok_or_else(|| {
                 vec![(
@@ -485,16 +492,7 @@ impl Parser {
         tee_or_mpc: &str,
         attribute: &str,
     ) -> Result<PoolId, ParseError> {
-        let result = self
-            .context
-            .pool_id_matcher
-            .find_pool_id(pool_str)
-            .ok_or_else(|| {
-                vec![(
-                    format!("Pool with ID ({pool_str}) was not found. Have you defined it?"),
-                    self.context.current_token_coordinate,
-                )]
-            });
+        let result = self.find_pool_id_or_error(pool_str);
         if let Ok(found_pool_id) = result
             && found_pool_id == forbidden_value
         {
@@ -536,7 +534,7 @@ impl Parser {
         node_ids
             .iter()
             .map(|(data_str, tc)| {
-                self.find_node_id(data_str)
+                self.context.id_matcher.find_data_node_id(data_str, None)
                     .ok_or_else(|| {
                         vec![(
                             format!(

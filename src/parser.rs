@@ -1,3 +1,5 @@
+use std::collections::HashSet;
+
 use crate::common::bpmn_node;
 use crate::common::bpmn_node::ActivityType;
 use crate::common::bpmn_node::BpmnNode;
@@ -8,14 +10,19 @@ use crate::common::edge::{MessageFlowAux, RegularEdgeBendPoints};
 use crate::common::graph::PoolAndLane;
 use crate::common::graph::{Graph, SdeId};
 use crate::common::graph::{LaneId, NodeId, PoolId};
+use crate::common::index_iter::IterIndices;
 use crate::common::node::DataAux;
 use crate::common::node::NodeType;
+use crate::common::pool::Pool;
 use crate::common::vecmap::VecMap;
 use crate::common::vecset::VecSet;
+use crate::id_matcher::IdMatcher;
+use crate::id_matcher::SomeId;
 use crate::layout::constraint::Above;
 use crate::layout::constraint::LeftOf;
 use crate::layout::constraint::SameLayer;
 use crate::lexer::ActivityMeta;
+use crate::lexer::BlackboxStatement;
 use crate::lexer::BoundaryEventMeta;
 use crate::lexer::DataFlowMeta;
 use crate::lexer::DataMeta;
@@ -27,9 +34,7 @@ use crate::lexer::LayoutStatement;
 use crate::lexer::PoolMeta;
 use crate::lexer::{self, MessageFlowMeta};
 use crate::lexer::{Statement, StatementStream, TokenCoordinate};
-use crate::node_id_matcher::NodeIdMatcher;
 use crate::parser::bpmn_node::BoundaryEvent;
-use crate::pool_id_matcher::PoolIdMatcher;
 
 pub struct ParseContext {
     last_node_id: Option<usize>,
@@ -43,8 +48,7 @@ pub struct ParseContext {
     // allowed to send or receive data. This automatic transformation is done to allow quickly
     // prototyping of the BPMD file using shorthand syntax in a first iteration.
     shorthand_blank_events: VecSet<NodeId>,
-    node_id_matcher: NodeIdMatcher,
-    pub pool_id_matcher: PoolIdMatcher,
+    pub id_matcher: IdMatcher,
     source_file_idx: usize,
 }
 
@@ -164,15 +168,17 @@ impl Parser {
                 current_token_coordinate: TokenCoordinate::default(),
                 dangling_sequence_flows: VecMap::default(),
                 shorthand_blank_events: Default::default(),
-                node_id_matcher: NodeIdMatcher::new(),
-                pool_id_matcher: PoolIdMatcher::new(),
+                id_matcher: IdMatcher::new(),
                 source_file_idx: 0,
             },
         }
     }
 
     pub fn parse(mut self, tokens: StatementStream) -> Result<Graph, ParseError> {
-        // Parse the input
+        // MFs are delayed because they should be resolved *after* we know what is a blackbox and
+        // what not.
+        let mut delayed_message_flow_statements = Vec::new();
+        let mut delayed_blackbox_statement = Vec::new();
         for (coordinate, token) in tokens {
             self.context.current_token_coordinate = coordinate;
             match token {
@@ -183,10 +189,11 @@ impl Parser {
                 Statement::Activity(meta) => self.parse_activity(meta)?,
                 Statement::BoundaryEvent(meta) => self.parse_boundary_event(meta)?,
                 Statement::Gateway(meta) => self.parse_gateway(meta)?,
-                Statement::MessageFlow(meta) => self.parse_message_flow(meta)?,
+                Statement::MessageFlow(meta) => delayed_message_flow_statements.push(meta),
                 Statement::Data(meta) => self.parse_data(meta)?,
                 Statement::PeBpmd(pe_bpmd) => self.parse_pe_bpmd(pe_bpmd)?,
                 Statement::Layout(layout) => self.parse_layout(layout)?,
+                Statement::Blackbox(blackbox) => delayed_blackbox_statement.push(blackbox),
             }
         }
 
@@ -201,6 +208,106 @@ impl Parser {
                     *token_coordinate,
                 )]);
             }
+        }
+
+        if let GroupingState::WithinPool { pool_id, ptc } = &self.context.grouping_state {
+            // A pool was created at the end with no further lane or node, meaning that no lane was
+            // created for that pool. But there is always the assumption that there is also at least
+            // one lane per pool.
+            let pool = &mut self.graph.pools[*pool_id];
+            assert!(pool.lanes.is_empty());
+            let _lane_id = pool.add_lane(None, *ptc);
+        }
+
+        // Resolve the blackbox statements here, so message flows always have some node to refer to.
+        {
+            let mut blackboxed = self
+                .graph
+                .pools
+                .iter()
+                .enumerate()
+                .filter_map(|(idx, pool)| {
+                    if pool.is_blackbox {
+                        Some(PoolId(idx))
+                    } else {
+                        None
+                    }
+                })
+                .collect::<HashSet<_>>();
+
+            for stmt in delayed_blackbox_statement {
+                match stmt {
+                    BlackboxStatement::BlackBoxAll { is_unblackbox } if is_unblackbox => {
+                        blackboxed.clear();
+                    }
+                    BlackboxStatement::BlackBoxAll { .. } => {
+                        blackboxed.extend(self.graph.pools.len().iter_indices(false).map(PoolId));
+                    }
+                    BlackboxStatement::BlackBox {
+                        is_unblackbox,
+                        pool_ids,
+                    } => {
+                        for (tc, pool_name) in pool_ids {
+                            let Some(pool_id) = self.context.id_matcher.find_pool_id(&pool_name)
+                            else {
+                                return Err(vec![(
+                                    format!(
+                                        "Pool with target {pool_name} was not found. Have you defined it?",
+                                    ),
+                                    tc,
+                                )]);
+                            };
+                            if is_unblackbox {
+                                blackboxed.remove(&pool_id);
+                            } else {
+                                blackboxed.insert(pool_id);
+                            }
+                        }
+                    }
+                }
+            }
+            for to_be_blackboxed in blackboxed {
+                self.graph.pools[to_be_blackboxed].is_blackbox = true;
+            }
+
+            // Now mark all nodes in a blackbox pool as blackboxed.
+            for node in &mut self.graph.nodes {
+                if self.graph.pools[node.pool].is_blackbox
+                    && let NodeType::RealNode {
+                        display_text, tc, ..
+                    } = &node.node_type
+                {
+                    node.node_type = NodeType::BlackBox {
+                        display_text: display_text.clone(),
+                        tc: tc.clone(),
+                    };
+                }
+            }
+
+            // Now, for all blackbox pools that have no non-data nodes, add a dummy node.
+            for pool_id in self.graph.pools.len().iter_indices(false).map(PoolId) {
+                let pool = &self.graph.pools[pool_id];
+                if find_nondata_node(&self.graph, pool).is_none() {
+                    assert!(!pool.lanes.is_empty()); // should have been added?
+                    self.graph.add_node(
+                        NodeType::BlackBox {
+                            display_text:
+                                "(implicit dummy blackbox node for pool without non-data nodes)"
+                                    .to_string(),
+                            tc: pool.tc,
+                        },
+                        PoolAndLane {
+                            pool: pool_id,
+                            lane: LaneId(0),
+                        },
+                        None,
+                    );
+                }
+            }
+        }
+
+        for meta in delayed_message_flow_statements {
+            self.parse_delayed_message_flow(meta)?;
         }
 
         for dangling_sequence_flows in self.context.dangling_sequence_flows.values() {
@@ -300,6 +407,14 @@ impl Parser {
             },
         );
         err_from_unfinished_lifeline(&old_state, self.context.current_token_coordinate)?;
+        if let GroupingState::WithinPool { pool_id, ptc } = &self.context.grouping_state {
+            // Two pools were created immediately behind each other. But there is always the
+            // assumption that there is also at least one lane per pool.
+            let pool = &mut self.graph.pools[*pool_id];
+            assert!(pool.lanes.is_empty());
+            let _lane_id = pool.add_lane(None, *ptc);
+        }
+
         let pool_id = self.graph.add_pool(
             Some(meta.title.clone()),
             self.context.current_token_coordinate,
@@ -311,10 +426,9 @@ impl Parser {
             ptc: self.context.current_token_coordinate,
         };
         self.context.last_node_id = None;
-        // For better error reporting, reset this to "fresh".
         self.context
-            .pool_id_matcher
-            .register(pool_id, Some(meta.title));
+            .id_matcher
+            .register_pool(pool_id, Vec::new(), Some(meta.title));
         Ok(())
     }
 
@@ -328,7 +442,7 @@ impl Parser {
         );
         err_from_unfinished_lifeline(&old_state, self.context.current_token_coordinate)?;
 
-        match self.context.grouping_state {
+        let (pool_id, lane_id) = match self.context.grouping_state {
             GroupingState::Init => {
                 return Err(vec![(
                     "Lanes must always be part of a pool, please add a pool (e.g. `= My Pool`) above this line.".to_string(),
@@ -348,6 +462,7 @@ impl Parser {
                     lane_id,
                     ltc: self.context.current_token_coordinate,
                 };
+                (pool_id, lane_id)
             }
             GroupingState::WithinAnonymousPool {
                 first_encountered_node,
@@ -385,9 +500,15 @@ impl Parser {
                     ("The pool started here.".to_string(), ptc, ),
                 ]);
             }
-        }
+        };
 
         self.context.last_node_id = None;
+        self.context.id_matcher.register_lane(
+            pool_id,
+            lane_id,
+            Vec::new(),
+            Some(label.to_string()),
+        );
         Ok(())
     }
 
@@ -409,8 +530,8 @@ impl Parser {
         );
 
         self.context
-            .node_id_matcher
-            .register(node_id, ids, &self.graph);
+            .id_matcher
+            .register_node(node_id, ids, &self.graph);
 
         self.connect_nodes(
             node_id,
@@ -437,7 +558,12 @@ impl Parser {
                 &self.context.lifeline_state,
                 self.context.current_token_coordinate,
             )?;
-            for EdgeMeta { target, text_label } in incoming_sequence_flow_landings.iter_mut() {
+            for EdgeMeta {
+                target,
+                text_label,
+                tc,
+            } in incoming_sequence_flow_landings.iter_mut()
+            {
                 self.context
                     .dangling_sequence_flows
                     .entry(current_pool_id)
@@ -448,7 +574,7 @@ impl Parser {
                     .push(DanglingEdgeInfo {
                         known_node_id: current_node_id,
                         edge_text: std::mem::take(text_label),
-                        tc: self.context.current_token_coordinate,
+                        tc: *tc,
                         boundary_event: None,
                     });
             }
@@ -479,7 +605,12 @@ impl Parser {
         }
 
         self.context.lifeline_state = if !outgoing_sequence_flow_jumps.is_empty() {
-            for EdgeMeta { target, text_label } in outgoing_sequence_flow_jumps.iter_mut() {
+            for EdgeMeta {
+                target,
+                text_label,
+                tc,
+            } in outgoing_sequence_flow_jumps.iter_mut()
+            {
                 self.context
                     .dangling_sequence_flows
                     .entry(current_pool_id)
@@ -490,7 +621,7 @@ impl Parser {
                     .push(DanglingEdgeInfo {
                         known_node_id: current_node_id,
                         edge_text: std::mem::take(text_label),
-                        tc: self.context.current_token_coordinate,
+                        tc: *tc,
                         boundary_event: None,
                     });
             }
@@ -545,8 +676,8 @@ impl Parser {
         );
 
         self.context
-            .node_id_matcher
-            .register(node_id, ids, &self.graph);
+            .id_matcher
+            .register_node(node_id, ids, &self.graph);
 
         if meta.shorthand_syntax {
             self.context.shorthand_blank_events.insert(node_id);
@@ -577,8 +708,8 @@ impl Parser {
         );
 
         self.context
-            .node_id_matcher
-            .register(node_id, ids, &self.graph);
+            .id_matcher
+            .register_node(node_id, ids, &self.graph);
 
         self.connect_nodes(
             node_id,
@@ -645,37 +776,42 @@ impl Parser {
         Ok(())
     }
 
-    fn parse_message_flow(&mut self, meta: MessageFlowMeta) -> Result<(), ParseError> {
-        todo!("see comment below");
-        //if MF ID matches pool, then that pool must be marked as a blackbox pool, otherwise make a new lookup only within the node namespace.
-        //if blackbox statement unblackboxes a pool which has been targeted by an MF, then it cannot be unblackboxed anymore.
-        let sender_node = self
-            .context
-            .node_id_matcher
-            .find_node_id(&meta.sender_id, None)
-            .ok_or_else(|| {
-                vec![(
-                    format!(
-                        "Sender node with id {:?} was not found. Have you defined it?",
-                        meta.sender_id
-                    ),
-                    self.context.current_token_coordinate,
-                )]
-            })?;
-
-        let receiver_node = self
-            .context
-            .node_id_matcher
-            .find_node_id(&meta.receiver_id, None)
-            .ok_or_else(|| {
-                vec![(
-                    format!(
-                        "Receiver node with id {:?} was not found. Have you defined it?",
-                        meta.receiver_id
-                    ),
-                    self.context.current_token_coordinate,
-                )]
-            })?;
+    fn parse_delayed_message_flow(&mut self, meta: MessageFlowMeta) -> Result<(), ParseError> {
+        let find_target_node = |sender_or_receiver: &str,
+                                target: &str,
+                                tc: TokenCoordinate|
+         -> Result<NodeId, ParseError> {
+            let result = match self.context.id_matcher.find_pool_or_nondata_id(target) {
+                None => {
+                    return Err(vec![(
+                        format!(
+                            "{sender_or_receiver} node with id {target} was not found. Have you defined it?",
+                        ),
+                        tc,
+                    )]);
+                }
+                Some(SomeId::PoolId(pool_id)) => {
+                    if self.graph.pools[pool_id].is_blackbox {
+                        find_nondata_node(&self.graph, &self.graph.pools[pool_id])
+                            .expect("At least a dummy node should have been added previously")
+                    } else {
+                        self.find_nondata_node_id(target).ok_or_else(|| {
+                        vec![(
+                            format!(
+                                "{sender_or_receiver} node or pool with id {target} was not found. Have you defined it?",
+                            ),
+                            tc,
+                        )]
+                    })?
+                    }
+                }
+                Some(SomeId::NodeId(node_id)) => node_id,
+                _ => unreachable!(),
+            };
+            Ok(result)
+        };
+        let sender_node = find_target_node("Sender", &meta.sender_id, meta.sender_tc)?;
+        let receiver_node = find_target_node("Receiver", &meta.receiver_id, meta.receiver_tc)?;
 
         {
             let sender_node = &self.graph.nodes[sender_node];
@@ -722,7 +858,7 @@ impl Parser {
     }
 
     fn parse_data(&mut self, meta: DataMeta) -> Result<(), ParseError> {
-        let mut pool_id = None;
+        let mut prev: Option<(PoolId, TokenCoordinate, TokenCoordinate, String)> = None;
         let mut lane_ids = Vec::<usize>::new();
         let mut edges = Vec::new();
 
@@ -737,30 +873,47 @@ impl Parser {
             direction,
             target,
             text_label,
+            tc,
         } in meta.data_flow_metas
         {
-            let Some(node_id) = self.find_node_id(&target) else {
+            let Some(node_id) = self.find_nondata_node_id(&target) else {
                 // TODO this should not only print the `target` but also underline it. But for that
                 // the DataFlowMeta must also record its TokenCoordinate.
                 return Err(vec![(
                     format!(
-                        "Data node recipient {target:?} has not yet been defined within the current pool. (Have you defined it afterwards? TODO).",
+                        "Data node recipient {target:?} has not yet been defined within the current diagram. (Have you defined it afterwards? TODO).",
                     ),
                     self.context.current_token_coordinate,
                 )]);
             };
             let recipient_node = &self.graph.nodes[node_id];
-            if let Some(prev_pool_id) = pool_id
+            if let Some((prev_pool_id, prev_edge_tc, prev_node_tc, prev_node_target)) = prev
                 && prev_pool_id != recipient_node.pool
             {
-                return Err(vec![(
-                    format!(
-                        "Data node recipient {target:?} is in another pool than the previous recipients. However, they must appear within the same pool (but may appear in different lanes)."
+                return Err(vec![
+                    (
+                        format!(
+                            "Data node recipient {target} is in another pool than the previous recipient {prev_node_target}. However, they must appear within the same pool (but may appear in different lanes). Maybe try to be more specific with the recipient name, or assign an ID (@some-unique-label) to the target node?"
+                        ),
+                        tc,
                     ),
-                    self.context.current_token_coordinate,
-                )]);
+                    (
+                        format!("The recipient of {target} is here"),
+                        recipient_node.tc(),
+                    ),
+                    (
+                        format!("The recipient of {prev_node_target} is here"),
+                        prev_node_tc,
+                    ),
+                    (
+                        format!(
+                            "Just being overly explicit here, the recipient {prev_node_target} was defined here"
+                        ),
+                        prev_edge_tc,
+                    ),
+                ]);
             }
-            pool_id = Some(recipient_node.pool);
+            prev = Some((recipient_node.pool, tc, recipient_node.tc(), target));
             lane_ids.push(recipient_node.lane.0);
             edges.push((direction, node_id, text_label));
         }
@@ -784,7 +937,7 @@ impl Parser {
                 pe_bpmd_hides_protection_operations: false,
             },
             PoolAndLane {
-                pool: pool_id.unwrap(),
+                pool: prev.unwrap().0,
                 lane: LaneId(
                     (lane_ids.iter().sum::<usize>() as f64 / lane_ids.len() as f64).round()
                         as usize,
@@ -816,8 +969,8 @@ impl Parser {
         }
         let ids = meta.node_meta.ids;
         self.context
-            .node_id_matcher
-            .register(data_node_id, ids, &self.graph);
+            .id_matcher
+            .register_node(data_node_id, ids, &self.graph);
 
         Ok(())
     }
@@ -829,23 +982,36 @@ impl Parser {
                 tc,
             )]
         };
+        let find_node = |myself: &Self, (tc, name): &(TokenCoordinate, String)| {
+            let node_id = self.find_any_node_id(name).ok_or_else(|| err(*tc))?;
+            let node = &myself.graph.nodes[node_id];
+            if node.is_data() {
+                Err(
+            vec![(
+                "The target name currently matches a data node, which is at this moment unsupported. It is planned in some distant future, hence the current error to not break your diagram when the update lands.".to_string(),
+                node.tc(),
+            )])
+            } else {
+                Ok(node_id)
+            }
+        };
         match layout {
             LayoutStatement::Above { above, below } => {
                 self.graph.layout_constraints.above.push(Above {
-                    above: self.find_node_id(&above.1).ok_or_else(|| err(above.0))?,
-                    below: self.find_node_id(&below.1).ok_or_else(|| err(below.0))?,
+                    above: find_node(self, &above)?,
+                    below: find_node(self, &below)?,
                 });
             }
             LayoutStatement::LeftOf { left, right } => {
                 self.graph.layout_constraints.left_of.push(LeftOf {
-                    left: self.find_node_id(&left.1).ok_or_else(|| err(left.0))?,
-                    right: self.find_node_id(&right.1).ok_or_else(|| err(right.0))?,
+                    left: find_node(self, &left)?,
+                    right: find_node(self, &right)?,
                 });
             }
             LayoutStatement::SameLayer(node_a, node_b) => {
                 self.graph.layout_constraints.same_layer.push(SameLayer(
-                    self.find_node_id(&node_a.1).ok_or_else(|| err(node_a.0))?,
-                    self.find_node_id(&node_b.1).ok_or_else(|| err(node_b.0))?,
+                    find_node(self, &node_a)?,
+                    find_node(self, &node_b)?,
                 ));
             }
         }
@@ -905,8 +1071,16 @@ impl Parser {
         }
     }
 
-    pub fn find_node_id(&self, needle: &str) -> Option<NodeId> {
-        self.context.node_id_matcher.find_node_id(needle, None)
+    pub fn find_any_node_id(&self, needle: &str) -> Option<NodeId> {
+        self.context.id_matcher.find_any_node_id(needle, None)
+    }
+
+    pub fn find_data_node_id(&self, needle: &str) -> Option<NodeId> {
+        self.context.id_matcher.find_data_node_id(needle, None)
+    }
+
+    pub fn find_nondata_node_id(&self, needle: &str) -> Option<NodeId> {
+        self.context.id_matcher.find_nondata_node_id(needle, None)
     }
 
     fn process_shorthand_blank_events(&mut self) -> Result<(), ParseError> {
@@ -994,4 +1168,11 @@ fn err_from_unfinished_lifeline(
         ]),
         LifelineState::NoLifelineActive { .. } => Ok(()),
     }
+}
+
+fn find_nondata_node(graph: &Graph, pool: &Pool) -> Option<NodeId> {
+    pool.lanes
+        .iter()
+        .flat_map(|lane| lane.nodes.iter().cloned())
+        .find(|&node_id| !graph.nodes[node_id].is_data())
 }

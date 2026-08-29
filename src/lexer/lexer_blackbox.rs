@@ -40,7 +40,7 @@ pub fn to_blackbox(mut tokens: Tokens, backup_tc: TokenCoordinate) -> AResult {
             // `[blackbox all @pool_a]` should point to `@pool_a` as the erroneous word.
             return Err(return_error(Some(*unexpected_token_tc)));
         } else {
-            return Ok(Statement::Layout(LayoutStatement::BlackBoxAll {
+            return Ok(Statement::Blackbox(BlackboxStatement::BlackBoxAll {
                 is_unblackbox,
             }));
         }
@@ -56,7 +56,7 @@ pub fn to_blackbox(mut tokens: Tokens, backup_tc: TokenCoordinate) -> AResult {
         })
         .collect::<Result<Vec<_>, _>>()?;
 
-    Ok(Statement::Layout(LayoutStatement::BlackBox {
+    Ok(Statement::Blackbox(BlackboxStatement::BlackBox {
         is_unblackbox,
         pool_ids,
     }))

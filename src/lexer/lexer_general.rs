@@ -164,6 +164,7 @@ pub enum Statement {
     MessageFlow(MessageFlowMeta),
     Data(DataMeta), // 'SD' for datastore 'OD' for dataobject '&' for continuation
     Layout(LayoutStatement),
+    Blackbox(BlackboxStatement),
     PeBpmd(PeBpmd),
     BoundaryEvent(BoundaryEventMeta),
 }
@@ -183,6 +184,10 @@ pub enum LayoutStatement {
     // from the left below again, similar to a line break.
     // Note: This is just an idea for a future feature.
     //RowWidth(usize),
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum BlackboxStatement {
     BlackBoxAll {
         is_unblackbox: bool,
     },
@@ -204,7 +209,9 @@ pub(crate) struct BoundaryEventMeta {
 pub(crate) struct MessageFlowMeta {
     pub display_text: String,
     pub sender_id: String,
+    pub sender_tc: TokenCoordinate,
     pub receiver_id: String,
+    pub receiver_tc: TokenCoordinate,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -221,6 +228,7 @@ pub(crate) struct EdgeMeta {
     pub(crate) target: String,
     /// The text which shall be displayed on the edge.
     pub(crate) text_label: String,
+    pub(crate) tc: TokenCoordinate,
 }
 
 #[derive(Debug, Clone, Copy, Eq, PartialEq)]
@@ -276,6 +284,7 @@ pub(crate) struct DataFlowMeta {
     pub(crate) direction: Direction,
     pub(crate) target: String,
     pub(crate) text_label: String,
+    pub(crate) tc: TokenCoordinate,
 }
 
 #[derive(Debug, Clone, Copy, Eq, PartialEq)]
@@ -470,7 +479,7 @@ fn to_pool(atts: Tokens, backup_tc: TokenCoordinate) -> AResult {
     Ok(Statement::Pool(PoolMeta {
         title: atts.display_text.unwrap(),
         shorthand_syntax: atts.used_shorthand_syntax,
-        is_blackbox: dbg!(atts.activity_marker.is_blackbox),
+        is_blackbox: atts.activity_marker.is_blackbox,
         multiple: atts.activity_marker.multiple,
     }))
 }
@@ -699,6 +708,7 @@ fn to_data(mut tokens: Tokens, backup_tc: TokenCoordinate) -> AResult {
             direction,
             target: edge_meta.target,
             text_label: edge_meta.text_label,
+            tc: edge_meta.tc,
         })
         .collect::<Vec<_>>();
 
@@ -762,18 +772,24 @@ fn to_message_flow(atts: Tokens, backup_tc: TokenCoordinate) -> AResult {
     )?;
 
     let flows = atts.left_and_right_arrows;
-    let (sender_id, receiver_id) = flows.iter().fold((None, None), |mut acc, (dir, meta)| {
-        match dir {
-            Direction::Incoming => acc.0 = Some(meta.target.clone()),
-            Direction::Outgoing => acc.1 = Some(meta.target.clone()),
-        }
-        acc
-    });
+    let (Some((sender_id, sender_tc)), Some((receiver_id, receiver_tc))) =
+        flows.iter().fold((None, None), |mut acc, (dir, meta)| {
+            match dir {
+                Direction::Incoming => acc.0 = Some((meta.target.clone(), meta.tc)),
+                Direction::Outgoing => acc.1 = Some((meta.target.clone(), meta.tc)),
+            }
+            acc
+        })
+    else {
+        unreachable!("Both sender ID and receiver ID should be present.")
+    };
 
     Ok(Statement::MessageFlow(MessageFlowMeta {
         display_text: atts.display_text.unwrap_or_default(),
-        sender_id: sender_id.expect("Message flow must have a sender ID"),
-        receiver_id: receiver_id.expect("Message flow must have a receiver ID"),
+        sender_id,
+        sender_tc,
+        receiver_id,
+        receiver_tc,
     }))
 }
 
@@ -1765,7 +1781,17 @@ impl<'a> Lexer<'a> {
                     self.sas.add_fragment(
                         tc,
                         tc_end.end,
-                        Token::Flow(Direction::Outgoing, EdgeMeta { target, text_label }),
+                        Token::Flow(
+                            Direction::Outgoing,
+                            EdgeMeta {
+                                target,
+                                text_label,
+                                tc: TokenCoordinate {
+                                    end: tc_end.end,
+                                    ..tc
+                                },
+                            },
+                        ),
                     )?;
                 }
                 Some('<') if self.continues_with("-") => {
@@ -1781,7 +1807,17 @@ impl<'a> Lexer<'a> {
                     self.sas.add_fragment(
                         tc,
                         tc_end.end,
-                        Token::Flow(Direction::Incoming, EdgeMeta { target, text_label }),
+                        Token::Flow(
+                            Direction::Incoming,
+                            EdgeMeta {
+                                target,
+                                text_label,
+                                tc: TokenCoordinate {
+                                    end: tc_end.end,
+                                    ..tc
+                                },
+                            },
+                        ),
                     )?;
                 }
 
@@ -2134,6 +2170,10 @@ impl<'a> Lexer<'a> {
             }
             "import" => {
                 self.run_import()?;
+                // Special case - import parses in-line as the regular `to_xyz` function does not
+                // support returning multiple statements. That also means that the sanity check
+                // after this match must be skipped.
+                return Ok(());
             }
             "blackbox" | "unblackbox" => {
                 let is_unblackbox = extension_type == "unblackbox";

@@ -37,7 +37,6 @@ use proc_macros::{e, from, n, to};
 use std::collections::HashSet;
 
 pub fn port_assignment(graph: &mut Graph) {
-    dbg!(&graph);
     // First handle non-gateway nodes and then gateway nodes in two separate loops. This way,
     // `is_vertical_edge` is easier as it does not need to account for gateway bend dummies which
     // make everything harder (since the gateway node "disappears").

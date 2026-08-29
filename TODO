@@ -37,7 +37,6 @@ After 1.0:
 * PE-BPMN tee-external-root-access in a tee-pool should not name itself (@tee-pool)
 * PE-BPMN tee-software-operators should have a similar `on-premises` placeholder as tee-hardware-operators. `local`? as `on-premises` seems weird. (ChatGPT recommends replacing existing 'on-premises' with 'local' as well, not sure if I agree, must sleep over that suggestion)
 * is `on-premises` for hardware-access doing the wrong thing?
-* PE-BPMN the selectors (e.g. secure-channel begin and end) should better filter their node types. Right now one can accidentally select data nodes which doesn't make sense and results in a non-helpful assertion error.
 * error in pe bpmd tool should result in error of test suite.
 * D1.1, page 53 figure 12 subprocess P5, is a good diagram that should be layoutable now.
 * Split the binary into a crate and a binary.
