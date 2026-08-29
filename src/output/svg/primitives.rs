@@ -332,12 +332,10 @@ impl Svg {
             );
             cumulative_height += lane_height;
         }
-        writeln!(self.body, "</g>").unwrap();
-
         if multiple {
             let start_x = content_width / 2 + pool_header_width - ACTIVITY_MARKER_DIMENSION / 2;
             let y_padding = 3;
-            let start_y = height - y_padding - ACTIVITY_MARKER_DIMENSION;
+            let start_y = dbg!(height) - y_padding - ACTIVITY_MARKER_DIMENSION;
             writeln!(
                     self.body,
                     r##"  <use href="#tm-multiple" x="{start_x}" y="{start_y}" width="{ACTIVITY_MARKER_DIMENSION}" height="{ACTIVITY_MARKER_DIMENSION}" stroke="{}" fill="none" />"##,
@@ -345,6 +343,8 @@ impl Svg {
                 )
                 .unwrap();
         }
+
+        writeln!(self.body, "</g>").unwrap();
     }
 
     pub fn draw_task(
