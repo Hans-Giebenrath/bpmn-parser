@@ -2,7 +2,6 @@ Big TODOs before 1.0:
 - Black Box Pools
   - port order calculation for message flows to blackbox pools (not from) must be updated, as they behave as if they were reversed.
 - rename `left of` to `before`
-- forbid `[place ...]` for data nodes (make it an error - don't just ignore them, as that would create in semantic changes in the future, possibly breaking older good diagrams)
 - fix the smaller bugs, especially in the pe-bpmn module.
 
 After 1.0:
