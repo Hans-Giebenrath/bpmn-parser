@@ -53,6 +53,7 @@ pub fn find_straight_edges(graph: &mut Graph) {
 
     data_edge_routing(graph, &grid, margin);
     sequence_edge_routing(graph);
+    message_flow_routing(graph);
 }
 
 fn sequence_edge_routing(graph: &mut Graph) {
@@ -252,4 +253,22 @@ fn endpoints(
             (y + visual_boundary[degrees].1 as u32) as usize,
         ),
     )
+}
+
+/// MFs which go between two blackbox pools are not routed, so just assign an empty FullyRouted.
+fn message_flow_routing(graph: &mut Graph) {
+    for edge_id in (0..graph.edges.len()).map(EdgeId) {
+        let edge = &mut e!(edge_id);
+        if edge.is_message_flow()
+            && let EdgeType::Regular { bend_points, .. } = &mut edge.edge_type
+            && n!(edge.from).is_blackbox_node()
+            && n!(edge.to).is_blackbox_node()
+        {
+            // Route blackbox edges here, so they don't need to be handled later in
+            // the edge routing phase anymore. There should not be any dummy edges
+            // in the blackbox, so it is just about regular edges.
+            *bend_points = RegularEdgeBendPoints::FullyRouted(vec![]);
+            continue;
+        }
+    }
 }

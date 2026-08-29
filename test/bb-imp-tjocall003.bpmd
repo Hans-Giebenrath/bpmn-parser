@@ -1,0 +1,5 @@
+[import "./tjoc-all.bpmd"]
+[blackbox all]
+[unblackbox @output-party]
+[unblackbox @input-party]
+

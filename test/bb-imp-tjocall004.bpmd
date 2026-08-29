@@ -1,0 +1,5 @@
+// So this is not really testing anything new, but I just think that this blackbox feature
+// is so pleasing to look at that I want more of it.
+[import "./tjoc-all.bpmd"]
+[blackbox all]
+[unblackbox @system-operator]

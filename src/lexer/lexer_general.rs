@@ -2176,13 +2176,13 @@ impl<'a> Lexer<'a> {
                 return Ok(());
             }
             "blackbox" | "unblackbox" => {
+                self.sas.next_statement(tc, self.position, to_blackbox)?;
                 let is_unblackbox = extension_type == "unblackbox";
                 self.sas.add_implicit_fragment(
                     tc,
                     self.position,
                     Token::BlackBox { is_unblackbox },
                 );
-                self.sas.next_statement(tc, self.position, to_blackbox)?;
                 tc = TokenCoordinate {
                     start: tc.start,
                     end: tc_end.end,

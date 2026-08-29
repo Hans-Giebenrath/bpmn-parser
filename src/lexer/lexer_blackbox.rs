@@ -2,9 +2,9 @@ use crate::{lexer::*, parser::ParseError};
 use itertools::Itertools;
 const VARIANTS: [&str; 4] = [
     "blackbox all",
-    "blackbox @pool_a @pool_b // any number of pools, at least 1",
+    "blackbox @pool-a @pool-b // any number of pools, at least 1",
     "unblackbox all",
-    "unblackbox @pool_a @pool_b // any number of pools, at least 1",
+    "unblackbox @pool-a @pool-b // any number of pools, at least 1",
 ];
 pub fn to_blackbox(mut tokens: Tokens, backup_tc: TokenCoordinate) -> AResult {
     let return_error = |unexpected_token_tc: Option<TokenCoordinate>| {
@@ -48,8 +48,8 @@ pub fn to_blackbox(mut tokens: Tokens, backup_tc: TokenCoordinate) -> AResult {
     let pool_ids = tokens
         .into_iter()
         .map(|(tc, token)| {
-            if let Token::Text(text) = token {
-                Ok((tc, text))
+            if let Token::Id(id) = token {
+                Ok((tc, id))
             } else {
                 Err(return_error(Some(tc)))
             }

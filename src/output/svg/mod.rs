@@ -117,7 +117,9 @@ pub fn to_svg(graph: &Graph, embed_font: bool) -> String {
         };
 
         let style = edge_style(edge);
-        if let Some(boundary_event) = &edge.attached_to_boundary_event {
+        if let Some(boundary_event) = &edge.attached_to_boundary_event
+            && !bend_points.is_empty()
+        {
             svg.draw_boundary_event(
                 (boundary_event.x, boundary_event.y),
                 boundary_event.event_type,
@@ -157,7 +159,7 @@ fn prepare_collision_grid(graph: &Graph) -> Grid {
             ..
         } = &edge.edge_type
         else {
-            unreachable!("Only regular edges at this point");
+            unreachable!("Only regular edges at this point, {edge:?}");
         };
         let weight = match edge.flow_type {
             FlowType::MessageFlow(..) => 8,
