@@ -646,6 +646,9 @@ impl Parser {
     }
 
     fn parse_message_flow(&mut self, meta: MessageFlowMeta) -> Result<(), ParseError> {
+        todo!("see comment below");
+        //if MF ID matches pool, then that pool must be marked as a blackbox pool, otherwise make a new lookup only within the node namespace.
+        //if blackbox statement unblackboxes a pool which has been targeted by an MF, then it cannot be unblackboxed anymore.
         let sender_node = self
             .context
             .node_id_matcher

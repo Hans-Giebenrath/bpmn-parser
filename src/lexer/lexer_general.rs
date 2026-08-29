@@ -183,6 +183,13 @@ pub enum LayoutStatement {
     // from the left below again, similar to a line break.
     // Note: This is just an idea for a future feature.
     //RowWidth(usize),
+    BlackBoxAll {
+        is_unblackbox: bool,
+    },
+    BlackBox {
+        is_unblackbox: bool,
+        pool_ids: Vec<(TokenCoordinate, String)>,
+    },
 }
 
 pub type StatementStream = std::vec::IntoIter<(TokenCoordinate, Statement)>;
@@ -1013,6 +1020,13 @@ fn assemble_attributes(
                     it.0,
                 )]);
             }
+            Token::BlackBox { .. } => {
+                return Err(vec![(
+                    "Programming error: BlackBox should be handled by the calling function."
+                        .to_string(),
+                    it.0,
+                )]);
+            }
             Token::UsedShorthandSyntax => out.used_shorthand_syntax = true,
             Token::ExtensionArgument(_) | Token::Separator => (),
         };
@@ -1148,6 +1162,9 @@ pub enum Token {
     UsedShorthandSyntax,
     BoundaryEvent(BoundaryEventType, InterruptKind),
     Event(EventType),
+    BlackBox {
+        is_unblackbox: bool,
+    },
 
     // ======================
     // == Extension Tokens ==
@@ -1962,7 +1979,7 @@ impl<'a> Lexer<'a> {
                 Some('[') if self.sas.allow_new_statement => {
                     let tc = self.current_coord();
                     self.advance();
-                    self.start_extension(tc)?;
+                    self.run_extension(tc)?;
                 }
                 Some('\n') | Some('\r') => {
                     self.advance();
@@ -2067,7 +2084,7 @@ impl<'a> Lexer<'a> {
         }
     }
 
-    pub fn start_extension(&mut self, tc: TokenCoordinate) -> Result<(), ParseError> {
+    pub fn run_extension(&mut self, tc: TokenCoordinate) -> Result<(), ParseError> {
         self.skip_whitespace();
         loop {
             match self.current_char {
@@ -2089,57 +2106,77 @@ impl<'a> Lexer<'a> {
                     return Err(vec![("Empty extension block. Make sure you complete the full \"[...]\" statement".to_string(), tc, )]);
                 }
                 Some(_) => {
-                    // Read extension
-                    let mut tc = self.current_coord();
-                    let (tc_end, extension_type) = self.read_label()?;
-                    // Check extension type
-                    if extension_type == "pe-bpmd" {
-                        self.sas.next_statement(tc, self.position, to_pe_bpmd)?;
-                        tc = TokenCoordinate {
-                            start: tc.start,
-                            end: tc_end.end,
-                            source_file_idx: tc.source_file_idx,
-                        };
-                        self.run_pe_bpmd(tc)?;
-                        // Empty [pe-bpmd]
-                        // TODO this is actually not a big deal? Could be due to code generation.
-                        if self.sas.fragments.is_empty() {
-                            return Err(vec![("Empty extension block. Make sure you complete the full \"[pe-bpmd...]\" statement".to_string(), tc, )]);
-                        }
-                        break;
-                    }
-                    if extension_type == "import" {
-                        self.run_import()?;
-                        break;
-                    }
-                    if extension_type == "place" {
-                        self.sas.next_statement(tc, self.position, to_place)?;
-                        tc = TokenCoordinate {
-                            start: tc.start,
-                            end: tc_end.end,
-                            source_file_idx: tc.source_file_idx,
-                        };
-                        self.run_place(tc)?;
-                        // Empty [place]
-                        // TODO this is actually not a big deal? Could be due to code generation.
-                        if self.sas.fragments.is_empty() {
-                            return Err(vec![("Empty extension block. Make sure you complete the full \"[pe-bpmd...]\" statement".to_string(), tc, )]);
-                        }
-                        break;
-                    }
-                    return Err(vec![(
-                        "Invalid extension. Valid extensions are: 'place', 'pe-bpmd'".to_string(),
-                        TokenCoordinate {
-                            start: tc.start,
-                            end: tc_end.end,
-                            source_file_idx: tc.source_file_idx,
-                        },
-                    )]);
+                    return self.run_extension_inner();
                 }
                 None => {
                     return Err(vec![("Unfinished extension block. Make sure you complete the full \"[...]\" statement.".to_string(),tc, )]);
                 }
             }
+        }
+    }
+
+    pub fn run_extension_inner(&mut self) -> Result<(), ParseError> {
+        // Read extension
+        let mut tc = self.current_coord();
+        let (tc_end, extension_type) = self.read_label()?;
+        // Hoist it here, as inlining hinders rustfmt from formatting the whole match statement.
+        const MISMATCH_ERR: &str = "Invalid extension. Valid extensions are: 'place', 'pe-bpmd', 'import', 'blackbox', 'unblackbox'";
+
+        match extension_type.as_str() {
+            "pe-bpmd" => {
+                self.sas.next_statement(tc, self.position, to_pe_bpmd)?;
+                tc = TokenCoordinate {
+                    start: tc.start,
+                    end: tc_end.end,
+                    source_file_idx: tc.source_file_idx,
+                };
+                self.run_pe_bpmd(tc)?;
+            }
+            "import" => {
+                self.run_import()?;
+            }
+            "blackbox" | "unblackbox" => {
+                let is_unblackbox = extension_type == "unblackbox";
+                self.sas.add_implicit_fragment(
+                    tc,
+                    self.position,
+                    Token::BlackBox { is_unblackbox },
+                );
+                self.sas.next_statement(tc, self.position, to_blackbox)?;
+                tc = TokenCoordinate {
+                    start: tc.start,
+                    end: tc_end.end,
+                    source_file_idx: tc.source_file_idx,
+                };
+                self.run_blackbox(tc, &extension_type)?;
+            }
+            "place" => {
+                self.sas.next_statement(tc, self.position, to_place)?;
+                tc = TokenCoordinate {
+                    start: tc.start,
+                    end: tc_end.end,
+                    source_file_idx: tc.source_file_idx,
+                };
+                self.run_place(tc)?;
+            }
+            _ => {
+                return Err(vec![(
+                    MISMATCH_ERR.to_string(),
+                    TokenCoordinate {
+                        start: tc.start,
+                        end: tc_end.end,
+                        source_file_idx: tc.source_file_idx,
+                    },
+                )]);
+            }
+        }
+        if self.sas.fragments.is_empty() {
+            return Err(vec![(
+                format!(
+                    "Empty extension block. Make sure you complete the full \"[{extension_type}...]\" statement"
+                ),
+                tc,
+            )]);
         }
         Ok(())
     }
