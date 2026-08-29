@@ -8,7 +8,7 @@ const PLACE_VARIANTS: [&str; 4] = [
     // Ideas (wording suggested by ChatGPT):
     // "place @node_a (no) higher than @node_b",
 ];
-pub fn to_place(tokens: Tokens, _backup_tc: TokenCoordinate) -> AResult {
+pub fn to_place(tokens: Tokens, backup_tc: TokenCoordinate) -> AResult {
     let return_error = || {
         // Idea: maybe a "place @node_a exactly left of @node_b"? Or a "align @node_a and @node_b vertically" though that opens the question why not "... horizontally".
         // Better (ChatGPT suggestions): "place @node_a (no) higher than @node_b", or "(no) lower
@@ -19,8 +19,8 @@ pub fn to_place(tokens: Tokens, _backup_tc: TokenCoordinate) -> AResult {
             .map(|content| format!("\n\t{content}"))
             .join("");
         Err(vec![(
-            format!("Placement syntax incorrect. Expecting one of: {help}"),
-            _backup_tc,
+            format!("Placement syntax incorrect. Expecting one of:{help}"),
+            backup_tc,
         )])
     };
 
