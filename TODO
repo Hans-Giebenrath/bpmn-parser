@@ -1,7 +1,6 @@
 Big TODOs before 1.0:
 - Black Box Pools
   - port order calculation for message flows to blackbox pools (not from) must be updated, as they behave as if they were reversed.
-- Fix reverse sweep phase
 - rename `left of` to `before`
 - forbid `[place ...]` for data nodes (make it an error - don't just ignore them, as that would create in semantic changes in the future, possibly breaking older good diagrams)
 - fix the smaller bugs, especially in the pe-bpmn module.
@@ -17,7 +16,7 @@ After 1.0:
 - delayed import statement (needs serialization of BpmdSourceFile + the TokenStream, so that error reporting is nice. But then I also need to thing about forward compatible serialization, i.e. ideally ensuring that data types in the TokenStream are overall good and will only receive new fields in the future.
 - parse config values
 
-* pe0003, tt01: backwords sweep seems to be broken. For pe0003 the DO outgoing edges are wrongly ordered, especially the edge going to Upper 4 should have its port above. The reason is that sweeping (i.e. crossing reduction) puts the long edge dummies of the outgoing data edges into a non-optimal position. Not sure if backsweep misses it, or if forward sweep verschlimmbessert it again.
+* pe0003, tt01: backwords sweep seems to be broken (but then again, disabling forward sweeps still results in correct layouts in other diagrams?!). For pe0003 the DO outgoing edges are wrongly ordered, especially the edge going to Upper 4 should have its port above. The reason is that sweeping (i.e. crossing reduction) puts the long edge dummies of the outgoing data edges into a non-optimal position. Not sure if backsweep misses it, or if forward sweep verschlimmbessert it again.
 * data elements have wonky y-coordinate differences, although it looks like they should all be at the same height. Also, they are oftentimes not put into the next halflayer, even though there is enough room.
 * black box pools
 * ActivityMarkers should just be 15x15, looks better than 20x20.
