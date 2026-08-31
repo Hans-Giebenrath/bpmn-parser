@@ -14,4 +14,4 @@ X GW ->out
 
 [place @n1 above @gw]
 [place @n2 below @gw]
-[place @gw left of @start]
+[place @gw before @start]

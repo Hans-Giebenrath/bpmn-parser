@@ -4,7 +4,7 @@ const PLACE_VARIANTS: [&str; 4] = [
     "place @node_a above @node_b",
     "place @node_a below @node_b",
     "place @node_a above or below @node_b",
-    "place @node_a left of @node_b",
+    "place @node_a before @node_b",
     // Ideas (wording suggested by ChatGPT):
     // "place @node_a (no) higher than @node_b",
 ];
@@ -57,10 +57,9 @@ pub fn to_place(tokens: Tokens, backup_tc: TokenCoordinate) -> AResult {
         }
         [
             (tc_a, Token::Id(node_a)),
-            (_, Token::Text(left)),
-            (_, Token::Text(of)),
+            (_, Token::Text(before)),
             (tc_b, Token::Id(node_b)),
-        ] if left == "left" && of == "of" => Ok(Statement::Layout(LayoutStatement::LeftOf {
+        ] if before == "before" => Ok(Statement::Layout(LayoutStatement::Before {
             left: (*tc_a, std::mem::take(node_a)),
             right: (*tc_b, std::mem::take(node_b)),
         })),

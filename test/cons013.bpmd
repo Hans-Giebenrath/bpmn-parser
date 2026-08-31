@@ -27,4 +27,4 @@ X gateway <-inc ->outg
 
 . End L6 <-outg
 
-[place @gateway left of @prex]
+[place @gateway before @prex]

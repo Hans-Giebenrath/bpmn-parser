@@ -89,12 +89,12 @@ fn solve_layers(graph: &mut Graph) {
                 && !n!(edge.from).is_blackbox_node()
         })
         .map(|(_, edge)| (edge.from, edge.to, true, "regular edge"))
-        .chain(graph.layout_constraints.left_of.iter().map(|constraint| {
+        .chain(graph.layout_constraints.before.iter().map(|constraint| {
             (
                 constraint.left,
                 constraint.right,
                 false,
-                "left-of constraint",
+                "before constraint",
             )
         }))
         .for_each(|(left, right, minimize, msg)| {
@@ -106,7 +106,7 @@ fn solve_layers(graph: &mut Graph) {
             let from_var = aux(&n!(left));
             let to_var = aux(&n!(right));
             d!(eprintln!(
-                "constraint n({}) leftof n({}) ({msg})",
+                "constraint n({}) before n({}) ({msg})",
                 left.0, right.0
             ));
             constraints.push((to_var - from_var).geq(1));

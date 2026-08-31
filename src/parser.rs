@@ -19,7 +19,7 @@ use crate::common::vecset::VecSet;
 use crate::id_matcher::IdMatcher;
 use crate::id_matcher::SomeId;
 use crate::layout::constraint::Above;
-use crate::layout::constraint::LeftOf;
+use crate::layout::constraint::Before;
 use crate::layout::constraint::SameLayer;
 use crate::lexer::ActivityMeta;
 use crate::lexer::BlackboxStatement;
@@ -1002,8 +1002,8 @@ impl Parser {
                     below: find_node(self, &below)?,
                 });
             }
-            LayoutStatement::LeftOf { left, right } => {
-                self.graph.layout_constraints.left_of.push(LeftOf {
+            LayoutStatement::Before { left, right } => {
+                self.graph.layout_constraints.before.push(Before {
                     left: find_node(self, &left)?,
                     right: find_node(self, &right)?,
                 });

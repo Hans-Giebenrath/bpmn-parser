@@ -171,7 +171,7 @@ pub enum Statement {
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum LayoutStatement {
-    LeftOf {
+    Before {
         left: (TokenCoordinate, String),
         right: (TokenCoordinate, String),
     },

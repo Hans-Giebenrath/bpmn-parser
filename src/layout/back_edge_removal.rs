@@ -1,6 +1,6 @@
 use crate::common::graph::{EdgeId, Graph, NodeId};
 use crate::common::node::Node;
-use crate::layout::constraint::{Above, LeftOf, SameLayer};
+use crate::layout::constraint::{Above, Before, SameLayer};
 use good_lp::*;
 use proc_macros::e;
 use proc_macros::n;
@@ -35,9 +35,9 @@ use std::iter::Sum;
 // pub back_edge_removal(nodes, edges, left-rights, same-layers) {
 
 // a -> b -> c -> d
-// a leftof b
-// c leftof a
-// b leftof c
+// a before b
+// c before a
+// b before c
 
 // Strategy:
 // - Iterate all cycles:
@@ -52,7 +52,7 @@ use std::iter::Sum;
 //      - Each user-defined back edge must be 1.
 //
 // Invalid situations to discover:
-//  (1) A cycle with left-of and no sequence flow exists.
+//  (1) A cycle with before and no sequence flow exists.
 //  (2) A cycle of only above edges exist (where the directed variant creates a cycle, so not
 //      following above edges in reverse direction as is done in (1))
 
@@ -134,7 +134,7 @@ fn solve_ilp(graph: &mut Graph, back_edge_groups: &[Vec<EdgeId>]) {
 
 fn analyse_cycle(cycle: &[PathSegment]) -> Result<Option<EdgeId>, String> {
     //let mut earliest_sf = None;
-    let mut contains_left_of_constraint = false;
+    let mut contains_before_constraint = false;
     let mut contains_above_flipped = false;
     let mut contains_above_not_flipped = false;
     let mut contains_same_layer = false;
@@ -145,7 +145,7 @@ fn analyse_cycle(cycle: &[PathSegment]) -> Result<Option<EdgeId>, String> {
                 //earliest_sf = Some(*edge_id)
             }
             //EdgeType::SequenceFlow(edge_id) => (),
-            EdgeType::LeftOfConstraint => contains_left_of_constraint = true,
+            EdgeType::BeforeConstraint => contains_before_constraint = true,
             EdgeType::AboveConstraint { flipped } if *flipped == true => {
                 contains_above_flipped = true
             }
@@ -154,7 +154,7 @@ fn analyse_cycle(cycle: &[PathSegment]) -> Result<Option<EdgeId>, String> {
         }
     }
     match (
-        contains_left_of_constraint,
+        contains_before_constraint,
         contains_above_not_flipped,
         contains_above_flipped,
         contains_same_layer,
@@ -188,7 +188,7 @@ fn iterate_all_cycles(callback: &mut dyn FnMut(&[PathSegment]), graph: &Graph) {
 #[derive(Debug)]
 enum EdgeType {
     SequenceFlow(EdgeId),
-    LeftOfConstraint,
+    BeforeConstraint,
     AboveConstraint { flipped: bool },
     SameLayerConstraint,
 }
@@ -224,14 +224,14 @@ fn traverse_path(
             );
         }
     }
-    for LeftOf { left, right } in &graph.layout_constraints.left_of {
+    for Before { left, right } in &graph.layout_constraints.before {
         if current_node.id == *left {
             recurse_maybe(
                 callback,
                 graph,
                 current_node,
                 &n!(*right),
-                EdgeType::LeftOfConstraint,
+                EdgeType::BeforeConstraint,
                 path,
             );
         }

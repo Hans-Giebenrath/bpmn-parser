@@ -5,7 +5,7 @@ use crate::common::vecset::VecSet;
 
 #[derive(Default, Debug, Clone)]
 pub struct LayoutConstraints {
-    pub left_of: Vec<LeftOf>,
+    pub before: Vec<Before>,
     pub above: Vec<Above>,
     pub same_layer: Vec<SameLayer>,
     /// Note: These are _only_ the user provided back edge constraints. The results of the back edge
@@ -18,7 +18,7 @@ pub struct LayoutConstraints {
 }
 
 #[derive(Debug, Clone, PartialEq)]
-pub struct LeftOf {
+pub struct Before {
     pub left: NodeId,
     pub right: NodeId,
 }
@@ -43,7 +43,7 @@ impl LayoutConstraints {
     }
 
     pub fn remove_references_to_blackboxes(&mut self, nodes: &[Node]) {
-        self.left_of
+        self.before
             .retain(|c| !nodes[c.left].is_blackbox_node() && !nodes[c.right].is_blackbox_node());
         self.above
             .retain(|c| !nodes[c.above].is_blackbox_node() && !nodes[c.below].is_blackbox_node());

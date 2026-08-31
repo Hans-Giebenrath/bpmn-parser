@@ -1,7 +1,7 @@
 Big TODOs before 1.0:
 - Black Box Pools
   - port order calculation for message flows to blackbox pools (not from) must be updated, as they behave as if they were reversed.
-- rename `left of` to `before`
+  - interaction with pe-bpmd, especially because currently the distinction between data and nondata nodes is lost. Blackbox node type probably needs a `is_data_node: bool` or something like that.
 - fix the smaller bugs, especially in the pe-bpmn module.
 
 After 1.0:

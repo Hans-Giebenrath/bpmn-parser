@@ -397,9 +397,9 @@ You will likely encounter generated diagrams where you see a potential for a bet
 ** `[place @node-a below @node-b]`
 ** `[place @node-a above or below @node-b]`
 * Force one node into another layer than another node:
-** `[place @node-a left of @node-b]`
+** `[place @node-a before @node-b]`
 
-In the future I might expand this to also exclude `right of`, `left or right of`, `higher than`, `lower than` and `higher or lower than`. Input for other ideas is welcome.
+In the future I might expand this to also exclude `left of`, `left or right of`, `higher than`, `lower than` and `higher or lower than`. Input for other ideas is welcome.
 
 Using these placement instructions, you can for example break a long sequence of statements into a new line, or you can better align critical nodes across pools.
 
