@@ -13,11 +13,10 @@ After 1.0:
 - Forced line break in display text, for manual collision avoidance.
 - `[compact]` which tries to remove whitespace at all kinds of locations, to make space between events less large. This is likely a mega project, but will result in even more naturally looking diagrams.
 - delayed import statement (needs serialization of BpmdSourceFile + the TokenStream, so that error reporting is nice. But then I also need to thing about forward compatible serialization, i.e. ideally ensuring that data types in the TokenStream are overall good and will only receive new fields in the future.
-- parse config values
+- Parse config values from the .bpmd file (see common/config.rs which is already macro-ified for this purpose).
+- `import` should provide an output of all imported files, for GNU Make etc
 
 * pe0003, tt01: backwords sweep seems to be broken (but then again, disabling forward sweeps still results in correct layouts in other diagrams?!). For pe0003 the DO outgoing edges are wrongly ordered, especially the edge going to Upper 4 should have its port above. The reason is that sweeping (i.e. crossing reduction) puts the long edge dummies of the outgoing data edges into a non-optimal position. Not sure if backsweep misses it, or if forward sweep verschlimmbessert it again.
-* data elements have wonky y-coordinate differences, although it looks like they should all be at the same height. Also, they are oftentimes not put into the next halflayer, even though there is enough room.
-* black box pools
 * ActivityMarkers should just be 15x15, looks better than 20x20.
 * extend on cons012(-m) to also have gateway successors within the same lane, or other lanes. Also mirror them (also cons013) to check incoming vs outgoing correctness, and order of their processing in port assignment.
 * cons013: The backedgecornerdummy should be merged into the gateway during xy-ilp phase.
@@ -28,12 +27,9 @@ After 1.0:
 * Coordinates should be u32 instead of usize.
 * edges should use the INCOMING=0 and OUTGOING=1 thing, so that the whole direction handling becomes easier.
 * model the diagrams from https://thesis.cs.ut.ee/82dce7c0-0318-4c55-b1a8-e3d28cd170cf, see if they spark some ideas.
-* Parse config values from the .bpmd file (see common/config.rs which is already macro-ified for this purpose).
-* `import` statement
 * <D, >D, <&, >& support (not sure if they are useful at all for non-executable BPMN)
 * g0014: why is the data edge doing such funny staircases? should go straight to the right.
 
-* PE-BPMN tee-external-root-access in a tee-pool should not name itself (@tee-pool)
 * PE-BPMN tee-software-operators should have a similar `on-premises` placeholder as tee-hardware-operators. `local`? as `on-premises` seems weird. (ChatGPT recommends replacing existing 'on-premises' with 'local' as well, not sure if I agree, must sleep over that suggestion)
 * is `on-premises` for hardware-access doing the wrong thing?
 * error in pe bpmd tool should result in error of test suite.

@@ -181,9 +181,13 @@ impl Parser {
         let computation_common = self.parse_tee_or_mpc_inner(common, tee_or_mpc)?;
 
         match &computation_common.pebpmd_type {
-            &PeBpmdSubType::Pool(..) => self.verify_pebpmd_pool(&computation_common, tee_or_mpc),
-            &PeBpmdSubType::Lane { .. } => self.verify_pebpmd_lane(&computation_common, tee_or_mpc),
-            PeBpmdSubType::Tasks(..) => self.verify_pebpmd_tasks(&computation_common, tee_or_mpc),
+            &PeBpmdSubType::Pool(..) => self.verify_pebpmd_pool(&computation_common, tee_or_mpc)?,
+            &PeBpmdSubType::Lane { .. } => {
+                self.verify_pebpmd_lane(&computation_common, tee_or_mpc)?
+            }
+            PeBpmdSubType::Tasks(..) => {
+                self.verify_pebpmd_tasks(&computation_common, tee_or_mpc)?
+            }
         };
         Ok(computation_common)
     }
@@ -215,9 +219,9 @@ impl Parser {
                 .unwrap_or(0),
         };
 
-        let (pebpmd_type, software_operators, hardware_operators) = match lexer.pebpmd_type {
+        let (pebpmd_type, software_operators, hardware_operators) = match &lexer.pebpmd_type {
             lexer::PeBpmdSubType::Pool(pool_str, _tc) => {
-                let pool_id = self.find_pool_id_or_error(&pool_str)?;
+                let pool_id = self.find_pool_id_or_error(pool_str)?;
                 if lexer.software_operators.is_empty() {
                     return Err(self.smthng_missing_error(tee_or_mpc, "software-operators", ""));
                 }
@@ -258,9 +262,9 @@ impl Parser {
                 )
             }
             lexer::PeBpmdSubType::Lane(lane_str, lane_tc) => {
-                let (pool_id, lane_id) = self.context.id_matcher.find_lane_id(&lane_str).ok_or_else(|| vec![(
+                let (pool_id, lane_id) = self.context.id_matcher.find_lane_id(lane_str).ok_or_else(|| vec![(
                     format!("Lane with name {lane_str} was not found in any pool. Have you defined it?"),
-                    lane_tc,
+                    *lane_tc,
 
                 )])?;
                 let software_operators = lexer
@@ -385,7 +389,27 @@ impl Parser {
                         format!("external_root_access pool with ID ({pool_str}) was not found. Have you defined it?"),
                         *pool_tc,
 
-                    )])
+                    )]).and_then(|e| if PeBpmdSubType::Pool(e) == pebpmd_type {
+                        let lexer::PeBpmdSubType::Pool(_, tee_pool_tc) = lexer.pebpmd_type else {
+                            unreachable!();
+                        };
+                        Err(vec![
+                            (
+                                "external_root_access is not allowed to refer to itself.".to_string(),
+                                *pool_tc,
+                            ),
+                            (
+                                "This ID refers to the same pool.".to_string(),
+                                tee_pool_tc
+                            ),
+                            (
+                                "This is the referenced pool.".to_string(),
+                                self.graph.pools[e].tc
+                            )
+                        ])
+                    } else {
+                        Ok(e)
+                    })
                 }).collect::<Result<Vec<PoolId>, _>>()?;
 
         let all_node_ids = std::iter::empty::<&Protection>()
