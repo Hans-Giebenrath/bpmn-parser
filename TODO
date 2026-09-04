@@ -30,7 +30,7 @@ After 1.0:
 * <D, >D, <&, >& support (not sure if they are useful at all for non-executable BPMN)
 * g0014: why is the data edge doing such funny staircases? should go straight to the right.
 
-* PE-BPMN tee-software-operators should have a similar `on-premises` placeholder as tee-hardware-operators. `local`? as `on-premises` seems weird. (ChatGPT recommends replacing existing 'on-premises' with 'local' as well, not sure if I agree, must sleep over that suggestion)
+* PE-BPMN tee-software-operators should have a similar `on-premises` placeholder as tee-hardware-operators. RESOLVED: Just use `containing-pool`, makes the most sense and should be easy to remember. `local`? as `on-premises` seems weird. (ChatGPT recommends replacing existing 'on-premises' with 'local' as well, not sure if I agree, must sleep over that suggestion)
 * is `on-premises` for hardware-access doing the wrong thing?
 * error in pe bpmd tool should result in error of test suite.
 * D1.1, page 53 figure 12 subprocess P5, is a good diagram that should be layoutable now.
