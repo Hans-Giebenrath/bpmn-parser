@@ -798,7 +798,9 @@ fn parse_ids_or_placeholder(
                     placeholder_found = true;
                 } else {
                     return Err(vec![(
-                        format!("Unexpected argument. Did you mean \"{placeholder}\"?",),
+                        format!(
+                            "Unexpected argument. Did you mean \"{placeholder}\"? Or did you forget to prepend an ID with the `@` sigil?",
+                        ),
                         tc,
                     )]);
                 }
