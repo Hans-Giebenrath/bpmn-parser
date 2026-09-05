@@ -1,5 +1,7 @@
 use crate::{lexer::*, parser::ParseError};
 
+pub const CONTAINING_POOL_ONLY_KEYWORD: &str = "containing-pool-only";
+
 #[derive(Debug, Clone, PartialEq)]
 pub struct PeBpmd {
     pub r#type: PeBpmdType,
@@ -43,9 +45,9 @@ pub struct ComputationCommon {
     pub data_without_protection: Vec<(String, TokenCoordinate)>,
     /// Technically this should be `Vec<Protection>`, since we need to know whether it was `no-rv`.
     pub data_already_protected: Vec<(String, TokenCoordinate)>,
+    /// If empty, then `containing-pool` was used.
     pub software_operators: Vec<(String, TokenCoordinate)>,
-    /// Can contain placeholder `on-premises`: can be distinguished from `@on-premises` via
-    /// TokenCoordinate length.
+    /// If empty, then `containing-pool` was used.
     pub hardware_operators: Vec<(String, TokenCoordinate)>,
     pub external_root_access: Vec<(String, TokenCoordinate)>,
     pub tc: TokenCoordinate,
@@ -281,7 +283,13 @@ fn assemble_tee_or_mpc(
                             )]);
                         }
                         seen_software_operators = true;
-                        software_operators = parse_ids(&mut tokens, it.0, &mut tc, "pool")?;
+                        software_operators = parse_ids_or_placeholder(
+                            &mut tokens,
+                            it.0,
+                            &mut tc,
+                            "containing-pool-only",
+                            "pool",
+                        )?;
                         continue;
                     }
                     "hardware-operators" if tee_or_mpc == "tee" => {
@@ -298,7 +306,7 @@ fn assemble_tee_or_mpc(
                             &mut tokens,
                             it.0,
                             &mut tc,
-                            "on-premises",
+                            "containing-pool-only",
                             "pool",
                         )?;
                         continue;
@@ -374,19 +382,19 @@ fn assemble_tee_or_mpc(
     if tee_or_mpc == "tee" {
         if !seen_external_root_access {
             return Err(vec![(
-                "Missing required 'tee-external-root-access' statement (even if empty)".to_string(),
+                "Missing required 'tee-external-root-access' statement (e.g. `(tee-external-root-access blocked)` or `(tee-external-root-access @pool-id1 @pool-id2)`)".to_string(),
                 tc,
             )]);
         }
         if !seen_software_operators {
             return Err(vec![(
-            "Missing required 'tee-software-operators' statement (e.g. `(tee-hardware-operators @pool-id1 @pool-id2)`)".to_string(),
+            "Missing required 'tee-software-operators' statement (e.g. `(tee-software-operators containing-pool-only)` or `(tee-software-operators @pool-id1 @pool-id2)`)".to_string(),
             tc,
         )]);
         }
         if !seen_hardware_operators {
             return Err(vec![(
-            "Missing required 'tee-hardware-operators' statement (e.g. `(tee-hardware-operators on-premises)` or `(tee-hardware-operators @pool-id1 @pool-id2)`)".to_string(),
+            "Missing required 'tee-hardware-operators' statement (e.g. `(tee-hardware-operators containing-pool-only)` or `(tee-hardware-operators @pool-id1 @pool-id2)`)".to_string(),
             tc,
         )]);
         }

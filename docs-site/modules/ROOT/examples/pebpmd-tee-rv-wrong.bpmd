@@ -26,7 +26,7 @@ MF <-user-send ->csp-receive
 
   // Additional access characteristics.
   (tee-external-root-access blocked)
-  (tee-hardware-operators on-premises)
+  (tee-hardware-operators containing-pool-only)
   (tee-software-operators @user @csp)
 
   // Generic attributes

@@ -3,8 +3,8 @@ use std::collections::HashMap;
 
 use crate::common::graph::{LaneId, PoolId};
 use crate::common::node::NodeType;
-use crate::lexer::TokenCoordinate;
 use crate::lexer::{self, PeBpmdProtection};
+use crate::lexer::{CONTAINING_POOL_ONLY_KEYWORD, TokenCoordinate};
 use crate::parser::Parser;
 use crate::{
     common::graph::{NodeId, SdeId},
@@ -220,94 +220,42 @@ impl Parser {
         };
 
         let (pebpmd_type, software_operators, hardware_operators) = match &lexer.pebpmd_type {
-            lexer::PeBpmdSubType::Pool(pool_str, _tc) => {
-                let pool_id = self.find_pool_id_or_error(pool_str)?;
-                if lexer.software_operators.is_empty() {
-                    return Err(self.smthng_missing_error(tee_or_mpc, "software-operators", ""));
-                }
-                if lexer.hardware_operators.is_empty() {
-                    return Err(self.smthng_missing_error(tee_or_mpc, "hardware-operators", ""));
-                }
-                let software_operators = lexer
-                    .software_operators
-                    .into_iter()
-                    .map(|(id, tc)| {
-                        self.find_pool_id_or_error_restricted(
-                            &id,
-                            pool_id,
-                            tc,
-                            tee_or_mpc,
-                            "software-operators",
-                        )
-                    })
-                    .collect::<Result<Vec<_>, _>>()?;
-
-                let hardware_operators = lexer
-                    .hardware_operators
-                    .into_iter()
-                    .map(|(id, tc)| {
-                        self.find_pool_id_or_error_restricted(
-                            &id,
-                            pool_id,
-                            tc,
-                            tee_or_mpc,
-                            "hardware-operators",
-                        )
-                    })
-                    .collect::<Result<Vec<_>, _>>()?;
-                (
-                    PeBpmdSubType::Pool(pool_id),
-                    software_operators,
-                    hardware_operators,
-                )
-            }
+            lexer::PeBpmdSubType::Pool(pool_str, _tc) => (
+                PeBpmdSubType::Pool(self.find_pool_id_or_error(pool_str)?),
+                self.find_and_verify_hw_sw_operators(
+                    tee_or_mpc,
+                    &lexer.software_operators,
+                    None,
+                    "software",
+                )?,
+                self.find_and_verify_hw_sw_operators(
+                    tee_or_mpc,
+                    &lexer.hardware_operators,
+                    None,
+                    "hardware",
+                )?,
+            ),
             lexer::PeBpmdSubType::Lane(lane_str, lane_tc) => {
                 let (pool_id, lane_id) = self.context.id_matcher.find_lane_id(lane_str).ok_or_else(|| vec![(
                     format!("Lane with name {lane_str} was not found in any pool. Have you defined it?"),
                     *lane_tc,
 
                 )])?;
-                let software_operators = lexer
-                    .software_operators
-                    .into_iter()
-                    .map(|(id, _)| self.find_pool_id_or_error(&id))
-                    .collect::<Result<Vec<_>, _>>()?;
-                if software_operators.is_empty() {
-                } else if !software_operators.contains(&pool_id) {
-                    let mut errors = vec![
-                        (
-                            format!(
-                                "The specified {tee_or_mpc}-software-operators does not contain the pool of the {tee_or_mpc}-lane. In {tee_or_mpc}-lane, the hosting pool is used automatically for the {tee_or_mpc}-software-operators. If you specify software operators explicitly, the list must as well refer to the lane's pool."
-                            ),
-                            software_operators_tc,
-                        ),
-                        (
-                            "This would be the correct pool, but ...".to_string(),
-                            self.graph.pools[pool_id].tc,
-                        ),
-                    ];
-                    for matched_pool_id in software_operators.iter().cloned() {
-                        errors.push((
-                            "... this pool was referenced".to_string(),
-                            self.graph.pools[matched_pool_id].tc,
-                        ));
-                    }
-                    return Err(errors);
-                }
-                // TODO should spot duplicates in the list? In all lists?
 
-                let mut hardware_operators = lexer
-                    .hardware_operators
-                    .into_iter()
-                    .map(|(id, _)| self.find_pool_id_or_error(&id))
-                    .collect::<Result<Vec<_>, _>>()?;
-                if hardware_operators.is_empty() && tee_or_mpc == "tee" {
-                    hardware_operators.push(pool_id);
-                }
                 (
                     PeBpmdSubType::Lane { pool_id, lane_id },
-                    software_operators,
-                    hardware_operators,
+                    self.find_and_verify_hw_sw_operators(
+                        tee_or_mpc,
+                        &lexer.software_operators,
+                        Some((pool_id, "lane")),
+                        "software",
+                    )?,
+                    self.find_and_verify_hw_sw_operators(
+                        tee_or_mpc,
+                        &lexer.hardware_operators,
+                        Some((pool_id, "lane")),
+                        "hardware",
+                    )?,
                 )
             }
             lexer::PeBpmdSubType::Tasks(tasks) => {
@@ -332,48 +280,20 @@ impl Parser {
                 let automatically_derived_software_operator =
                     self.graph.nodes[first_node_id.0].pool;
 
-                let mut software_operators = lexer
-                    .software_operators
-                    .into_iter()
-                    .map(|(id, _)| self.find_pool_id_or_error(&id))
-                    .collect::<Result<Vec<_>, _>>()?;
-                if software_operators.is_empty() {
-                    software_operators.push(automatically_derived_software_operator);
-                } else if !software_operators.contains(&automatically_derived_software_operator) {
-                    let mut errors = vec![
-                        (
-                            format!(
-                                "The specified {tee_or_mpc}-software-operators does not contain the pool of the {tee_or_mpc}-tasks. In {tee_or_mpc}-tasks, the hosting pool is used automatically for the {tee_or_mpc}-software-operators. If you specify software operators explicitly, the list must as well refer to the tasks' pool."
-                            ),
-                            software_operators_tc,
-                        ),
-                        (
-                            "This would be the correct pool, but ...".to_string(),
-                            self.graph.pools[automatically_derived_software_operator].tc,
-                        ),
-                    ];
-                    for matched_pool_id in software_operators.iter().cloned() {
-                        errors.push((
-                            "... this pool was referenced".to_string(),
-                            self.graph.pools[matched_pool_id].tc,
-                        ));
-                    }
-                    return Err(errors);
-                }
-                // TODO should spot duplicates in the list? In all lists?
-
-                let mut hardware_operators = lexer
-                    .hardware_operators
-                    .into_iter()
-                    .map(|(id, _)| self.find_pool_id_or_error(&id))
-                    .collect::<Result<Vec<_>, _>>()?;
-                if hardware_operators.is_empty() && tee_or_mpc == "tee" {
-                    hardware_operators.push(automatically_derived_software_operator);
-                }
                 (
                     PeBpmdSubType::Tasks(task_ids),
-                    software_operators,
-                    hardware_operators,
+                    self.find_and_verify_hw_sw_operators(
+                        tee_or_mpc,
+                        &lexer.software_operators,
+                        Some((automatically_derived_software_operator, "lane")),
+                        "software",
+                    )?,
+                    self.find_and_verify_hw_sw_operators(
+                        tee_or_mpc,
+                        &lexer.hardware_operators,
+                        Some((automatically_derived_software_operator, "lane")),
+                        "hardware",
+                    )?,
                 )
             }
         };
@@ -724,211 +644,87 @@ impl Parser {
 
         Ok(())
     }
-}
 
-//#[cfg(test)]
-//mod tests {
-//    use itertools::Itertools;
-//
-//    use crate::{
-//        common::{
-//            edge::{FlowType, MessageFlowAux},
-//            graph::SdeId,
-//        },
-//        lexer::{PeBpmdProtection, TokenCoordinate},
-//        parser::{ParseError, parse},
-//    };
-//
-//    #[test]
-//    fn multiple_data_elements_secure_channel_protection() -> Result<(), ParseError> {
-//        let input = r#"
-//= Pool1
-//# Start1
-//- Task1
-//. Forward1
-//
-//= Pool2
-//# Receive2
-//- Task2
-//. Forward2
-//
-//= Pool3
-//# Receive3
-//- Task3
-//. End3
-//
-//MF <-forward1 ->receive2
-//MF <-forward2 ->receive3
-//
-//OD Data Element 1 <-task1 ->forward1
-// & <-receive2 ->task2
-// & <-task2 ->forward2
-// & <-receive3 ->task3
-//
-//OD Data Element 2 <-task1 ->forward1
-// & <-receive2 ->task2
-// & <-task2 ->forward2
-// & <-receive3 ->task3
-//
-//[pe-bpmd (secure-channel @forward1 @receive3)]
-//    "#;
-//
-//        let graph = parse(input.to_string(), &mut Vec::new())?;
-//
-//        for (i, sde) in graph.data_elements.iter().enumerate() {
-//            let node_ids: Vec<_> = sde.data_element.iter().collect();
-//
-//            assert!(
-//                node_ids.len() == 4,
-//                "Expected at 4 nodes in semantic data element"
-//            );
-//
-//            // Expected secure-channel protection on node 1 and 2 (index 1 and 2)
-//            for &secure_index in &[1, 2] {
-//                let node_id = *node_ids
-//                    .get(secure_index)
-//                    .expect("Missing node at expected secure index");
-//                let node = &graph.nodes[*node_id];
-//                let protection = &node
-//                    .get_data_aux()
-//                    .expect("Expected data_aux")
-//                    .pebpmd_protection;
-//
-//                assert!(
-//                    protection.contains(&PeBpmdProtection::SecureChannel(TokenCoordinate {
-//                        /* TODO */ start: 0,
-//                        /* TODO */ end: 0,
-//                        source_file_idx: 0
-//                    })),
-//                    "Expected SecureChannel protection on node '{}' in SDE {}",
-//                    node.id,
-//                    i + 1
-//                );
-//            }
-//
-//            // Sanity check: other nodes (optional)
-//            for (j, &node_id) in node_ids.iter().enumerate() {
-//                if ![1, 2].contains(&j) {
-//                    let node = &graph.nodes[*node_id];
-//                    let protection = &node
-//                        .get_data_aux()
-//                        .expect("Expected data_aux")
-//                        .pebpmd_protection;
-//
-//                    assert!(
-//                        protection.is_empty(),
-//                        "Did not expect protection on node '{}' (index {}) in SDE {}",
-//                        node.id,
-//                        j,
-//                        i + 1
-//                    );
-//                }
-//            }
-//
-//            let edges = &graph
-//                .edges
-//                .iter()
-//                .filter(|e| e.is_message_flow())
-//                .collect_vec();
-//            for edge in edges {
-//                if let FlowType::MessageFlow(MessageFlowAux {
-//                    pebpmd_protection, ..
-//                }) = &edge.flow_type
-//                {
-//                    assert!(
-//                        pebpmd_protection
-//                            .iter()
-//                            .find(|e| e.0 == SdeId(i))
-//                            .unwrap()
-//                            .1
-//                            .contains(&PeBpmdProtection::SecureChannel(TokenCoordinate {
-//                                start: 0,
-//                                end: 0,
-//                                source_file_idx: 0
-//                            }))
-//                    );
-//                }
-//            }
-//        }
-//        Ok(())
-//    }
-//
-//    #[test]
-//    fn secure_channel_only_applied_to_middle_nodes_of_first_sde() -> Result<(), ParseError> {
-//        let input = r#"
-//= Pool1
-//# Start1
-//- Task1
-//. Forward1
-//
-//= Pool2
-//# Receive2
-//- Task2
-//. Forward2
-//
-//= Pool3
-//# Receive3
-//- Task3
-//. End3
-//
-//MF <-forward1 ->receive2
-//MF <-forward2 ->receive3
-//
-//OD Data Element 1 <-task1 ->forward1 @data-element1
-//& <-receive2 ->task2
-//& <-task2 ->forward2
-//& <-receive3 ->task3
-//
-//OD Data Element 2 <-task1 ->forward1
-//& <-receive2 ->task2
-//& <-task2 ->forward2
-//& <-receive3 ->task3
-//
-//[pe-bpmd (secure-channel @forward1 @receive3 @data-element1)]
-//    "#;
-//
-//        let graph = parse(input.to_string(), &mut Vec::new())?;
-//
-//        for (sde_index, sde) in graph.data_elements.iter().enumerate() {
-//            assert_eq!(
-//                sde.data_element.len(),
-//                4,
-//                "Each SDE should contain exactly 4 nodes"
-//            );
-//
-//            for (node_position, &node_id) in sde.data_element.iter().enumerate() {
-//                let node = &graph.nodes[node_id];
-//                let protection = &node
-//                    .get_data_aux()
-//                    .expect("Expected data_aux")
-//                    .pebpmd_protection;
-//
-//                let should_have_protection =
-//                    sde_index == 0 && (node_position == 1 || node_position == 2);
-//
-//                if should_have_protection {
-//                    assert!(
-//                        protection.contains(&PeBpmdProtection::SecureChannel(TokenCoordinate {
-//                            start: 0,
-//                            end: 0,
-//                            source_file_idx: 0
-//                        })),
-//                        "Expected SecureChannel on node '{}' in SDE {} at index {}",
-//                        node.id,
-//                        sde_index,
-//                        node_position
-//                    );
-//                } else {
-//                    assert!(
-//                        protection.is_empty(),
-//                        "Did NOT expect protection on node '{}' in SDE {} at index {}",
-//                        node.id,
-//                        sde_index,
-//                        node_position
-//                    );
-//                }
-//            }
-//        }
-//        Ok(())
-//    }
-//}
+    fn find_and_verify_hw_sw_operators(
+        &self,
+        tee_or_mpc: &str,
+        operators: &[(String, TokenCoordinate)],
+        // None for tee-pool/mpc-pool.
+        this_pool_id_and_lane_or_tasks: Option<(PoolId, /* lane or tasks */ &str)>,
+        software_or_hardware: &str,
+    ) -> Result<Vec<PoolId>, ParseError> {
+        let all_tcs = match operators {
+            [(_, first_tc @ last_tc)] | [(_, first_tc), .., (_, last_tc)] => TokenCoordinate {
+                end: last_tc.end,
+                ..*first_tc
+            },
+
+            _ => {
+                if let Some((this_pool_id, _)) = this_pool_id_and_lane_or_tasks {
+                    if tee_or_mpc == "tee" {
+                        return Ok(vec![this_pool_id]);
+                    } else {
+                        return Ok(Vec::new());
+                    }
+                } else {
+                    return Err(vec![(
+                        format!(
+                            "You must have a list of pool references for `({tee_or_mpc}-{software_or_hardware}-operators @pool-1 @optional-pool-2)`."
+                        ),
+                        self.context.current_token_coordinate,
+                    )]);
+                }
+            }
+        };
+        let mut result = Vec::new();
+        let mut result_tc = Vec::new();
+        let mut found_this_pool = this_pool_id_and_lane_or_tasks.is_none();
+        for (operator, tc) in operators {
+            let pool_id = self.find_pool_id_or_error(operator)?;
+            if let Some(idx) = result.iter().position(|prev| *prev == pool_id) {
+                return Err(vec![
+                    (
+                        format!(
+                            "Each pool can only be specified once in `({tee_or_mpc}-{software_or_hardware}-operators ...)`, but this one was specified twice"
+                        ),
+                        *tc,
+                    ),
+                    (
+                        "Previous reference to the same pool was here".to_string(),
+                        result_tc[idx],
+                    ),
+                    (
+                        "This is the pool which both target".to_string(),
+                        self.graph.pools[pool_id].tc,
+                    ),
+                ]);
+            }
+            if let Some((this_pool_id, _)) = this_pool_id_and_lane_or_tasks
+                && this_pool_id == pool_id
+            {
+                found_this_pool = true;
+            }
+            result.push(pool_id);
+            result_tc.push(*tc);
+        }
+
+        if !found_this_pool {
+            let (_, lane_or_tasks) = this_pool_id_and_lane_or_tasks.unwrap();
+            let mut errors = vec![(
+                format!(
+                    "The containing pool must always be part of the `({tee_or_mpc}-{software_or_hardware}-operators ..)` list of {tee_or_mpc}-{lane_or_tasks}, but it is currently missing. Note: If the containing pool would be the only operator, then you can use the magic keyword `{CONTAINING_POOL_ONLY_KEYWORD}`"
+                ),
+                all_tcs,
+            )];
+            for matched_pool_id in result.iter().cloned() {
+                errors.push((
+                    "This pool was referenced (but is not the containing pool)".to_string(),
+                    self.graph.pools[matched_pool_id].tc,
+                ));
+            }
+            return Err(errors);
+        }
+
+        Ok(result)
+    }
+}

@@ -22,7 +22,7 @@ MF <-user-send ->csp-receive
   (tee-in-protect @user-send @user)
 
   (tee-external-root-access @someone-with-root-access) // <1>
-  (tee-hardware-operators on-premises)
+  (tee-hardware-operators containing-pool-only)
   (tee-software-operators @user @csp)
 
   // Generic attributes

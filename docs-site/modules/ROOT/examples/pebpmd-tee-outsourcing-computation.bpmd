@@ -36,7 +36,7 @@ MF <-cvm-send ->user-receive
 
   // Additional access characteristics.
   (tee-external-root-access @user)
-  (tee-hardware-operators on-premises)
+  (tee-hardware-operators containing-pool-only)
   (tee-software-operators @csp)
 
   // Generic attributes

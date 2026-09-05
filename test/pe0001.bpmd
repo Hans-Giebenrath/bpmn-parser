@@ -25,7 +25,7 @@ MF <-send ->receive
   (tee-tasks @tee)
   (tee-external-root-access blocked)
   (tee-in-protect @protect @p1)
-  (tee-hardware-operators on-premises)
+  (tee-hardware-operators containing-pool-only)
   (tee-software-operators @p2)
   (stroke-color #a9d31e)
   (fill-color #eef7d0)
