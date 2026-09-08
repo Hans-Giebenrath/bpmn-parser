@@ -361,65 +361,64 @@ fn compute_accessible_data(graph: &Graph, analysis_state: &mut State) -> Result<
         let mut lane_protection = None;
         task_protections.clear();
 
-        {
-            for pebpmd in &graph.pe_bpmd_definitions {
-                match &pebpmd.r#type {
-                    PeBpmdType::Tee(Tee { common }) | PeBpmdType::Mpc(Mpc { common }) => {
-                        match &common.pebpmd_type {
-                            PeBpmdSubType::Pool(pool_id) if *pool_id == node.pool => {
-                                assert!(pool_protection.is_none());
-                                pool_protection = Some(pebpmd.r#type.protection());
-                            }
-                            PeBpmdSubType::Lane { pool_id, lane_id }
-                                if *pool_id == node.pool && *lane_id == node.lane =>
-                            {
-                                assert!(lane_protection.is_none());
-                                lane_protection = Some(pebpmd.r#type.protection());
-                            }
-                            PeBpmdSubType::Tasks(tasks) if contains(tasks, &node.id) => {
-                                task_protections.push(pebpmd.r#type.protection());
-                            }
-                            _ => continue,
+        for pebpmd in &graph.pe_bpmd_definitions {
+            match &pebpmd.r#type {
+                PeBpmdType::Tee(Tee { common }) | PeBpmdType::Mpc(Mpc { common }) => {
+                    match &common.pebpmd_type {
+                        PeBpmdSubType::Pool(pool_id) if *pool_id == node.pool => {
+                            assert!(pool_protection.is_none());
+                            pool_protection = Some(pebpmd.r#type.protection());
                         }
-                    }
-                    PeBpmdType::SecureChannel(sc) => {
-                        if sc
-                            .sender
-                            .iter()
-                            .chain(sc.receiver.iter())
-                            .any(|(node_id, _)| *node_id == node.id)
+                        PeBpmdSubType::Lane { pool_id, lane_id }
+                            if *pool_id == node.pool && *lane_id == node.lane =>
                         {
+                            assert!(lane_protection.is_none());
+                            lane_protection = Some(pebpmd.r#type.protection());
+                        }
+                        PeBpmdSubType::Tasks(tasks) if contains(tasks, &node.id) => {
                             task_protections.push(pebpmd.r#type.protection());
                         }
-                    }
-                };
-            }
-
-            for (a, b) in std::iter::once((pool_protection, lane_protection)).chain(
-                lane_protection.or(pool_protection).iter().flat_map(|prot| {
-                    task_protections
-                        .iter()
-                        .map(|task_protection| (Some(*prot), Some(*task_protection)))
-                }),
-            ) {
-                if let Some(a) = a
-                    && let Some(b) = b
-                {
-                    let cmp = analysis_state
-                        .protection_paths_graphs
-                        .get(&a)
-                        .unwrap()
-                        .compare(analysis_state.protection_paths_graphs.get(&b).unwrap());
-                    match cmp {
-                        Err(e) => todo!("nicer error {e:?}, {a:?}, {b:?}"),
-                        Ok(ProtectionGraphCmp::Sub) => todo!("nicer error {a:?}, {b:?}"),
-                        Ok(ProtectionGraphCmp::Super) => { /* all good */ }
-                        Ok(ProtectionGraphCmp::Disjoint) => ( /* weird but all good */),
+                        _ => continue,
                     }
                 }
-            }
+                PeBpmdType::SecureChannel(sc) => {
+                    if sc
+                        .sender
+                        .iter()
+                        .chain(sc.receiver.iter())
+                        .any(|(node_id, _)| *node_id == node.id)
+                    {
+                        task_protections.push(pebpmd.r#type.protection());
+                    }
+                }
+            };
+        }
 
-            task_protections.sort_by(|a, b| {
+        for (a, b) in std::iter::once((pool_protection, lane_protection)).chain(
+            lane_protection.or(pool_protection).iter().flat_map(|prot| {
+                task_protections
+                    .iter()
+                    .map(|task_protection| (Some(*prot), Some(*task_protection)))
+            }),
+        ) {
+            if let Some(a) = a
+                && let Some(b) = b
+            {
+                let cmp = analysis_state
+                    .protection_paths_graphs
+                    .get(&a)
+                    .unwrap()
+                    .compare(analysis_state.protection_paths_graphs.get(&b).unwrap());
+                match cmp {
+                    Err(e) => todo!("nicer error {e:?}, {a:?}, {b:?}"),
+                    Ok(ProtectionGraphCmp::Sub) => todo!("nicer error {a:?}, {b:?}"),
+                    Ok(ProtectionGraphCmp::Super) => { /* all good */ }
+                    Ok(ProtectionGraphCmp::Disjoint) => ( /* weird but all good */),
+                }
+            }
+        }
+
+        task_protections.sort_by(|a, b| {
                 match analysis_state
                     .protection_paths_graphs
                     .get(a)
@@ -438,37 +437,37 @@ fn compute_accessible_data(graph: &Graph, analysis_state: &mut State) -> Result<
                 }
             });
 
-            pool_protection
-                .iter()
-                .chain(lane_protection.iter())
-                .chain(
-                    task_protections
-                        .iter()
-                        .filter(|protection| !protection.is_secure_channel()),
-                )
-                .tuple_windows()
-                .for_each(|(a, b)| {
-                    analysis_state
-                        .result
-                        .software_operator
-                        .insert((PoolOrProtection::Protection(*a), *b));
-                });
-
-            // A secure channel should not be the first protection, or only if the rest is also
-            // secure channels. Because if there are TEE/MPC tasks, then those make the task
-            // implicit (the whole encryption/decryption stuff), but semantically the secure channel
-            // is outside of them, so it should also end (or start) at another task. But if the
-            // secure channel is within the TEE/MPC implicit task, then that's fine, as we then know
-            // that it does not need to have the visible outcoming/incoing data icon.
-            // TODO the `data` icon exception is probably not present at the moment in
-            // `check_protection_paths`? Maybe that check should move into this function here?
-            if let Some(first) = task_protections.first()
-                && first.is_secure_channel()
-                && let Some(non_sc) = task_protections
+        pool_protection
+            .iter()
+            .chain(lane_protection.iter())
+            .chain(
+                task_protections
                     .iter()
-                    .find(|arg0| !PeBpmdProtection::is_secure_channel(*arg0))
-            {
-                return Err(vec![
+                    .filter(|protection| !protection.is_secure_channel()),
+            )
+            .tuple_windows()
+            .for_each(|(a, b)| {
+                analysis_state
+                    .result
+                    .software_operator
+                    .insert((PoolOrProtection::Protection(*a), *b));
+            });
+
+        // A secure channel should not be the first protection, or only if the rest is also
+        // secure channels. Because if there are TEE/MPC tasks, then those make the task
+        // implicit (the whole encryption/decryption stuff), but semantically the secure channel
+        // is outside of them, so it should also end (or start) at another task. But if the
+        // secure channel is within the TEE/MPC implicit task, then that's fine, as we then know
+        // that it does not need to have the visible outcoming/incoing data icon.
+        // TODO the `data` icon exception is probably not present at the moment in
+        // `check_protection_paths`? Maybe that check should move into this function here?
+        if let Some(first) = task_protections.first()
+            && first.is_secure_channel()
+            && let Some(non_sc) = task_protections
+                .iter()
+                .find(|arg0| !PeBpmdProtection::is_secure_channel(*arg0))
+        {
+            return Err(vec![
                     (
                         "This node is part of a secure channel and a nested (mpc|tee)-tasks protection. This is not allowed. Move the end of the secure channel to another node to make the secure channel more understandable. Or did you mix up the nesting? It would be ok the have the secure channel nested inside of the (mpc|tee)-tasks protection.".to_string(),
                         node.tc(),
@@ -482,116 +481,115 @@ fn compute_accessible_data(graph: &Graph, analysis_state: &mut State) -> Result<
                         non_sc.tc()
                     ),
                 ]);
+        }
+
+        let mut analyse = |sde_id: SdeId,
+                           mut protections: BTreeSet<PeBpmdProtection>,
+                           is_message_flow: bool,
+                           is_cross_lane_flow: bool| {
+            if let Some(lane_protection) = lane_protection {
+                analysis_state
+                    .result
+                    .directly_accessible_data
+                    .entry(PoolOrProtection::Protection(lane_protection))
+                    .or_default()
+                    .entry(sde_id)
+                    .or_default()
+                    .insert(protections.clone());
             }
 
-            let mut analyse = |sde_id: SdeId,
-                               mut protections: BTreeSet<PeBpmdProtection>,
-                               is_message_flow: bool,
-                               is_cross_lane_flow: bool| {
-                if let Some(lane_protection) = lane_protection {
-                    analysis_state
-                        .result
-                        .directly_accessible_data
-                        .entry(PoolOrProtection::Protection(lane_protection))
-                        .or_default()
-                        .entry(sde_id)
-                        .or_default()
-                        .insert(protections.clone());
-                }
-
-                if is_message_flow || is_cross_lane_flow || lane_protection.is_none() {
-                    // The container gets to see what moves in and out of the lane.
-                    let pool_or_protection = if let Some(pool_protection) = pool_protection {
-                        PoolOrProtection::Protection(pool_protection)
-                    } else {
-                        PoolOrProtection::Pool(node.pool)
-                    };
-                    analysis_state
-                        .result
-                        .directly_accessible_data
-                        .entry(pool_or_protection)
-                        .or_default()
-                        .entry(sde_id)
-                        .or_default()
-                        .insert(protections.clone());
-                }
-
-                // The nested protections are all just secure channels, so there is no "owner".
-                if task_protections
-                    .first()
-                    .map(PeBpmdProtection::is_secure_channel)
-                    .unwrap_or(true)
-                {
-                    return;
-                }
-
-                let mut i = 0;
-                while let Some(task_protection) = task_protections.get(i) {
-                    // If the next (and next-next etc) is a
-                    // secure channel, then their protections should be removed in the context
-                    // of the current protection. But then the above secure channel must not be
-                    // filtered out (see added TODO).
-                    // Treat it as a message flow for all the protections.
-                    protections.remove(task_protection);
-                    // Now, there might be nested secure channels
-                    let mut j = i + 1;
-                    while let Some(peek) = task_protections.get(j)
-                        && peek.is_secure_channel()
-                    {
-                        protections.remove(task_protection);
-                        // We skip this one (the `+1` part is coming at the end).
-                        i = j;
-                        j += 1;
-                    }
-                    analysis_state
-                        .result
-                        .directly_accessible_data
-                        .entry(PoolOrProtection::Protection(*task_protection))
-                        .or_default()
-                        .entry(sde_id)
-                        .or_default()
-                        .insert(protections.clone());
-                    i += 1;
-                }
-            };
-
-            // A `data` icon might span across lanes: Start in one lane, and end in another lane. Now
-            // it could be that both lanes are separate `tee-lane`s. Hence the hosting pool would
-            // not see it in the analysis just by looking at the source and target tasks. Instead,
-            // we must identify that there is some implicit channel present. If the data shall be
-            // shared securely, then it must be done with a secure channel. Easy as pie. Otherwise,
-            // the host pool sees the unprotected data.
-            let is_cross_lane_data = |edge_id: EdgeId| {
-                let data_node = if from!(edge_id).is_data() {
-                    &from!(edge_id)
+            if is_message_flow || is_cross_lane_flow || lane_protection.is_none() {
+                // The container gets to see what moves in and out of the lane.
+                let pool_or_protection = if let Some(pool_protection) = pool_protection {
+                    PoolOrProtection::Protection(pool_protection)
                 } else {
-                    &to!(edge_id)
+                    PoolOrProtection::Pool(node.pool)
                 };
-                assert!(data_node.is_data());
-                data_node
-                    .incoming
-                    .iter()
-                    .map(|e| &from!(*e))
-                    .chain(data_node.outgoing.iter().map(|e| &to!(*e)))
-                    .any(|other_node| other_node.lane != node.lane)
-            };
+                analysis_state
+                    .result
+                    .directly_accessible_data
+                    .entry(pool_or_protection)
+                    .or_default()
+                    .entry(sde_id)
+                    .or_default()
+                    .insert(protections.clone());
+            }
 
-            for edge_id in node.incoming.iter().chain(node.outgoing.iter()).cloned() {
-                let edge = &e!(edge_id);
-                for sde_id in edge.get_transported_data().iter().cloned() {
-                    let protections = analysis_state
-                        .flow_protection
-                        .get(&edge_id)
-                        .and_then(|a| a.get(&sde_id))
-                        .cloned()
-                        .unwrap_or_default();
-                    analyse(
-                        sde_id,
-                        protections,
-                        edge.is_message_flow(),
-                        edge.is_data_flow() && is_cross_lane_data(edge_id),
-                    );
+            // The nested protections are all just secure channels, so there is no "owner".
+            if task_protections
+                .first()
+                .map(PeBpmdProtection::is_secure_channel)
+                .unwrap_or(true)
+            {
+                return;
+            }
+
+            let mut i = 0;
+            while let Some(task_protection) = task_protections.get(i) {
+                // If the next (and next-next etc) is a
+                // secure channel, then their protections should be removed in the context
+                // of the current protection. But then the above secure channel must not be
+                // filtered out (see added TODO).
+                // Treat it as a message flow for all the protections.
+                protections.remove(task_protection);
+                // Now, there might be nested secure channels
+                let mut j = i + 1;
+                while let Some(peek) = task_protections.get(j)
+                    && peek.is_secure_channel()
+                {
+                    protections.remove(task_protection);
+                    // We skip this one (the `+1` part is coming at the end).
+                    i = j;
+                    j += 1;
                 }
+                analysis_state
+                    .result
+                    .directly_accessible_data
+                    .entry(PoolOrProtection::Protection(*task_protection))
+                    .or_default()
+                    .entry(sde_id)
+                    .or_default()
+                    .insert(protections.clone());
+                i += 1;
+            }
+        };
+
+        // A `data` icon might span across lanes: Start in one lane, and end in another lane. Now
+        // it could be that both lanes are separate `tee-lane`s. Hence the hosting pool would
+        // not see it in the analysis just by looking at the source and target tasks. Instead,
+        // we must identify that there is some implicit channel present. If the data shall be
+        // shared securely, then it must be done with a secure channel. Easy as pie. Otherwise,
+        // the host pool sees the unprotected data.
+        let is_cross_lane_data = |edge_id: EdgeId| {
+            let data_node = if from!(edge_id).is_data() {
+                &from!(edge_id)
+            } else {
+                &to!(edge_id)
+            };
+            assert!(data_node.is_data());
+            data_node
+                .incoming
+                .iter()
+                .map(|e| &from!(*e))
+                .chain(data_node.outgoing.iter().map(|e| &to!(*e)))
+                .any(|other_node| other_node.lane != node.lane)
+        };
+
+        for edge_id in node.incoming.iter().chain(node.outgoing.iter()).cloned() {
+            let edge = &e!(edge_id);
+            for sde_id in edge.get_transported_data().iter().cloned() {
+                let protections = analysis_state
+                    .flow_protection
+                    .get(&edge_id)
+                    .and_then(|a| a.get(&sde_id))
+                    .cloned()
+                    .unwrap_or_default();
+                analyse(
+                    sde_id,
+                    protections,
+                    edge.is_message_flow(),
+                    edge.is_data_flow() && is_cross_lane_data(edge_id),
+                );
             }
         }
     }
@@ -673,6 +671,7 @@ fn compute_visibility_tee_or_mpc(
             .or_default()
             .insert(protection);
     }
+    // TODO something is missing here, `all_sdes` is not used for anything?
     let mut all_sdes = HashSet::<SdeId>::new();
     // Consider all data which is transported to/within/out of the TEE/MPC.
     for node in &graph.nodes {
@@ -1006,6 +1005,7 @@ fn check_that_protection_is_visually_applied(
     } if !pe_bpmd_hides_protection_operations),
         "got node: {:?}\n{:?}",
         &graph.nodes[node_id],
+        // TODO something is missing here, `all_sdes` is not used for anything?
         &graph
     );
 

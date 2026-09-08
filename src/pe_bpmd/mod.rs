@@ -1,24 +1,35 @@
-use crate::common::graph::EdgeId;
-use crate::common::graph::PoolId;
+use itertools::Itertools;
+
 use crate::common::graph::SdeId;
+use crate::common::graph::{EdgeId, PoolId};
 use crate::lexer::PeBpmdProtection;
 use std::collections::BTreeSet;
 use std::collections::HashMap;
 use std::collections::HashSet;
+use std::fmt::Debug;
 
 pub mod analysis;
 pub mod parser;
 pub mod visibility_table;
 
-#[derive(Debug, Eq, Hash, PartialEq, Clone, Copy)]
+#[derive(Eq, Hash, PartialEq, Clone, Copy, PartialOrd, Ord)]
 pub enum PoolOrProtection {
     Pool(PoolId),
     Protection(PeBpmdProtection),
 }
 
+impl Debug for PoolOrProtection {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Pool(PoolId(pool_idx)) => write!(f, "p({pool_idx})"),
+            Self::Protection(prot) => write!(f, "prot({prot})"),
+        }
+    }
+}
+
 /// This is just a slightly different form of the PeBpmd type, but more digestible for the creation
 /// of the visibility table. All necessary information is assembled in one place.
-#[derive(Default, Debug)]
+#[derive(Default)]
 pub struct VisibilityTableInput {
     /// This happens if a sender uses tee-protect `no-rv` or with the `@software-operator-of-tee`,
     /// as then the software operator could replace the TEE with something they control (the remote
@@ -64,6 +75,86 @@ pub struct VisibilityTableInput {
     // TODO this comment is not totally adequate and should move to `tee_vulnerable_rv`.
     pub directly_accessible_data:
         HashMap<PoolOrProtection, HashMap<SdeId, HashSet<BTreeSet<PeBpmdProtection>>>>,
+}
+
+impl Debug for VisibilityTableInput {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        writeln!(f, "visibility Table Input")?;
+        writeln!(f, "  tee_vulnerable_rv")?;
+        for ((pool_id, sde_id), hs) in self
+            .tee_vulnerable_rv
+            .iter()
+            .sorted_unstable_by_key(|e| e.0)
+        {
+            write!(f, "    p/sde({}/{}): ", pool_id.0, sde_id.0)?;
+            for protections in hs.iter().sorted_unstable() {
+                let protections = protections.iter().map(|e| format!("{e}")).join(", ");
+                write!(f, "({protections}), ")?;
+            }
+            writeln!(f)?;
+        }
+        writeln!(f, "  software_operator")?;
+        for (pool_or_protection, pe_prot) in self
+            .software_operator
+            .iter()
+            .sorted_unstable_by_key(|e| e.0)
+        {
+            writeln!(f, "    {pool_or_protection:?} {pe_prot}")?;
+        }
+        writeln!(f, "  tee_hardware_operator")?;
+        for (PoolId(pool_idx), pe_prot) in self
+            .tee_hardware_operator
+            .iter()
+            .sorted_unstable_by_key(|e| e.0)
+        {
+            writeln!(f, "    p({pool_idx}) {pe_prot}")?;
+        }
+        writeln!(f, "  tee_external_root_access")?;
+        for (pool_id, hs) in self
+            .tee_external_root_access
+            .iter()
+            .sorted_unstable_by_key(|e| e.0)
+        {
+            let protections = hs
+                .iter()
+                .sorted_unstable()
+                .map(|e| format!("{e}"))
+                .join(", ");
+            writeln!(f, "    p({}): {protections}", pool_id.0)?;
+        }
+
+        writeln!(f, "  network_message_protections")?;
+        for (sde_id, hs) in self
+            .network_message_protections
+            .iter()
+            .sorted_unstable_by_key(|e| e.0)
+        {
+            write!(f, "    sde({}): ", sde_id.0)?;
+            for protections in hs.iter().sorted_unstable() {
+                let protections = protections.iter().map(|e| format!("{e}")).join(", ");
+                write!(f, "({protections}), ")?;
+            }
+            writeln!(f)?;
+        }
+
+        writeln!(f, "  directly_accessible_data")?;
+        for (pool_or_protection, hs) in self
+            .directly_accessible_data
+            .iter()
+            .sorted_unstable_by_key(|e| e.0)
+        {
+            writeln!(f, "    {pool_or_protection:?}:")?;
+            for (sde_id, protections) in hs.iter().sorted_unstable_by_key(|e| e.0) {
+                writeln!(f, "      sde({}):", sde_id.0)?;
+                for protections in protections.iter().sorted_unstable() {
+                    let protections = protections.iter().map(|e| format!("{e}")).join(", ");
+                    writeln!(f, "        ({protections})")?;
+                }
+            }
+        }
+
+        Ok(())
+    }
 }
 
 #[derive(Default)]

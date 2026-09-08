@@ -280,6 +280,7 @@ fn pebpmd_analysis(
     let analysis_result = timer
         .time_it("PE-BPMD analyse", || pe_bpmd::analysis::analyse(graph))
         .bpmd_format_err(bpmd_source_files)?;
+    dbg!(&analysis_result);
     let visibility_data = timer.time_it("PE-BPMD generate_visibility_table", || {
         pe_bpmd::visibility_table::generate_visibility_table(graph, &analysis_result)
     })?;

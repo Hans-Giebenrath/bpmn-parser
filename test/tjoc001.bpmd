@@ -81,3 +81,45 @@ MF ->p5.1 <-p5.2
   (stroke-color #1ed39f)
   (fill-color #d0f7ec)
 ]
+
+
+
+//[src/main.rs:283:5] &analysis_result = visibility Table Input
+//  tee_vulnerable_rv
+//  software_operator
+//    p(1) tee
+//    p(1) mpc !!! THIS IS MISSING AFTER THE REFACTOR well, this is actually correct? Kinda?
+//    prot(mpc) tee
+//  tee_hardware_operator
+//    p(1) tee
+//  tee_external_root_access
+//  network_message_protections
+//    sde(1): (tee, mpc),
+//    sde(2): (tee, mpc),
+//  directly_accessible_data
+//    p(0):
+//      sde(0):
+//        ()
+//      sde(1):
+//        ()
+//        (tee, mpc)
+//        (mpc)
+//    p(1):
+//      sde(1):
+//        (tee, mpc)
+//      sde(2):
+//        (tee, mpc)
+//    p(2):
+//      sde(2):
+//        ()
+//        (tee, mpc)
+//    prot(tee):
+//      sde(1):
+//        () !!! This is wrong, should say (mpc)
+//      sde(2):
+//        ()
+//    prot(mpc):
+//      sde(1):
+//        (tee)
+//      sde(2):
+//        (tee)
