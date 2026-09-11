@@ -163,6 +163,7 @@ pub struct ProtectionPaths {
     subgraphs: HashSet<BTreeSet<EdgeId>>,
 }
 
+#[derive(Debug)]
 enum ProtectionGraphCmp {
     Sub,
     Super,

@@ -394,6 +394,9 @@ fn compute_accessible_data(graph: &Graph, analysis_state: &mut State) -> Result<
             };
         }
 
+        // Ensure that the pool protection is a superset of the lane protection, and the lane (or
+        // pool if missing) protection is a superset of all the task protections. (task protections
+        // themselves are sorted afterwards, hang on)
         for (a, b) in std::iter::once((pool_protection, lane_protection)).chain(
             lane_protection.or(pool_protection).iter().flat_map(|prot| {
                 task_protections
@@ -411,13 +414,14 @@ fn compute_accessible_data(graph: &Graph, analysis_state: &mut State) -> Result<
                     .compare(analysis_state.protection_paths_graphs.get(&b).unwrap());
                 match cmp {
                     Err(e) => todo!("nicer error {e:?}, {a:?}, {b:?}"),
-                    Ok(ProtectionGraphCmp::Sub) => todo!("nicer error {a:?}, {b:?}"),
-                    Ok(ProtectionGraphCmp::Super) => { /* all good */ }
+                    Ok(ProtectionGraphCmp::Super) => todo!("nicer error {a:?}, {b:?}"),
+                    Ok(ProtectionGraphCmp::Sub) => { /* all good */ }
                     Ok(ProtectionGraphCmp::Disjoint) => ( /* weird but all good */),
                 }
             }
         }
 
+        // Now ensure that task protections are sorted correctly.
         task_protections.sort_by(|a, b| {
                 match analysis_state
                     .protection_paths_graphs
@@ -426,9 +430,9 @@ fn compute_accessible_data(graph: &Graph, analysis_state: &mut State) -> Result<
                     .compare(analysis_state.protection_paths_graphs.get(b).unwrap())
                 {
                     Err(e) => todo!("Write a good error message, {e}"),
-                    // Smallest to the right.
-                    Ok(ProtectionGraphCmp::Sub) => std::cmp::Ordering::Greater,
-                    Ok(ProtectionGraphCmp::Super) => std::cmp::Ordering::Less,
+                    // Smallest to the left, as this is the one containing the others.
+                    Ok(ProtectionGraphCmp::Super) => std::cmp::Ordering::Greater,
+                    Ok(ProtectionGraphCmp::Sub) => std::cmp::Ordering::Less,
                     // TODO This is not allowed since it makes analysis rather hard. It could be
                     // that there is a TEE which could conditionally execute one MPC algorithm or
                     // another algorithm. But I believe this is a headache to implement, so just

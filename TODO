@@ -4,6 +4,8 @@ Big TODOs before 1.0:
   - interaction with pe-bpmd, especially because currently the distinction between data and nondata nodes is lost. Blackbox node type probably needs a `is_data_node: bool` or something like that.
 - fix the smaller bugs, especially in the pe-bpmn module.
 - bug: previously, Pool1 was software-operator for mpc, resulting in visibility P. now it is missing that, resulting in visibility HH.
+- PE-BPMD: make an example where unencrypted data is communicated out of a TEE pool/lane/tasks, to identify that the containing pool gets correct visibility assigned. AIUI that code is currently missing.
+- PE-BPMD: Fix all the TODOs, mostly around good error messages (and ensure there are tests which would trigger those, if possible)
 
 After 1.0:
 - add `[place .. left of ..]` which also fixes the vertical alignment of the two nodes
