@@ -75,12 +75,6 @@ pub struct Protection {
     pub rv_tc: Option<TokenCoordinate>,
 }
 
-#[derive(Debug, Clone, PartialEq, Default)]
-pub struct PeBpmdMeta {
-    pub stroke_color: Option<String>,
-    pub fill_color: Option<String>,
-}
-
 enum BlockState {
     Closed,
     Opened,
