@@ -1,31 +1,26 @@
 cargo-features = ["profile-rustflags", "codegen-backend"]
 
-[package]
-name = "bpmn-parser"
-version = "0.1.0"
-edition = "2024"
+[workspace]
+resolver = "3"
+members = ["boundary-lookuptable","bpmd", "bpmd-algorithms", "bpmd-graph", "bpmd-layout", "bpmd-parse", "bpmd-pebpmd-analysis", "bpmd-to-bpmn", "bpmd-to-svg", "bpmd-util", "proc_macros"]
 
-[[bin]]
-name = "boundary-lookuptable"
-path = "src/boundary-lookuptable.rs"
-
-[dependencies]
-clap = { version = "4", features = ["derive"] }
-good_lp = { version = "1", features = [
-    "microlp",
-], default-features = false }
-resvg = "0.47"
-annotate-snippets = "0.12"
-itertools = {version = "0", features = ["use_alloc"]}
-rustc-hash = {version = "2", default-features = false }
-fuzzy-matcher = "0.3.7"
-csv = "1.3.1"
-proc_macros = { path = "./proc_macros" }
-cosmic-text = {
-    version = "0.19",
-    default-features = false,
-    features = ["std", "swash", "wasm-web"],
-}
+#[dependencies]
+#clap = { version = "4", features = ["derive"] }
+#good_lp = { version = "1", features = [
+#    "microlp",
+#], default-features = false }
+#resvg = "0.47"
+#annotate-snippets = "0.12"
+#itertools = {version = "0", features = ["use_alloc"]}
+#rustc-hash = {version = "2", default-features = false }
+#fuzzy-matcher = "0.3.7"
+#csv = "1.3.1"
+#proc_macros = { path = "./proc_macros" }
+#cosmic-text = {
+#    version = "0.19",
+#    default-features = false,
+#    features = ["std", "swash", "wasm-web"],
+#}
 
 [profile.test]
 rustflags = ["-Adead_code", "-Aunused_variables", "-Aunused_imports"]
