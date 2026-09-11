@@ -4,3 +4,5 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
+bpmd-util = { path = "../bpmd-util" }
+bpmd-graph = { path = "../bpmd-graph" }
