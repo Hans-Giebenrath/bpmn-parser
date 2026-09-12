@@ -1,21 +1,9 @@
-use crate::lexer::TokenCoordinate;
-use crate::pe_bpmd::PoolOrProtection;
-use crate::pe_bpmd::parser::{
-    ComputationCommon, Mpc, PeBpmd, PeBpmdSubType, PeBpmdType, Protection, SecureChannel, Tee,
-};
-use crate::pe_bpmd::{ProtectionPaths, VisibilityTableInput};
-use crate::{
-    common::graph::{EdgeId, NodeId, SdeId},
-    lexer::PeBpmdProtection,
-    parser::ParseError,
-};
-use crate::{
-    common::{
-        graph::{Graph, LaneId, PoolId},
-        node::NodeType,
-    },
-    pe_bpmd::ProtectionGraphCmp,
-};
+use crate::PoolOrProtection;
+use crate::ProtectionGraphCmp;
+use crate::ProtectionPaths;
+use crate::VisibilityTableInput;
+use bpmd_graph::pebpmd::*;
+use bpmd_graph::*;
 use itertools::Itertools;
 use proc_macros::{e, from, n, to};
 use std::collections::{BTreeSet, HashMap, HashSet};

@@ -1,5 +1,8 @@
-use crate::{lexer::*, parser::ParseError};
+use crate::lexer::*;
+use bpmd_graph::ParseError;
+use bpmd_graph::TokenCoordinate;
 use itertools::Itertools;
+
 const VARIANTS: [&str; 4] = [
     "blackbox all",
     "blackbox @pool-a @pool-b // any number of pools, at least 1",

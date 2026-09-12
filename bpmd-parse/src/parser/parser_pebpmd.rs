@@ -1,16 +1,11 @@
+use bpmd_graph::pebpmd::*;
+use bpmd_graph::*;
 use itertools::Itertools;
 use std::collections::HashMap;
 
-use crate::common::graph::{LaneId, PoolId};
-use crate::common::node::NodeType;
-use crate::lexer::{self, PeBpmdProtection};
-use crate::lexer::{CONTAINING_POOL_ONLY_KEYWORD, TokenCoordinate};
-use crate::parser::Parser;
-use crate::{
-    common::graph::{NodeId, SdeId},
-    lexer::PeBpmdMeta,
-    parser::ParseError,
-};
+use crate::lexer;
+use crate::lexer::CONTAINING_POOL_ONLY_KEYWORD;
+use crate::parser::parser::Parser;
 
 impl Parser {
     pub fn parse_pe_bpmd(&mut self, pe_bpmd: lexer::PeBpmd) -> Result<(), ParseError> {

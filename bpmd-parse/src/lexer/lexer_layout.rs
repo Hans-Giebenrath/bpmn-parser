@@ -1,5 +1,8 @@
-use crate::{lexer::*, parser::ParseError};
+use crate::lexer::*;
+use bpmd_graph::ParseError;
+use bpmd_graph::TokenCoordinate;
 use itertools::Itertools;
+
 const PLACE_VARIANTS: [&str; 4] = [
     "place @node_a above @node_b",
     "place @node_a below @node_b",

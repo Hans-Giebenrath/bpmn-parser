@@ -1,17 +1,10 @@
-use crate::pe_bpmd::PoolOrProtection;
-use crate::pe_bpmd::VisibilityTableInput;
-use crate::pe_bpmd::parser::{ComputationCommon, Mpc, PeBpmdSubType, PeBpmdType, Tee};
-use itertools::chain;
-use std::collections::BTreeSet;
-use std::collections::HashSet;
+use crate::PoolOrProtection;
+use crate::VisibilityTableInput;
+use bpmd_graph::pebpmd::*;
+use bpmd_graph::*;
+use itertools::Itertools;
+use std::collections::{BTreeSet, HashMap, HashSet};
 use std::fmt::Display;
-
-use crate::{
-    common::graph::{Graph, PoolId, SdeId},
-    lexer::PeBpmdProtection,
-    pe_bpmd::parser::PeBpmd,
-};
-use std::collections::HashMap;
 
 struct Args<'a> {
     graph: &'a Graph,
@@ -171,10 +164,9 @@ pub fn generate_visibility_table(
     };
 
     // Write header
-    csv.write_record(chain(
-        std::iter::once("Pool"),
-        graph.data_elements.iter().map(|sde| sde.name.as_str()),
-    ))?;
+    csv.write_record(
+        std::iter::once("Pool").chain(graph.data_elements.iter().map(|sde| sde.name.as_str())),
+    )?;
 
     // Write rows
     for (pool_idx, pool) in graph.pools.iter().enumerate() {

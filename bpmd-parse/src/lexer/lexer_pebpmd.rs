@@ -1,4 +1,7 @@
-use crate::{lexer::*, parser::ParseError};
+use crate::lexer::*;
+use bpmd_graph::ParseError;
+use bpmd_graph::TokenCoordinate;
+use bpmd_graph::pebpmd::PeBpmdMeta;
 
 pub const CONTAINING_POOL_ONLY_KEYWORD: &str = "containing-pool-only";
 

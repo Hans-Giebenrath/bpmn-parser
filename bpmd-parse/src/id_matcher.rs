@@ -1,8 +1,8 @@
-use crate::common::graph::Graph;
-use crate::common::graph::LaneId;
-use crate::common::graph::NodeId;
-use crate::common::graph::PoolId;
 use crate::lexer::is_allowed_symbol_in_label_or_id;
+use bpmd_graph::graph::Graph;
+use bpmd_graph::graph::LaneId;
+use bpmd_graph::graph::NodeId;
+use bpmd_graph::graph::PoolId;
 use fuzzy_matcher::FuzzyMatcher;
 
 const DUMMY_SEPARATOR: char = '-';
@@ -409,50 +409,3 @@ fn normalize(s: &str) -> String {
         })
         .collect()
 }
-
-//#[cfg(test)]
-//mod tests {
-//    use super::*;
-//
-//    #[test]
-//    fn t() {
-//        let m = IdMatcher {
-//            nodes: vec![
-//                IdMeta {
-//                    ids: vec!["send1".to_owned()],
-//                    fuzzy_haystack: vec![
-//                        normalize("Service Provider Dept1 Send Message"),
-//                        normalize("Service Provider Dept1 send1"),
-//                    ],
-//                    node_id: NodeId(1),
-//                    pool_id: PoolId(0),
-//                    lane_id: LaneId(0),
-//                },
-//                IdMeta {
-//                    ids: vec!["send2".to_owned()],
-//                    fuzzy_haystack: vec![
-//                        normalize("End User Send Message"),
-//                        normalize("End User send1"),
-//                    ],
-//                    node_id: NodeId(2),
-//                    pool_id: PoolId(0),
-//                    lane_id: LaneId(0),
-//                },
-//                IdMeta {
-//                    // This ID is created from the initials of the first node:
-//                    // "Service Provider Dept1 Send1"
-//                    ids: vec!["spds".to_owned()],
-//                    fuzzy_haystack: vec![normalize("End User Speed S"), normalize("End User spds")],
-//                    node_id: NodeId(3),
-//                    pool_id: PoolId(0),
-//                    lane_id: LaneId(0),
-//                },
-//            ],
-//        };
-//
-//        assert_eq!(m.find_any_node_id("send2", None), Some(NodeId(2)));
-//        assert_eq!(m.find_any_node_id("spds", None), Some(NodeId(3)));
-//        assert_eq!(m.find_any_node_id("eu-send", None), Some(NodeId(2)));
-//        assert_eq!(m.find_any_node_id("sp-send", None), Some(NodeId(1)));
-//    }
-//}

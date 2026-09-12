@@ -1,27 +1,7 @@
 use std::collections::HashSet;
 
-use crate::common::bpmn_node;
-use crate::common::bpmn_node::ActivityType;
-use crate::common::bpmn_node::BpmnNode;
-use crate::common::bpmn_node::EventVisual;
-use crate::common::bpmn_node::InterruptKind;
-use crate::common::edge::{DataFlowAux, EdgeType, FlowType};
-use crate::common::edge::{MessageFlowAux, RegularEdgeBendPoints};
-use crate::common::graph::EdgeId;
-use crate::common::graph::PoolAndLane;
-use crate::common::graph::{Graph, SdeId};
-use crate::common::graph::{LaneId, NodeId, PoolId};
-use crate::common::index_iter::IterIndices;
-use crate::common::node::DataAux;
-use crate::common::node::NodeType;
-use crate::common::pool::Pool;
-use crate::common::vecmap::VecMap;
-use crate::common::vecset::VecSet;
 use crate::id_matcher::IdMatcher;
 use crate::id_matcher::SomeId;
-use crate::layout::constraint::Above;
-use crate::layout::constraint::Before;
-use crate::layout::constraint::SameLayer;
 use crate::lexer::ActivityMeta;
 use crate::lexer::BlackboxStatement;
 use crate::lexer::BoundaryEventMeta;
@@ -29,13 +9,15 @@ use crate::lexer::DataFlowMeta;
 use crate::lexer::DataMeta;
 use crate::lexer::Direction;
 use crate::lexer::EdgeMeta;
-use crate::lexer::EventType;
 use crate::lexer::GatewayNodeMeta;
 use crate::lexer::LayoutStatement;
 use crate::lexer::PoolMeta;
 use crate::lexer::{self, MessageFlowMeta};
-use crate::lexer::{Statement, StatementStream, TokenCoordinate};
-use crate::parser::bpmn_node::BoundaryEvent;
+use crate::lexer::{Statement, StatementStream};
+use bpmd_graph::*;
+use bpmd_util::index_iter::IterIndices;
+use bpmd_util::vecmap::VecMap;
+use bpmd_util::vecset::VecSet;
 
 pub struct ParseContext {
     last_node_id: Option<usize>,
@@ -393,7 +375,7 @@ impl Parser {
 
         self.graph.layout_constraints.finish(&self.graph.nodes);
         create_transported_data(&mut self.graph);
-        crate::common::graph::validate_invariants(&self.graph)?;
+        bpmd_algorithms::validate_graph_correctness(&self.graph)?;
 
         Ok(self.graph)
     }
@@ -651,15 +633,12 @@ impl Parser {
         let ids = meta.node_meta.ids;
         let (event_visual, node_position) = match self.context.lifeline_state {
             LifelineState::NoLifelineActive { .. } if !is_end => (
-                bpmn_node::EventVisual::default_start(meta.event_visual)?,
+                default_start(meta.event_visual)?,
                 NodePositionInLifeline::Start,
             ),
-            _ if is_end => (
-                bpmn_node::EventVisual::default_end(meta.event_visual)?,
-                NodePositionInLifeline::End,
-            ),
+            _ if is_end => (default_end(meta.event_visual)?, NodePositionInLifeline::End),
             _ => (
-                bpmn_node::EventVisual::default_intermediate(meta.event_visual, meta.event_type)?,
+                default_intermediate(meta.event_visual, meta.event_type)?,
                 NodePositionInLifeline::Middle,
             ),
         };
@@ -1244,4 +1223,73 @@ fn get_edge_data_ids(graph: &Graph, edge_ids: &[EdgeId]) -> HashSet<SdeId> {
         ids.extend(edge.get_transported_data());
     }
     ids
+}
+
+fn default_start(
+    (ev, tc): (lexer::EventVisual, TokenCoordinate),
+) -> Result<bpmd_graph::bpmn_node::EventVisual, ParseError> {
+    use crate::lexer::EventVisual as E;
+    use bpmd_graph::bpmn_node::EventVisual as EV;
+    match ev {
+        E::None | E::Receive | E::Catch => Ok(EV::Start(InterruptKind::Interrupting)),
+        E::Send | E::Throw => Err(vec![(
+            "Start events can only be ~catch or ~receive events (or simply remove this attribute)."
+                .to_string(),
+            tc,
+        )]),
+    }
+}
+
+fn default_intermediate(
+    (ev, tc): (lexer::EventVisual, TokenCoordinate),
+    event_type: EventType,
+) -> Result<bpmd_graph::bpmn_node::EventVisual, ParseError> {
+    use bpmd_graph::bpmn_node::EventVisual as EV;
+    use lexer::EventVisual as E;
+    match ev {
+        E::Receive | E::Catch => Ok(EV::Catch(InterruptKind::Interrupting)),
+        E::Send | E::Throw => Ok(EV::Throw),
+        E::None => match event_type {
+            EventType::Blank => Ok(EV::Throw),
+            EventType::Message => Ok(EV::Catch(InterruptKind::Interrupting)),
+            EventType::Timer => Ok(EV::Catch(InterruptKind::Interrupting)),
+            EventType::Conditional => Ok(EV::Catch(InterruptKind::Interrupting)),
+            EventType::Link => Ok(EV::Catch(InterruptKind::Interrupting)),
+            EventType::Signal => Ok(EV::Catch(InterruptKind::Interrupting)),
+            EventType::Error => Err(vec![(
+                "Error events cannot be intermediate events, but only end or boundary events."
+                    .to_string(),
+                tc,
+            )]),
+            EventType::Escalation => Ok(EV::Throw),
+            EventType::Termination => Err(vec![(
+                "Termination events cannot be intermediate events, but only end events."
+                    .to_string(),
+                tc,
+            )]),
+            EventType::Compensation => Ok(EV::Throw),
+            EventType::Cancel => Err(vec![(
+                "Cancel events cannot be intermediate events, but only end or boundary events."
+                    .to_string(),
+                tc,
+            )]),
+            EventType::Multiple => Ok(EV::Catch(InterruptKind::Interrupting)),
+            EventType::MultipleParallel => Ok(EV::Catch(InterruptKind::Interrupting)),
+        },
+    }
+}
+
+fn default_end(
+    (ev, tc): (lexer::EventVisual, TokenCoordinate),
+) -> Result<bpmd_graph::bpmn_node::EventVisual, ParseError> {
+    use bpmd_graph::bpmn_node::EventVisual as EV;
+    use lexer::EventVisual as E;
+    match ev {
+        E::None | E::Send | E::Throw => Ok(EV::End),
+        E::Receive | E::Catch => Err(vec![(
+            "End events can only ~send or ~throw events (or simply remove this attribute)."
+                .to_string(),
+            tc,
+        )]),
+    }
 }

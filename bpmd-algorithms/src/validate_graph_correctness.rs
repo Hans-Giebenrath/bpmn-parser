@@ -1,4 +1,16 @@
-pub fn validate_invariants(graph: &Graph) -> Result<(), ValidationErrors> {
+use crate::same_layaer_lane_crossings_within_cluster::same_layer_lane_crossings_within_cluster;
+use bpmd_graph::ParseError;
+use bpmd_graph::bpmn_node::BpmnNode;
+use bpmd_graph::bpmn_node::EventType;
+use bpmd_graph::bpmn_node::EventVisual;
+use bpmd_graph::graph::Graph;
+use bpmd_graph::graph::PoolAndLane;
+use bpmd_graph::node::Node;
+use bpmd_graph::node::NodeType;
+use bpmd_util::vecset::VecSet;
+use proc_macros::{e, from, n, to};
+
+pub fn validate_graph_correctness(graph: &Graph) -> Result<(), ParseError> {
     // TODO
     //
     // (1) there is no situation where an edge's from has multiple edges in its outgoing vec, and
@@ -68,8 +80,8 @@ pub fn validate_invariants(graph: &Graph) -> Result<(), ValidationErrors> {
         }
     }
 
-    // Regular nodes don't branch nor join. This is the job for gateways.
-    // In principle, I think BPMN with Style said that it is OK to join, but my tool is opinionated.
+    // Regular nodes don't branch nor join. This is the job for gateways. In principle, I think BPMN
+    // with Style said that it is okay to join, but my tool is opinionated.
     for node in &graph.nodes {
         if node.is_gateway() {
             continue;
@@ -231,7 +243,7 @@ pub fn validate_invariants(graph: &Graph) -> Result<(), ValidationErrors> {
     }
 }
 
-fn check_if_valid_message_flow_start(node: &Node, errors: &mut Vec<ValidationErrors>) {
+fn check_if_valid_message_flow_start(node: &Node, errors: &mut Vec<ParseError>) {
     if let NodeType::RealNode { event, tc, .. } = &node.node_type {
         match event {
             BpmnNode::Event(EventType::Message, EventVisual::Throw | EventVisual::End) => (),
@@ -247,7 +259,7 @@ fn check_if_valid_message_flow_start(node: &Node, errors: &mut Vec<ValidationErr
     }
 }
 
-fn check_if_valid_message_flow_end(node: &Node, errors: &mut Vec<ValidationErrors>) {
+fn check_if_valid_message_flow_end(node: &Node, errors: &mut Vec<ParseError>) {
     if let NodeType::RealNode { event, tc, .. } = &node.node_type {
         match event {
             BpmnNode::Event(EventType::Message, EventVisual::Start(_) | EventVisual::Catch(_)) => {}

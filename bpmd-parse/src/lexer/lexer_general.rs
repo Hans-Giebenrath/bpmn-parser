@@ -4,23 +4,26 @@
 //! case of using it for real-time error diagnostics (as an LSP basically which does not do
 //! layouting) then maybe(?) it needs to be optimized to get sub-millisecond speed out of it.
 
-use core::fmt::Display;
 use std::path::Path;
 use std::path::PathBuf;
 
 use itertools::Either;
 use itertools::Itertools;
 
-use crate::BpmdSourceFile;
-use crate::common::bpmn_node::ActivityMarker;
-use crate::common::bpmn_node::ActivityMarkerTokenCoordinates;
-use crate::common::bpmn_node::ActivityType;
-use crate::common::bpmn_node::BoundaryEvent;
-use crate::common::bpmn_node::BoundaryEventType;
-use crate::common::bpmn_node::InterruptKind;
-use crate::common::bpmn_node::TaskType;
 use crate::lexer::*;
-use crate::parser::ParseError;
+use bpmd_graph::BpmdSourceFile;
+use bpmd_graph::ParseError;
+use bpmd_graph::TokenCoordinate;
+use bpmd_graph::bpmn_node::ActivityMarker;
+use bpmd_graph::bpmn_node::ActivityMarkerTokenCoordinates;
+use bpmd_graph::bpmn_node::ActivityType;
+use bpmd_graph::bpmn_node::BoundaryEvent;
+use bpmd_graph::bpmn_node::BoundaryEventType;
+use bpmd_graph::bpmn_node::DataType;
+use bpmd_graph::bpmn_node::EventType;
+use bpmd_graph::bpmn_node::GatewayType;
+use bpmd_graph::bpmn_node::InterruptKind;
+use bpmd_graph::bpmn_node::TaskType;
 
 pub fn validate_import(
     canonicalized_location: &Path,
@@ -288,69 +291,6 @@ pub enum EventVisual {
     Receive,
     Throw,
     Catch,
-}
-
-impl (EventVisual, TokenCoordinate) {
-    pub(crate) fn default_start(&self) -> Result<bpmd_graph::EventVisual, ParseError> {
-        use EventVisual as E;
-        use bpmd_graph::EventVisual as EV;
-        match self.0 {
-            E::None | E::Receive | E::Catch => Ok(EV::Start(InterruptKind::Interrupting)),
-            E::Send | E::Throw => Err(vec![("Start events can only be ~catch or ~receive events (or simply remove this attribute).".to_string(), tc, )]),
-        }
-    }
-
-    pub(crate) fn default_intermediate(
-        &self,
-        event_type: EventType,
-    ) -> Result<bpmd_graph::EventVisual, ParseError> {
-        use bpmd_graph::EventVisual as EV;
-        use lexer::EventVisual as E;
-        match lexed {
-            E::Receive | E::Catch => Ok(EV::Catch(InterruptKind::Interrupting)),
-            E::Send | E::Throw => Ok(EV::Throw),
-            E::None => match event_type {
-                EventType::Blank => Ok(EV::Throw),
-                EventType::Message => Ok(EV::Catch(InterruptKind::Interrupting)),
-                EventType::Timer => Ok(EV::Catch(InterruptKind::Interrupting)),
-                EventType::Conditional => Ok(EV::Catch(InterruptKind::Interrupting)),
-                EventType::Link => Ok(EV::Catch(InterruptKind::Interrupting)),
-                EventType::Signal => Ok(EV::Catch(InterruptKind::Interrupting)),
-                EventType::Error => Err(vec![(
-                    "Error events cannot be intermediate events, but only end or boundary events."
-                        .to_string(),
-                    tc,
-                )]),
-                EventType::Escalation => Ok(EV::Throw),
-                EventType::Termination => Err(vec![(
-                    "Termination events cannot be intermediate events, but only end events."
-                        .to_string(),
-                    tc,
-                )]),
-                EventType::Compensation => Ok(EV::Throw),
-                EventType::Cancel => Err(vec![(
-                    "Cancel events cannot be intermediate events, but only end or boundary events."
-                        .to_string(),
-                    tc,
-                )]),
-                EventType::Multiple => Ok(EV::Catch(InterruptKind::Interrupting)),
-                EventType::MultipleParallel => Ok(EV::Catch(InterruptKind::Interrupting)),
-            },
-        }
-    }
-
-    pub(crate) fn default_end(&self) -> Result<bpmd_graph::EventVisual, ParseError> {
-        use bpmd_graph::EventVisual as EV;
-        use lexer::EventVisual as E;
-        match lexed {
-            E::None | E::Send | E::Throw => Ok(EV::End),
-            E::Receive | E::Catch => Err(vec![(
-                "End events can only ~send or ~throw events (or simply remove this attribute)."
-                    .to_string(),
-                tc,
-            )]),
-        }
-    }
 }
 
 #[derive(Eq, Debug, Clone, PartialEq)]
@@ -1221,43 +1161,43 @@ macro_rules! charify {
 // this is stupid please tell me.
 macro_rules! tt_as_boundary_event_type {
     (M) => {
-        crate::common::bpmn_node::BoundaryEventType::Message
+        bpmd_graph::bpmn_node::BoundaryEventType::Message
     };
     (T) => {
-        crate::common::bpmn_node::BoundaryEventType::Timer
+        bpmd_graph::bpmn_node::BoundaryEventType::Timer
     };
     (C) => {
-        crate::common::bpmn_node::BoundaryEventType::Conditional
+        bpmd_graph::bpmn_node::BoundaryEventType::Conditional
     };
     (S) => {
-        crate::common::bpmn_node::BoundaryEventType::Signal
+        bpmd_graph::bpmn_node::BoundaryEventType::Signal
     };
     (E) => {
-        crate::common::bpmn_node::BoundaryEventType::Error
+        bpmd_graph::bpmn_node::BoundaryEventType::Error
     };
     (^) => {
-        crate::common::bpmn_node::BoundaryEventType::Escalation
+        bpmd_graph::bpmn_node::BoundaryEventType::Escalation
     };
     (<) => {
-        crate::common::bpmn_node::BoundaryEventType::Compensation
+        bpmd_graph::bpmn_node::BoundaryEventType::Compensation
     };
     (X) => {
-        crate::common::bpmn_node::BoundaryEventType::Cancel
+        bpmd_graph::bpmn_node::BoundaryEventType::Cancel
     };
     (#) => {
-        crate::common::bpmn_node::BoundaryEventType::Multiple
+        bpmd_graph::bpmn_node::BoundaryEventType::Multiple
     };
     (+) => {
-        crate::common::bpmn_node::BoundaryEventType::MultipleParallel
+        bpmd_graph::bpmn_node::BoundaryEventType::MultipleParallel
     };
 }
 
 macro_rules! tt_as_interrupt_kind {
     (!) => {
-        crate::common::bpmn_node::InterruptKind::Interrupting
+        bpmd_graph::bpmn_node::InterruptKind::Interrupting
     };
     (+) => {
-        crate::common::bpmn_node::InterruptKind::NonInterrupting
+        bpmd_graph::bpmn_node::InterruptKind::NonInterrupting
     };
 }
 

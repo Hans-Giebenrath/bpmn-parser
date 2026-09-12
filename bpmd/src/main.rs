@@ -90,13 +90,6 @@ impl Display for OutputFormat {
     }
 }
 
-pub struct BpmdSourceFile {
-    // Standard input, file path, or URL in include, or whatever.
-    location: String,
-    canonicalized_location: PathBuf,
-    content: String,
-}
-
 #[derive(Default)]
 struct Timer {
     measurements: Vec<(&'static str, std::time::Duration)>,

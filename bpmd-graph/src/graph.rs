@@ -756,7 +756,7 @@ impl Index<PeBpmdProtection> for Graph {
 }
 
 impl SemanticDataElement {
-    pub(crate) fn contains(&self, node_id: NodeId) -> bool {
+    pub fn contains(&self, node_id: NodeId) -> bool {
         self.data_element.contains(&node_id)
     }
 }
@@ -861,7 +861,6 @@ pub(crate) fn add_node(
         outgoing: Vec::new(),
         incoming_ports: Vec::new(),
         outgoing_ports: Vec::new(),
-        aux: super::node::NodePhaseAuxData::None,
     });
 
     node_id

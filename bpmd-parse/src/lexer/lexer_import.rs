@@ -1,4 +1,6 @@
-use crate::{lexer::*, parser::ParseError};
+use crate::lexer::*;
+use bpmd_graph::ParseError;
+use bpmd_graph::TokenCoordinate;
 
 impl<'a> Lexer<'a> {
     pub(crate) fn run_import(&mut self) -> Result<(), ParseError> {

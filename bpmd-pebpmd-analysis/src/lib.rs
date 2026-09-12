@@ -1,15 +1,13 @@
 use itertools::Itertools;
 
-use crate::common::graph::SdeId;
-use crate::common::graph::{EdgeId, PoolId};
-use crate::lexer::PeBpmdProtection;
+use bpmd_graph::pebpmd::*;
+use bpmd_graph::*;
 use std::collections::BTreeSet;
 use std::collections::HashMap;
 use std::collections::HashSet;
 use std::fmt::Debug;
 
 pub mod analysis;
-pub mod parser;
 pub mod visibility_table;
 
 #[derive(Eq, Hash, PartialEq, Clone, Copy, PartialOrd, Ord)]
