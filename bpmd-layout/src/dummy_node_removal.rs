@@ -1,13 +1,5 @@
-use crate::common::edge::DummyEdgeBendPoints;
-use crate::common::edge::Edge;
-use crate::common::edge::EdgeType;
-use crate::common::edge::RegularEdgeBendPoints;
-use crate::common::graph::EdgeId;
-use crate::common::graph::Graph;
-use crate::common::node::AbsolutePort;
-use crate::common::node::NodeIdOrEdgeId;
-use proc_macros::e;
-use proc_macros::n;
+use bpmd_graph::*;
+use proc_macros::*;
 
 // Assigns bend points to the Regular edges. Afterwards, no more dummy nodes or edges are present.
 pub fn dummy_node_removal(graph: &mut Graph) {

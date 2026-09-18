@@ -6,3 +6,8 @@ edition = "2024"
 [dependencies]
 bpmd-util = { path = "../bpmd-util" }
 proc_macros = { path = "../proc_macros" }
+cosmic-text = {
+    version = "0.19",
+    default-features = false,
+    features = ["wasm-web"],
+}

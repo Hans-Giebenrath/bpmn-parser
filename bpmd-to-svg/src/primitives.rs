@@ -12,29 +12,14 @@ use cosmic_text::{
 
 use std::fmt::Write as _;
 
-use crate::{
-    common::{
-        bpmn_node::{
-            ActivityMarker, ActivityType, BoundaryEventType, EventVisual, InterruptKind, TaskType,
-        },
-        config::Config,
-        edge::FlowType,
-        graph::{
-            ACTIVITY_NODE_HEIGHT, ACTIVITY_NODE_WIDTH, DATAOBJECT_NODE_HEIGHT,
-            DATAOBJECT_NODE_WIDTH, DATASTORE_NODE_HEIGHT, DATASTORE_NODE_WIDTH, EVENT_NODE_HEIGHT,
-            EVENT_NODE_WIDTH, GATEWAY_NODE_HEIGHT, GATEWAY_NODE_WIDTH, MAX_NODE_WIDTH,
-        },
-        node::{Dimension, Side},
+use bpmd_graph::*;
+use layout::{
+    collision_grid::Grid,
+    set_display_text_location_candidates::{
+        Alignment, DisplayTextLocationCandidate, activity_display_text_location_candidates,
+        data_display_text_location_candidates, edge_display_text_location_candidates,
+        event_display_text_location_candidates, gateway_display_text_location_candidates,
     },
-    layout::{
-        collision_grid::Grid,
-        set_display_text_location_candidates::{
-            Alignment, DisplayTextLocationCandidate, activity_display_text_location_candidates,
-            data_display_text_location_candidates, edge_display_text_location_candidates,
-            event_display_text_location_candidates, gateway_display_text_location_candidates,
-        },
-    },
-    lexer::{DataType, EventType, GatewayType},
 };
 pub const STROKE_WIDTH: f64 = 2.;
 pub const FLOW_CORNER_RADIUS: usize = 7;
@@ -151,35 +136,18 @@ pub struct Svg {
     height: usize,
     body: String,
     style: SvgStyle,
-    font_system: FontSystem,
-    swash_cache: SwashCache,
     embed_font: bool,
-    grid: Grid,
     config: Config,
 }
 
 impl Svg {
-    pub fn new(embed_font: bool, width: usize, height: usize, grid: Grid, config: &Config) -> Self {
-        let mut font_system = FontSystem::new();
-        let swash_cache = SwashCache::new();
-        font_system
-            .db_mut()
-            .load_font_data(include_bytes!("../../../inter-font/Inter-Regular.ttf").to_vec());
-        font_system
-            .db_mut()
-            .load_font_data(include_bytes!("../../../inter-font/Inter-SemiBold.ttf").to_vec());
-        font_system
-            .db_mut()
-            .load_font_data(include_bytes!("../../../inter-font/Inter-Italic.ttf").to_vec());
+    pub fn new(embed_font: bool, width: usize, height: usize, config: &Config) -> Self {
         Self {
             width,
             height,
             body: String::new(),
             style: SvgStyle::default(),
-            font_system,
-            swash_cache,
             embed_font,
-            grid,
             // Just clone it to avoid lifetimes. It is big, but whatever. Just one clone.
             config: config.clone(),
         }
@@ -1055,7 +1023,6 @@ impl<'a> PreparedText<'a> {
 fn write_text_at(
     body: &mut String,
     candidate: DisplayTextLocationCandidate,
-    grid: &mut Grid,
     text: PreparedText,
     merged: &MergedSvgStyle,
     class: &str,

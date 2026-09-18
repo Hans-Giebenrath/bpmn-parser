@@ -1,11 +1,5 @@
-use crate::common::edge::DummyEdgeBendPoints;
-use crate::common::edge::Edge;
-use crate::common::edge::EdgeType;
-use crate::common::graph::EdgeId;
-use crate::common::graph::{Graph, NodeId};
-use crate::common::node::LayerId;
-use crate::common::node::NodeType;
-use proc_macros::{e, n};
+use bpmd_graph::*;
+use proc_macros::*;
 
 pub(crate) struct Undo {
     original_num_nodes: usize,

@@ -40,20 +40,10 @@
 //! * If a message flow goes through a layer with a data-object in a half layer, then that should
 //!   not be in the half layer.
 
-use crate::common::config::{EdgeSegmentSpace, EdgeSegmentSpaceLocation};
-use crate::common::graph::PoolId;
-use crate::common::index_iter::IterIndices;
-use crate::common::node::{LayerId, NodeType};
-use proc_macros::e;
-use proc_macros::from;
-use proc_macros::n;
-use proc_macros::to;
+use bpmd_graph::*;
+use bpmd_util::index_iter::IterIndices;
+use proc_macros::*;
 use std::collections::HashMap;
-
-use crate::common::edge::DummyEdgeBendPoints;
-use crate::common::edge::{EdgeType, RegularEdgeBendPoints};
-use crate::common::graph::{EdgeId, Graph};
-use crate::common::node::AbsolutePort;
 
 /// Created for one `SegmentsOfSameLayer`. Is meant to calculate left-to-right paths of overlapping
 /// segment intervals.

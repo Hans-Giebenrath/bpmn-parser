@@ -1,9 +1,5 @@
-use proc_macros::n;
-
-use crate::common::{
-    edge::{EdgeType, RegularEdgeBendPoints},
-    graph::{EVENT_NODE_HEIGHT, EVENT_NODE_WIDTH, Graph},
-};
+use bpmd_graph::*;
+use proc_macros::*;
 
 pub fn fix_boundary_event_connections(graph: &mut Graph) {
     for edge in &mut graph.edges {

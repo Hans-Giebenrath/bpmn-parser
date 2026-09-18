@@ -1,14 +1,19 @@
-pub fn add(left: u64, right: u64) -> u64 {
-    left + right
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn it_works() {
-        let result = add(2, 2);
-        assert_eq!(result, 4);
-    }
-}
+pub mod all_crossing_minimization_common;
+pub mod all_crossing_minimization_sweep;
+pub mod back_edge_removal;
+pub mod dummy_node_generation;
+pub mod dummy_node_removal;
+pub mod edge_routing;
+pub mod fix_boundary_event_connections;
+pub mod introduce_snake_edge_bisect_dummies;
+pub mod macros;
+pub mod port_assignment;
+pub mod postprocess_ports_and_vertical_edges;
+pub mod set_display_text_location_candidates;
+pub mod solve_layer_assignment;
+pub mod sort_incoming_and_outgoing;
+pub mod straight_edge_math;
+pub mod straight_edge_routing;
+pub mod try_move_nodes_into_half_layer;
+mod util;
+pub mod xy_ilp;

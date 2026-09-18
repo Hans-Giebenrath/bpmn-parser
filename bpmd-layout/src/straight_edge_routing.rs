@@ -1,16 +1,8 @@
-use crate::common::bpmn_node::BpmnNode;
-use crate::common::edge::EdgeType;
-use crate::common::edge::RegularEdgeBendPoints;
-use crate::common::graph::EdgeId;
-use crate::common::graph::Graph;
-use crate::common::index_iter::IterIndices;
-use crate::common::node::Node;
-use crate::common::node::NodeType;
-use crate::layout::collision_grid::Grid;
-use crate::layout::straight_edge_math;
-use crate::lexer::DataType;
-use proc_macros::e;
-use proc_macros::n;
+use crate::collision_grid::Grid;
+use crate::straight_edge_math;
+use bpmd_graph::*;
+use bpmd_util::index_iter::IterIndices;
+use proc_macros::*;
 
 pub fn find_straight_edges(graph: &mut Graph) {
     let mut grid = Grid::new(graph.total_width_height());

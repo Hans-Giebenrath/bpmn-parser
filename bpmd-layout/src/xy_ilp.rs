@@ -1,30 +1,12 @@
-use std::cmp::Ordering;
-
-use crate::common::config::Config;
-use crate::common::edge::Edge;
-use crate::common::edge::FlowType;
-use crate::common::graph::EdgeId;
-use crate::common::graph::Graph;
-use crate::common::graph::LaneId;
-use crate::common::graph::MAX_NODE_HEIGHT;
-use crate::common::graph::NodeId;
-use crate::common::graph::PoolId;
-use crate::common::graph::StartAt;
-use crate::common::lane::Lane;
-use crate::common::node::BendDummyKind;
-use crate::common::node::Node;
-use crate::common::node::NodePhaseAuxData;
-use crate::common::node::NodeType;
-use crate::common::node::classify_barrier_node_for_gateway;
+use crate::util::classify_barrier_node_for_gateway;
+use bpmd_graph::*;
 use good_lp::solvers::SolverModel;
 use good_lp::*;
 use itertools::Either;
 use itertools::Itertools;
 use itertools::iproduct;
-use proc_macros::e;
-use proc_macros::from;
-use proc_macros::n;
-use proc_macros::to;
+use proc_macros::*;
+use std::cmp::Ordering;
 
 type PaddingVarsExpandedAux = (
     /* above */
@@ -117,15 +99,35 @@ pub fn assign_xy_ilp(graph: &mut Graph) {
     assign_x(graph);
 }
 
-#[track_caller]
-fn aux(node: &Node) -> Variable {
-    match node.aux {
-        NodePhaseAuxData::XyIlpNodeData(ref a) => a.var,
-        _ => panic!("{node:#?}"),
+struct Aux(Vec<Option<XyIlpNodeData>>);
+impl Aux {
+    fn new(graph: &Graph) -> Self {
+        Self(graph.nodes.iter().map(|_| None).collect::<_>())
+    }
+
+    #[track_caller]
+    fn get(&self, index: NodeId) -> &XyIlpNodeData {
+        self.0[index.0].as_ref().unwrap()
+    }
+
+    #[track_caller]
+    fn v(&self, index: NodeId) -> Variable {
+        self.0[index.0].as_ref().unwrap().var
+    }
+
+    #[track_caller]
+    fn get_mut(&mut self, index: NodeId) -> &mut XyIlpNodeData {
+        self.0[index.0].as_mut().unwrap()
+    }
+
+    #[track_caller]
+    fn set(&mut self, index: NodeId, value: XyIlpNodeData) {
+        self.0[index.0] = Some(value)
     }
 }
 
-fn get_correct_padding_vars_node<'a>(graph: &'a Graph, node: &'a Node) -> &'a Node {
+#[track_caller]
+fn get_correct_padding_vars_node<'a>(graph: &'a Graph, node: &'a Node) -> NodeId {
     match &node.node_type {
         NodeType::BendDummy {
             originating_node, ..
@@ -133,31 +135,37 @@ fn get_correct_padding_vars_node<'a>(graph: &'a Graph, node: &'a Node) -> &'a No
         } => {
 let originating_node = &n!(*originating_node);
 if originating_node.is_gateway() && originating_node.pool_and_lane() == node.pool_and_lane() {
-    originating_node } else { node }
+    originating_node.id } else { node.id }
             }
-        _ => node,
+        _ => node.id,
     }
 }
 
 #[track_caller]
-fn padding_vars_above<'a>(graph: &'a Graph, node: &'a Node) -> &'a [(Variable, usize, usize)] {
-    match get_correct_padding_vars_node(graph, node).aux {
-        NodePhaseAuxData::XyIlpNodeData(ref a) => &a.padding_vars_expanded.0,
-        _ => panic!("{node:#?}"),
-    }
+fn padding_vars_above<'a>(
+    graph: &Graph,
+    node: &Node,
+    aux: &'a Aux,
+) -> &'a [(Variable, usize, usize)] {
+    &aux.get(get_correct_padding_vars_node(graph, node))
+        .padding_vars_expanded
+        .0
 }
 
 #[track_caller]
-fn padding_vars_below<'a>(graph: &'a Graph, node: &'a Node) -> &'a [(Variable, usize, usize)] {
-    match get_correct_padding_vars_node(graph, node).aux {
-        NodePhaseAuxData::XyIlpNodeData(ref a) => &a.padding_vars_expanded.1,
-        _ => panic!("{node:#?}"),
-    }
+fn padding_vars_below<'a>(
+    graph: &Graph,
+    node: &Node,
+    aux: &'a Aux,
+) -> &'a [(Variable, usize, usize)] {
+    &aux.get(get_correct_padding_vars_node(graph, node))
+        .padding_vars_expanded
+        .1
 }
 
 #[track_caller]
-fn middle(node: &Node) -> Expression {
-    aux(node) + (node.height / 2) as f64
+fn middle(node: &Node, aux: &Aux) -> Expression {
+    aux.v(node.id) + (node.height / 2) as f64
 }
 
 const DEBUG_ILP_CONSTRUCTION: bool = false;
@@ -181,6 +189,7 @@ fn c<T: SolverModel>(problem: &mut T, constraint: Constraint) {
 
 fn assign_y(graph: &mut Graph, pool: PoolId, lane: LaneId, min_y_value: usize) -> usize {
     d!(dbg!(&graph););
+    let mut aux = Aux::new(graph);
     let mut vars = variables!();
     let node_ids_iter = graph.pools[pool.0].lanes[lane.0].nodes.iter().cloned();
 
@@ -219,13 +228,16 @@ fn assign_y(graph: &mut Graph, pool: PoolId, lane: LaneId, min_y_value: usize) -
         // NOT an integer variable! Otherwise, this lead to unsatisfiable problems with nested
         // gateways (t0029.bpmd). We just round, this must be good enough.
         let var = vars.add(variable().min(min_y_value as f64));
-        node.aux = NodePhaseAuxData::XyIlpNodeData(XyIlpNodeData {
-            var,
-            padding_vars_expanded: (
-                vec![(var, y_padding(node, &graph.config), node.height)],
-                vec![(var, y_padding(node, &graph.config), node.height)],
-            ),
-        });
+        aux.set(
+            node.id,
+            XyIlpNodeData {
+                var,
+                padding_vars_expanded: (
+                    vec![(var, y_padding(node, &graph.config), node.height)],
+                    vec![(var, y_padding(node, &graph.config), node.height)],
+                ),
+            },
+        );
         d!(eprintln!(
             "minimum y for n({} - ilp var v{}): {min_y_value}",
             node.id.0,
@@ -316,14 +328,17 @@ fn assign_y(graph: &mut Graph, pool: PoolId, lane: LaneId, min_y_value: usize) -
         if !gateway.is_gateway() {
             continue;
         }
-        let gateway_additional =
-            handle_gateway(graph, lane, &mut vars, &mut cached_constraints, gateway);
+        let gateway_additional = handle_gateway(
+            graph,
+            lane,
+            &mut vars,
+            &mut cached_constraints,
+            gateway,
+            &aux,
+        );
 
-        let NodePhaseAuxData::XyIlpNodeData(aux) = &mut &mut graph.nodes[node_id].aux else {
-            unreachable!();
-        };
         // Override this with the expanded gateway information.
-        aux.padding_vars_expanded = gateway_additional;
+        aux.get_mut(node_id).padding_vars_expanded = gateway_additional;
     }
 
     println!("Num of vars: {}", vars.len());
@@ -365,8 +380,8 @@ fn assign_y(graph: &mut Graph, pool: PoolId, lane: LaneId, min_y_value: usize) -
         })
         .for_each(|(above, below)| {
             iproduct!(
-                padding_vars_below(graph, above),
-                padding_vars_above(graph, below)
+                padding_vars_below(graph, above, &aux),
+                padding_vars_above(graph, below, &aux)
             )
             .for_each(
                 |(&(above_aux, above_padding, above_height), &(below_aux, below_padding, _))| {
@@ -378,11 +393,11 @@ fn assign_y(graph: &mut Graph, pool: PoolId, lane: LaneId, min_y_value: usize) -
                     d! {
                         let real_above = node_ids_iter
                             .clone()
-                            .find(|n| aux(&n!(*n)) == above_aux)
+                            .find(|n| aux.v(*n) == above_aux)
                             .unwrap();
                         let real_below = node_ids_iter
                             .clone()
-                            .find(|n| aux(&n!(*n)) == below_aux)
+                            .find(|n| aux.v(*n) == below_aux)
                             .unwrap();
                         eprintln!(
                             "padding above node({}) <dist {}> below node({})",
@@ -396,9 +411,7 @@ fn assign_y(graph: &mut Graph, pool: PoolId, lane: LaneId, min_y_value: usize) -
     node_ids_iter.clone().for_each(|node_id| {
         c(
             &mut problem,
-            (aux(&n!(node_id)) + (&n!(node_id).height / 2) as f64)
-                .into_expression()
-                .leq(height_minimization_var),
+            middle(&n!(node_id), &aux).leq(height_minimization_var),
         )
     });
 
@@ -427,8 +440,8 @@ fn assign_y(graph: &mut Graph, pool: PoolId, lane: LaneId, min_y_value: usize) -
             from_node.display_text_or_dummy_kind(),
             to_node.display_text_or_dummy_kind(),
         ));
-        let from_var = aux(from_node);
-        let to_var = aux(to_node);
+        let from_var = aux.v(*from_id);
+        let to_var = aux.v(*to_id);
         let from_offset = if from_node.is_real() {
             let port = from_node.relative_port_of_outgoing(*edge_id);
             if from_node.relative_port_is_left_or_right(&port) {
@@ -467,13 +480,13 @@ fn assign_y(graph: &mut Graph, pool: PoolId, lane: LaneId, min_y_value: usize) -
         d!(eprintln!(
             "solution n({}) y: {} (non-rounded: {})",
             node_id.0,
-            solution.value(aux(&n!(node_id))).round() as usize,
-            solution.value(aux(&n!(node_id))),
+            solution.value(aux.v(node_id)).round() as usize,
+            solution.value(aux.v(node_id)),
         ));
     }
     for node_id in node_ids_iter.clone() {
         let node = &mut n!(node_id);
-        node.y = solution.value(aux(node)).round() as usize;
+        node.y = solution.value(aux.v(node_id)).round() as usize;
         min_y_encountered = min_y_encountered.min(node.y);
         max_y_plus_height_encountered = max_y_plus_height_encountered.max(node.y + node.height);
     }
@@ -570,15 +583,16 @@ fn handle_gateway(
     vars: &mut ProblemVariables,
     cached_constraints: &mut Vec<Constraint>,
     gateway: &Node,
+    aux: &Aux,
 ) -> PaddingVarsExpandedAux {
     let mut gateway_additional = (
         vec![(
-            aux(gateway),
+            aux.v(gateway.id),
             graph.config.regular_node_y_padding,
             gateway.height,
         )],
         vec![(
-            aux(gateway),
+            aux.v(gateway.id),
             graph.config.regular_node_y_padding,
             gateway.height,
         )],
@@ -846,6 +860,7 @@ fn handle_gateway(
         top_slot_is_data,
         bottom_slot_is_data,
         &mut gateway_additional,
+        aux,
     );
 
     handle_gateway_neighbor_layer_connectivity(
@@ -864,6 +879,7 @@ fn handle_gateway(
         top_slot_is_data,
         bottom_slot_is_data,
         &mut gateway_additional,
+        aux,
     );
     gateway_additional
 }
@@ -884,6 +900,7 @@ fn handle_gateway_neighbor_layer_connectivity(
     top_slot_is_data: bool,
     bottom_slot_is_data: bool,
     gateway_additional: &mut PaddingVarsExpandedAux,
+    aux: &Aux,
 ) {
     let mut first_other = None;
     let mut last_other = None;
@@ -912,7 +929,7 @@ fn handle_gateway_neighbor_layer_connectivity(
                 if *other_node_id == cur.id {
                     assert!(gateway.pool_and_lane() == cur.pool_and_lane());
                     if cur.is_bend_dummy() {
-                        cached_constraints.push((middle(gateway) - middle(cur)).eq(0.0));
+                        cached_constraints.push((middle(gateway, &aux) - middle(cur, &aux)).eq(0.0));
                         d!(eprintln!(
                             "gateway fix lone bend node to same y coordinate: gateway node({}) - bend node({}) / \"{}\" - \"{}\"",
                             gateway.id.0,
@@ -929,7 +946,7 @@ fn handle_gateway_neighbor_layer_connectivity(
                 } else if !lone_encountered {
                     assert!(!top_slot_is_data); // Graph validation insufficient.
                     if gateway.pool_and_lane() == cur.pool_and_lane() {
-                        cached_constraints.push((middle(gateway) - middle(cur)).geq(graph.config.min_vertical_space_between_gateway_bendpoints as f64 / 2.0));
+                        cached_constraints.push((middle(gateway, &aux) - middle(cur, &aux)).geq(graph.config.min_vertical_space_between_gateway_bendpoints as f64 / 2.0));
                         d!(eprintln!(
                             "gateway below non-lone bend node: gateway node({}) - bend node({}) / \"{}\" - \"{}\"",
                             gateway.id.0,
@@ -942,7 +959,7 @@ fn handle_gateway_neighbor_layer_connectivity(
                 } else {
                     assert!(!bottom_slot_is_data); // Graph validation insufficient.
                     if gateway.pool_and_lane() == cur.pool_and_lane() {
-                        cached_constraints.push((middle(cur) - middle(gateway)).geq(graph.config.min_vertical_space_between_gateway_bendpoints as f64 / 2.0));
+                        cached_constraints.push((middle(cur, &aux) - middle(gateway, &aux)).geq(graph.config.min_vertical_space_between_gateway_bendpoints as f64 / 2.0));
                         d!(eprintln!(
                             "gateway above non-lone bend node: gateway node({}) - bend node({}) / \"{}\" - \"{}\"",
                             gateway.id.0,
@@ -960,7 +977,7 @@ fn handle_gateway_neighbor_layer_connectivity(
                 // Assert: Otherwise bend dummy placement logic is flawed, should not have pushed
                 // the bend dummy into another lane if we cannot leave from the top/bottom at all.
                 assert!(gateway.pool_and_lane() == cur.pool_and_lane());
-                cached_constraints.push((middle(gateway) - middle(cur)).eq(0.0));
+                cached_constraints.push((middle(gateway, &aux) - middle(cur, &aux)).eq(0.0));
                 d!(eprintln!(
                     "gateway fix non-lone bend node to same y: gateway node({}) - bend node({}) / \"{}\" - \"{}\"",
                     gateway.id.0,
@@ -982,7 +999,7 @@ fn handle_gateway_neighbor_layer_connectivity(
             inc_iter.fold(Option::<&Node>::None, |prev, cur| {
                 if top_is_blocked_for_non_lones {
                     if gateway.pool_and_lane() == cur.pool_and_lane() {
-                        cached_constraints.push((middle(gateway) - middle(cur)).leq(0.0));
+                        cached_constraints.push((middle(gateway, &aux) - middle(cur, &aux)).leq(0.0));
                         d!(eprintln!(
                             "gateway below non-lone bend node: gateway node({}) - bend node({}) / \"{}\" - \"{}\"",
                             gateway.id.0,
@@ -997,7 +1014,7 @@ fn handle_gateway_neighbor_layer_connectivity(
                     }
                 } else {
                     if gateway.pool_and_lane() == cur.pool_and_lane() {
-                        cached_constraints.push((middle(gateway) - middle(cur)).geq(0.0));
+                        cached_constraints.push((middle(gateway, &aux) - middle(cur, &aux)).geq(0.0));
                         d!(eprintln!(
                             "gateway above non-lone bend node: gateway node({}) - bend node({}) / \"{}\" - \"{}\"",
                             gateway.id.0,
@@ -1013,7 +1030,7 @@ fn handle_gateway_neighbor_layer_connectivity(
                 }
                 if let Some(prev) = prev && cur.pool_and_lane() == prev.pool_and_lane() && cur.pool_and_lane() == gateway.pool_and_lane() {
                     cached_constraints.push(
-                        (middle(cur) - middle(prev)).geq(graph.config.dummy_node_y_padding as f64),
+                        (middle(cur, &aux) - middle(prev, &aux)).geq(graph.config.dummy_node_y_padding as f64),
                     );
                     d!(eprintln!(
                         "padding above node({}) <dist {}> below node({})",
@@ -1029,7 +1046,8 @@ fn handle_gateway_neighbor_layer_connectivity(
                     && prev.pool_and_lane() == cur.pool_and_lane()
                 {
                     cached_constraints.push(
-                        (middle(cur) - middle(prev)).geq(graph.config.dummy_node_y_padding as f64),
+                        (middle(cur, &aux) - middle(prev, &aux))
+                            .geq(graph.config.dummy_node_y_padding as f64),
                     );
                     d!(eprintln!(
                         "padding above node({}) <dist {}> below node({})",
@@ -1046,7 +1064,7 @@ fn handle_gateway_neighbor_layer_connectivity(
     {
         if first_other.is_bend_dummy() {
             gateway_additional.0.push((
-                aux(first_other),
+                aux.v(first_other.id),
                 graph.config.dummy_node_y_padding,
                 first_other.height,
             ));
@@ -1064,7 +1082,7 @@ fn handle_gateway_neighbor_layer_connectivity(
     {
         if last_other.is_bend_dummy() {
             gateway_additional.1.push((
-                aux(last_other),
+                aux.v(last_other.id),
                 graph.config.dummy_node_y_padding,
                 last_other.height,
             ));
@@ -1095,7 +1113,7 @@ fn handle_gateway_neighbor_layer_connectivity(
         GatewayNeighborLayerConnectivity::OnlyOneSameLaneEdge(node) => {
             // The bend node shall stay on the same height as the gateway node, so the edge leaves
             // nicely at the right corner of the gateway symbol.
-            cached_constraints.push((middle(gateway) - middle(node)).eq(0.0));
+            cached_constraints.push((middle(gateway, aux) - middle(node, aux)).eq(0.0));
 
             //let id1 = std::cmp::min(gateway.id, node.id);
             //let id2 = std::cmp::max(gateway.id, node.id);
@@ -1125,8 +1143,10 @@ fn handle_gateway_neighbor_layer_connectivity(
         } => {
             if !top_is_blocked_for_non_lones && !bottom_is_blocked_for_non_lones {
                 // gateway == (top_node + bottom_node) / 2 <==> 2 * gateway - top_node - bottom_node == 0
-                cached_constraints
-                    .push((2.0 * middle(gateway) - middle(top_node) - middle(bottom_node)).eq(0.0));
+                cached_constraints.push(
+                    (2.0 * middle(gateway, aux) - middle(top_node, aux) - middle(bottom_node, aux))
+                        .eq(0.0),
+                );
 
                 d!(eprintln!(
                     "gateway balance between top node({0}) - gateway node({1}) - bottom node({2}) (and distance between {0} and {2} > {3})",
@@ -1139,9 +1159,9 @@ fn handle_gateway_neighbor_layer_connectivity(
                 // An additional constraint to ensure that the branches are not too close to the gateway
                 // node, otherwise it looks awkward.
                 cached_constraints.push(
-                    (aux(top_node)
+                    (aux.v(top_node.id)
                         + graph.config.min_vertical_space_between_gateway_bendpoints as f64)
-                        .leq(aux(bottom_node)),
+                        .leq(aux.v(bottom_node.id)),
                 );
             } else {
                 let (above_node, below_node) = match (
@@ -1159,7 +1179,8 @@ fn handle_gateway_neighbor_layer_connectivity(
                 // But with the current forced same height we don't need the rest of the constraints
                 // which are just there to put the intermediate nodes not at an awkward position
                 // with respect to gateway (since now they are all pushed to the side anyway).
-                cached_constraints.push((middle(above_node) - middle(below_node)).eq(0.0));
+                cached_constraints
+                    .push((middle(above_node, aux) - middle(below_node, aux)).eq(0.0));
                 d!(eprintln!(
                     "gateway and bend dummy forced on same y: gateway node({}) - other node({})",
                     gateway.id.0,
@@ -1194,6 +1215,7 @@ fn handle_gateway_neighbor_layer_connectivity(
                     z0,
                     zp,
                     zm,
+                    aux,
                 );
             }
             if in_between_count > 0 {
@@ -1215,6 +1237,7 @@ fn gateway_forbidden_offset_constraints(
     z0: Variable,
     zp: Variable,
     zm: Variable,
+    aux: &Aux,
 ) {
     // Gateway neighbors: Ensure that the target node of a gateway is either exactly at the same
     // height (so the edge is straight to the right) or sufficiently offset to the top or bottom
@@ -1249,9 +1272,11 @@ fn gateway_forbidden_offset_constraints(
     cached_constraints.push((z0 + zp + zm).eq(1));
 
     //  (1) `d >= min * z+ - max * z-`
-    cached_constraints
-        .push((middle(gateway) - middle(other_node)).geq((min as f64) * zp - (max as f64) * zm));
+    cached_constraints.push(
+        (middle(gateway, aux) - middle(other_node, aux)).geq((min as f64) * zp - (max as f64) * zm),
+    );
     //  (2) `d <= max * z+ - min * z-`
-    cached_constraints
-        .push((middle(gateway) - middle(other_node)).leq((max as f64) * zp - (min as f64) * zm));
+    cached_constraints.push(
+        (middle(gateway, aux) - middle(other_node, aux)).leq((max as f64) * zp - (min as f64) * zm),
+    );
 }

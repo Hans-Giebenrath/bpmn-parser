@@ -162,7 +162,7 @@ impl Debug for Coord3 {
 }
 
 #[derive(Debug)]
-pub(crate) enum StartAt {
+pub enum StartAt {
     Node(NodeId),
     PoolLane(Coord3),
 }
@@ -271,7 +271,7 @@ impl Graph {
         edge.is_reversed = true;
     }
 
-    pub(crate) fn start_and_end_ports(&self, edge_id: EdgeId) -> [(usize, usize); 2] {
+    pub fn start_and_end_ports(&self, edge_id: EdgeId) -> [(usize, usize); 2] {
         let graph = self;
         let from_xy = from!(edge_id).port_of_outgoing(edge_id).as_pair();
         let to_xy = to!(edge_id).port_of_incoming(edge_id).as_pair();
@@ -318,7 +318,7 @@ impl Graph {
         }
     }
 
-    pub(crate) fn get_bottom_node(&self, pool_lane: PoolAndLane, layer: LayerId) -> Option<NodeId> {
+    pub fn get_bottom_node(&self, pool_lane: PoolAndLane, layer: LayerId) -> Option<NodeId> {
         let PoolAndLane { pool, lane } = pool_lane;
         let mut it = self.pools[pool].lanes[lane].nodes.iter().cloned();
         loop {
@@ -336,7 +336,7 @@ impl Graph {
         }
     }
 
-    pub(crate) fn get_nextup_higher_node_same_pool(
+    pub fn get_nextup_higher_node_same_pool(
         &self,
         mut lane_below_requested_one: PoolAndLane,
         mut final_pool_lane_to_consider: PoolAndLane,
@@ -362,7 +362,7 @@ impl Graph {
         None
     }
 
-    pub(crate) fn iter_upwards_same_pool(
+    pub fn iter_upwards_same_pool(
         &self,
         start: StartAt,
         final_pool_lane_to_consider: Option<PoolAndLane>,
@@ -425,7 +425,7 @@ impl Graph {
         })
     }
 
-    pub(crate) fn iter_upwards_all_pools(
+    pub fn iter_upwards_all_pools(
         &self,
         start: StartAt,
         final_pool_lane_to_consider: Option<PoolAndLane>,
@@ -471,7 +471,7 @@ impl Graph {
             )
     }
 
-    pub(crate) fn get_top_node(&self, pool_lane: PoolAndLane, layer: LayerId) -> Option<NodeId> {
+    pub fn get_top_node(&self, pool_lane: PoolAndLane, layer: LayerId) -> Option<NodeId> {
         let PoolAndLane { pool, lane } = pool_lane;
 
         let mut it = self.pools[pool].lanes[lane].nodes.iter().cloned();
@@ -490,7 +490,7 @@ impl Graph {
         }
     }
 
-    pub(crate) fn get_next_lower_node_same_pool(
+    pub fn get_next_lower_node_same_pool(
         &self,
         mut lane_above_requested_one: PoolAndLane,
         mut final_pool_lane_to_consider: PoolAndLane,
@@ -516,7 +516,7 @@ impl Graph {
         None
     }
 
-    pub(crate) fn iter_downwards_same_pool(
+    pub fn iter_downwards_same_pool(
         &self,
         start: StartAt,
         final_pool_lane_to_consider: Option<PoolAndLane>,
@@ -587,7 +587,7 @@ impl Graph {
         })
     }
 
-    pub(crate) fn iter_downwards_all_pools(
+    pub fn iter_downwards_all_pools(
         &self,
         start: StartAt,
         final_pool_lane_to_consider: Option<PoolAndLane>,
@@ -763,7 +763,7 @@ impl SemanticDataElement {
 
 /// Very small function, does not really deserve its own file? Is also just a helper thingy, not
 /// really a dedicated phase.
-pub(crate) fn sort_lanes_by_layer(graph: &mut Graph) {
+fn sort_lanes_by_layer(graph: &mut Graph) {
     for pool in &mut graph.pools {
         for lane in &mut pool.lanes {
             lane.nodes
@@ -773,13 +773,13 @@ pub(crate) fn sort_lanes_by_layer(graph: &mut Graph) {
 }
 
 #[derive(Debug)]
-pub(crate) enum Place {
+pub enum Place {
     AsOnlyNode,
     Above(NodeId),
     Below(NodeId),
 }
 
-pub(crate) fn adjust_above_and_below_for_new_inbetween(
+pub fn adjust_above_and_below_for_new_inbetween(
     inbetween: NodeId,
     place: Place,
     graph: &mut Graph,
@@ -817,7 +817,7 @@ pub(crate) fn adjust_above_and_below_for_new_inbetween(
 
 /// Helper function to not call `graph.add_node(..)` directly, as this cancels borrows of graph.edges
 /// as well.
-pub(crate) fn add_node(
+pub fn add_node(
     nodes: &mut Vec<Node>,
     pools: &mut [Pool],
     node_type: NodeType,

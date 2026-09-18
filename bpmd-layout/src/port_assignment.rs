@@ -11,27 +11,8 @@
 //    - there is just one non-reversed edge in the respective incoming or outgoing. That's the only
 //    rule, this must exist.
 
-use crate::common::edge::DummyEdgeBendPoints;
-use crate::common::edge::Edge;
-use crate::common::edge::EdgeType;
-use crate::common::edge::FlowType;
-use crate::common::graph::Coord3;
-use crate::common::graph::DUMMY_NODE_WIDTH;
-use crate::common::graph::EdgeId;
-use crate::common::graph::Graph;
-use crate::common::graph::NodeId;
-use crate::common::graph::Place;
-use crate::common::graph::PoolAndLane;
-use crate::common::graph::StartAt;
-use crate::common::graph::add_node;
-use crate::common::graph::adjust_above_and_below_for_new_inbetween;
-use crate::common::graph::node_size;
-use crate::common::node::BendDummyKind;
-use crate::common::node::LayerId;
-use crate::common::node::Node;
-use crate::common::node::NodeType;
-use crate::common::node::RelativePort;
-use crate::common::node::classify_barrier_node_for_gateway;
+use crate::util::classify_barrier_node_for_gateway;
+use bpmd_graph::*;
 use itertools::Itertools;
 use proc_macros::{e, from, n, to};
 use std::collections::HashSet;

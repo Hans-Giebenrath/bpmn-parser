@@ -4,3 +4,16 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
+good_lp = { version = "1", features = [
+    "microlp",
+], default-features = false }
+bpmd-algorithms = { path = "../bpmd-algorithms" }
+bpmd-util = { path = "../bpmd-util" }
+bpmd-graph = { path = "../bpmd-graph" }
+proc_macros = { path = "../proc_macros" }
+itertools = "0.15.0"
+cosmic-text = {
+    version = "0.19",
+    default-features = false,
+    features = ["std", "swash", "wasm-web"],
+}

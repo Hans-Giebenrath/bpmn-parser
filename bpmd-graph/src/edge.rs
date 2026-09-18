@@ -1,7 +1,7 @@
-use crate::TokenCoordinate;
 use crate::bpmn_node::BoundaryEvent;
 use crate::graph::{EdgeId, NodeId, SdeId};
 use crate::macros::impl_index;
+use crate::{DisplayText, TokenCoordinate};
 
 /// TODO better name.
 #[derive(Debug, Clone, PartialEq)]
@@ -30,7 +30,7 @@ pub struct DataFlowAux {
 #[derive(Debug, Clone)]
 pub enum EdgeType {
     Regular {
-        text: Option<String>,
+        text: Option<DisplayText>,
         /// TODO ToBeDeterminedOrStraight is confusing, better make this Option<...> and just leave
         /// "Straight"?
         bend_points: RegularEdgeBendPoints,
@@ -45,7 +45,7 @@ pub enum EdgeType {
         /// from this edge, so if more edges are added later (e.g. for bend dummies), then the
         /// [first_dummy_edge] might need to be updated.
         first_dummy_edge: EdgeId,
-        text: Option<String>,
+        text: Option<DisplayText>,
     },
     DummyEdge {
         /// All the dummy edges which replace the same original edge share the same value.

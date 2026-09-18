@@ -230,15 +230,9 @@ fn layout_graph(
     timer.time_it("sort_lanes_by_layer", || sort_lanes_by_layer(graph));
 
     // Phase 3
-    if false {
-        timer.time_it("reduce_all_crossings_ilp", || {
-            reduce_all_crossings_ilp(graph)
-        });
-    } else {
-        timer.time_it("reduce_all_crossings_sweep", || {
-            reduce_all_crossings_sweep(graph).bpmd_format_err(bpmd_source_files)
-        })?;
-    }
+    timer.time_it("reduce_all_crossings_sweep", || {
+        reduce_all_crossings_sweep(graph).bpmd_format_err(bpmd_source_files)
+    })?;
     timer.time_it("sort_incoming_and_outgoing", || {
         sort_incoming_and_outgoing(graph);
     });

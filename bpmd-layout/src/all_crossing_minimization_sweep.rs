@@ -10,27 +10,13 @@
 //!
 //! Naaa. New idea: Lane per lane. Then store multiple results, depending on the order. Then stitch
 //! lanes together, by checking all combinations for their global crossing counts, take the best one.
-use crate::common::edge::Edge;
-use crate::common::edge::FlowType;
-use crate::common::graph::Coord3;
-use crate::common::graph::LaneId;
-use crate::common::graph::PoolId;
-use crate::common::graph::{EdgeId, Graph, NodeId, PoolAndLane};
-use crate::common::index_iter::IterIndices;
-use crate::common::lane::Lane;
-use crate::common::macros::impl_index;
-use crate::common::node::LayerId;
-use crate::common::node::Node;
-use crate::common::node::NodePhaseAuxData;
-use crate::common::vecmap::VecMap;
-use crate::common::vecset::VecSet;
-use crate::layout::all_crossing_minimization_common::remove_temporarily_added_dummy_nodes_for_edges_within_same_layer;
-use crate::layout::all_crossing_minimization_common::temporarily_add_dummy_nodes_for_edges_within_same_layer;
-use crate::layout::constraint::Above;
-use crate::parser::ParseError;
-use itertools::Either;
+use crate::all_crossing_minimization_common::*;
+use crate::macros::impl_index;
+use bpmd_graph::*;
+use bpmd_util::index_iter::IterIndices;
+use bpmd_util::vecset::VecSet;
 use itertools::Itertools;
-use proc_macros::{e, from, lane, n, to};
+use proc_macros::*;
 use std::cmp::Ordering;
 use std::collections::HashMap;
 use std::collections::HashSet;
@@ -98,16 +84,26 @@ pub(crate) struct SweepNode {
     layer_position: u8,
 }
 
-#[derive(Debug)]
-pub struct CrossingMinimizationSweepNodeData {
-    sweep_node_id: SweepNodeId,
-}
+#[derive(Default, Clone, Debug)]
+struct Aux(Vec<Option<SweepNodeId>>);
+impl Aux {
+    fn new(graph: &Graph) -> Self {
+        Self(
+            graph
+                .nodes
+                .iter()
+                .map(|_| None)
+                .collect::<Vec<Option<SweepNodeId>>>(),
+        )
+    }
 
-#[track_caller]
-fn aux(node: &Node) -> SweepNodeId {
-    match node.aux {
-        NodePhaseAuxData::CrossingMinimizationSweep(ref a) => a.sweep_node_id,
-        _ => panic!("{node:#?}"),
+    #[track_caller]
+    fn get(&self, index: NodeId) -> SweepNodeId {
+        self.0[index.0].unwrap()
+    }
+
+    fn set(&mut self, index: NodeId, val: SweepNodeId) {
+        self.0[index.0] = Some(val);
     }
 }
 
@@ -237,6 +233,8 @@ struct SweepGraph {
     /// TODO this excludes those vertical edges which would result in cycles. Must write an analysis
     /// for that, similar to the back edge removal analysis.
     vertical_edge_chains: Rc<Vec<VerticalEdgeChain>>,
+
+    aux: Aux,
 }
 
 impl SweepGraph {
@@ -246,15 +244,14 @@ impl SweepGraph {
         vertical_edge_chains: Rc<Vec<VerticalEdgeChain>>,
     ) -> Result<Self, ParseError> {
         let lane = &graph.pools[pool_lane.pool].lanes[pool_lane.lane];
+        let mut aux = Aux::new(graph);
         for (idx, node_id) in lane.nodes.iter().enumerate() {
-            n!(*node_id).aux =
-                NodePhaseAuxData::CrossingMinimizationSweep(CrossingMinimizationSweepNodeData {
-                    sweep_node_id: SweepNodeId(idx),
-                });
+            aux.set(*node_id, SweepNodeId(idx));
         }
 
         let mut result = SweepGraph {
             vertical_edge_chains,
+            aux,
             ..Default::default()
         };
 
@@ -362,7 +359,9 @@ impl SweepGraph {
                                     } else {
                                         EdgeConnection::Both
                                     };
-                                    result.edge_targets.push((aux(from), edge_connection));
+                                    result
+                                        .edge_targets
+                                        .push((result.aux.get(from.id), edge_connection));
                                     continue;
                                 }
                                 Ordering::Less => -1,
@@ -400,7 +399,9 @@ impl SweepGraph {
                                 } else {
                                     EdgeConnection::Both
                                 };
-                                result.edge_targets.push((aux(to), edge_connection));
+                                result
+                                    .edge_targets
+                                    .push((result.aux.get(to.id), edge_connection));
                                 continue;
                             }
                             Ordering::Less => -1,

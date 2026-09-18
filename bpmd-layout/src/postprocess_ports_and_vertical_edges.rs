@@ -1,11 +1,5 @@
-use crate::common::edge::DummyEdgeBendPoints;
-use crate::common::edge::EdgeType;
-use crate::common::graph::EdgeId;
-use crate::common::graph::Graph;
-use crate::common::graph::NodeId;
-use crate::common::node::RelativePort;
-use proc_macros::e;
-use proc_macros::n;
+use bpmd_graph::*;
+use proc_macros::*;
 
 /// Gateway ports were assigned {x: node_width/2, y: node_height/2} since it is unclear at what
 /// position the associated bend dummy will be, relative to the gateway node. But this is now known

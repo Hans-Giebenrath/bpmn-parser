@@ -1,6 +1,3 @@
-// XXX All the math code was written by AI, I just did some cosmetic changes (naming, structuring,
-// inlining etc).
-
 const CELL_SIZE: u16 = 100;
 
 // It's not _The Grid_, just a grid.
@@ -145,6 +142,7 @@ impl Point {
     }
 }
 
+// XXX Written by AI, I just did some cosmetic changes (naming, structuring, inlining etc).
 fn orientation(a: Point, b: Point, c: Point) -> i32 {
     let bax = b.x - a.x;
     let bay = b.y - a.y;
@@ -154,6 +152,7 @@ fn orientation(a: Point, b: Point, c: Point) -> i32 {
     bax * cay - bay * cax
 }
 
+// XXX Written by AI, I just did some cosmetic changes (naming, structuring, inlining etc).
 fn on_segment(a: Point, b: Point, p: Point, o: &mut i32) -> bool {
     *o = orientation(a, b, p);
 
@@ -164,6 +163,7 @@ fn on_segment(a: Point, b: Point, p: Point, o: &mut i32) -> bool {
         && p.y <= a.y.max(b.y)
 }
 
+// XXX Written by AI, I just did some cosmetic changes (naming, structuring, inlining etc).
 pub fn segments_intersect(
     Line { start: a, end: b }: Line,
     Line { start: c, end: d }: Line,

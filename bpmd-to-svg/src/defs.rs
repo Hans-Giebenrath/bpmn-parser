@@ -1,9 +1,9 @@
-use crate::output::svg::primitives::{
+use crate::primitives::{
     ACTIVITY_MARKER_DIMENSION, MESSAGE_FLOW_END_MARKER_WIDTH, MESSAGE_FLOW_START_MARKER_RADIUS,
     STROKE_WIDTH,
 };
 
-use crate::common::graph::*;
+use bpmd_graph::*;
 
 // This function is large and annoying to scroll through, so I moved it into its own file.
 pub fn defs() -> String {

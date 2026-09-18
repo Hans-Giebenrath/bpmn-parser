@@ -1,9 +1,10 @@
+use bpmd_util::collision_grid::Grid;
+use cosmic_text::{
+    Align, Attrs, Buffer, Command, FontSystem, LayoutRun, Metrics, Shaping, SwashCache, Wrap,
+};
 use std::{num::NonZero, ops::ControlFlow};
 
-use crate::common::{
-    config::Config,
-    node::{Dimension, Side},
-};
+use bpmd_graph::*;
 
 struct DisplayTextLocationCandidateInner {
     pub alignment: Alignment,
@@ -13,7 +14,7 @@ struct DisplayTextLocationCandidateInner {
 }
 
 impl DisplayTextLocationCandidateInner {
-    fn materialize(&self, (width, height): (usize, usize)) -> DisplayTextLocationCandidate {
+    fn materialize(&self, (width, height): (usize, usize)) -> DisplayTextLocation {
         let x = match self.reference_point {
             ReferencePoint::Center | ReferencePoint::CenterTop | ReferencePoint::CenterBottom => {
                 self.x.saturating_sub(width / 2)
@@ -38,7 +39,7 @@ impl DisplayTextLocationCandidateInner {
             | ReferencePoint::RightBottom => self.y.saturating_sub(height),
         };
 
-        DisplayTextLocationCandidate {
+        DisplayTextLocation {
             alignment: self.alignment,
             x,
             y,
@@ -46,16 +47,9 @@ impl DisplayTextLocationCandidateInner {
     }
 }
 
-#[derive(Debug)]
-pub struct DisplayTextLocationCandidate {
-    pub alignment: Alignment,
-    pub x: usize,
-    pub y: usize,
-}
-
 struct CandidateTracker<'a> {
     score: u32,
-    candidate: DisplayTextLocationCandidate,
+    candidate: DisplayTextLocation,
     textbox_wh: (usize, usize),
     callback: &'a DisplayLocationCallback<'a>,
 }
@@ -80,7 +74,7 @@ impl<'a> CandidateTracker<'a> {
         }
     }
 }
-type DisplayLocationCallback<'a> = dyn Fn(&DisplayTextLocationCandidate) -> u32 + 'a;
+type DisplayLocationCallback<'a> = dyn Fn(&DisplayTextLocation) -> u32 + 'a;
 
 pub fn edge_display_text_location_candidates(
     config: &Config,
@@ -88,7 +82,7 @@ pub fn edge_display_text_location_candidates(
     line_points: &[(usize, usize)],
     // A gen fn would be cooler, but then again I maybe need to rotate the start
     callback: &DisplayLocationCallback,
-) -> DisplayTextLocationCandidate {
+) -> DisplayTextLocation {
     let mut it = line_points.iter().cloned().peekable();
     let mut best_candidate = CandidateTracker {
         score: u32::MAX,
@@ -539,20 +533,13 @@ pub enum ReferencePoint {
     LeftCenter,
 }
 
-#[derive(Debug, Clone, Copy)]
-pub enum Alignment {
-    Left,
-    Center,
-    Right,
-}
-
 pub fn gateway_display_text_location_candidates(
     config: &Config,
     textbox_wh: (usize, usize),
     dim: Dimension,
     incoming_from: Side,
     callback: &DisplayLocationCallback,
-) -> DisplayTextLocationCandidate {
+) -> DisplayTextLocation {
     let full_margin = config.display_text_margin as usize;
     let fract_margin = ((full_margin * full_margin) / 2).isqrt();
 
@@ -704,7 +691,7 @@ fn event_or_data_display_text_location_candidates(
     dim: Dimension,
     incoming_from: Side,
     callback: &DisplayLocationCallback,
-) -> DisplayTextLocationCandidate {
+) -> DisplayTextLocation {
     let full_margin = config.display_text_margin as usize;
     let fract_margin = ((full_margin * full_margin) / 2).isqrt();
 
@@ -855,7 +842,7 @@ pub fn event_display_text_location_candidates(
     dim: Dimension,
     incoming_from: Side,
     callback: &DisplayLocationCallback,
-) -> DisplayTextLocationCandidate {
+) -> DisplayTextLocation {
     event_or_data_display_text_location_candidates(
         config,
         5,
@@ -872,7 +859,7 @@ pub fn data_display_text_location_candidates(
     dim: Dimension,
     incoming_from: Side,
     callback: &DisplayLocationCallback,
-) -> DisplayTextLocationCandidate {
+) -> DisplayTextLocation {
     event_or_data_display_text_location_candidates(
         config,
         0,
@@ -886,7 +873,7 @@ pub fn data_display_text_location_candidates(
 pub fn activity_display_text_location_candidates(
     textbox_wh: (usize, usize),
     dim: Dimension,
-) -> DisplayTextLocationCandidate {
+) -> DisplayTextLocation {
     DisplayTextLocationCandidateInner {
         alignment: Alignment::Center,
         reference_point: ReferencePoint::Center,
@@ -894,4 +881,208 @@ pub fn activity_display_text_location_candidates(
         y: dim.y.saturating_add(dim.height / 2),
     }
     .materialize(textbox_wh)
+}
+
+pub struct FontCache {
+    font_system: FontSystem,
+    swash_cache: SwashCache,
+}
+
+impl FontCache {
+    fn new() -> Self {
+        let mut font_system = FontSystem::new();
+        let swash_cache = SwashCache::new();
+        font_system
+            .db_mut()
+            .load_font_data(include_bytes!("../../inter-font/Inter-Regular.ttf").to_vec());
+        font_system
+            .db_mut()
+            .load_font_data(include_bytes!("../../inter-font/Inter-SemiBold.ttf").to_vec());
+        font_system
+            .db_mut()
+            .load_font_data(include_bytes!("../../inter-font/Inter-Italic.ttf").to_vec());
+        Self {
+            font_system,
+            swash_cache,
+        }
+    }
+}
+
+pub fn set_display_text_locations(graph: &mut Graph, cache: &mut FontCache) {
+    let mut grid = prepare_collision_grid(graph);
+    for node in &mut graph.nodes {
+        if node.is_blackbox_node() {
+            // TODO this is a bit ugly, combine the next `let NodeType::RealNode` with a match.
+            continue;
+        }
+        let NodeType::RealNode {
+            display_text,
+            event,
+            ..
+        } = &mut node.node_type
+        else {
+            unreachable!();
+        };
+        if display_text.raw_text.is_empty() {
+            continue;
+        }
+        let text_dims = prep(cache, display_text);
+        match event {
+            BpmnNode::Event(event_type, event_visual) => {
+                display_text.location = event_display_text_location_candidates(
+                    &self.config,
+                    text_dims,
+                    Dimension {
+                        x,
+                        y,
+                        width: EVENT_NODE_WIDTH,
+                        height: EVENT_NODE_HEIGHT,
+                    },
+                    sequence_flow_coming_in_from,
+                    &|e: &DisplayTextLocationCandidate| {
+                        self.grid.box_intersection_weight((e.x, e.y), text_dims)
+                    },
+                );
+            }
+            BpmnNode::Gateway(gateway_type) => svg.draw_gateway(
+                (node.x, node.y),
+                display_text,
+                &style,
+                *gateway_type,
+                node.side_of_first_incoming_flow(graph, Edge::is_sequence_flow),
+            ),
+            BpmnNode::Activity(activity_type, activity_marker) => svg.draw_task(
+                (node.x, node.y),
+                display_text,
+                &style,
+                *activity_type,
+                *activity_marker,
+            ),
+            BpmnNode::Data(data_type, ..) => svg.draw_data(
+                (node.x, node.y),
+                display_text,
+                *data_type,
+                &style,
+                node.side_of_first_incoming_flow(graph, Edge::is_data_flow),
+            ),
+        }
+    }
+
+    for edge in &graph.edges {
+        let EdgeType::Regular {
+            bend_points: RegularEdgeBendPoints::FullyRouted(bend_points),
+            text,
+        } = &edge.edge_type
+        else {
+            dbg!("This should never be the case?");
+            continue;
+        };
+
+        let style = edge_style(edge);
+        if let Some(boundary_event) = &edge.attached_to_boundary_event
+            && !bend_points.is_empty()
+        {
+            svg.draw_boundary_event(
+                (boundary_event.x, boundary_event.y),
+                boundary_event.event_type,
+                boundary_event.interrupt_kind,
+                &style,
+            );
+        }
+
+        svg.draw_flow(bend_points, text, &edge.flow_type, &style);
+    }
+
+    svg.finish()
+}
+
+fn prepare_collision_grid(graph: &Graph) -> Grid {
+    let mut grid = Grid::new(graph.total_width_height());
+
+    for edge in &graph.edges {
+        let EdgeType::Regular {
+            bend_points: RegularEdgeBendPoints::FullyRouted(bend_points),
+            ..
+        } = &edge.edge_type
+        else {
+            unreachable!("Only regular edges at this point, {edge:?}");
+        };
+        let weight = match edge.flow_type {
+            FlowType::MessageFlow(..) => 8,
+            FlowType::DataFlow(..) => 2,
+            FlowType::SequenceFlow => 10,
+        };
+        for [start, end] in bend_points.array_windows() {
+            grid.insert(&Line::new(start, end), weight);
+        }
+    }
+
+    for node in &graph.nodes {
+        let node_weight = 10;
+        if node.is_gateway() {
+            #[rustfmt::skip]
+            let (top, right, bottom, left)   = (
+                (node.x + node.width / 2, node.y                  ),
+                (node.x + node.width    , node.y + node.height / 2),
+                (node.x + node.width / 2, node.y + node.height    ),
+                (node.x                 , node.y + node.height / 2)
+             );
+
+            grid.insert_quadrangle(top, right, bottom, left, node_weight);
+        } else {
+            let tl = (node.x, node.y);
+            let tr = (node.x + node.width, node.y);
+            let br = (node.x + node.width, node.y + node.height);
+            let bl = (node.x, node.y + node.height);
+
+            grid.insert_quadrangle(tl, tr, br, bl, node_weight);
+        }
+    }
+
+    for pool in &graph.pools {
+        for lane in &pool.lanes {
+            let lane_weight = 9;
+            let tl = (lane.x, lane.y);
+            let tr = (lane.x + lane.width, lane.y);
+            let br = (lane.x + lane.width, lane.y + lane.height);
+            let bl = (lane.x, lane.y + lane.height);
+
+            grid.insert_quadrangle(tl, tr, br, bl, lane_weight);
+        }
+    }
+
+    grid
+}
+
+fn prep(cache: &mut FontCache, display_text: &mut DisplayText) -> (usize, usize) {
+    let metrics = Metrics::new(display_text.font_size, display_text.line_height);
+
+    let mut buffer = Buffer::new(&mut cache.font_system, metrics);
+
+    buffer.set_wrap(Wrap::Word);
+    buffer.set_size(display_text.max_width.map(|width| width as f32), None);
+    buffer.set_text(
+        // Don't escape just yet. We want to first inspect the text that will be visible.
+        &display_text.raw_text,
+        &Attrs::new().family(cosmic_text::Family::Name(display_text.font_family)),
+        Shaping::Advanced,
+        // Can only have Center here, since we don't know where it will be finally positioned at.
+        Some(Align::Center),
+    );
+
+    // Perform shaping as desired
+    buffer.shape_until_scroll(&mut cache.font_system, false /* not sure? */);
+    let count = buffer.layout_runs().count().max(1); // Always have at least one.
+    let height = count as f32 * display_text.line_height;
+    let width = buffer.layout_runs().fold(0.0, |state, line| {
+        if state < line.line_w {
+            line.line_w
+        } else {
+            state
+        }
+    });
+
+    display_text.buffer = buffer;
+
+    (width, height)
 }

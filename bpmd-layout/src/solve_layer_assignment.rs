@@ -1,12 +1,8 @@
-use std::collections::{HashMap, HashSet};
-
-use crate::common::graph::{EdgeId, same_layer_lane_crossings_within_cluster};
-use crate::common::node::NodePhaseAuxData;
-use proc_macros::{e, n};
-
-use crate::common::graph::Graph;
-use crate::common::node::Node;
+use bpmd_algorithms::same_layaer_lane_crossings_within_cluster::same_layer_lane_crossings_within_cluster;
+use bpmd_graph::*;
 use good_lp::*;
+use proc_macros::*;
+use std::collections::HashSet;
 
 pub fn solve_layer_assignment(graph: &mut Graph) {
     solve_layers(graph);
@@ -16,14 +12,6 @@ pub fn solve_layer_assignment(graph: &mut Graph) {
 
 #[derive(Debug)]
 pub struct LayerAssignmentData(Variable);
-
-#[track_caller]
-fn aux(node: &Node) -> Variable {
-    match node.aux {
-        NodePhaseAuxData::LayerAssignmentData(LayerAssignmentData(variable)) => variable,
-        _ => unreachable!(),
-    }
-}
 
 const DEBUG_ILP_CONSTRUCTION: bool = false;
 
@@ -35,9 +23,32 @@ macro_rules! d {
     }};
 }
 
+struct Aux(Vec<Option<Variable>>);
+impl Aux {
+    fn new(graph: &Graph) -> Self {
+        Self(
+            graph
+                .nodes
+                .iter()
+                .map(|_| None)
+                .collect::<Vec<Option<Variable>>>(),
+        )
+    }
+
+    #[track_caller]
+    fn get(&self, index: NodeId) -> Variable {
+        self.0[index.0].unwrap()
+    }
+
+    fn set(&mut self, index: NodeId, val: Variable) {
+        self.0[index.0] = Some(val);
+    }
+}
+
 fn solve_layers(graph: &mut Graph) {
     d!(dbg!(&graph););
     let mut vars = variables!();
+    let mut aux = Aux::new(graph);
 
     let num_nodes = graph.nodes.len();
     for node in graph
@@ -45,9 +56,10 @@ fn solve_layers(graph: &mut Graph) {
         .iter_mut()
         .filter(|node| !node.is_data() && !node.is_blackbox_node())
     {
-        node.aux = NodePhaseAuxData::LayerAssignmentData(LayerAssignmentData(
+        aux.set(
+            node.id,
             vars.add(variable().integer().min(0).max(num_nodes as f64)),
-        ));
+        );
         d!(eprintln!("0 <= n({}) <= {num_nodes}", node.id.0));
     }
 
@@ -69,13 +81,13 @@ fn solve_layers(graph: &mut Graph) {
                 !e!(*edge_id).is_sequence_flow() || graph.computed_back_edges.contains(edge_id)
             })
         {
-            objective += 0.1 * aux(node);
+            objective += 0.1 * aux.get(node.id);
             d!(eprintln!("pull left n({})", node.id.0));
         }
     }
 
     let mut constraints = Vec::new();
-    handle_vertical_lane_crossings(graph, &mut vars, &mut constraints);
+    handle_vertical_lane_crossings(graph, &aux, &mut vars, &mut constraints);
     //let mut problem = problem.set_verbose(true);
     //problem.set_parameter("loglevel", "0");
 
@@ -100,11 +112,11 @@ fn solve_layers(graph: &mut Graph) {
         .for_each(|(left, right, minimize, msg)| {
             if minimize {
                 // Favor short edges
-                objective += aux(&n!(right)) - aux(&n!(left));
+                objective += aux.get(right) - aux.get(left);
                 d!(eprintln!("minimize n({}) -> n({})", left.0, right.0));
             }
-            let from_var = aux(&n!(left));
-            let to_var = aux(&n!(right));
+            let from_var = aux.get(left);
+            let to_var = aux.get(right);
             d!(eprintln!(
                 "constraint n({}) before n({}) ({msg})",
                 left.0, right.0
@@ -129,7 +141,7 @@ fn solve_layers(graph: &mut Graph) {
                 "constraint n({}) same layer as n({}) ({msg})",
                 n0.0, n1.0
             ));
-            constraints.push((aux(&n!(n0)) - aux(&n!(n1))).eq(0));
+            constraints.push((aux.get(n0) - aux.get(n1)).eq(0));
         });
 
     let mut problem = vars.minimise(objective).using(default_solver);
@@ -145,7 +157,7 @@ fn solve_layers(graph: &mut Graph) {
         .iter_mut()
         .filter(|node| !node.is_data() && !node.is_blackbox_node())
     {
-        node.layer_id.0 = solution.value(aux(node)) as usize;
+        node.layer_id.0 = solution.value(aux.get(node.id)) as usize;
         graph.num_layers = graph.num_layers.max(node.layer_id.0 + 1);
     }
 }
@@ -240,6 +252,7 @@ fn solve_data_object_layers_via_arithmetic_mean(graph: &mut Graph) {
 
 fn handle_vertical_lane_crossings(
     graph: &Graph,
+    aux: &Aux,
     vars: &mut ProblemVariables,
     constraints: &mut Vec<Constraint>,
 ) {
@@ -267,6 +280,7 @@ fn handle_vertical_lane_crossings(
                 }
 
                 force_different_layers(
+                    aux,
                     &n!(node_id_1),
                     &n!(node_id_2),
                     vars,
@@ -299,6 +313,7 @@ fn handle_vertical_lane_crossings(
             continue;
         }
         force_different_layers(
+            aux,
             &n!(node_id_1),
             &n!(node_id_2),
             vars,
@@ -309,6 +324,7 @@ fn handle_vertical_lane_crossings(
 }
 
 fn force_different_layers(
+    aux: &Aux,
     a: &Node,
     b: &Node,
     vars: &mut ProblemVariables,
@@ -335,6 +351,6 @@ fn force_different_layers(
     //
     d!(eprintln!("different layers: {} - {}", a.id.0, b.id.0));
     let z = vars.add(variable().binary());
-    constraints.push((aux(a) + 1).leq(aux(b) + total_num_nodes as f64 * z));
-    constraints.push((aux(b) + 1).leq(aux(a) + total_num_nodes as f64 * (1 - z)));
+    constraints.push((aux.get(a.id) + 1).leq(aux.get(b.id) + total_num_nodes as f64 * z));
+    constraints.push((aux.get(b.id) + 1).leq(aux.get(a.id) + total_num_nodes as f64 * (1 - z)));
 }

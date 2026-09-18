@@ -1,17 +1,7 @@
 use std::collections::HashSet;
 
-use crate::common::bpmn_node::BoundaryEvent;
-use crate::common::edge::DummyEdgeBendPoints;
-use crate::common::edge::EdgeType;
-use crate::common::edge::FlowType;
-use crate::common::graph::EdgeId;
-use crate::common::graph::Graph;
-use crate::common::graph::NodeId;
-use crate::common::graph::PoolAndLane;
-use crate::common::node::LayerId;
-use crate::common::node::NodeType;
-
-use proc_macros::{e, n};
+use bpmd_graph::*;
+use proc_macros::*;
 
 pub fn dummy_node_generation(graph: &mut Graph) {
     // After this function we will have a bunch of new temporary edges which make some of the

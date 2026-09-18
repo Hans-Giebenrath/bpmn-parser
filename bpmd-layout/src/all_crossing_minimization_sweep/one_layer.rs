@@ -1,10 +1,9 @@
-use crate::common::graph::{Coord3, Graph};
-use crate::common::index_iter::IterIndices;
-use crate::layout::all_crossing_minimization_sweep::{
-    EdgeConnection, INCOMING, OUTGOING, PullBalance, SweepGraph, SweepNode, SweepNodeId, aux,
+use crate::all_crossing_minimization_sweep::{
+    EdgeConnection, INCOMING, OUTGOING, PullBalance, SweepGraph, SweepNode, SweepNodeId,
 };
-use crate::layout::constraint::Above;
-use proc_macros::n;
+use bpmd_graph::*;
+use bpmd_util::index_iter::IterIndices;
+use proc_macros::*;
 use std::collections::{HashSet, VecDeque};
 
 #[derive(Default)]
@@ -65,12 +64,12 @@ pub fn run(
                 let mn0 = state
                     .merge_nodes
                     .iter()
-                    .find(|mn| mn.ordered_nodes[0] == aux(&n!(*id0)))
+                    .find(|mn| mn.ordered_nodes[0] == sweep_graph.aux.get(*id0))
                     .unwrap();
                 let mn1 = state
                     .merge_nodes
                     .iter()
-                    .find(|mn| mn.ordered_nodes[0] == aux(&n!(*id1)))
+                    .find(|mn| mn.ordered_nodes[0] == sweep_graph.aux.get(*id1))
                     .unwrap();
                 if mind_the_pull {
                     match mn0
@@ -103,13 +102,13 @@ pub fn run(
         let top_most_mn_id = state
             .merge_nodes
             .iter()
-            .position(|mn| mn.ordered_nodes.first() == Some(&aux(&n!(top_most_sn_id))))
+            .position(|mn| mn.ordered_nodes.first() == Some(&sweep_graph.aux.get(top_most_sn_id)))
             .unwrap();
         for sn_id in sweepnode_it {
             let mn = state
                 .merge_nodes
                 .iter()
-                .position(|mn| mn.ordered_nodes.first() == Some(&aux(&n!(sn_id))))
+                .position(|mn| mn.ordered_nodes.first() == Some(&sweep_graph.aux.get(sn_id)))
                 .unwrap();
             state.absorb(
                 /* remaining to-be above: */ top_most_mn_id,

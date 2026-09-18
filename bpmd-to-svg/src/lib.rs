@@ -1,11 +1,8 @@
-use crate::{
-    common::{
-        bpmn_node::BpmnNode,
-        edge::{Edge, EdgeType, FlowType, RegularEdgeBendPoints},
-        graph::Graph,
-        node::{Node, NodeType},
-    },
-    layout::collision_grid::{Grid, Line},
+use crate::common::{
+    bpmn_node::BpmnNode,
+    edge::{Edge, EdgeType, FlowType, RegularEdgeBendPoints},
+    graph::Graph,
+    node::{Node, NodeType},
 };
 
 pub mod defs;
@@ -15,13 +12,7 @@ use primitives::ElementSvgStyle;
 
 pub fn to_svg(graph: &Graph, embed_font: bool) -> String {
     let (total_width, total_height) = graph.total_width_height();
-    let mut svg = primitives::Svg::new(
-        embed_font,
-        total_width,
-        total_height,
-        prepare_collision_grid(graph),
-        &graph.config,
-    );
+    let mut svg = primitives::Svg::new(embed_font, total_width, total_height, &graph.config);
     if graph.pools[0].name.is_some() || graph.pools[0].lanes[0].name.is_some() {
         // Only render the pools if they are not anonymous.
         for pool in &graph.pools {
@@ -148,62 +139,4 @@ fn node_style(node: &Node) -> ElementSvgStyle {
         font_color: node.stroke_color.as_ref().map(Into::into),
         ..Default::default()
     }
-}
-
-fn prepare_collision_grid(graph: &Graph) -> Grid {
-    let mut quad_tree = Grid::new(graph.total_width_height());
-
-    for edge in &graph.edges {
-        let EdgeType::Regular {
-            bend_points: RegularEdgeBendPoints::FullyRouted(bend_points),
-            ..
-        } = &edge.edge_type
-        else {
-            unreachable!("Only regular edges at this point, {edge:?}");
-        };
-        let weight = match edge.flow_type {
-            FlowType::MessageFlow(..) => 8,
-            FlowType::DataFlow(..) => 2,
-            FlowType::SequenceFlow => 10,
-        };
-        for [start, end] in bend_points.array_windows() {
-            quad_tree.insert(&Line::new(start, end), weight);
-        }
-    }
-
-    for node in &graph.nodes {
-        let node_weight = 10;
-        if node.is_gateway() {
-            #[rustfmt::skip]
-            let (top, right, bottom, left)   = (
-                (node.x + node.width / 2, node.y                  ),
-                (node.x + node.width    , node.y + node.height / 2),
-                (node.x + node.width / 2, node.y + node.height    ),
-                (node.x                 , node.y + node.height / 2)
-             );
-
-            quad_tree.insert_quadrangle(top, right, bottom, left, node_weight);
-        } else {
-            let tl = (node.x, node.y);
-            let tr = (node.x + node.width, node.y);
-            let br = (node.x + node.width, node.y + node.height);
-            let bl = (node.x, node.y + node.height);
-
-            quad_tree.insert_quadrangle(tl, tr, br, bl, node_weight);
-        }
-    }
-
-    for pool in &graph.pools {
-        for lane in &pool.lanes {
-            let lane_weight = 9;
-            let tl = (lane.x, lane.y);
-            let tr = (lane.x + lane.width, lane.y);
-            let br = (lane.x + lane.width, lane.y + lane.height);
-            let bl = (lane.x, lane.y + lane.height);
-
-            quad_tree.insert_quadrangle(tl, tr, br, bl, lane_weight);
-        }
-    }
-
-    quad_tree
 }

@@ -121,13 +121,13 @@ define_config!(
 );
 
 #[derive(Debug)]
-pub(crate) struct EdgeSegmentSpace {
-    pub(crate) start_x: usize,
-    pub(crate) end_x: usize,
-    pub(crate) center_x: usize,
+pub struct EdgeSegmentSpace {
+    pub start_x: usize,
+    pub end_x: usize,
+    pub center_x: usize,
 }
 
-pub(crate) enum EdgeSegmentSpaceLocation {
+pub enum EdgeSegmentSpaceLocation {
     // There should only be right-loops.
     LeftBorder,
     // Regular room between two node layers.
@@ -137,15 +137,15 @@ pub(crate) enum EdgeSegmentSpaceLocation {
 }
 
 impl Config {
-    pub(crate) fn space_between_layers_for_segments(&self) -> usize {
+    pub fn space_between_layers_for_segments(&self) -> usize {
         self.min_horizontal_space_between_nodes - 2 * self.max_space_between_vertical_edge_segments
     }
 
-    pub(crate) fn layer_width(&self) -> usize {
+    pub fn layer_width(&self) -> usize {
         self.min_horizontal_space_between_nodes + MAX_NODE_WIDTH
     }
 
-    pub(crate) fn layer_center(&self, LayerId(layer_idx): LayerId) -> usize {
+    pub fn layer_center(&self, LayerId(layer_idx): LayerId) -> usize {
         self.pool_header_width
             + self.lane_header_width
             + self.lane_x_padding
@@ -153,7 +153,7 @@ impl Config {
             + layer_idx * self.layer_width()
     }
 
-    pub(crate) fn pool_width(&self, num_layers: usize) -> usize {
+    pub fn pool_width(&self, num_layers: usize) -> usize {
         // The start:
         self.pool_header_width
             + self.lane_header_width
@@ -164,10 +164,7 @@ impl Config {
             + MAX_NODE_WIDTH + self.lane_x_padding
     }
 
-    pub(crate) fn edge_segment_space(
-        &self,
-        location: EdgeSegmentSpaceLocation,
-    ) -> EdgeSegmentSpace {
+    pub fn edge_segment_space(&self, location: EdgeSegmentSpaceLocation) -> EdgeSegmentSpace {
         match location {
             EdgeSegmentSpaceLocation::LeftBorder => {
                 let start_x = self.pool_header_width

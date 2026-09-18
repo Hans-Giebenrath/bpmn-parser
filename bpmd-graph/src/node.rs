@@ -1,6 +1,7 @@
 // node.rs
 
 use super::macros::impl_index;
+use crate::DisplayText;
 use crate::TokenCoordinate;
 use crate::bpmn_node::*;
 use crate::edge::Edge;
@@ -19,12 +20,15 @@ use std::ops::Add;
 pub enum NodeType {
     RealNode {
         /// Is data node -> DataStoreReference or DataObjectReference
+        /// TODO put behind a Box maybe to reduce memory pressure.
         event: BpmnNode,
-        display_text: String,
+        /// TODO put behind a Box maybe to reduce memory pressure.
+        display_text: DisplayText,
         /// The node, but also a sequence flow jump or landing associated with this node.
         tc: TokenCoordinate,
         /// Invariant: Contains only unique elements. By coincidence it is also sorted, but don't
         /// rely on that.
+        /// TODO make this a VecSet.
         transported_data: Vec<SdeId>,
 
         /// In the "tee-tasks" / "mpc-tasks" form, the TEE activity is abstracted away in a single
@@ -549,31 +553,6 @@ impl std::fmt::Display for Node {
             "Node {{ id: {}, x: {:?}, y: {:?}, event: {:?}, pool: {:?}, lane: {:?} }}",
             self.id, self.x, self.y, self.node_type, self.pool, self.lane
         )
-    }
-}
-
-pub(crate) fn classify_barrier_node_for_gateway(
-    gateway_node_id: NodeId,
-    node: &Node,
-) -> Option<NodeId> {
-    match &node.node_type {
-        NodeType::LongEdgeDummy => None,
-        // The back edge corner dummy is meant to create a loop, i.e. in this context it behaves
-        // like a LongEdgeDummy (it does not go vertical exactly here, but only in the in-between
-        // layers area where vertical regular edge segments are located at.
-        NodeType::BackEdgeCornerDummy { .. } => None,
-        // (Not sure about this): Technically this seems incorrect (we would only inspect bend
-        // dummies from the other direction (incoming vs outgoing) due to the two phases of looking
-        // at them, so we would align bend dummies on the same side). However, the later xy-ilp phase
-        // ensures that the bend dummies are correctly aligned not above / not below the gateway
-        // node.
-        NodeType::BendDummy {
-            originating_node, ..
-        } if *originating_node == gateway_node_id => None,
-        // The gateway node itself is not a barrier as well. We transition across it.
-        _ if node.id == gateway_node_id => None,
-        // But every other kind of node (real node or another gateway's bend dummy) is a barrier.
-        _ => Some(node.id),
     }
 }
 

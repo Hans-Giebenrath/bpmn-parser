@@ -1,7 +1,5 @@
-use crate::common::graph::{Graph, NodeId};
-use crate::common::node::Node;
-use proc_macros::from;
-use proc_macros::to;
+use bpmd_graph::*;
+use proc_macros::*;
 
 /// TODO the images are wrong, make a BPMN from this to correct it.
 /// Sort order images only show the upper part, but the lower part is equal, just mirrored.
