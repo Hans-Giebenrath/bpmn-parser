@@ -30,6 +30,7 @@ pub struct DataFlowAux {
 #[derive(Debug, Clone)]
 pub enum EdgeType {
     Regular {
+        // TODO rename to `dislay_text` when everything compiles.
         text: Option<DisplayText>,
         /// TODO ToBeDeterminedOrStraight is confusing, better make this Option<...> and just leave
         /// "Straight"?
@@ -159,8 +160,9 @@ impl Edge {
 
     pub fn text(&self) -> Option<&str> {
         match &self.edge_type {
-            EdgeType::Regular { text, .. } => text.as_deref(),
-            EdgeType::ReplacedByDummies { text, .. } => text.as_deref(),
+            EdgeType::Regular { text, .. } | EdgeType::ReplacedByDummies { text, .. } => {
+                text.as_ref().map(|t| t.raw_text.as_str())
+            }
             _ => None,
         }
     }

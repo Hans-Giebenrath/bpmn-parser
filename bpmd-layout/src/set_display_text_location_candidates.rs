@@ -1,16 +1,143 @@
 use bpmd_util::collision_grid::Grid;
-use cosmic_text::{
-    Align, Attrs, Buffer, Command, FontSystem, LayoutRun, Metrics, Shaping, SwashCache, Wrap,
-};
+use bpmd_util::collision_grid::Line;
+use cosmic_text::{Align, Attrs, Buffer, FontSystem, Metrics, Shaping, SwashCache, Wrap};
 use std::{num::NonZero, ops::ControlFlow};
 
 use bpmd_graph::*;
 
+pub fn set_display_text_locations(graph: &mut Graph, cache: &mut FontCache) {
+    let mut grid = prepare_collision_grid(graph);
+    for node in &mut graph.nodes {
+        if node.is_blackbox_node() {
+            // TODO this is a bit ugly, combine the next `let NodeType::RealNode` with a match.
+            continue;
+        }
+        let NodeType::RealNode {
+            display_text,
+            event,
+            ..
+        } = &mut node.node_type
+        else {
+            unreachable!();
+        };
+        if display_text.raw_text.is_empty() {
+            continue;
+        }
+        let text_dims = prep(cache, display_text);
+        let (x, y) = (node.x, node.y);
+        // Saving a bit of room when calling the `side_of_first_incoming_flow` function.
+        let side_calc_args = (
+            node.width,
+            node.height,
+            node.incoming.as_slice(),
+            node.incoming_ports.as_slice(),
+            graph.edges.as_slice(),
+        );
+        match event {
+            BpmnNode::Event(..) => {
+                display_text.location = event_display_text_location_candidates(
+                    &graph.config,
+                    text_dims,
+                    Dimension {
+                        x,
+                        y,
+                        width: EVENT_NODE_WIDTH,
+                        height: EVENT_NODE_HEIGHT,
+                    },
+                    side_of_first_incoming_flow(side_calc_args, Edge::is_sequence_flow),
+                    &|e: &DisplayTextLocation| grid.box_intersection_weight((e.x, e.y), text_dims),
+                );
+            }
+            BpmnNode::Gateway(..) => {
+                display_text.location = gateway_display_text_location_candidates(
+                    &graph.config,
+                    text_dims,
+                    Dimension {
+                        x,
+                        y,
+                        width: GATEWAY_NODE_WIDTH,
+                        height: GATEWAY_NODE_HEIGHT,
+                    },
+                    side_of_first_incoming_flow(side_calc_args, Edge::is_sequence_flow),
+                    &|e: &DisplayTextLocation| grid.box_intersection_weight((e.x, e.y), text_dims),
+                );
+            }
+            BpmnNode::Activity(..) => {
+                display_text.location = activity_display_text_location_candidates(
+                    text_dims,
+                    Dimension {
+                        x,
+                        y,
+                        width: ACTIVITY_NODE_WIDTH,
+                        height: ACTIVITY_NODE_HEIGHT,
+                    },
+                );
+            }
+            BpmnNode::Data(data_type, ..) => {
+                let (width, height) = match data_type {
+                    DataType::Store => (DATASTORE_NODE_WIDTH, DATASTORE_NODE_HEIGHT),
+                    DataType::Object => (DATAOBJECT_NODE_WIDTH, DATAOBJECT_NODE_HEIGHT),
+                };
+                display_text.location = data_display_text_location_candidates(
+                    &graph.config,
+                    text_dims,
+                    Dimension {
+                        x,
+                        y,
+                        width,
+                        height,
+                    },
+                    side_of_first_incoming_flow(side_calc_args, Edge::is_data_flow),
+                    &|e: &DisplayTextLocation| grid.box_intersection_weight((e.x, e.y), text_dims),
+                );
+            }
+        }
+
+        text_into_grid(&display_text.location, text_dims, &mut grid);
+    }
+
+    for edge in &mut graph.edges {
+        let EdgeType::Regular {
+            text: Some(display_text),
+            bend_points: RegularEdgeBendPoints::FullyRouted(points),
+        } = &mut edge.edge_type
+        else {
+            continue;
+        };
+
+        let text_dims = prep(cache, display_text);
+        if matches!(&edge.flow_type, FlowType::DataFlow(..)) {
+            // Data flows are ideally straight, so the fine logic for orthogonal edges won't work.
+            let mid = if (points.len() & 1) == 1 {
+                // Uneven, so just take middle point.
+                points[points.len() / 2]
+            } else {
+                let a = points[points.len() / 2];
+                let b = points[(points.len() / 2) + 1];
+                ((a.0 + b.0) / 2, (a.1 + b.1) / 2)
+            };
+            display_text.location = DisplayTextLocation {
+                alignment: Alignment::Center,
+                x: mid.0,
+                y: mid.1.saturating_sub(display_text.line_height as usize / 2),
+            };
+        } else {
+            display_text.location = edge_display_text_location_candidates(
+                &graph.config,
+                text_dims,
+                points,
+                &|e: &DisplayTextLocation| grid.box_intersection_weight((e.x, e.y), text_dims),
+            );
+        }
+        text_into_grid(&display_text.location, text_dims, &mut grid);
+    }
+}
+
 struct DisplayTextLocationCandidateInner {
-    pub alignment: Alignment,
-    pub reference_point: ReferencePoint,
-    pub x: usize,
-    pub y: usize,
+    alignment: Alignment,
+    reference_point: ReferencePoint,
+    x: usize,
+    y: usize,
 }
 
 impl DisplayTextLocationCandidateInner {
@@ -76,7 +203,7 @@ impl<'a> CandidateTracker<'a> {
 }
 type DisplayLocationCallback<'a> = dyn Fn(&DisplayTextLocation) -> u32 + 'a;
 
-pub fn edge_display_text_location_candidates(
+fn edge_display_text_location_candidates(
     config: &Config,
     textbox_wh: (usize, usize),
     line_points: &[(usize, usize)],
@@ -519,7 +646,7 @@ fn edge_corner_display_text_location_candidates(
     ControlFlow::Continue(())
 }
 
-pub enum ReferencePoint {
+enum ReferencePoint {
     Center,
 
     LeftTop,
@@ -533,7 +660,7 @@ pub enum ReferencePoint {
     LeftCenter,
 }
 
-pub fn gateway_display_text_location_candidates(
+fn gateway_display_text_location_candidates(
     config: &Config,
     textbox_wh: (usize, usize),
     dim: Dimension,
@@ -836,7 +963,7 @@ fn event_or_data_display_text_location_candidates(
     best_candidate.candidate
 }
 
-pub fn event_display_text_location_candidates(
+fn event_display_text_location_candidates(
     config: &Config,
     textbox_wh: (usize, usize),
     dim: Dimension,
@@ -853,7 +980,7 @@ pub fn event_display_text_location_candidates(
     )
 }
 
-pub fn data_display_text_location_candidates(
+fn data_display_text_location_candidates(
     config: &Config,
     textbox_wh: (usize, usize),
     dim: Dimension,
@@ -870,7 +997,7 @@ pub fn data_display_text_location_candidates(
     )
 }
 
-pub fn activity_display_text_location_candidates(
+fn activity_display_text_location_candidates(
     textbox_wh: (usize, usize),
     dim: Dimension,
 ) -> DisplayTextLocation {
@@ -881,119 +1008,6 @@ pub fn activity_display_text_location_candidates(
         y: dim.y.saturating_add(dim.height / 2),
     }
     .materialize(textbox_wh)
-}
-
-pub struct FontCache {
-    font_system: FontSystem,
-    swash_cache: SwashCache,
-}
-
-impl FontCache {
-    fn new() -> Self {
-        let mut font_system = FontSystem::new();
-        let swash_cache = SwashCache::new();
-        font_system
-            .db_mut()
-            .load_font_data(include_bytes!("../../inter-font/Inter-Regular.ttf").to_vec());
-        font_system
-            .db_mut()
-            .load_font_data(include_bytes!("../../inter-font/Inter-SemiBold.ttf").to_vec());
-        font_system
-            .db_mut()
-            .load_font_data(include_bytes!("../../inter-font/Inter-Italic.ttf").to_vec());
-        Self {
-            font_system,
-            swash_cache,
-        }
-    }
-}
-
-pub fn set_display_text_locations(graph: &mut Graph, cache: &mut FontCache) {
-    let mut grid = prepare_collision_grid(graph);
-    for node in &mut graph.nodes {
-        if node.is_blackbox_node() {
-            // TODO this is a bit ugly, combine the next `let NodeType::RealNode` with a match.
-            continue;
-        }
-        let NodeType::RealNode {
-            display_text,
-            event,
-            ..
-        } = &mut node.node_type
-        else {
-            unreachable!();
-        };
-        if display_text.raw_text.is_empty() {
-            continue;
-        }
-        let text_dims = prep(cache, display_text);
-        match event {
-            BpmnNode::Event(event_type, event_visual) => {
-                display_text.location = event_display_text_location_candidates(
-                    &self.config,
-                    text_dims,
-                    Dimension {
-                        x,
-                        y,
-                        width: EVENT_NODE_WIDTH,
-                        height: EVENT_NODE_HEIGHT,
-                    },
-                    sequence_flow_coming_in_from,
-                    &|e: &DisplayTextLocationCandidate| {
-                        self.grid.box_intersection_weight((e.x, e.y), text_dims)
-                    },
-                );
-            }
-            BpmnNode::Gateway(gateway_type) => svg.draw_gateway(
-                (node.x, node.y),
-                display_text,
-                &style,
-                *gateway_type,
-                node.side_of_first_incoming_flow(graph, Edge::is_sequence_flow),
-            ),
-            BpmnNode::Activity(activity_type, activity_marker) => svg.draw_task(
-                (node.x, node.y),
-                display_text,
-                &style,
-                *activity_type,
-                *activity_marker,
-            ),
-            BpmnNode::Data(data_type, ..) => svg.draw_data(
-                (node.x, node.y),
-                display_text,
-                *data_type,
-                &style,
-                node.side_of_first_incoming_flow(graph, Edge::is_data_flow),
-            ),
-        }
-    }
-
-    for edge in &graph.edges {
-        let EdgeType::Regular {
-            bend_points: RegularEdgeBendPoints::FullyRouted(bend_points),
-            text,
-        } = &edge.edge_type
-        else {
-            dbg!("This should never be the case?");
-            continue;
-        };
-
-        let style = edge_style(edge);
-        if let Some(boundary_event) = &edge.attached_to_boundary_event
-            && !bend_points.is_empty()
-        {
-            svg.draw_boundary_event(
-                (boundary_event.x, boundary_event.y),
-                boundary_event.event_type,
-                boundary_event.interrupt_kind,
-                &style,
-            );
-        }
-
-        svg.draw_flow(bend_points, text, &edge.flow_type, &style);
-    }
-
-    svg.finish()
 }
 
 fn prepare_collision_grid(graph: &Graph) -> Grid {
@@ -1064,7 +1078,7 @@ fn prep(cache: &mut FontCache, display_text: &mut DisplayText) -> (usize, usize)
     buffer.set_text(
         // Don't escape just yet. We want to first inspect the text that will be visible.
         &display_text.raw_text,
-        &Attrs::new().family(cosmic_text::Family::Name(display_text.font_family)),
+        &Attrs::new().family(cosmic_text::Family::Name(&display_text.font_family)),
         Shaping::Advanced,
         // Can only have Center here, since we don't know where it will be finally positioned at.
         Some(Align::Center),
@@ -1084,5 +1098,51 @@ fn prep(cache: &mut FontCache, display_text: &mut DisplayText) -> (usize, usize)
 
     display_text.buffer = buffer;
 
-    (width, height)
+    (width.ceil() as usize, height.ceil() as usize)
+}
+
+// Taking arguments very peace meal to circumvent the borrow checker.
+fn side_of_first_incoming_flow(
+    (width, height, incoming, incoming_ports, edges): (
+        usize,
+        usize,
+        &[EdgeId],
+        &[RelativePort],
+        &[Edge],
+    ),
+    edge_type: fn(&Edge) -> bool,
+) -> Side {
+    let Some((port, _)) = incoming_ports
+        .iter()
+        .zip(incoming.iter())
+        .find(|&(_, e)| edge_type(&edges[*e]))
+    else {
+        return Side::Left;
+    };
+    if port.x == 0 {
+        Side::Left
+    } else if port.x == width {
+        Side::Right
+    } else if port.y == 0 {
+        Side::Top
+    } else {
+        assert!(port.y == height);
+        Side::Bottom
+    }
+}
+
+fn text_into_grid(
+    location: &DisplayTextLocation,
+    (width, height): (usize, usize),
+    grid: &mut Grid,
+) {
+    let x = location.x;
+    let y = location.y;
+    grid.insert_quadrangle(
+        (x, y),
+        (x + width, y),
+        (x + width, y + height),
+        (x, y + height),
+        10,
+    );
 }

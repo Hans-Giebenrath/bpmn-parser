@@ -835,7 +835,10 @@ pub fn add_node(
         else {
             unreachable!();
         };
-        NodeType::BlackBox { display_text, tc }
+        NodeType::BlackBox {
+            display_text: display_text.raw_text,
+            tc,
+        }
     } else {
         node_type
     };

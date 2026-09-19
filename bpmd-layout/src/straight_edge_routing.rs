@@ -1,6 +1,6 @@
-use crate::collision_grid::Grid;
 use crate::straight_edge_math;
 use bpmd_graph::*;
+use bpmd_util::collision_grid::Grid;
 use bpmd_util::index_iter::IterIndices;
 use proc_macros::*;
 

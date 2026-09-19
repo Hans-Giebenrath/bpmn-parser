@@ -4,3 +4,9 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
+clap = { version = "4", features = ["derive"] }
+annotate-snippets = "0.12"
+bpmd-graph = { path = "../bpmd-graph" }
+bpmd-layout = { path = "../bpmd-layout" }
+bpmd-to-svg = { path = "../bpmd-to-svg" }
+bpmd-to-bpmn = { path = "../bpmd-to-bpmn" }

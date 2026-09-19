@@ -13,14 +13,6 @@ use cosmic_text::{
 use std::fmt::Write as _;
 
 use bpmd_graph::*;
-use layout::{
-    collision_grid::Grid,
-    set_display_text_location_candidates::{
-        Alignment, DisplayTextLocationCandidate, activity_display_text_location_candidates,
-        data_display_text_location_candidates, edge_display_text_location_candidates,
-        event_display_text_location_candidates, gateway_display_text_location_candidates,
-    },
-};
 pub const STROKE_WIDTH: f64 = 2.;
 pub const FLOW_CORNER_RADIUS: usize = 7;
 pub const MESSAGE_FLOW_START_MARKER_RADIUS: f64 = 4.;
@@ -131,17 +123,24 @@ impl Default for SvgStyle {
 /// SVG builder for BPMN diagrams.
 ///
 /// Create one renderer, call draw_* methods, then call [`Svg::finish`].
-pub struct Svg {
+pub struct Svg<'a> {
     width: usize,
     height: usize,
     body: String,
     style: SvgStyle,
     embed_font: bool,
-    config: Config,
+    config: &'a Config,
+    font_cache: &'a mut FontCache,
 }
 
-impl Svg {
-    pub fn new(embed_font: bool, width: usize, height: usize, config: &Config) -> Self {
+impl<'a> Svg<'a> {
+    pub fn new(
+        embed_font: bool,
+        width: usize,
+        height: usize,
+        config: &'a Config,
+        font_cache: &'a mut FontCache,
+    ) -> Self {
         Self {
             width,
             height,
@@ -149,7 +148,8 @@ impl Svg {
             style: SvgStyle::default(),
             embed_font,
             // Just clone it to avoid lifetimes. It is big, but whatever. Just one clone.
-            config: config.clone(),
+            config,
+            font_cache,
         }
     }
 
@@ -266,8 +266,7 @@ impl Svg {
             pool_header_width / 2,
             height / 2,
             PreparedText::new(
-                &mut self.font_system,
-                &mut self.swash_cache,
+                self.font_cache,
                 title,
                 Some(height),
                 &merged,
@@ -288,8 +287,7 @@ impl Svg {
                 pool_header_width + lane_header_width / 2,
                 cumulative_height + lane_height / 2,
                 PreparedText::new(
-                    &mut self.font_system,
-                    &mut self.swash_cache,
+                    self.font_cache,
                     lane_title,
                     Some(*lane_height),
                     &merged,
@@ -318,7 +316,7 @@ impl Svg {
     pub fn draw_task(
         &mut self,
         (x, y): (usize, usize),
-        text: &str,
+        text: &DisplayText,
         element_style: &ElementSvgStyle,
         activity_type: ActivityType,
         activity_marker: ActivityMarker,
@@ -392,31 +390,14 @@ impl Svg {
             }
         }
 
-        if !text.is_empty() {
-            let text = PreparedText::new(
-                &mut self.font_system,
-                &mut self.swash_cache,
-                text,
-                Some((ACTIVITY_NODE_WIDTH - STROKE_WIDTH as usize) - 4),
-                &merged,
-                self.embed_font,
-            );
-            let text_dims = text.dims();
+        if !text.raw_text.is_empty() {
             write_text_at(
                 &mut self.body,
-                activity_display_text_location_candidates(
-                    text_dims,
-                    Dimension {
-                        x,
-                        y,
-                        width: ACTIVITY_NODE_WIDTH,
-                        height: ACTIVITY_NODE_HEIGHT,
-                    },
-                ),
-                &mut self.grid,
                 text,
+                self.font_cache,
                 &merged,
                 "",
+                self.embed_font,
             );
         }
         writeln!(self.body, "</g>").unwrap();
@@ -426,11 +407,10 @@ impl Svg {
     pub fn draw_event(
         &mut self,
         (x, y): (usize, usize),
-        text: &str,
+        text: &DisplayText,
         event_type: EventType,
         event_visual: EventVisual,
         style: &ElementSvgStyle,
-        sequence_flow_coming_in_from: Side,
     ) {
         let merged = MergedSvgStyle::new(&self.style, style);
 
@@ -478,31 +458,15 @@ merged.stroke, merged.fill
         )
         .unwrap();
 
-        if !text.is_empty() {
-            let text = PreparedText::new(
-                &mut self.font_system,
-                &mut self.swash_cache,
+        if !text.raw_text.is_empty() {
+            write_text_at(
+                &mut self.body,
                 text,
-                Some(MAX_NODE_WIDTH),
+                self.font_cache,
                 &merged,
+                "",
                 self.embed_font,
             );
-            let text_dims = text.dims();
-            let position = event_display_text_location_candidates(
-                &self.config,
-                text_dims,
-                Dimension {
-                    x,
-                    y,
-                    width: EVENT_NODE_WIDTH,
-                    height: EVENT_NODE_HEIGHT,
-                },
-                sequence_flow_coming_in_from,
-                &|e: &DisplayTextLocationCandidate| {
-                    self.grid.box_intersection_weight((e.x, e.y), text_dims)
-                },
-            );
-            write_text_at(&mut self.body, position, &mut self.grid, text, &merged, "");
         }
         writeln!(self.body, "</g>").unwrap();
     }
@@ -549,10 +513,9 @@ merged.stroke, merged.fill
     pub fn draw_gateway(
         &mut self,
         (x, y): (usize, usize),
-        text: &str,
+        text: &DisplayText,
         element_style: &ElementSvgStyle,
         gateway_type: GatewayType,
-        sequence_flow_coming_in_from: Side,
     ) {
         let merged = MergedSvgStyle::new(&self.style, element_style);
 
@@ -574,31 +537,15 @@ merged.stroke, merged.fill
         )
         .unwrap();
 
-        if !text.is_empty() {
-            let text = PreparedText::new(
-                &mut self.font_system,
-                &mut self.swash_cache,
+        if !text.raw_text.is_empty() {
+            write_text_at(
+                &mut self.body,
                 text,
-                Some(MAX_NODE_WIDTH),
+                self.font_cache,
                 &merged,
+                "",
                 self.embed_font,
             );
-            let text_dims = text.dims();
-            let position = gateway_display_text_location_candidates(
-                &self.config,
-                text_dims,
-                Dimension {
-                    x,
-                    y,
-                    width: GATEWAY_NODE_WIDTH,
-                    height: GATEWAY_NODE_HEIGHT,
-                },
-                sequence_flow_coming_in_from,
-                &|e: &DisplayTextLocationCandidate| {
-                    self.grid.box_intersection_weight((e.x, e.y), text_dims)
-                },
-            );
-            write_text_at(&mut self.body, position, &mut self.grid, text, &merged, "");
         }
         writeln!(self.body, "</g>").unwrap();
     }
@@ -607,10 +554,9 @@ merged.stroke, merged.fill
     pub fn draw_data(
         &mut self,
         (x, y): (usize, usize),
-        text: &str,
+        text: &DisplayText,
         data_type: DataType,
         style: &ElementSvgStyle,
-        data_flow_coming_in_from: Side,
     ) {
         let merged = MergedSvgStyle::new(&self.style, style);
         let (symbol, width, height) = match data_type {
@@ -627,40 +573,23 @@ merged.stroke, merged.fill
         )
         .unwrap();
 
-        if !text.is_empty() {
-            let text = PreparedText::new(
-                &mut self.font_system,
-                &mut self.swash_cache,
+        if !text.raw_text.is_empty() {
+            write_text_at(
+                &mut self.body,
                 text,
-                Some(MAX_NODE_WIDTH),
+                self.font_cache,
                 &merged,
+                "",
                 self.embed_font,
             );
-            let text_dims = text.dims();
-            let position = data_display_text_location_candidates(
-                &self.config,
-                text_dims,
-                Dimension {
-                    x,
-                    y,
-                    width,
-                    height,
-                },
-                data_flow_coming_in_from,
-                &|e: &DisplayTextLocationCandidate| {
-                    self.grid.box_intersection_weight((e.x, e.y), text_dims)
-                },
-            );
-            write_text_at(&mut self.body, position, &mut self.grid, text, &merged, "");
         }
-
         writeln!(self.body, "</g>").unwrap();
     }
 
     pub fn draw_flow(
         &mut self,
         points: &[(usize, usize)],
-        label: &Option<String>,
+        text: &Option<DisplayText>,
         flow_type: &FlowType,
         element_style: &ElementSvgStyle,
     ) {
@@ -701,57 +630,15 @@ merged.stroke, merged.fill
         )
         .unwrap();
 
-        if let Some(label) = label.as_ref().filter(|s| !s.is_empty()) {
-            if matches!(flow_type, FlowType::DataFlow(..)) {
-                // Data flows are ideally straight, so the fine logic for orthogonal edges won't work.
-                let mid = if (points.len() & 1) == 1 {
-                    // Uneven, so just take middle point.
-                    points[points.len() / 2]
-                } else {
-                    let a = points[points.len() / 2];
-                    let b = points[(points.len() / 2) + 1];
-                    ((a.0 + b.0) / 2, (a.1 + b.1) / 2)
-                };
-                let text = PreparedText::new(
-                    &mut self.font_system,
-                    &mut self.swash_cache,
-                    label,
-                    Some(MAX_NODE_WIDTH),
-                    &merged,
-                    self.embed_font,
-                );
-                write_text_at(
-                    &mut self.body,
-                    DisplayTextLocationCandidate {
-                        alignment: Alignment::Center,
-                        x: mid.0,
-                        y: mid.1.saturating_sub(merged.line_height as usize / 2),
-                    },
-                    &mut self.grid,
-                    text,
-                    &merged,
-                    "",
-                );
-            } else {
-                let text = PreparedText::new(
-                    &mut self.font_system,
-                    &mut self.swash_cache,
-                    label,
-                    Some(MAX_NODE_WIDTH),
-                    &merged,
-                    self.embed_font,
-                );
-                let text_dims = text.dims();
-                let position = edge_display_text_location_candidates(
-                    &self.config,
-                    text_dims,
-                    points,
-                    &|e: &DisplayTextLocationCandidate| {
-                        self.grid.box_intersection_weight((e.x, e.y), text_dims)
-                    },
-                );
-                write_text_at(&mut self.body, position, &mut self.grid, text, &merged, "");
-            }
+        if let Some(text) = text.as_ref().filter(|s| !s.raw_text.is_empty()) {
+            write_text_at(
+                &mut self.body,
+                text,
+                self.font_cache,
+                &merged,
+                "",
+                self.embed_font,
+            );
         }
     }
 }
@@ -918,7 +805,7 @@ fn write_rotated_text(
             r#"
             <path transform="translate({x_offset}, {y_offset}) rotate(-90)" d="{}" fill="{}" stroke="none" />
             "#,
-            run_to_svg_path(text.font_system, text.swash_cache, &line, 0.0, 0.0),
+            run_to_svg_path(&mut text.font_cache.font_system, &mut text.font_cache.swash_cache, &line, 0.0, 0.0),
             merged.font_color
         )
         .unwrap();
@@ -959,8 +846,7 @@ struct PreparedText<'a> {
     buffer: Buffer,
     height: f32,
     width: f32,
-    font_system: &'a mut FontSystem,
-    swash_cache: &'a mut SwashCache,
+    font_cache: &'a mut FontCache,
     max_width: Option<f32>,
     /// If true, the text will be inserted as pre-rendered <path ...>, and overlaid transparently
     /// with an invisible <text ...> for copy support.
@@ -969,8 +855,7 @@ struct PreparedText<'a> {
 
 impl<'a> PreparedText<'a> {
     fn new(
-        font_system: &'a mut FontSystem,
-        swash_cache: &'a mut SwashCache,
+        font_cache: &'a mut FontCache,
         text: &str,
         max_width: Option<usize>,
         merged: &MergedSvgStyle,
@@ -978,7 +863,7 @@ impl<'a> PreparedText<'a> {
     ) -> Self {
         let metrics = Metrics::new(merged.font_size, merged.line_height);
 
-        let mut buffer = Buffer::new(font_system, metrics);
+        let mut buffer = Buffer::new(&mut font_cache.font_system, metrics);
 
         buffer.set_wrap(Wrap::Word);
         buffer.set_size(max_width.map(|width| width as f32), None);
@@ -992,7 +877,7 @@ impl<'a> PreparedText<'a> {
         );
 
         // Perform shaping as desired
-        buffer.shape_until_scroll(font_system, false /* not sure? */);
+        buffer.shape_until_scroll(&mut font_cache.font_system, false /* not sure? */);
         let count = buffer.layout_runs().count().max(1); // Always have at least one.
         let height = count as f32 * merged.line_height;
         let width = buffer.layout_runs().fold(0.0, |state, line| {
@@ -1006,15 +891,10 @@ impl<'a> PreparedText<'a> {
             buffer,
             height,
             width,
-            font_system,
-            swash_cache,
+            font_cache,
             max_width: max_width.map(|x| x as f32),
             embed,
         }
-    }
-
-    fn dims(&self) -> (usize, usize) {
-        (self.width as usize, self.height as usize)
     }
 }
 
@@ -1022,39 +902,53 @@ impl<'a> PreparedText<'a> {
 /// one can select and copy it. Done for portability and user experience (at the cost of file size).
 fn write_text_at(
     body: &mut String,
-    candidate: DisplayTextLocationCandidate,
-    text: PreparedText,
+    text: &DisplayText,
+    font_cache: &mut FontCache,
     merged: &MergedSvgStyle,
     class: &str,
+    embed: bool,
 ) {
-    let x = candidate.x as f32;
-    let y = candidate.y as f32;
+    let x = text.location.x as f32;
+    let y = text.location.y as f32;
+    let width = text.buffer.layout_runs().fold(0.0, |state, line| {
+        if state < line.line_w {
+            line.line_w
+        } else {
+            state
+        }
+    });
 
-    if text.embed {
+    if embed {
         for line in text.buffer.layout_runs() {
             // Came up with this using trial and error. No idea why it works but it works.
-            let x = match candidate.alignment {
+            let x = match text.location.alignment {
                 Alignment::Left => x,
                 Alignment::Center => {
                     if let Some(max_width) = text.max_width {
-                        (x + text.width / 2.) - max_width / 2.
+                        (x + width / 2.) - max_width as f32 / 2.
                     } else {
-                        x - text.width / 2.
+                        x - width / 2.
                     }
                 }
                 Alignment::Right => {
                     (if let Some(max_width) = text.max_width {
-                        (x + text.width / 2.) - max_width / 2.
+                        (x + width / 2.) - max_width as f32 / 2.
                     } else {
-                        x - text.width / 2.
-                    }) + (text.width - line.line_w) / 2.
+                        x - width / 2.
+                    }) + (width - line.line_w) / 2.
                 }
             };
 
             writeln!(
                 body,
                 r#"<path d="{}" fill="{}" stroke="none" />"#,
-                run_to_svg_path(text.font_system, text.swash_cache, &line, x, y),
+                run_to_svg_path(
+                    &mut font_cache.font_system,
+                    &mut font_cache.swash_cache,
+                    &line,
+                    x,
+                    y
+                ),
                 merged.font_color
             )
             .unwrap();
@@ -1062,11 +956,7 @@ fn write_text_at(
     }
 
     {
-        let fill_opacity = if text.embed {
-            " fill-opacity=\"0\""
-        } else {
-            ""
-        };
+        let fill_opacity = if embed { " fill-opacity=\"0\"" } else { "" };
         // Write the invisible text, so it can be selected.
         // This does mean that text is duplicated, but should provide maximum portability and
         // usability.
@@ -1085,10 +975,10 @@ fn write_text_at(
             let start = line.glyphs.first().map(|g| g.start).unwrap_or(0);
             let end = line.glyphs.last().map(|g| g.end).unwrap_or(start);
             let dy = merged.line_height;
-            let x = match candidate.alignment {
+            let x = match text.location.alignment {
                 Alignment::Left => x,
-                Alignment::Center => x + (text.width - line.line_w) / 2.,
-                Alignment::Right => x + (text.width - line.line_w),
+                Alignment::Center => x + (width - line.line_w) / 2.,
+                Alignment::Right => x + (width - line.line_w),
             };
             write!(
                 body,
@@ -1099,17 +989,6 @@ fn write_text_at(
         }
         writeln!(body, "</text>").unwrap();
     }
-
-    grid.insert_quadrangle(
-        (x.trunc() as usize, y.trunc() as usize),
-        ((x + text.width).ceil() as usize, y.trunc() as usize),
-        (
-            (x + text.width).ceil() as usize,
-            (y + text.height).ceil() as usize,
-        ),
-        (x.trunc() as usize, (y + text.height).ceil() as usize),
-        10,
-    );
 }
 
 fn run_to_svg_path(

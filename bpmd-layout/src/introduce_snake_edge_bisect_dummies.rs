@@ -1,8 +1,5 @@
-use crate::Graph;
-use crate::common::graph::EdgeId;
-use crate::common::node::Node;
-use proc_macros::from;
-use proc_macros::to;
+use bpmd_graph::*;
+use proc_macros::*;
 
 pub fn introduce_snake_edge_bisect_dummies(graph: &mut Graph) {
     for edge_id in (0..graph.edges.len()).map(EdgeId) {

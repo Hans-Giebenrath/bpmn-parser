@@ -1,25 +1,11 @@
 #![allow(clippy::too_many_arguments)]
 #![feature(gen_blocks)]
 
-mod analysis;
-mod common;
-mod id_matcher;
-mod layout;
-mod lexer;
-mod output;
-mod parser;
-mod pe_bpmd;
-mod to_xml;
-use crate::layout::all_crossing_minimization_sweep::reduce_all_crossings_sweep;
-use crate::layout::back_edge_removal::back_edge_removal;
-use crate::layout::fix_boundary_event_connections::fix_boundary_event_connections;
-use crate::layout::sort_incoming_and_outgoing::sort_incoming_and_outgoing;
-use crate::lexer::ImportData;
-use crate::lexer::TokenCoordinate;
-use crate::lexer::lex;
-use crate::output::svg::to_svg;
 use annotate_snippets::AnnotationKind;
 use annotate_snippets::Level;
+use bpmd_graph::*;
+use bpmd_layout::*;
+use bpmd_to_svg::*;
 use std::fmt::Display;
 use std::panic::AssertUnwindSafe;
 use std::panic::catch_unwind;
@@ -29,21 +15,6 @@ use std::str::FromStr;
 use annotate_snippets::Snippet;
 use annotate_snippets::renderer::{DecorStyle, Renderer};
 use clap::{Parser, ValueEnum};
-use layout::all_crossing_minimization_ilp::reduce_all_crossings_ilp;
-use layout::dummy_node_generation::dummy_node_generation;
-use layout::dummy_node_removal::dummy_node_removal;
-use layout::edge_routing::edge_routing;
-use layout::port_assignment::port_assignment;
-use layout::postprocess_ports_and_vertical_edges::postprocess_ports_and_vertical_edges;
-use layout::solve_layer_assignment::solve_layer_assignment;
-use layout::straight_edge_routing::find_straight_edges;
-use layout::try_move_nodes_into_half_layer::try_move_nodes_into_half_layer;
-use layout::xy_ilp::assign_xy_ilp;
-
-use crate::{
-    common::graph::{Graph, sort_lanes_by_layer},
-    parser::ParseError,
-};
 
 #[derive(Parser)]
 #[command(version, about, long_about = None)]

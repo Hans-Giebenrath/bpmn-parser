@@ -259,7 +259,7 @@ impl Parser {
                     } = &node.node_type
                 {
                     node.node_type = NodeType::BlackBox {
-                        display_text: display_text.clone(),
+                        display_text: display_text.raw_text.clone(),
                         tc: tc.clone(),
                     };
                 }
@@ -325,7 +325,7 @@ impl Parser {
                                     start.known_node_id,
                                     end.known_node_id,
                                     EdgeType::Regular {
-                                        text: Some(start.edge_text.clone()),
+                                        text: Some(DisplayText::new(start.edge_text.clone())),
                                         bend_points: RegularEdgeBendPoints::ToBeDetermined,
                                     },
                                     FlowType::SequenceFlow,
@@ -502,7 +502,7 @@ impl Parser {
         let node_id = self.graph.add_node(
             NodeType::RealNode {
                 event: BpmnNode::Gateway(meta.gateway_type),
-                display_text: meta.node_meta.display_text,
+                display_text: DisplayText::new(meta.node_meta.display_text),
                 tc: self.context.current_token_coordinate,
                 transported_data: vec![],
                 pe_bpmd_hides_protection_operations: false,
@@ -645,7 +645,7 @@ impl Parser {
         let node_id = self.graph.add_node(
             NodeType::RealNode {
                 event: BpmnNode::Event(meta.event_type, event_visual),
-                display_text: meta.node_meta.display_text,
+                display_text: DisplayText::new(meta.node_meta.display_text),
                 tc: self.context.current_token_coordinate,
                 transported_data: vec![],
                 pe_bpmd_hides_protection_operations: false,
@@ -677,7 +677,7 @@ impl Parser {
         let node_id = self.graph.add_node(
             NodeType::RealNode {
                 event: BpmnNode::Activity(meta.activity_type, meta.activity_marker),
-                display_text: meta.node_meta.display_text,
+                display_text: DisplayText::new(meta.node_meta.display_text),
                 tc: self.context.current_token_coordinate,
                 transported_data: vec![],
                 pe_bpmd_hides_protection_operations: false,
@@ -824,7 +824,7 @@ impl Parser {
             sender_node,
             receiver_node,
             EdgeType::Regular {
-                text: Some(meta.display_text),
+                text: Some(DisplayText::new(meta.display_text)),
                 bend_points: RegularEdgeBendPoints::ToBeDetermined,
             },
             FlowType::MessageFlow(MessageFlowAux {
@@ -910,7 +910,7 @@ impl Parser {
         let data_node_id = self.graph.add_node(
             NodeType::RealNode {
                 event,
-                display_text: meta.node_meta.display_text,
+                display_text: DisplayText::new(meta.node_meta.display_text),
                 tc: self.context.current_token_coordinate,
                 transported_data: vec![],
                 pe_bpmd_hides_protection_operations: false,
@@ -937,7 +937,7 @@ impl Parser {
                 from,
                 to,
                 EdgeType::Regular {
-                    text: Some(text_label),
+                    text: Some(DisplayText::new(text_label)),
                     bend_points: RegularEdgeBendPoints::ToBeDetermined,
                 },
                 FlowType::DataFlow(DataFlowAux {

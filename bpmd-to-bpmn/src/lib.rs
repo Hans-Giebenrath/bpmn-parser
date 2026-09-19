@@ -1,24 +1,5 @@
-use crate::common::bpmn_node::ActivityType;
-use crate::common::bpmn_node::BoundaryEventType;
-use crate::common::bpmn_node::BpmnNode;
-use crate::common::bpmn_node::EventVisual;
-use crate::common::bpmn_node::InterruptKind;
-use crate::common::bpmn_node::TaskType;
-use crate::common::edge::Edge;
-use crate::common::edge::EdgeType;
-use crate::common::edge::FlowType;
-use crate::common::edge::RegularEdgeBendPoints;
-use crate::common::graph::EVENT_NODE_HEIGHT;
-use crate::common::graph::EVENT_NODE_WIDTH;
-use crate::common::graph::EdgeId;
-use crate::common::graph::Graph;
-use crate::common::graph::NodeId;
-use crate::common::node::Node;
-use crate::common::node::NodeType;
-use crate::lexer::DataType;
-use crate::lexer::EventType;
-use proc_macros::e;
-use proc_macros::n;
+use bpmd_graph::*;
+use proc_macros::*;
 use std::fmt::Display;
 
 struct IncomingOutgoing<'a> {
@@ -186,18 +167,18 @@ pub fn generate_bpmn(graph: &Graph) -> String {
             .for_each(|(node_idx, node)| match &node.node_type {
                 NodeType::RealNode {
                     event: BpmnNode::Data(DataType::Store, _),
-                    display_text,
+                    display_text: DisplayText { raw_text, ..},
                     ..
                 } => bpmn.push_str(&format!(
-                    "        <bpmn:dataStoreReference id=\"Node_{node_idx}\" name=\"{display_text}\" />\n",
+                    "        <bpmn:dataStoreReference id=\"Node_{node_idx}\" name=\"{raw_text}\" />\n",
 
                 )),
                 NodeType::RealNode {
                     event: BpmnNode::Data(DataType::Object, _),
-                    display_text,
+                    display_text: DisplayText { raw_text, ..},
                     ..
                 } => bpmn.push_str(&format!(
-                    "        <bpmn:dataObjectReference id=\"Node_{node_idx}\" name=\"{display_text}\" />\n",
+                    "        <bpmn:dataObjectReference id=\"Node_{node_idx}\" name=\"{raw_text}\" />\n",
                 )),
                 _ => { /* skip - we are only interested in data objects right now */ }
             });
@@ -343,7 +324,7 @@ pub fn generate_bpmn(graph: &Graph) -> String {
 fn write_process_node(bpmn: &mut String, graph: &Graph, node_idx: usize, node: &Node) {
     let NodeType::RealNode {
         event,
-        display_text,
+        display_text: DisplayText { raw_text, .. },
         ..
     } = &node.node_type
     else {
@@ -366,10 +347,10 @@ fn write_process_node(bpmn: &mut String, graph: &Graph, node_idx: usize, node: &
     </bpmn:{0}Gateway>
 "#,
                 match gt {
-                    crate::lexer::GatewayType::Exclusive => "exclusive",
-                    crate::lexer::GatewayType::Parallel => "parallel",
-                    crate::lexer::GatewayType::Inclusive => "inclusive",
-                    crate::lexer::GatewayType::Event => "eventBased",
+                    GatewayType::Exclusive => "exclusive",
+                    GatewayType::Parallel => "parallel",
+                    GatewayType::Inclusive => "inclusive",
+                    GatewayType::Event => "eventBased",
                 }
             ));
         }
@@ -377,7 +358,7 @@ fn write_process_node(bpmn: &mut String, graph: &Graph, node_idx: usize, node: &
         // Activities
         BpmnNode::Activity(ActivityType::Task(TaskType::User), ..) => {
             bpmn.push_str(&format!(
-                r#"    <bpmn:userTask id="Node_{node_idx}" name="{display_text}">
+                r#"    <bpmn:userTask id="Node_{node_idx}" name="{raw_text}">
 {incomingoutgoing}
     </bpmn:userTask>
 "#,
@@ -385,7 +366,7 @@ fn write_process_node(bpmn: &mut String, graph: &Graph, node_idx: usize, node: &
         }
         BpmnNode::Activity(ActivityType::Task(TaskType::Service), ..) => {
             bpmn.push_str(&format!(
-                r#"    <bpmn:serviceTask id="Node_{node_idx}" name="{display_text}">
+                r#"    <bpmn:serviceTask id="Node_{node_idx}" name="{raw_text}">
 {incomingoutgoing}
     </bpmn:serviceTask>
 "#,
@@ -393,7 +374,7 @@ fn write_process_node(bpmn: &mut String, graph: &Graph, node_idx: usize, node: &
         }
         BpmnNode::Activity(ActivityType::Task(TaskType::Businessrule), ..) => {
             bpmn.push_str(&format!(
-                r#"    <bpmn:businessRuleTask id="Node_{node_idx}" name="{display_text}">
+                r#"    <bpmn:businessRuleTask id="Node_{node_idx}" name="{raw_text}">
 {incomingoutgoing}
     </bpmn:businessRuleTask>
 "#,
@@ -401,7 +382,7 @@ fn write_process_node(bpmn: &mut String, graph: &Graph, node_idx: usize, node: &
         }
         BpmnNode::Activity(ActivityType::Task(TaskType::Script), ..) => {
             bpmn.push_str(&format!(
-                r#"    <bpmn:scriptTask id="Node_{node_idx}" name="{display_text}">
+                r#"    <bpmn:scriptTask id="Node_{node_idx}" name="{raw_text}">
 {incomingoutgoing}
     </bpmn:scriptTask>
 "#,
@@ -409,7 +390,7 @@ fn write_process_node(bpmn: &mut String, graph: &Graph, node_idx: usize, node: &
         }
         BpmnNode::Activity(ActivityType::Task(TaskType::None), ..) => {
             bpmn.push_str(&format!(
-                r#"    <bpmn:task id="Node_{node_idx}" name="{display_text}">
+                r#"    <bpmn:task id="Node_{node_idx}" name="{raw_text}">
 {incomingoutgoing}
     </bpmn:task>
 "#,
@@ -420,7 +401,7 @@ fn write_process_node(bpmn: &mut String, graph: &Graph, node_idx: usize, node: &
         // Tasks
         BpmnNode::Activity(ActivityType::Subprocess, ..) => {
             bpmn.push_str(&format!(
-                r#"    <bpmn:subProcess id="Node_{node_idx}" name="{display_text}" triggeredByEvent="false">
+                r#"    <bpmn:subProcess id="Node_{node_idx}" name="{raw_text}" triggeredByEvent="false">
 {incomingoutgoing}
     </bpmn:subProcess>
 "#,
@@ -428,7 +409,7 @@ fn write_process_node(bpmn: &mut String, graph: &Graph, node_idx: usize, node: &
         }
         BpmnNode::Activity(ActivityType::CallActivity, ..) => {
             bpmn.push_str(&format!(
-                r#"    <bpmn:callActivity id="Node_{node_idx}" name="{display_text}">
+                r#"    <bpmn:callActivity id="Node_{node_idx}" name="{raw_text}">
 {incomingoutgoing}
     </bpmn:callActivity>
 "#,
@@ -436,7 +417,7 @@ fn write_process_node(bpmn: &mut String, graph: &Graph, node_idx: usize, node: &
         }
         BpmnNode::Activity(ActivityType::EventSubprocess, ..) => {
             bpmn.push_str(&format!(
-                r#"    <bpmn:subProcess id="Node_{node_idx}" name="{display_text}" triggeredByEvent="true">
+                r#"    <bpmn:subProcess id="Node_{node_idx}" name="{raw_text}" triggeredByEvent="true">
 {incomingoutgoing}
     </bpmn:subProcess>
 "#,
@@ -444,7 +425,7 @@ fn write_process_node(bpmn: &mut String, graph: &Graph, node_idx: usize, node: &
         }
         BpmnNode::Activity(ActivityType::Transaction, ..) => {
             bpmn.push_str(&format!(
-                r#"    <bpmn:transaction id="Node_{node_idx}" name="{display_text}">
+                r#"    <bpmn:transaction id="Node_{node_idx}" name="{raw_text}">
 {incomingoutgoing}
     </bpmn:transaction>
 "#,
@@ -454,7 +435,7 @@ fn write_process_node(bpmn: &mut String, graph: &Graph, node_idx: usize, node: &
         // Start Events
         BpmnNode::Event(event_type, EventVisual::Start(_)) => {
             bpmn.push_str(&format!(
-                r#"    <bpmn:startEvent id="Node_{node_idx}" name="{display_text}">
+                r#"    <bpmn:startEvent id="Node_{node_idx}" name="{raw_text}">
 {incomingoutgoing}
 {}    </bpmn:startEvent>
 "#,
@@ -465,7 +446,7 @@ fn write_process_node(bpmn: &mut String, graph: &Graph, node_idx: usize, node: &
         // Intermediate Events
         BpmnNode::Event(event_type, EventVisual::Throw) => {
             bpmn.push_str(&format!(
-                r#"    <bpmn:intermediateThrowEvent id="Node_{node_idx}" name="{display_text}">
+                r#"    <bpmn:intermediateThrowEvent id="Node_{node_idx}" name="{raw_text}">
 {incomingoutgoing}
 {}    </bpmn:intermediateThrowEvent>
 "#,
@@ -474,7 +455,7 @@ fn write_process_node(bpmn: &mut String, graph: &Graph, node_idx: usize, node: &
         }
         BpmnNode::Event(event_type, EventVisual::Catch(InterruptKind::Interrupting)) => {
             bpmn.push_str(&format!(
-                r#"    <bpmn:intermediateCatchEvent id="Node_{node_idx}" name="{display_text}">
+                r#"    <bpmn:intermediateCatchEvent id="Node_{node_idx}" name="{raw_text}">
 {incomingoutgoing}
 {}    </bpmn:intermediateCatchEvent>
 "#,
@@ -485,7 +466,7 @@ fn write_process_node(bpmn: &mut String, graph: &Graph, node_idx: usize, node: &
 
         BpmnNode::Event(EventType::Blank, EventVisual::End) => {
             bpmn.push_str(&format!(
-                r#"    <bpmn:endEvent id="Node_{node_idx}" name="{display_text}">
+                r#"    <bpmn:endEvent id="Node_{node_idx}" name="{raw_text}">
 {incomingoutgoing}
     </bpmn:endEvent>
 "#,
@@ -493,7 +474,7 @@ fn write_process_node(bpmn: &mut String, graph: &Graph, node_idx: usize, node: &
         }
         BpmnNode::Event(EventType::Error, EventVisual::End) => {
             bpmn.push_str(&format!(
-                r#"    <bpmn:endEvent id="Node_{node_idx}" name="{display_text}">
+                r#"    <bpmn:endEvent id="Node_{node_idx}" name="{raw_text}">
 {incomingoutgoing}
     <bpmn:errorEventDefinition />
     </bpmn:endEvent>
@@ -502,7 +483,7 @@ fn write_process_node(bpmn: &mut String, graph: &Graph, node_idx: usize, node: &
         }
         BpmnNode::Event(EventType::Cancel, EventVisual::End) => {
             bpmn.push_str(&format!(
-                r#"    <bpmn:endEvent id="Node_{node_idx}" name="{display_text}">
+                r#"    <bpmn:endEvent id="Node_{node_idx}" name="{raw_text}">
 {incomingoutgoing}
     <bpmn:cancelEventDefinition />
     </bpmn:endEvent>
@@ -511,7 +492,7 @@ fn write_process_node(bpmn: &mut String, graph: &Graph, node_idx: usize, node: &
         }
         BpmnNode::Event(EventType::Signal, EventVisual::End) => {
             bpmn.push_str(&format!(
-                r#"    <bpmn:endEvent id="Node_{node_idx}" name="{display_text}">
+                r#"    <bpmn:endEvent id="Node_{node_idx}" name="{raw_text}">
 {incomingoutgoing}
     <bpmn:signalEventDefinition />
     </bpmn:endEvent>
@@ -520,7 +501,7 @@ fn write_process_node(bpmn: &mut String, graph: &Graph, node_idx: usize, node: &
         }
         BpmnNode::Event(EventType::Message, EventVisual::End) => {
             bpmn.push_str(&format!(
-                r#"    <bpmn:endEvent id="Node_{node_idx}" name="{display_text}">
+                r#"    <bpmn:endEvent id="Node_{node_idx}" name="{raw_text}">
 {incomingoutgoing}
     <bpmn:messageEventDefinition />
     </bpmn:endEvent>
@@ -529,7 +510,7 @@ fn write_process_node(bpmn: &mut String, graph: &Graph, node_idx: usize, node: &
         }
         BpmnNode::Event(EventType::Termination, EventVisual::End) => {
             bpmn.push_str(&format!(
-                r#"    <bpmn:endEvent id="Node_{node_idx}" name="{display_text}">
+                r#"    <bpmn:endEvent id="Node_{node_idx}" name="{raw_text}">
 {incomingoutgoing}
     <bpmn:terminateEventDefinition />
     </bpmn:endEvent>
@@ -538,7 +519,7 @@ fn write_process_node(bpmn: &mut String, graph: &Graph, node_idx: usize, node: &
         }
         BpmnNode::Event(EventType::Escalation, EventVisual::End) => {
             bpmn.push_str(&format!(
-                r#"    <bpmn:endEvent id="Node_{node_idx}" name="{display_text}">
+                r#"    <bpmn:endEvent id="Node_{node_idx}" name="{raw_text}">
 {incomingoutgoing}
     <bpmn:escalationEventDefinition />
     </bpmn:endEvent>
@@ -547,7 +528,7 @@ fn write_process_node(bpmn: &mut String, graph: &Graph, node_idx: usize, node: &
         }
         BpmnNode::Event(EventType::Compensation, EventVisual::End) => {
             bpmn.push_str(&format!(
-                r#"    <bpmn:endEvent id="Node_{node_idx}" name="{display_text}">
+                r#"    <bpmn:endEvent id="Node_{node_idx}" name="{raw_text}">
 {incomingoutgoing}
     <bpmn:compensateEventDefinition />
     </bpmn:endEvent>

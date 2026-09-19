@@ -476,16 +476,21 @@ impl Node {
 
     pub fn display_text(&self) -> Option<&str> {
         match &self.node_type {
-            NodeType::RealNode { display_text, .. } | NodeType::BlackBox { display_text, .. } => {
-                Some(display_text.as_str())
+            NodeType::RealNode {
+                display_text: DisplayText { raw_text, .. },
+                ..
             }
+            | NodeType::BlackBox {
+                display_text: raw_text,
+                ..
+            } => Some(raw_text.as_str()),
             _ => None,
         }
     }
 
     pub fn display_text_or_dummy_kind(&self) -> String {
         match &self.node_type {
-            NodeType::RealNode { display_text, .. } => display_text.clone(),
+            NodeType::RealNode { display_text, .. } => display_text.raw_text.clone(),
             NodeType::LongEdgeDummy => "(-)".to_string(),
             NodeType::BackEdgeCornerDummy { .. } => "(])".to_string(),
             NodeType::BendDummy { .. } => "(┌)".to_string(),
@@ -520,28 +525,6 @@ impl Node {
             y: self.y,
             width: self.width,
             height: self.height,
-        }
-    }
-
-    pub fn side_of_first_incoming_flow(&self, graph: &Graph, edge_type: fn(&Edge) -> bool) -> Side {
-        let Some((port, _)) = self
-            .incoming_ports
-            .iter()
-            .zip(self.incoming.iter())
-            .filter(|&(_, e)| edge_type(&e!(*e)))
-            .next()
-        else {
-            return Side::Left;
-        };
-        if port.x == 0 {
-            Side::Left
-        } else if port.x == self.width {
-            Side::Right
-        } else if port.y == 0 {
-            Side::Top
-        } else {
-            assert!(port.y == self.height);
-            Side::Bottom
         }
     }
 }

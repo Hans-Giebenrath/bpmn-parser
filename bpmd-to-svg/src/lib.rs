@@ -1,18 +1,19 @@
-use crate::common::{
-    bpmn_node::BpmnNode,
-    edge::{Edge, EdgeType, FlowType, RegularEdgeBendPoints},
-    graph::Graph,
-    node::{Node, NodeType},
-};
+use bpmd_graph::*;
 
 pub mod defs;
 pub mod primitives;
 
 use primitives::ElementSvgStyle;
 
-pub fn to_svg(graph: &Graph, embed_font: bool) -> String {
+pub fn to_svg(graph: &Graph, font_cache: &mut FontCache, embed_font: bool) -> String {
     let (total_width, total_height) = graph.total_width_height();
-    let mut svg = primitives::Svg::new(embed_font, total_width, total_height, &graph.config);
+    let mut svg = primitives::Svg::new(
+        embed_font,
+        total_width,
+        total_height,
+        &graph.config,
+        font_cache,
+    );
     if graph.pools[0].name.is_some() || graph.pools[0].lanes[0].name.is_some() {
         // Only render the pools if they are not anonymous.
         for pool in &graph.pools {
@@ -71,15 +72,10 @@ pub fn to_svg(graph: &Graph, embed_font: bool) -> String {
                 *event_type,
                 *event_visual,
                 &style,
-                node.side_of_first_incoming_flow(graph, Edge::is_sequence_flow),
             ),
-            BpmnNode::Gateway(gateway_type) => svg.draw_gateway(
-                (node.x, node.y),
-                display_text,
-                &style,
-                *gateway_type,
-                node.side_of_first_incoming_flow(graph, Edge::is_sequence_flow),
-            ),
+            BpmnNode::Gateway(gateway_type) => {
+                svg.draw_gateway((node.x, node.y), display_text, &style, *gateway_type)
+            }
             BpmnNode::Activity(activity_type, activity_marker) => svg.draw_task(
                 (node.x, node.y),
                 display_text,
@@ -87,13 +83,9 @@ pub fn to_svg(graph: &Graph, embed_font: bool) -> String {
                 *activity_type,
                 *activity_marker,
             ),
-            BpmnNode::Data(data_type, ..) => svg.draw_data(
-                (node.x, node.y),
-                display_text,
-                *data_type,
-                &style,
-                node.side_of_first_incoming_flow(graph, Edge::is_data_flow),
-            ),
+            BpmnNode::Data(data_type, ..) => {
+                svg.draw_data((node.x, node.y), display_text, *data_type, &style)
+            }
         }
     }
 
