@@ -9,7 +9,7 @@ use proc_macros::{e, from, n, to};
 use std::collections::{BTreeSet, HashMap, HashSet};
 use std::iter::Extend;
 
-pub fn analyse(graph: &mut Graph) -> Result<VisibilityTableInput, ParseError> {
+pub fn pebpmd_analysis(graph: &mut Graph) -> Result<VisibilityTableInput, ParseError> {
     let mut state = State::default();
     let pebpmd_definitions = std::mem::take(&mut graph.pe_bpmd_definitions);
     for pebpmd_definition in &pebpmd_definitions {

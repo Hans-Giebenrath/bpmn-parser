@@ -763,7 +763,7 @@ impl SemanticDataElement {
 
 /// Very small function, does not really deserve its own file? Is also just a helper thingy, not
 /// really a dedicated phase.
-fn sort_lanes_by_layer(graph: &mut Graph) {
+pub fn sort_lanes_by_layer(graph: &mut Graph) {
     for pool in &mut graph.pools {
         for lane in &mut pool.lanes {
             lane.nodes

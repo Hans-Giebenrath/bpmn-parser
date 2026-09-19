@@ -2154,7 +2154,7 @@ pub fn is_allowed_symbol_in_label_or_id(c: char) -> bool {
     c.is_alphanumeric() || matches!(c, '_' | '-' | '.')
 }
 
-pub(crate) fn lex(import_data: &mut ImportData) -> Result<StatementStream, ParseError> {
+pub fn lex(import_data: &mut ImportData) -> Result<StatementStream, ParseError> {
     // Could probably be solved without cloning, but ... who cares :) This is not the bottleneck.
     let content = import_data.bpmd_source_files[import_data
         .import_stack

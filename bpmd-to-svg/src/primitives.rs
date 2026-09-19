@@ -789,15 +789,15 @@ fn write_rotated_text(
     class: &str,
 ) {
     if text.embed {
+        let y_offset = y as f32 + {
+            if let Some(max_width) = text.max_width {
+                max_width / 2.
+            } else {
+                text.width / 2.
+            }
+        };
         for line in text.buffer.layout_runs() {
             // Came up with this using trial and error. No idea why it works but it works.
-            let y_offset = y as f32 + {
-                if let Some(max_width) = text.max_width {
-                    max_width / 2.
-                } else {
-                    text.width / 2.
-                }
-            };
             let x_offset = x as f32 - text.height / 2.;
 
             writeln!(
@@ -842,6 +842,9 @@ fn write_rotated_text(
     writeln!(body, "</text>").unwrap();
 }
 
+// TODO this should ideally go away. The `Buffer` should be created in the layout phase.
+// This is now only used for pool and lane headers, as they are rotated.
+// The layout phase already handles node and edge labels, which are not rotated.
 struct PreparedText<'a> {
     buffer: Buffer,
     height: f32,

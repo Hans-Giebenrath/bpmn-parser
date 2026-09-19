@@ -7,6 +7,8 @@ edition = "2024"
 clap = { version = "4", features = ["derive"] }
 annotate-snippets = "0.12"
 bpmd-graph = { path = "../bpmd-graph" }
+bpmd-parse = { path = "../bpmd-parse" }
 bpmd-layout = { path = "../bpmd-layout" }
 bpmd-to-svg = { path = "../bpmd-to-svg" }
 bpmd-to-bpmn = { path = "../bpmd-to-bpmn" }
+bpmd-pebpmd-analysis = { path = "../bpmd-pebpmd-analysis" }

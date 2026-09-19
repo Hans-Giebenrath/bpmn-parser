@@ -156,7 +156,7 @@ impl Display for ProtectionString {
 pub fn generate_visibility_table(
     graph: &Graph,
     input: &VisibilityTableInput,
-) -> Result<String, Box<dyn std::error::Error>> {
+) -> Result<String, ParseError> {
     let mut csv = csv::Writer::from_writer(Vec::new());
     let mut on_demand_call = OnDemandVisibilityTableCell {
         cache: Default::default(),
@@ -166,7 +166,8 @@ pub fn generate_visibility_table(
     // Write header
     csv.write_record(
         std::iter::once("Pool").chain(graph.data_elements.iter().map(|sde| sde.name.as_str())),
-    )?;
+    )
+    .expect("writing into a Vec.");
 
     // Write rows
     for (pool_idx, pool) in graph.pools.iter().enumerate() {
@@ -280,7 +281,7 @@ impl OnDemandVisibilityTableCell {
             .endless_recursion_detection
             .contains(&(pool_or_protection, sde_id))
         {
-            // TODO this should have a nice color.
+            // TODO must be a ParseError.
             Err(format!("endless recursion: {:?}", self.endless_recursion_detection).into())
         } else if let Some(protection_string) = self.cache.get(&(pool_or_protection, sde_id)) {
             Ok(*protection_string)

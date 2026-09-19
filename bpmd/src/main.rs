@@ -5,6 +5,9 @@ use annotate_snippets::AnnotationKind;
 use annotate_snippets::Level;
 use bpmd_graph::*;
 use bpmd_layout::*;
+use bpmd_parse::*;
+use bpmd_pebpmd_analysis::*;
+use bpmd_to_bpmn::*;
 use bpmd_to_svg::*;
 use std::fmt::Display;
 use std::panic::AssertUnwindSafe;
@@ -142,10 +145,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             .bpmd_format_err(&import_data.bpmd_source_files)
     })?;
 
-    timer.time_it("Create transported data", || {
-        analysis::create_transported_data(&mut graph);
-    });
-
     if let Some(visibility_path) = &cli.visibility_table {
         pebpmd_analysis(
             &mut graph,
@@ -155,16 +154,26 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         )?;
     };
 
+    // This takes quite some time :( Would be cool if that could be a `const` method, but requires
+    // upstream support and I don't believe this is easily achievable.
+    let mut font_cache = timer.time_it("Initializing font system", || FontCache::new());
+
     let result = catch_unwind(AssertUnwindSafe(
         || -> Result<String, Box<dyn std::error::Error>> {
-            layout_graph(&mut graph, &mut timer, &import_data.bpmd_source_files)?;
+            layout_graph(
+                &mut graph,
+                &mut timer,
+                &import_data.bpmd_source_files,
+                &mut font_cache,
+            )?;
             Ok(match cli.output_format {
-                OutputFormat::Bpmn => timer.time_it("XML export", || to_xml::generate_bpmn(&graph)),
-                OutputFormat::Svg => {
-                    timer.time_it("SVG export", || to_svg(&graph, !cli.no_svg_embed_font))
-                }
+                OutputFormat::Bpmn => timer.time_it("XML export", || generate_bpmn(&graph)),
+                OutputFormat::Svg => timer.time_it("SVG export", || {
+                    to_svg(&graph, &mut font_cache, !cli.no_svg_embed_font)
+                }),
                 OutputFormat::Png => {
-                    let _svg = timer.time_it("SVG export", || to_svg(&graph, true));
+                    let _svg =
+                        timer.time_it("SVG export", || to_svg(&graph, &mut font_cache, true));
                     timer.time_it("Png export", || todo!())
                 }
             })
@@ -191,6 +200,7 @@ fn layout_graph(
     graph: &mut Graph,
     timer: &mut Timer,
     bpmd_source_files: &[BpmdSourceFile],
+    font_cache: &mut FontCache,
 ) -> Result<(), Box<dyn std::error::Error>> {
     // Phase 1
     timer.time_it("back_edge_removal", || back_edge_removal(graph))?;
@@ -224,6 +234,9 @@ fn layout_graph(
     timer.time_it("dummy_node_removal", || dummy_node_removal(graph));
     timer.time_it("fix_boundary_event_connections", || {
         fix_boundary_event_connections(graph)
+    });
+    timer.time_it("set_display_text_locations", || {
+        set_display_text_locations(graph, font_cache)
     });
 
     Ok(())

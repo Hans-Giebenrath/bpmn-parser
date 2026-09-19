@@ -86,6 +86,8 @@ dependencies = [
  "annotate-snippets",
  "bpmd-graph",
  "bpmd-layout",
+ "bpmd-parse",
+ "bpmd-pebpmd-analysis",
  "bpmd-to-bpmn",
  "bpmd-to-svg",
  "clap",
