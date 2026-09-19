@@ -1,6 +1,6 @@
 use bpmd_util::collision_grid::Grid;
 use bpmd_util::collision_grid::Line;
-use cosmic_text::{Align, Attrs, Buffer, FontSystem, Metrics, Shaping, SwashCache, Wrap};
+use cosmic_text::{Align, Attrs, Buffer, Metrics, Shaping, Wrap};
 use std::{num::NonZero, ops::ControlFlow};
 
 use bpmd_graph::*;
@@ -105,6 +105,10 @@ pub fn set_display_text_locations(graph: &mut Graph, cache: &mut FontCache) {
             continue;
         };
 
+        if points.len() < 2 {
+            return;
+        }
+
         let text_dims = prep(cache, display_text);
         if matches!(&edge.flow_type, FlowType::DataFlow(..)) {
             // Data flows are ideally straight, so the fine logic for orthogonal edges won't work.
@@ -112,8 +116,8 @@ pub fn set_display_text_locations(graph: &mut Graph, cache: &mut FontCache) {
                 // Uneven, so just take middle point.
                 points[points.len() / 2]
             } else {
-                let a = points[points.len() / 2];
-                let b = points[(points.len() / 2) + 1];
+                let a = points[(points.len() / 2) - 1];
+                let b = points[points.len() / 2];
                 ((a.0 + b.0) / 2, (a.1 + b.1) / 2)
             };
             display_text.location = DisplayTextLocation {

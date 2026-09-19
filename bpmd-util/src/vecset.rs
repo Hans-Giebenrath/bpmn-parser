@@ -1,4 +1,4 @@
-use std::slice::{Iter, IterMut};
+use std::slice::Iter;
 
 #[derive(Debug, Clone)]
 pub struct VecSet<T> {

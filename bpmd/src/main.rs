@@ -1,17 +1,17 @@
 #![allow(clippy::too_many_arguments)]
-#![feature(gen_blocks)]
 
 use annotate_snippets::AnnotationKind;
 use annotate_snippets::Level;
 use bpmd_graph::*;
 use bpmd_layout::*;
 use bpmd_parse::*;
-use bpmd_pebpmd_analysis::*;
+use bpmd_pebpmd_analysis::pebpmd_analysis;
 use bpmd_to_bpmn::*;
 use bpmd_to_svg::*;
 use std::fmt::Display;
 use std::panic::AssertUnwindSafe;
 use std::panic::catch_unwind;
+use std::path::Path;
 use std::path::PathBuf;
 use std::str::FromStr;
 
@@ -145,18 +145,18 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             .bpmd_format_err(&import_data.bpmd_source_files)
     })?;
 
-    if let Some(visibility_path) = &cli.visibility_table {
-        pebpmd_analysis(
-            &mut graph,
-            visibility_path,
-            &import_data.bpmd_source_files,
-            &mut timer,
-        )?;
-    };
+    {
+        let visibility_table = timer.time_it("pebpmd analysis", || {
+            pebpmd_analysis(&mut graph).bpmd_format_err(&import_data.bpmd_source_files)
+        })?;
+        if let Some(visibility_path) = &cli.visibility_table {
+            std::fs::write(visibility_path, visibility_table)?;
+        };
+    }
 
     // This takes quite some time :( Would be cool if that could be a `const` method, but requires
     // upstream support and I don't believe this is easily achievable.
-    let mut font_cache = timer.time_it("Initializing font system", || FontCache::new());
+    let mut font_cache = timer.time_it("Initializing font system", FontCache::new);
 
     let result = catch_unwind(AssertUnwindSafe(
         || -> Result<String, Box<dyn std::error::Error>> {
@@ -242,23 +242,6 @@ fn layout_graph(
     Ok(())
 }
 
-fn pebpmd_analysis(
-    graph: &mut Graph,
-    visibility_path: &PathBuf,
-    bpmd_source_files: &[BpmdSourceFile],
-    timer: &mut Timer,
-) -> Result<(), Box<dyn std::error::Error>> {
-    let analysis_result = timer
-        .time_it("PE-BPMD analyse", || pe_bpmd::analysis::analyse(graph))
-        .bpmd_format_err(bpmd_source_files)?;
-    dbg!(&analysis_result);
-    let visibility_data = timer.time_it("PE-BPMD generate_visibility_table", || {
-        pe_bpmd::visibility_table::generate_visibility_table(graph, &analysis_result)
-    })?;
-    std::fs::write(visibility_path, visibility_data)?;
-    Ok(())
-}
-
 // XXX Don't use `String.into()` instead of this, as otherwise it will verbatim print all the
 // terminal color escape codes, instead of printing colored output.
 pub(crate) struct BpmdParseError(pub String);
@@ -338,4 +321,152 @@ fn render_snippet_report(
 
     let renderer = Renderer::styled().decor_style(DecorStyle::Unicode);
     renderer.render(&report).to_string()
+}
+
+struct ImportData {
+    root: Option<PathBuf>,
+    bpmd_source_files: Vec<BpmdSourceFile>,
+    import_stack: Vec<ImportStackElement>,
+}
+
+impl ImportData {
+    fn new(root: Option<PathBuf>) -> Self {
+        Self {
+            root,
+            bpmd_source_files: vec![],
+            import_stack: vec![],
+        }
+    }
+
+    fn push(
+        &mut self,
+        current_processed_file_location: &Path,
+        location: String,
+        tc: TokenCoordinate,
+    ) -> Result<(), ParseError> {
+        let canonicalized_location = match std::fs::canonicalize(
+            current_processed_file_location.join(&location),
+        ) {
+            Ok(v) => v,
+            Err(e) => {
+                return Err(vec![(
+                    format!(
+                        "The imported file seems to not exist at the given path: {location} (looking relative to {}, underlying error: {e})",
+                        current_processed_file_location.to_string_lossy()
+                    ),
+                    tc,
+                )]);
+            }
+        };
+        if self.import_stack.iter().any(|e| {
+            self.bpmd_source_files[e.bpmn_source_file_index].canonicalized_location
+                == canonicalized_location
+        }) {
+            return Err(vec![(
+                format!(
+                    "There is a cyclic [import ...] happening, in order: {:?}. The last attempted import is here.",
+                    self.bpmd_source_files
+                        .iter()
+                        .map(|e| e.location.as_str())
+                        .chain(std::iter::once(location.as_str()))
+                        .collect::<Vec<_>>()
+                ),
+                tc,
+            )]);
+        }
+        if let Some(previously_imported) = self
+            .bpmd_source_files
+            .iter()
+            .position(|a| a.canonicalized_location == canonicalized_location)
+        {
+            self.import_stack.push(ImportStackElement {
+                bpmn_source_file_index: previously_imported,
+            });
+        } else {
+            validate_import(&canonicalized_location, &self.root, tc)?;
+            let content = match std::fs::read_to_string(&canonicalized_location) {
+                Ok(content) => content,
+                Err(err) => {
+                    return Err(vec![(
+                        format!("The requested file at <{location}> cannot be read: {err}"),
+                        tc,
+                    )]);
+                }
+            };
+            self.bpmd_source_files.push(BpmdSourceFile {
+                location,
+                content,
+                canonicalized_location,
+            });
+            self.import_stack.push(ImportStackElement {
+                bpmn_source_file_index: self.bpmd_source_files.len().strict_sub(1),
+            });
+        }
+        Ok(())
+    }
+
+    fn pop(&mut self) {
+        self.import_stack.pop().expect("Called too often?");
+    }
+
+    fn push_from_stdin(&mut self, content: String) {
+        self.bpmd_source_files.push(BpmdSourceFile {
+            location: "(source read from standard input)".to_string(),
+            canonicalized_location: "(source read from standard input)".into(),
+            content,
+        });
+        self.import_stack.push(ImportStackElement {
+            bpmn_source_file_index: 0,
+        });
+    }
+}
+
+struct ImportStackElement {
+    pub bpmn_source_file_index: usize,
+}
+
+impl ImportHandler for ImportData {
+    fn push(&mut self, location: String, tc: TokenCoordinate) -> Result<(), ParseError> {
+        let current_file_location = self.bpmd_source_files
+            [self.import_stack.last().unwrap().bpmn_source_file_index]
+            .canonicalized_location
+            // `.clone()` for the borrow checker.
+            .clone();
+        self.push(current_file_location.parent().unwrap(), location, tc)?;
+        Ok(())
+    }
+
+    fn pop(&mut self) {
+        self.pop();
+    }
+
+    fn current_source_file_content_and_index(&self) -> (String, usize) {
+        let idx = self.import_stack.last().unwrap().bpmn_source_file_index;
+        (self.bpmd_source_files[idx].content.clone(), idx)
+    }
+}
+
+fn validate_import(
+    canonicalized_location: &Path,
+    root: &Option<PathBuf>,
+    tc: TokenCoordinate,
+) -> Result<(), ParseError> {
+    let Some(root) = &root else {
+        return Err(vec![("It looks like you are reading a .bpmd diagram from STDIN which wants to `[import ..]` some file. However, this is forbidden unless you specify the `--root some/path` argument.".to_string(),
+        tc)
+        ]);
+    };
+
+    if canonicalized_location.starts_with(root) {
+        Ok(())
+    } else {
+        Err(vec![(
+            format!(
+                "The imported file is outside of the current root. The imported file path resolves to: {}, the root to: {}",
+                canonicalized_location.to_string_lossy(),
+                root.to_string_lossy()
+            ),
+            tc,
+        )])
+    }
 }

@@ -749,40 +749,6 @@ fn parse_optional_ids(
     Ok(arguments_ids)
 }
 
-fn parse_ids(
-    tokens: &mut impl Iterator<Item = (TokenCoordinate, Token)>,
-    prev_tc: TokenCoordinate,
-    full_pebpmd_tc: &mut TokenCoordinate,
-    actor: &str,
-) -> Result<Vec<(String, TokenCoordinate)>, ParseError> {
-    let mut arguments_ids = Vec::new();
-    for (tc, t) in tokens.by_ref() {
-        full_pebpmd_tc.end = tc.end;
-        match t {
-            Token::Separator => {
-                break;
-            }
-            Token::Id(id) => {
-                arguments_ids.push((id, tc));
-            }
-            _ => {
-                return Err(vec![(
-                    "Unexpected argument. Only accepting IDs".to_string(),
-                    tc,
-                )]);
-            }
-        }
-    }
-
-    if arguments_ids.is_empty() {
-        return Err(vec![(
-            format!("Expected arguments. Add a {actor} ID"),
-            prev_tc,
-        )]);
-    }
-    Ok(arguments_ids)
-}
-
 fn parse_ids_or_placeholder(
     tokens: &mut impl Iterator<Item = (TokenCoordinate, Token)>,
     prev_tc: TokenCoordinate,

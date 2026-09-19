@@ -35,24 +35,9 @@ impl<'a> Lexer<'a> {
                     let mut tc = self.current_coord();
                     let (tc_end, argument) = self.read_quoted_text()?.unwrap();
                     tc.end = tc_end.end;
-                    {
-                        let current_file_location = self.import_data.bpmd_source_files[self
-                            .import_data
-                            .import_stack
-                            .last()
-                            .unwrap()
-                            .bpmn_source_file_index]
-                            .canonicalized_location
-                            // `.clone()` for the borrow checker.
-                            .clone();
-                        self.import_data.push(
-                            current_file_location.parent().unwrap(),
-                            argument,
-                            tc,
-                        )?;
-                        self.sas.assembled_statements.extend(lex(self.import_data)?);
-                        self.import_data.pop();
-                    }
+                    self.import_data.push(argument, tc)?;
+                    self.sas.assembled_statements.extend(lex(self.import_data)?);
+                    self.import_data.pop();
                 }
                 Some(_) => {
                     return Err(vec![("Illegal character detected in this extension block. The current syntax is: `[import \"path/to/my file.txt\"]`".to_string(), self.current_coord(),)]);

@@ -2,7 +2,6 @@ use crate::PoolOrProtection;
 use crate::VisibilityTableInput;
 use bpmd_graph::pebpmd::*;
 use bpmd_graph::*;
-use itertools::Itertools;
 use std::collections::{BTreeSet, HashMap, HashSet};
 use std::fmt::Display;
 
@@ -159,6 +158,7 @@ pub fn generate_visibility_table(
 ) -> Result<String, ParseError> {
     let mut csv = csv::Writer::from_writer(Vec::new());
     let mut on_demand_call = OnDemandVisibilityTableCell {
+        graph,
         cache: Default::default(),
         endless_recursion_detection: Default::default(),
     };
@@ -196,8 +196,9 @@ pub fn generate_visibility_table(
                     .clone()
                     .unwrap_or_else(|| "Anonymous Pool".to_string()),
             )
-            .chain(row.into_iter()),
-        )?;
+            .chain(row),
+        )
+        .expect("writing into a Vec.");
     }
 
     let min_protections_len = |protection_groups: &HashSet<BTreeSet<PeBpmdProtection>>| -> usize {
@@ -223,9 +224,9 @@ pub fn generate_visibility_table(
             None => row.push(String::new()),
         }
     }
-    csv.write_record(row)?;
+    csv.write_record(row).expect("writing into a Vec.");
 
-    let bytes = csv.into_inner()?;
+    let bytes = csv.into_inner().expect("writing into a Vec.");
     Ok(String::from_utf8(bytes).unwrap_or("".to_string()))
 }
 
@@ -255,18 +256,19 @@ fn is_pool_pebpmd(pebpmd: &PeBpmd, pool_id: PoolId) -> bool {
 /// they are not pools. And further, if TEE `A` is admin of TEE `B`, then admin of TEE `A` becomes
 /// transitively the admin of TEE `B`. So this is an on-demand data structure where cells are
 /// calculated lazily and then cached for further usage.
-struct OnDemandVisibilityTableCell {
+struct OnDemandVisibilityTableCell<'a> {
+    graph: &'a Graph,
     cache: HashMap<(PoolOrProtection, SdeId), ProtectionString>,
     endless_recursion_detection: Vec<(PoolOrProtection, SdeId)>,
 }
 
-impl OnDemandVisibilityTableCell {
+impl<'a> OnDemandVisibilityTableCell<'a> {
     fn get(
         &mut self,
         args: &Args<'_>,
         pool_or_protection: PoolOrProtection,
         sde_id: SdeId,
-    ) -> Result<ProtectionString, Box<dyn std::error::Error>> {
+    ) -> Result<ProtectionString, ParseError> {
         let pool_or_protection = match pool_or_protection {
             PoolOrProtection::Pool(pool_id) => args
                 .graph
@@ -282,7 +284,15 @@ impl OnDemandVisibilityTableCell {
             .contains(&(pool_or_protection, sde_id))
         {
             // TODO must be a ParseError.
-            Err(format!("endless recursion: {:?}", self.endless_recursion_detection).into())
+            let mut errors = Vec::new();
+            for rec in &self.endless_recursion_detection {
+                let tc = match rec.0 {
+                    PoolOrProtection::Protection(prot) => prot.tc(),
+                    PoolOrProtection::Pool(pool_id) => self.graph.pools[pool_id].tc,
+                };
+                errors.push(("Endless protection recursion detected".to_string(), tc));
+            }
+            Err(errors)
         } else if let Some(protection_string) = self.cache.get(&(pool_or_protection, sde_id)) {
             Ok(*protection_string)
         } else {
@@ -301,7 +311,7 @@ impl OnDemandVisibilityTableCell {
         args: &Args<'_>,
         pool_or_protection: PoolOrProtection,
         sde_id: SdeId,
-    ) -> Result<ProtectionString, Box<dyn std::error::Error>> {
+    ) -> Result<ProtectionString, ParseError> {
         let mut protections_result = if let Some(inner) =
             args.input.directly_accessible_data.get(&pool_or_protection)
             && let Some(inner) = inner.get(&sde_id)

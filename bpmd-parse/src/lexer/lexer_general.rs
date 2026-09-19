@@ -4,14 +4,10 @@
 //! case of using it for real-time error diagnostics (as an LSP basically which does not do
 //! layouting) then maybe(?) it needs to be optimized to get sub-millisecond speed out of it.
 
-use std::path::Path;
-use std::path::PathBuf;
-
 use itertools::Either;
 use itertools::Itertools;
 
 use crate::lexer::*;
-use bpmd_graph::BpmdSourceFile;
 use bpmd_graph::ParseError;
 use bpmd_graph::TokenCoordinate;
 use bpmd_graph::bpmn_node::ActivityMarker;
@@ -25,135 +21,12 @@ use bpmd_graph::bpmn_node::GatewayType;
 use bpmd_graph::bpmn_node::InterruptKind;
 use bpmd_graph::bpmn_node::TaskType;
 
-pub fn validate_import(
-    canonicalized_location: &Path,
-    root: &Option<PathBuf>,
-    tc: TokenCoordinate,
-) -> Result<(), ParseError> {
-    let Some(root) = &root else {
-        return Err(vec![("It looks like you are reading a .bpmd diagram from STDIN which wants to `[import ..]` some file. However, this is forbidden unless you specify the `--root some/path` argument.".to_string(),
-        tc)
-        ]);
-    };
+pub trait ImportHandler {
+    fn push(&mut self, location: String, tc: TokenCoordinate) -> Result<(), ParseError>;
 
-    if canonicalized_location.starts_with(root) {
-        Ok(())
-    } else {
-        Err(vec![(
-            format!(
-                "The imported file is outside of the current root. The imported file path resolves to: {}, the root to: {}",
-                canonicalized_location.to_string_lossy(),
-                root.to_string_lossy()
-            ),
-            tc,
-        )])
-    }
-}
+    fn pop(&mut self);
 
-pub struct ImportData {
-    pub root: Option<PathBuf>,
-    pub bpmd_source_files: Vec<BpmdSourceFile>,
-    pub import_stack: Vec<ImportStackElement>,
-}
-
-impl ImportData {
-    pub fn new(root: Option<PathBuf>) -> Self {
-        Self {
-            root,
-            bpmd_source_files: vec![],
-            import_stack: vec![],
-        }
-    }
-
-    pub fn push(
-        &mut self,
-        current_processed_file_location: &Path,
-        location: String,
-        tc: TokenCoordinate,
-    ) -> Result<(), ParseError> {
-        let canonicalized_location = match std::fs::canonicalize(
-            current_processed_file_location.join(&location),
-        ) {
-            Ok(v) => v,
-            Err(e) => {
-                return Err(vec![(
-                    format!(
-                        "The imported file seems to not exist at the given path: {location} (looking relative to {}, underlying error: {e})",
-                        current_processed_file_location.to_string_lossy()
-                    ),
-                    tc,
-                )]);
-            }
-        };
-        if self.import_stack.iter().any(|e| {
-            self.bpmd_source_files[e.bpmn_source_file_index].canonicalized_location
-                == canonicalized_location
-        }) {
-            return Err(vec![(
-                format!(
-                    "There is a cyclic [import ...] happening, in order: {:?}. The last attempted import is here.",
-                    self.bpmd_source_files
-                        .iter()
-                        .map(|e| e.location.as_str())
-                        .chain(std::iter::once(location.as_str()))
-                        .collect::<Vec<_>>()
-                ),
-                tc,
-            )]);
-        }
-        if let Some(previously_imported) = self
-            .bpmd_source_files
-            .iter()
-            .position(|a| a.canonicalized_location == canonicalized_location)
-        {
-            self.import_stack.push(ImportStackElement {
-                bpmn_source_file_index: previously_imported,
-                imported_at: tc,
-            });
-        } else {
-            validate_import(&canonicalized_location, &self.root, tc)?;
-            let content = match std::fs::read_to_string(&canonicalized_location) {
-                Ok(content) => content,
-                Err(err) => {
-                    return Err(vec![(
-                        format!("The requested file at <{location}> cannot be read: {err}"),
-                        tc,
-                    )]);
-                }
-            };
-            self.bpmd_source_files.push(BpmdSourceFile {
-                location,
-                content,
-                canonicalized_location,
-            });
-            self.import_stack.push(ImportStackElement {
-                bpmn_source_file_index: self.bpmd_source_files.len().strict_sub(1),
-                imported_at: tc,
-            });
-        }
-        Ok(())
-    }
-
-    pub fn pop(&mut self) {
-        self.import_stack.pop().expect("Called too often?");
-    }
-
-    pub fn push_from_stdin(&mut self, content: String) {
-        self.bpmd_source_files.push(BpmdSourceFile {
-            location: "(source read from standard input)".to_string(),
-            canonicalized_location: "(source read from standard input)".into(),
-            content,
-        });
-        self.import_stack.push(ImportStackElement {
-            bpmn_source_file_index: 0,
-            imported_at: TokenCoordinate::default(),
-        });
-    }
-}
-
-pub struct ImportStackElement {
-    pub bpmn_source_file_index: usize,
-    imported_at: TokenCoordinate,
+    fn current_source_file_content_and_index(&self) -> (String, usize);
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -203,13 +76,13 @@ pub enum BlackboxStatement {
 pub type StatementStream = std::vec::IntoIter<(TokenCoordinate, Statement)>;
 
 #[derive(Debug, Clone, PartialEq)]
-pub(crate) struct BoundaryEventMeta {
-    pub(crate) sequence_flow_jump_meta: EdgeMeta,
-    pub(crate) boundary_event: BoundaryEvent,
+pub struct BoundaryEventMeta {
+    pub sequence_flow_jump_meta: EdgeMeta,
+    pub boundary_event: BoundaryEvent,
 }
 
 #[derive(Debug, Clone, PartialEq)]
-pub(crate) struct MessageFlowMeta {
+pub struct MessageFlowMeta {
     pub display_text: String,
     pub sender_id: String,
     pub sender_tc: TokenCoordinate,
@@ -218,68 +91,68 @@ pub(crate) struct MessageFlowMeta {
 }
 
 #[derive(Debug, Clone, PartialEq)]
-pub(crate) struct GatewayNodeMeta {
-    pub(crate) gateway_type: GatewayType,
-    pub(crate) node_meta: NodeMeta,
-    pub(crate) sequence_flow_jumps: Vec<EdgeMeta>,
-    pub(crate) sequence_flow_landings: Vec<EdgeMeta>,
+pub struct GatewayNodeMeta {
+    pub gateway_type: GatewayType,
+    pub node_meta: NodeMeta,
+    pub sequence_flow_jumps: Vec<EdgeMeta>,
+    pub sequence_flow_landings: Vec<EdgeMeta>,
 }
 
 #[derive(Debug, Clone, Eq, PartialEq)]
-pub(crate) struct EdgeMeta {
+pub struct EdgeMeta {
     /// The name of the thing this edge is connected to. This is context dependent.
-    pub(crate) target: String,
+    pub target: String,
     /// The text which shall be displayed on the edge.
-    pub(crate) text_label: String,
-    pub(crate) tc: TokenCoordinate,
+    pub text_label: String,
+    pub tc: TokenCoordinate,
 }
 
 #[derive(Debug, Clone, Eq, PartialEq)]
-pub(crate) struct DataMeta {
-    pub(crate) node_meta: NodeMeta,
-    pub(crate) data_type: DataType,
-    pub(crate) data_flow_metas: Vec<DataFlowMeta>,
+pub struct DataMeta {
+    pub node_meta: NodeMeta,
+    pub data_type: DataType,
+    pub data_flow_metas: Vec<DataFlowMeta>,
     /// & Object [Processed] <-t1 ->t2 (or O&, S&)
-    pub(crate) is_continuation: bool,
+    pub is_continuation: bool,
 }
 
 #[derive(Debug, Clone, Eq, PartialEq)]
-pub(crate) struct DataFlowMeta {
-    pub(crate) direction: Direction,
-    pub(crate) target: String,
-    pub(crate) text_label: String,
-    pub(crate) tc: TokenCoordinate,
+pub struct DataFlowMeta {
+    pub direction: Direction,
+    pub target: String,
+    pub text_label: String,
+    pub tc: TokenCoordinate,
 }
 
 #[derive(Eq, Debug, Clone, PartialEq)]
-pub(crate) struct PoolMeta {
-    pub(crate) title: String,
+pub struct PoolMeta {
+    pub title: String,
     /// When `#` or `.` was used.
-    pub(crate) shorthand_syntax: bool,
+    pub shorthand_syntax: bool,
     /// `~blackbox`.
-    pub(crate) is_blackbox: bool,
+    pub is_blackbox: bool,
     /// The three vertical bars, as in `ActivityMarker`.
-    pub(crate) multiple: bool,
+    pub multiple: bool,
 }
 
 #[derive(Eq, Debug, Clone, PartialEq)]
-pub(crate) struct EventMeta {
-    pub(crate) node_meta: NodeMeta,
+pub struct EventMeta {
+    pub node_meta: NodeMeta,
     /// When `#` or `.` was used.
-    pub(crate) shorthand_syntax: bool,
-    pub(crate) event_type: EventType,
-    pub(crate) event_visual: (EventVisual, TokenCoordinate),
-    pub(crate) sequence_flow_jump: Option<EdgeMeta>,
-    pub(crate) sequence_flow_landing: Option<EdgeMeta>,
+    pub shorthand_syntax: bool,
+    pub event_type: EventType,
+    pub event_visual: (EventVisual, TokenCoordinate),
+    pub sequence_flow_jump: Option<EdgeMeta>,
+    pub sequence_flow_landing: Option<EdgeMeta>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct ActivityMeta {
-    pub(crate) node_meta: NodeMeta,
-    pub(crate) activity_type: ActivityType,
-    pub(crate) activity_marker: ActivityMarker,
-    pub(crate) sequence_flow_jump: Option<EdgeMeta>,
-    pub(crate) sequence_flow_landing: Option<EdgeMeta>,
+pub struct ActivityMeta {
+    pub node_meta: NodeMeta,
+    pub activity_type: ActivityType,
+    pub activity_marker: ActivityMarker,
+    pub sequence_flow_jump: Option<EdgeMeta>,
+    pub sequence_flow_landing: Option<EdgeMeta>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
@@ -294,20 +167,15 @@ pub enum EventVisual {
 }
 
 #[derive(Eq, Debug, Clone, PartialEq)]
-pub(crate) enum Direction {
+pub enum Direction {
     Incoming,
     Outgoing,
 }
 
-#[derive(Debug, Clone, PartialEq)]
-struct TaskMeta {
-    pub(crate) node_meta: NodeMeta,
-}
-
 #[derive(Eq, Default, Debug, Clone, PartialEq)]
-pub(crate) struct NodeMeta {
-    pub(crate) display_text: String,
-    pub(crate) ids: Vec<String>,
+pub struct NodeMeta {
+    pub display_text: String,
+    pub ids: Vec<String>,
 }
 
 //enum Attribute {
@@ -1469,7 +1337,7 @@ impl StatementAssemblyState {
 
     fn previous_data_type(&mut self, tc: TokenCoordinate) -> Result<DataType, ParseError> {
         if let Some((_, Token::DataKind(data_type, _))) = self.fragments.first() {
-            Ok(data_type.clone())
+            Ok(*data_type)
         } else {
             Err(vec![("You are not continuing a data element. Please only use '&' when continuing a data element ('OD' or 'SD').".to_string(), tc, )])
         }
@@ -1484,9 +1352,8 @@ struct FreeformTextState {
 
 pub struct Lexer<'a> {
     // Technically could be &str, but this just adds lifetimes and is not necessary.
-    input: String, // Input string
     remaining_input: std::str::Chars<'a>,
-    pub import_data: &'a mut ImportData,
+    pub import_data: &'a mut dyn ImportHandler,
     pub position: usize,            // Current position in the input
     pub current_char: Option<char>, // Current character being examined
     pub line: usize,                // Current line number
@@ -1497,19 +1364,13 @@ pub struct Lexer<'a> {
 impl<'a> Lexer<'a> {
     // Create a new lexer from an input string
     pub fn new(
-        input: String,
+        source_file_idx: usize,
         mut remaining_input: std::str::Chars<'a>,
-        import_data: &'a mut ImportData,
+        import_data: &'a mut dyn ImportHandler,
     ) -> Self {
         let current_char = remaining_input.next();
-        let source_file_idx = import_data
-            .import_stack
-            .last()
-            .unwrap()
-            .bpmn_source_file_index;
 
         Lexer {
-            input,
             import_data,
             source_file_idx,
             remaining_input,
@@ -1855,7 +1716,8 @@ impl<'a> Lexer<'a> {
                 }
                 Some('.') if self.sas.allow_new_statement && self.continues_with("-") => {
                     let tc = self.current_coord();
-                    self.advance();
+                    self.advance(); // .
+                    self.advance(); // -
                     self.sas
                         .next_statement(tc, self.position, to_task_activity)?;
                 }
@@ -2154,14 +2016,8 @@ pub fn is_allowed_symbol_in_label_or_id(c: char) -> bool {
     c.is_alphanumeric() || matches!(c, '_' | '-' | '.')
 }
 
-pub fn lex(import_data: &mut ImportData) -> Result<StatementStream, ParseError> {
+pub fn lex(import_data: &mut dyn ImportHandler) -> Result<StatementStream, ParseError> {
     // Could probably be solved without cloning, but ... who cares :) This is not the bottleneck.
-    let content = import_data.bpmd_source_files[import_data
-        .import_stack
-        .last()
-        .unwrap()
-        .bpmn_source_file_index]
-        .content
-        .clone();
-    Lexer::new(content.clone(), content.chars(), import_data).run()
+    let (content, idx) = import_data.current_source_file_content_and_index();
+    Lexer::new(idx, content.chars(), import_data).run()
 }

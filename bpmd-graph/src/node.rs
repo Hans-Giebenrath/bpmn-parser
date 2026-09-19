@@ -4,7 +4,6 @@ use super::macros::impl_index;
 use crate::DisplayText;
 use crate::TokenCoordinate;
 use crate::bpmn_node::*;
-use crate::edge::Edge;
 use crate::graph::Coord3;
 use crate::graph::EdgeId;
 use crate::graph::Graph;

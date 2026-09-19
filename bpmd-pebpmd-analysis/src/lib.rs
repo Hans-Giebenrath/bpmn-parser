@@ -10,19 +10,10 @@ use std::fmt::Debug;
 pub mod analysis;
 pub mod visibility_table;
 
-fn pebpmd_analysis(
-    graph: &mut Graph,
-    visibility_path: &PathBuf,
-    bpmd_source_files: &[BpmdSourceFile],
-) -> Result<(), Box<dyn std::error::Error>> {
-    let analysis_result = analysis::pebpmd_analysis(graph);
-        .bpmd_format_err(bpmd_source_files)?;
-    dbg!(&analysis_result);
-    let visibility_data = timer.time_it("PE-BPMD generate_visibility_table", || {
-        pe_bpmd::visibility_table::generate_visibility_table(graph, &analysis_result)
-    })?;
-    std::fs::write(visibility_path, visibility_data)?;
-    Ok(())
+pub fn pebpmd_analysis(graph: &mut Graph) -> Result<String, ParseError> {
+    let analysis_result = analysis::pebpmd_analysis(graph)?;
+    let visibility_data = visibility_table::generate_visibility_table(graph, &analysis_result)?;
+    Ok(visibility_data)
 }
 
 #[derive(Eq, Hash, PartialEq, Clone, Copy, PartialOrd, Ord)]
