@@ -1,5 +1,10 @@
 // node.rs
 
+use alloc::format;
+use alloc::string::String;
+use alloc::string::ToString;
+use alloc::vec::Vec;
+
 use super::macros::impl_index;
 use crate::DisplayText;
 use crate::TokenCoordinate;
@@ -12,8 +17,8 @@ use crate::graph::NodeId;
 use crate::graph::PoolAndLane;
 use crate::graph::PoolId;
 use crate::graph::SdeId;
+use core::ops::Add;
 use proc_macros::e;
-use std::ops::Add;
 
 #[derive(Debug, Clone)]
 pub enum NodeType {
@@ -528,8 +533,8 @@ impl Node {
     }
 }
 
-impl std::fmt::Display for Node {
-    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+impl core::fmt::Display for Node {
+    fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
         write!(
             f,
             "Node {{ id: {}, x: {:?}, y: {:?}, event: {:?}, pool: {:?}, lane: {:?} }}",

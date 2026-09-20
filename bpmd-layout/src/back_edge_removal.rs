@@ -52,9 +52,9 @@ use std::iter::Sum;
 //  (2) A cycle of only above edges exist (where the directed variant creates a cycle, so not
 //      following above edges in reverse direction as is done in (1))
 
-pub fn back_edge_removal(graph: &mut Graph) -> Result<(), String> {
+pub fn back_edge_removal(graph: &mut Graph) -> Result<(), ParseError> {
     let mut back_edges = Vec::new();
-    let mut bad_cycle: Option<String> = None;
+    let mut bad_cycle: Option<ParseError> = None;
     iterate_all_cycles(
         &mut |cycle| match analyse_cycle(cycle) {
             Ok(Some(back_edge)) => back_edges.push(back_edge),
@@ -128,7 +128,7 @@ fn solve_ilp(graph: &mut Graph, back_edge_groups: &[Vec<EdgeId>]) {
         .collect();
 }
 
-fn analyse_cycle(cycle: &[PathSegment]) -> Result<Option<EdgeId>, String> {
+fn analyse_cycle(cycle: &[PathSegment]) -> Result<Option<EdgeId>, ParseError> {
     //let mut earliest_sf = None;
     let mut contains_before_constraint = false;
     let mut contains_above_flipped = false;

@@ -1,3 +1,5 @@
+extern crate alloc;
+use alloc::{boxed::Box, vec::Vec};
 const CELL_SIZE: u16 = 100;
 
 // It's not _The Grid_, just a grid.
@@ -108,7 +110,7 @@ impl Grid {
             },
         };
         cells_under_line(&line, self.num_cells_horizontally)
-            .flat_map(|index| &self.cells[index as usize].lines)
+            .flat_map(|index| &self.cells[index].lines)
             .filter(|wl| segments_intersect(line, wl.line))
             .map(|wl| wl.weight)
             .sum()

@@ -1,6 +1,7 @@
 use crate::graph::EdgeId;
 use crate::graph::NodeId;
 use crate::node::Node;
+use alloc::vec::Vec;
 use bpmd_util::vecset::VecSet;
 
 #[derive(Default, Debug, Clone)]

@@ -3,7 +3,9 @@ use crate::graph::LaneId;
 use crate::graph::NodeId;
 use crate::graph::PoolId;
 use crate::graph::SdeId;
-use std::fmt::Display;
+use alloc::string::String;
+use alloc::vec::Vec;
+use core::fmt::Display;
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct PeBpmd {

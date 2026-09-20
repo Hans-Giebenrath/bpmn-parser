@@ -16,7 +16,7 @@ pub struct SameLayerLaneCrossing {
 }
 
 impl Ord for SameLayerLaneCrossing {
-    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+    fn cmp(&self, other: &Self) -> core::cmp::Ordering {
         (
             self.top_pool_lane,
             self.bot_pool_lane,
@@ -33,7 +33,7 @@ impl Ord for SameLayerLaneCrossing {
 }
 
 impl PartialOrd for SameLayerLaneCrossing {
-    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+    fn partial_cmp(&self, other: &Self) -> Option<core::cmp::Ordering> {
         Some(self.cmp(other))
     }
 }

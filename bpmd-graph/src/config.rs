@@ -1,7 +1,11 @@
 // Have a macro to avoid duplicating field names in the struct def and custom default def.
 // Also, later we want to parse each of these values from the DSL, so autogenerating that code as
 // well can be done easily with this macro.
-use std::str::FromStr;
+use alloc::format;
+use alloc::string::String;
+use alloc::string::ToString;
+use alloc::vec;
+use core::str::FromStr;
 
 use crate::{graph::MAX_NODE_WIDTH, node::LayerId};
 

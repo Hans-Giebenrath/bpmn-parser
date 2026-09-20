@@ -5,6 +5,8 @@ use crate::lane::Lane;
 use crate::macros::impl_index;
 use crate::node::LayerId;
 use crate::node::Node;
+use alloc::string::String;
+use alloc::vec::Vec;
 
 pub struct Pool {
     /// None: Anonymous Pool. Invariant: If a graph contains a pool with a None name, then this is

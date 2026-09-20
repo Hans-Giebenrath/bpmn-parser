@@ -4,6 +4,11 @@
 //! case of using it for real-time error diagnostics (as an LSP basically which does not do
 //! layouting) then maybe(?) it needs to be optimized to get sub-millisecond speed out of it.
 
+use alloc::format;
+use alloc::string::String;
+use alloc::string::ToString;
+use alloc::vec;
+use alloc::vec::Vec;
 use itertools::Either;
 use itertools::Itertools;
 
@@ -73,7 +78,7 @@ pub enum BlackboxStatement {
     },
 }
 
-pub type StatementStream = std::vec::IntoIter<(TokenCoordinate, Statement)>;
+pub type StatementStream = alloc::vec::IntoIter<(TokenCoordinate, Statement)>;
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct BoundaryEventMeta {
@@ -184,7 +189,7 @@ pub struct NodeMeta {
 //SequenceFlowEdge(Direction, EdgeMeta),
 //}
 
-pub type Tokens = std::vec::IntoIter<(TokenCoordinate, Token)>;
+pub type Tokens = alloc::vec::IntoIter<(TokenCoordinate, Token)>;
 
 enum AROptionalAttribute {
     Forbidden,
@@ -1309,7 +1314,7 @@ impl StatementAssemblyState {
             self.fragments
                 .last()
                 .inspect(|(token_tc, _)| tc.end = token_tc.end);
-            let s = callback(std::mem::take(&mut self.fragments).into_iter(), tc)?;
+            let s = callback(core::mem::take(&mut self.fragments).into_iter(), tc)?;
             self.assembled_statements.push((tc, s));
         }
         self.fts.active = true;
@@ -1352,7 +1357,7 @@ struct FreeformTextState {
 
 pub struct Lexer<'a> {
     // Technically could be &str, but this just adds lifetimes and is not necessary.
-    remaining_input: std::str::Chars<'a>,
+    remaining_input: core::str::Chars<'a>,
     pub import_data: &'a mut dyn ImportHandler,
     pub position: usize,            // Current position in the input
     pub current_char: Option<char>, // Current character being examined
@@ -1365,7 +1370,7 @@ impl<'a> Lexer<'a> {
     // Create a new lexer from an input string
     pub fn new(
         source_file_idx: usize,
-        mut remaining_input: std::str::Chars<'a>,
+        mut remaining_input: core::str::Chars<'a>,
         import_data: &'a mut dyn ImportHandler,
     ) -> Self {
         let current_char = remaining_input.next();

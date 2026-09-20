@@ -1,4 +1,8 @@
-use std::collections::HashSet;
+use alloc::format;
+use alloc::string::String;
+use alloc::string::ToString;
+use alloc::vec;
+use alloc::vec::Vec;
 
 use crate::id_matcher::IdMatcher;
 use crate::id_matcher::SomeId;
@@ -214,7 +218,7 @@ impl Parser {
                         None
                     }
                 })
-                .collect::<HashSet<_>>();
+                .collect::<VecSet<_>>();
 
             for stmt in delayed_blackbox_statement {
                 match stmt {
@@ -247,8 +251,8 @@ impl Parser {
                     }
                 }
             }
-            for to_be_blackboxed in blackboxed {
-                self.graph.pools[to_be_blackboxed].is_blackbox = true;
+            for to_be_blackboxed in blackboxed.iter() {
+                self.graph.pools[*to_be_blackboxed].is_blackbox = true;
             }
 
             // Now mark all nodes in a blackbox pool as blackboxed.
@@ -382,7 +386,7 @@ impl Parser {
 
     /// Set the current pool
     fn parse_pool(&mut self, meta: PoolMeta) -> Result<(), ParseError> {
-        let old_state = std::mem::replace(
+        let old_state = core::mem::replace(
             &mut self.context.lifeline_state,
             LifelineState::NoLifelineActive {
                 previous_lifeline_termination_statement: None,
@@ -416,7 +420,7 @@ impl Parser {
 
     /// Set the current lane
     fn parse_lane(&mut self, label: &str) -> Result<(), ParseError> {
-        let old_state = std::mem::replace(
+        let old_state = core::mem::replace(
             &mut self.context.lifeline_state,
             LifelineState::NoLifelineActive {
                 previous_lifeline_termination_statement: None,
@@ -551,11 +555,11 @@ impl Parser {
                     .entry(current_pool_id)
                     .or_default()
                     .dangling_start_map
-                    .entry(std::mem::take(target))
+                    .entry(core::mem::take(target))
                     .or_default()
                     .push(DanglingEdgeInfo {
                         known_node_id: current_node_id,
-                        edge_text: std::mem::take(text_label),
+                        edge_text: core::mem::take(text_label),
                         tc: *tc,
                         boundary_event: None,
                     });
@@ -598,11 +602,11 @@ impl Parser {
                     .entry(current_pool_id)
                     .or_default()
                     .dangling_end_map
-                    .entry(std::mem::take(target))
+                    .entry(core::mem::take(target))
                     .or_default()
                     .push(DanglingEdgeInfo {
                         known_node_id: current_node_id,
-                        edge_text: std::mem::take(text_label),
+                        edge_text: core::mem::take(text_label),
                         tc: *tc,
                         boundary_event: None,
                     });
@@ -1163,7 +1167,7 @@ fn create_transported_data(graph: &mut Graph) {
         }
         let edge = &graph.edges[edge_id];
 
-        let incoming_nodes: HashSet<NodeId> = graph.nodes[edge.from]
+        let incoming_nodes: VecSet<NodeId> = graph.nodes[edge.from]
             .incoming
             .iter()
             .map(|e| graph.edges[*e].clone())
@@ -1171,13 +1175,13 @@ fn create_transported_data(graph: &mut Graph) {
             .map(|e| e.from)
             .collect();
 
-        let incoming_sde: HashSet<SdeId> = incoming_nodes
+        let incoming_sde: VecSet<SdeId> = incoming_nodes
             .iter()
             .filter_map(|node_id| graph.nodes[*node_id].get_data_aux())
             .map(|aux| aux.sde_id)
             .collect();
 
-        let outgoing_nodes: HashSet<NodeId> = graph.nodes[edge.to]
+        let outgoing_nodes: VecSet<NodeId> = graph.nodes[edge.to]
             .outgoing
             .iter()
             .map(|e| graph.edges[*e].clone())
@@ -1185,13 +1189,13 @@ fn create_transported_data(graph: &mut Graph) {
             .map(|e| e.to)
             .collect();
 
-        let outgoing_sde: HashSet<SdeId> = outgoing_nodes
+        let outgoing_sde: VecSet<SdeId> = outgoing_nodes
             .iter()
             .filter_map(|node_id| graph.nodes[*node_id].get_data_aux())
             .map(|aux| aux.sde_id)
             .collect();
 
-        let intersection: Vec<SdeId> = incoming_sde.intersection(&outgoing_sde).cloned().collect();
+        let intersection: Vec<SdeId> = incoming_sde.intersect(&outgoing_sde);
 
         if let FlowType::MessageFlow(message_flow_aux) = &mut graph.edges[edge_id].flow_type {
             message_flow_aux.transported_data.extend(intersection);
@@ -1210,17 +1214,17 @@ fn create_transported_data(graph: &mut Graph) {
         let incoming = get_edge_data_ids(graph, &node.incoming);
         let outgoing = get_edge_data_ids(graph, &node.outgoing);
 
-        let intersect: Vec<SdeId> = incoming.intersection(&outgoing).copied().collect();
+        let intersect: Vec<SdeId> = incoming.intersect(&outgoing);
         graph.nodes[i].add_node_transported_data(&intersect);
     }
 }
 
-fn get_edge_data_ids(graph: &Graph, edge_ids: &[EdgeId]) -> HashSet<SdeId> {
-    let mut ids = HashSet::new();
+fn get_edge_data_ids(graph: &Graph, edge_ids: &[EdgeId]) -> VecSet<SdeId> {
+    let mut ids = VecSet::new();
 
     for edge_id in edge_ids {
         let edge = &graph.edges[*edge_id];
-        ids.extend(edge.get_transported_data());
+        ids.extend(edge.get_transported_data().iter().cloned());
     }
     ids
 }

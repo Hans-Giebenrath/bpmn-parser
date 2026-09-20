@@ -3,6 +3,8 @@ use crate::TokenCoordinate;
 use crate::graph::LaneId;
 use crate::graph::NodeId;
 use crate::macros::impl_index;
+use alloc::string::String;
+use alloc::vec::Vec;
 
 #[derive(Default)]
 pub struct Lane {

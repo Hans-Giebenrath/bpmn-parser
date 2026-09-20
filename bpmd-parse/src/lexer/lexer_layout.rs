@@ -1,4 +1,8 @@
 use crate::lexer::*;
+use alloc::format;
+use alloc::string::ToString;
+use alloc::vec;
+use alloc::vec::Vec;
 use bpmd_graph::ParseError;
 use bpmd_graph::TokenCoordinate;
 use itertools::Itertools;
@@ -35,16 +39,16 @@ pub fn to_place(tokens: Tokens, backup_tc: TokenCoordinate) -> AResult {
             (_, Token::Text(above)),
             (tc_b, Token::Id(node_b)),
         ] if above == "above" => Ok(Statement::Layout(LayoutStatement::Above {
-            above: (*tc_a, std::mem::take(node_a)),
-            below: (*tc_b, std::mem::take(node_b)),
+            above: (*tc_a, core::mem::take(node_a)),
+            below: (*tc_b, core::mem::take(node_b)),
         })),
         [
             (tc_a, Token::Id(node_a)),
             (_, Token::Text(below)),
             (tc_b, Token::Id(node_b)),
         ] if below == "below" => Ok(Statement::Layout(LayoutStatement::Above {
-            below: (*tc_a, std::mem::take(node_a)),
-            above: (*tc_b, std::mem::take(node_b)),
+            below: (*tc_a, core::mem::take(node_a)),
+            above: (*tc_b, core::mem::take(node_b)),
         })),
         [
             (tc_a, Token::Id(node_a)),
@@ -54,8 +58,8 @@ pub fn to_place(tokens: Tokens, backup_tc: TokenCoordinate) -> AResult {
             (tc_b, Token::Id(node_b)),
         ] if above == "above" && or == "or" && below == "below" => {
             Ok(Statement::Layout(LayoutStatement::SameLayer(
-                (*tc_a, std::mem::take(node_a)),
-                (*tc_b, std::mem::take(node_b)),
+                (*tc_a, core::mem::take(node_a)),
+                (*tc_b, core::mem::take(node_b)),
             )))
         }
         [
@@ -63,8 +67,8 @@ pub fn to_place(tokens: Tokens, backup_tc: TokenCoordinate) -> AResult {
             (_, Token::Text(before)),
             (tc_b, Token::Id(node_b)),
         ] if before == "before" => Ok(Statement::Layout(LayoutStatement::Before {
-            left: (*tc_a, std::mem::take(node_a)),
-            right: (*tc_b, std::mem::take(node_b)),
+            left: (*tc_a, core::mem::take(node_a)),
+            right: (*tc_b, core::mem::take(node_b)),
         })),
         _ => return_error(),
     }

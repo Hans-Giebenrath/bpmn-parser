@@ -1,3 +1,4 @@
+use bpmd_util::timer::Timer;
 use itertools::Itertools;
 
 use bpmd_graph::pebpmd::*;
@@ -10,9 +11,11 @@ use std::fmt::Debug;
 pub mod analysis;
 pub mod visibility_table;
 
-pub fn pebpmd_analysis(graph: &mut Graph) -> Result<String, ParseError> {
-    let analysis_result = analysis::pebpmd_analysis(graph)?;
-    let visibility_data = visibility_table::generate_visibility_table(graph, &analysis_result)?;
+pub fn pebpmd_analysis(graph: &mut Graph, timer: &mut Timer) -> Result<String, ParseError> {
+    let analysis_result = timer.time_it("pebpmd_analysis", || analysis::pebpmd_analysis(graph))?;
+    let visibility_data = timer.time_it("pebpmd_generate_visibility_table", || {
+        visibility_table::generate_visibility_table(graph, &analysis_result)
+    })?;
     Ok(visibility_data)
 }
 

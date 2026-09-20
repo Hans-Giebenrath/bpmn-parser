@@ -90,6 +90,7 @@ dependencies = [
  "bpmd-pebpmd-analysis",
  "bpmd-to-bpmn",
  "bpmd-to-svg",
+ "bpmd-util",
  "clap",
 ]
 

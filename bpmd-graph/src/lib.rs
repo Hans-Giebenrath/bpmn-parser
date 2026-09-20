@@ -1,4 +1,8 @@
-use std::path::PathBuf;
+#![no_std]
+
+extern crate alloc;
+use alloc::string::String;
+use alloc::vec::Vec;
 
 #[derive(Debug, Clone, Default, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct TokenCoordinate {
@@ -8,13 +12,6 @@ pub struct TokenCoordinate {
 }
 
 pub type ParseError = Vec<(String, TokenCoordinate)>;
-
-pub struct BpmdSourceFile {
-    // Standard input, file path, or URL in include, or whatever.
-    pub location: String,
-    pub canonicalized_location: PathBuf,
-    pub content: String,
-}
 
 pub mod bpmn_node;
 pub mod config;

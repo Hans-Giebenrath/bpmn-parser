@@ -1,4 +1,6 @@
-use std::slice::Iter;
+extern crate alloc;
+use alloc::vec::Vec;
+use core::slice::Iter;
 
 #[derive(Debug, Clone)]
 pub struct VecSet<T> {
@@ -30,6 +32,11 @@ impl<T: Eq> VecSet<T> {
         self.inner.len()
     }
 
+    #[must_use]
+    pub fn is_empty(&self) -> bool {
+        self.len() == 0
+    }
+
     pub fn clear(&mut self) {
         self.inner.clear();
     }
@@ -47,8 +54,23 @@ impl<T: Eq> VecSet<T> {
         }
     }
 
+    pub fn remove(&mut self, value: &T) {
+        self.inner.retain(|e| e != value);
+    }
+
     pub fn iter(&self) -> Iter<'_, T> {
         self.inner.iter()
+    }
+
+    pub fn intersect(&self, other: &Self) -> Vec<T>
+    where
+        T: Clone,
+    {
+        self.inner
+            .iter()
+            .filter(|e| other.contains(e))
+            .cloned()
+            .collect()
     }
 }
 
@@ -61,5 +83,16 @@ impl<T: Eq> FromIterator<T> for VecSet<T> {
         }
 
         set
+    }
+}
+
+impl<T: Eq> Extend<T> for VecSet<T> {
+    fn extend<I>(&mut self, iter: I)
+    where
+        I: IntoIterator<Item = T>,
+    {
+        iter.into_iter().for_each(|item| {
+            let _ = self.insert(item);
+        });
     }
 }

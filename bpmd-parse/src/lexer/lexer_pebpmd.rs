@@ -1,4 +1,9 @@
 use crate::lexer::*;
+use alloc::format;
+use alloc::string::String;
+use alloc::string::ToString;
+use alloc::vec;
+use alloc::vec::Vec;
 use bpmd_graph::ParseError;
 use bpmd_graph::TokenCoordinate;
 use bpmd_graph::pebpmd::PeBpmdMeta;
@@ -177,7 +182,7 @@ fn assemble_tee_or_mpc(
                 )]);
             }
             [(a, b)] => {
-                *name = std::mem::take(a);
+                *name = core::mem::take(a);
                 *out_tc = *b;
             }
             [] => {

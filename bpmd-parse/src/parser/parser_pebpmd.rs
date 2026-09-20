@@ -1,7 +1,12 @@
+use alloc::format;
+use alloc::string::String;
+use alloc::string::ToString;
+use alloc::vec;
+use alloc::vec::Vec;
 use bpmd_graph::pebpmd::*;
 use bpmd_graph::*;
+use bpmd_util::vecmap::VecMap;
 use itertools::Itertools;
-use std::collections::HashMap;
 
 use crate::lexer;
 use crate::lexer::CONTAINING_POOL_ONLY_KEYWORD;
@@ -33,7 +38,7 @@ impl Parser {
                         )])
                     })?;
 
-                let permitted_sdes: HashMap<SdeId, TokenCoordinate> = secure_channel
+                let permitted_sdes: VecMap<SdeId, TokenCoordinate> = secure_channel
                     .argument_ids
                     .iter()
                     .map(|(string_id, tc)| {

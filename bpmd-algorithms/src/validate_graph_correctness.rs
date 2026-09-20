@@ -1,4 +1,8 @@
+extern crate alloc;
 use crate::same_layaer_lane_crossings_within_cluster::same_layer_lane_crossings_within_cluster;
+use alloc::string::ToString;
+use alloc::vec;
+use alloc::vec::Vec;
 use bpmd_graph::ParseError;
 use bpmd_graph::bpmn_node::BpmnNode;
 use bpmd_graph::bpmn_node::EventType;

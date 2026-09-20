@@ -1,3 +1,5 @@
+extern crate alloc;
+use alloc::vec::Vec;
 #[derive(Debug, Clone)]
 pub struct VecMap<K, V> {
     inner: Vec<(K, V)>,

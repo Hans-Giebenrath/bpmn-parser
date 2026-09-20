@@ -1,3 +1,5 @@
+use alloc::string::String;
+use alloc::string::ToString;
 use cosmic_text::{Buffer, FontSystem, Metrics, SwashCache};
 
 use crate::MAX_NODE_WIDTH;

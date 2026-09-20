@@ -11,11 +11,14 @@ use crate::node::{Node, NodeType};
 use crate::pebpmd::PeBpmd;
 use crate::pebpmd::PeBpmdProtection;
 use crate::pool::Pool;
+use alloc::format;
+use alloc::string::String;
+use alloc::vec::Vec;
+use core::fmt::{self, Debug};
+use core::iter::from_fn;
+use core::mem;
+use core::ops::Index;
 use proc_macros::{from, n, to};
-use std::fmt::{self, Debug};
-use std::iter::from_fn;
-use std::mem;
-use std::ops::Index;
 
 use super::edge::FlowType;
 

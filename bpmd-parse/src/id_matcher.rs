@@ -1,4 +1,7 @@
 use crate::lexer::is_allowed_symbol_in_label_or_id;
+use alloc::string::String;
+use alloc::vec;
+use alloc::vec::Vec;
 use bpmd_graph::graph::Graph;
 use bpmd_graph::graph::LaneId;
 use bpmd_graph::graph::NodeId;
@@ -384,7 +387,7 @@ impl IdMatcher {
             .map(|p| p.fuzzy_haystack.iter().map(|e| e.as_ref()))
             .into_iter()
             .flatten()
-            .chain(std::iter::once(""))
+            .chain(core::iter::once(""))
     }
 
     fn lane_names_and_empty(&self, pool_id: PoolId, lane_id: LaneId) -> impl Iterator<Item = &str> {
@@ -394,7 +397,7 @@ impl IdMatcher {
             .map(|l| l.fuzzy_haystack.iter().map(|e| e.as_ref()))
             .into_iter()
             .flatten()
-            .chain(std::iter::once(""))
+            .chain(core::iter::once(""))
     }
 }
 

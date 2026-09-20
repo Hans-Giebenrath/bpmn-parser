@@ -1,4 +1,8 @@
 use crate::lexer::*;
+use alloc::format;
+use alloc::string::ToString;
+use alloc::vec;
+use alloc::vec::Vec;
 use bpmd_graph::ParseError;
 use bpmd_graph::TokenCoordinate;
 use itertools::Itertools;

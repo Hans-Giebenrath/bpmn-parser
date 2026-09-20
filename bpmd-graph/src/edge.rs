@@ -2,6 +2,8 @@ use crate::bpmn_node::BoundaryEvent;
 use crate::graph::{EdgeId, NodeId, SdeId};
 use crate::macros::impl_index;
 use crate::{DisplayText, TokenCoordinate};
+use alloc::string::String;
+use alloc::vec::Vec;
 
 /// TODO better name.
 #[derive(Debug, Clone, PartialEq)]
@@ -150,7 +152,7 @@ impl Edge {
 
     pub fn get_transported_data(&self) -> &[SdeId] {
         if let FlowType::DataFlow(aux) = &self.flow_type {
-            std::slice::from_ref(&aux.transported_data)
+            core::slice::from_ref(&aux.transported_data)
         } else if let FlowType::MessageFlow(aux) = &self.flow_type {
             &aux.transported_data
         } else {

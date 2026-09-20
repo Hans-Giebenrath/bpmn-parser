@@ -8,12 +8,14 @@ use bpmd_parse::*;
 use bpmd_pebpmd_analysis::pebpmd_analysis;
 use bpmd_to_bpmn::*;
 use bpmd_to_svg::*;
+use bpmd_util::timer::Timer;
 use std::fmt::Display;
 use std::panic::AssertUnwindSafe;
 use std::panic::catch_unwind;
 use std::path::Path;
 use std::path::PathBuf;
 use std::str::FromStr;
+use std::time::Instant;
 
 use annotate_snippets::Snippet;
 use annotate_snippets::renderer::{DecorStyle, Renderer};
@@ -64,50 +66,14 @@ impl Display for OutputFormat {
     }
 }
 
-#[derive(Default)]
-struct Timer {
-    measurements: Vec<(&'static str, std::time::Duration)>,
-}
-
-impl Timer {
-    fn time_it<F, R>(&mut self, label: &'static str, f: F) -> R
-    where
-        F: FnOnce() -> R,
-    {
-        println!("{label}");
-        let t = std::time::Instant::now();
-        let r = f();
-        self.measurements.push((label, t.elapsed()));
-        r
-    }
-}
-
-impl Drop for Timer {
-    fn drop(&mut self) {
-        if self.measurements.is_empty() {
-            return;
-        }
-        let longest_label = self
-            .measurements
-            .iter()
-            .max_by_key(|(label, _)| label.len())
-            .expect("Just checked before")
-            .0
-            .len();
-        for (label, duration) in &mut self.measurements {
-            let padding = std::iter::repeat_n(' ', longest_label - label.len()).collect::<String>();
-            println!(
-                // 7: total width, this includes the digit and post digit numbers as well.
-                "{padding}{label} took {:7.2} ms",
-                duration.as_micros() as f64 / 1000.
-            );
-        }
-    }
-}
-
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let cli = Cli::parse();
-    let mut timer = Timer::default();
+    let origin = Instant::now();
+    let mut timer = Timer::new(
+        Box::new(move || origin.elapsed()),
+        Box::new(|start, end| end - start),
+        Box::new(|s| println!("{s}")),
+    );
 
     let bpmd = cli.input.as_ref().map_or_else(
         || std::io::read_to_string(std::io::stdin()),
@@ -131,24 +97,18 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         ) {
             Ok(stack) => stack,
             Err(e) => {
-                Result::<(), ParseError>::Err(e).bpmd_format_err(&import_data.bpmd_source_files)?;
+                Result::<(), ParseError>::Err(e).bpmd_format_err(&import_data)?;
                 unreachable!();
             }
         },
     }
 
-    let stream = lex(&mut import_data).bpmd_format_err(&import_data.bpmd_source_files)?;
+    let mut graph = parse(&mut import_data, &mut timer).bpmd_format_err(&import_data)?;
     import_data.pop();
-    let mut graph: Graph = timer.time_it("Parsing", || {
-        parser::Parser::new()
-            .parse(stream)
-            .bpmd_format_err(&import_data.bpmd_source_files)
-    })?;
 
     {
-        let visibility_table = timer.time_it("pebpmd analysis", || {
-            pebpmd_analysis(&mut graph).bpmd_format_err(&import_data.bpmd_source_files)
-        })?;
+        let visibility_table =
+            pebpmd_analysis(&mut graph, &mut timer).bpmd_format_err(&import_data)?;
         if let Some(visibility_path) = &cli.visibility_table {
             std::fs::write(visibility_path, visibility_table)?;
         };
@@ -160,12 +120,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let result = catch_unwind(AssertUnwindSafe(
         || -> Result<String, Box<dyn std::error::Error>> {
-            layout_graph(
-                &mut graph,
-                &mut timer,
-                &import_data.bpmd_source_files,
-                &mut font_cache,
-            )?;
+            layout_graph(&mut graph, &mut timer, &mut font_cache).bpmd_format_err(&import_data)?;
             Ok(match cli.output_format {
                 OutputFormat::Bpmn => timer.time_it("XML export", || generate_bpmn(&graph)),
                 OutputFormat::Svg => timer.time_it("SVG export", || {
@@ -196,52 +151,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
-fn layout_graph(
-    graph: &mut Graph,
-    timer: &mut Timer,
-    bpmd_source_files: &[BpmdSourceFile],
-    font_cache: &mut FontCache,
-) -> Result<(), Box<dyn std::error::Error>> {
-    // Phase 1
-    timer.time_it("back_edge_removal", || back_edge_removal(graph))?;
-
-    // Phase 2
-    timer.time_it("solve_layer_assignment", || solve_layer_assignment(graph));
-    timer.time_it("generate_dummy_nodes", || dummy_node_generation(graph));
-    timer.time_it("sort_lanes_by_layer", || sort_lanes_by_layer(graph));
-
-    // Phase 3
-    timer.time_it("reduce_all_crossings_sweep", || {
-        reduce_all_crossings_sweep(graph).bpmd_format_err(bpmd_source_files)
-    })?;
-    timer.time_it("sort_incoming_and_outgoing", || {
-        sort_incoming_and_outgoing(graph);
-    });
-    timer.time_it("port_assignment", || port_assignment(graph));
-
-    // Phase 4
-    timer.time_it("assign_xy_ilp", || assign_xy_ilp(graph));
-
-    // Phase 5
-    timer.time_it("postprocess_ports_and_vertical_edges", || {
-        postprocess_ports_and_vertical_edges(graph)
-    });
-    timer.time_it("try_move_nodes_into_half_layer", || {
-        try_move_nodes_into_half_layer(graph)
-    });
-    timer.time_it("find_straight_edges", || find_straight_edges(graph));
-    timer.time_it("edge_routing", || edge_routing(graph));
-    timer.time_it("dummy_node_removal", || dummy_node_removal(graph));
-    timer.time_it("fix_boundary_event_connections", || {
-        fix_boundary_event_connections(graph)
-    });
-    timer.time_it("set_display_text_locations", || {
-        set_display_text_locations(graph, font_cache)
-    });
-
-    Ok(())
-}
-
 // XXX Don't use `String.into()` instead of this, as otherwise it will verbatim print all the
 // terminal color escape codes, instead of printing colored output.
 pub(crate) struct BpmdParseError(pub String);
@@ -261,25 +170,26 @@ impl std::fmt::Debug for BpmdParseError {
 impl std::error::Error for BpmdParseError {}
 
 trait ParseErrorMapToBoxError<T> {
-    fn bpmd_format_err(
-        self,
-        source_files: &[BpmdSourceFile],
-    ) -> Result<T, Box<dyn std::error::Error>>;
+    fn bpmd_format_err(self, source_files: &ImportData) -> Result<T, Box<dyn std::error::Error>>;
 }
 
 impl<T> ParseErrorMapToBoxError<T> for Result<T, ParseError> {
-    fn bpmd_format_err(
-        self,
-        source_files: &[BpmdSourceFile],
-    ) -> Result<T, Box<dyn std::error::Error>> {
+    fn bpmd_format_err(self, source_files: &ImportData) -> Result<T, Box<dyn std::error::Error>> {
         self.map_err(|annotations| {
             Box::new(BpmdParseError(render_snippet_report(
-                source_files,
+                &source_files.bpmd_source_files,
                 annotations,
             )))
             .into()
         })
     }
+}
+
+pub struct BpmdSourceFile {
+    // Standard input, file path, or URL in include, or whatever.
+    pub location: String,
+    pub canonicalized_location: PathBuf,
+    pub content: String,
 }
 
 fn render_snippet_report(
