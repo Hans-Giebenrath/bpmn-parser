@@ -1,8 +1,19 @@
 extern crate alloc;
 use alloc::vec::Vec;
+
 #[derive(Debug, Clone)]
 pub struct VecMap<K, V> {
     inner: Vec<(K, V)>,
+}
+
+impl<K, V> IntoIterator for VecMap<K, V> {
+    type Item = (K, V);
+
+    type IntoIter = alloc::vec::IntoIter<(K, V)>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.inner.into_iter()
+    }
 }
 
 impl<K, V> Default for VecMap<K, V> {
@@ -30,6 +41,11 @@ impl<K: Eq, V> VecMap<K, V> {
         self.inner.len()
     }
 
+    #[must_use]
+    pub fn is_empty(&self) -> bool {
+        self.len() == 0
+    }
+
     pub fn clear(&mut self) {
         self.inner.clear();
     }
@@ -49,6 +65,15 @@ impl<K: Eq, V> VecMap<K, V> {
 
     pub fn get(&self, value: &K) -> Option<&V> {
         self.inner.iter().find(|(x, _)| x == value).map(|(_, v)| v)
+    }
+
+    pub fn remove(&mut self, value: &K) -> Option<V> {
+        for idx in 0..self.inner.len() {
+            if self.inner[idx].0 == *value {
+                return Some(self.inner.swap_remove(idx).1);
+            }
+        }
+        None
     }
 
     pub fn keys(&self) -> impl Iterator<Item = &K> {
@@ -86,5 +111,16 @@ impl<'a, K: Eq, V> Entry<'a, K, V> {
         // Otherwise, insert a default value.
         self.map.inner.push((self.key, V::default()));
         &mut self.map.inner.last_mut().unwrap().1
+    }
+}
+
+impl<K, V> FromIterator<(K, V)> for VecMap<K, V> {
+    fn from_iter<I>(iter: I) -> Self
+    where
+        I: IntoIterator<Item = (K, V)>,
+    {
+        Self {
+            inner: iter.into_iter().collect(),
+        }
     }
 }

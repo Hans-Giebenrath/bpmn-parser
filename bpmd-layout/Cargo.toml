@@ -15,5 +15,5 @@ itertools = "0.15.0"
 cosmic-text = {
     version = "0.19",
     default-features = false,
-    features = ["std", "swash", "wasm-web"],
+    features = ["no_std", "swash"],
 }

@@ -9,5 +9,5 @@ proc_macros = { path = "../proc_macros" }
 cosmic-text = {
     version = "0.19",
     default-features = false,
-    features = ["std", "wasm-web"],
+    features = ["no_std", "swash"],
 }

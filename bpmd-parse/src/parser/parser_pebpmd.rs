@@ -254,7 +254,7 @@ impl Parser {
                     })
                 }).collect::<Result<Vec<PoolId>, _>>()?;
 
-        let all_node_ids = std::iter::empty::<&Protection>()
+        let all_node_ids = core::iter::empty::<&Protection>()
             .chain(in_protect.iter())
             .chain(in_unprotect.iter())
             .chain(out_protect.iter())
@@ -263,7 +263,7 @@ impl Parser {
             .collect::<Vec<_>>();
 
         {
-            let mut set = HashMap::new();
+            let mut set = VecMap::new();
             for (node_id, tc) in &all_node_ids {
                 if let Some(old_duplicate_tc) = set.remove(node_id) {
                     return Err(vec![(
@@ -275,7 +275,7 @@ impl Parser {
                             old_duplicate_tc,
                     )]);
                 }
-                set.insert(node_id, *tc);
+                set.insert(*node_id, *tc);
             }
         }
 
@@ -396,7 +396,7 @@ impl Parser {
         node_ids: &[(String, TokenCoordinate)],
         kind: &str,
     ) -> Result<Vec<(SdeId, TokenCoordinate)>, ParseError> {
-        let mut uniqueness_set = HashMap::<SdeId, TokenCoordinate>::new();
+        let mut uniqueness_set = VecMap::<SdeId, TokenCoordinate>::new();
         node_ids
             .iter()
             .map(|(data_str, tc)| {
