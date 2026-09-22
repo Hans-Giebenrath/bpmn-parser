@@ -16,8 +16,8 @@ pub fn postprocess_ports_and_vertical_edges(graph: &mut Graph) {
             continue;
         }
         // XXX make sure there is no `continue` down from here, otherwise these values are lost.
-        let mut incoming_ports = std::mem::take(&mut node.incoming_ports);
-        let mut outgoing_ports = std::mem::take(&mut node.outgoing_ports);
+        let mut incoming_ports = core::mem::take(&mut node.incoming_ports);
+        let mut outgoing_ports = core::mem::take(&mut node.outgoing_ports);
         let node = &n!(node_id);
 
         let top_border_y = node.y;

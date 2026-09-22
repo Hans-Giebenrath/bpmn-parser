@@ -67,6 +67,13 @@ impl<K: Eq, V> VecMap<K, V> {
         self.inner.iter().find(|(x, _)| x == value).map(|(_, v)| v)
     }
 
+    pub fn get_mut(&mut self, value: &K) -> Option<&mut V> {
+        self.inner
+            .iter_mut()
+            .find(|(x, _)| x == value)
+            .map(|(_, v)| v)
+    }
+
     pub fn remove(&mut self, value: &K) -> Option<V> {
         for idx in 0..self.inner.len() {
             if self.inner[idx].0 == *value {
@@ -112,6 +119,18 @@ impl<'a, K: Eq, V> Entry<'a, K, V> {
         self.map.inner.push((self.key, V::default()));
         &mut self.map.inner.last_mut().unwrap().1
     }
+
+    pub fn or_insert_with<F>(self, default: F) -> &'a mut V
+    where
+        F: FnOnce() -> V,
+    {
+        if let Some(idx) = self.map.inner.iter().position(|(k, _)| *k == self.key) {
+            return &mut self.map.inner[idx].1;
+        }
+
+        self.map.inner.push((self.key, default()));
+        &mut self.map.inner.last_mut().unwrap().1
+    }
 }
 
 impl<K, V> FromIterator<(K, V)> for VecMap<K, V> {
@@ -122,5 +141,20 @@ impl<K, V> FromIterator<(K, V)> for VecMap<K, V> {
         Self {
             inner: iter.into_iter().collect(),
         }
+    }
+}
+
+impl<K, V> core::ops::Index<&K> for VecMap<K, V>
+where
+    K: PartialEq,
+{
+    type Output = V;
+
+    fn index(&self, key: &K) -> &Self::Output {
+        self.inner
+            .iter()
+            .find(|(k, _)| k == key)
+            .map(|(_, v)| v)
+            .expect("no entry found for key")
     }
 }

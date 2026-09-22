@@ -1,7 +1,7 @@
 use bpmd_util::collision_grid::Grid;
 use bpmd_util::collision_grid::Line;
+use core::{num::NonZero, ops::ControlFlow};
 use cosmic_text::{Align, Attrs, Buffer, Metrics, Shaping, Wrap};
-use std::{num::NonZero, ops::ControlFlow};
 
 use bpmd_graph::*;
 
@@ -435,7 +435,7 @@ fn iterate_edge_points(
     assert!(steps >= 0);
     (0..steps)
         .map(move |i| (new_start + i * step_size) as u32)
-        .chain(std::iter::once(mid_point))
+        .chain(core::iter::once(mid_point))
         .chain(
             (0..steps)
                 .rev()
@@ -450,7 +450,7 @@ fn edge_corner_display_text_location_candidates(
     end: (usize, usize),
     best_candidate: &mut CandidateTracker,
 ) -> ControlFlow<()> {
-    use std::cmp::Ordering::{Equal, Greater, Less};
+    use core::cmp::Ordering::{Equal, Greater, Less};
     let candidates_to_try = match (
         start.0.cmp(&middle.0),
         start.1.cmp(&middle.1),

@@ -40,10 +40,12 @@
 //! * If a message flow goes through a layer with a data-object in a half layer, then that should
 //!   not be in the half layer.
 
+use alloc::vec;
+use alloc::vec::Vec;
 use bpmd_graph::*;
 use bpmd_util::index_iter::IterIndices;
+use bpmd_util::vecmap::VecMap;
 use proc_macros::*;
-use std::collections::HashMap;
 
 /// Created for one `SegmentsOfSameLayer`. Is meant to calculate left-to-right paths of overlapping
 /// segment intervals.
@@ -51,7 +53,7 @@ use std::collections::HashMap;
 struct SegmentGraph<'a> {
     // Note: this could move into VerticalSegment as a RefCell, that should be more efficient than hash
     // lookups?
-    graph: HashMap<EdgeId, Vec<&'a VerticalSegment>>,
+    graph: VecMap<EdgeId, Vec<&'a VerticalSegment>>,
     /// A `root` is a left-most segment, i.e. where no other segment if left of it which overlaps
     /// it.
     roots: Vec<&'a VerticalSegment>,
@@ -65,7 +67,7 @@ impl<'a> SegmentGraph<'a> {
         right: Option<&'a VerticalSegment>,
     ) {
         fn remove<'a>(needle: &'a VerticalSegment, haystack: &mut Vec<&'a VerticalSegment>) {
-            haystack.retain(|connection| !std::ptr::eq(*connection, needle));
+            haystack.retain(|connection| !core::ptr::eq(*connection, needle));
         }
         let right_connections = self.graph.entry(new_edge.id).or_default();
         if let Some(right) = right {
@@ -216,7 +218,7 @@ fn transpose(
 
 #[derive(Default, Debug)]
 struct MessageFlowBendPointStore {
-    store: HashMap<EdgeId, MessageFlowBendState>,
+    store: VecMap<EdgeId, MessageFlowBendState>,
 }
 
 impl MessageFlowBendPointStore {
@@ -422,7 +424,7 @@ struct VerticalSegment {
     alignment: Alignment,
     // Oioioi sorry for the spaghetti. I just don't want to handle all those usize indexes.
     // But I create paths from left to right and store `&VerticalSegment`s, and I still want to mark
-    x_coordinate: std::cell::Cell<Option<usize>>,
+    x_coordinate: core::cell::Cell<Option<usize>>,
 }
 
 impl VerticalSegment {
@@ -804,7 +806,7 @@ fn determine_segment_layers_ixi(
     max_y_per_layer_buffer.sort_unstable();
 
     let mid = (max_y_per_layer_buffer.len() - 1) / 2;
-    for (new_target_idx, &mut max_y) in std::iter::once(0isize)
+    for (new_target_idx, &mut max_y) in core::iter::once(0isize)
         .chain((0..).flat_map(|i| [i as isize, -i as isize]))
         .map(|offset| mid.strict_add_signed(offset))
         .zip(&mut *max_y_per_layer_buffer)
@@ -1128,17 +1130,17 @@ fn get_layered_edges(graph: &mut Graph) -> (Vec<SegmentsOfSameLayer>, MessageFlo
                 return;
             }
             match edge.start_y.cmp(&edge.end_y) {
-                std::cmp::Ordering::Less if edge.is_message_flow => {
+                core::cmp::Ordering::Less if edge.is_message_flow => {
                     edge.alignment = Alignment::Right;
                     segments.down_message_flows.push(edge);
                 }
-                std::cmp::Ordering::Greater if edge.is_message_flow => {
+                core::cmp::Ordering::Greater if edge.is_message_flow => {
                     edge.alignment = Alignment::Left;
                     segments.up_message_flows.push(edge);
                 }
-                std::cmp::Ordering::Less => segments.down_edges.push(edge),
-                std::cmp::Ordering::Greater => segments.up_edges.push(edge),
-                std::cmp::Ordering::Equal => {
+                core::cmp::Ordering::Less => segments.down_edges.push(edge),
+                core::cmp::Ordering::Greater => segments.up_edges.push(edge),
+                core::cmp::Ordering::Equal => {
                     unreachable!("start_y == end_y has been checked earlier.")
                 }
             }
@@ -1205,9 +1207,9 @@ fn get_layered_mfs(
             // in which case this should become a right_loops or left_loops member,
             // respectively.
             match edge.start_y.cmp(&edge.end_y) {
-                std::cmp::Ordering::Less => segments.down_edges.push(edge),
-                std::cmp::Ordering::Greater => segments.up_edges.push(edge),
-                std::cmp::Ordering::Equal => {
+                core::cmp::Ordering::Less => segments.down_edges.push(edge),
+                core::cmp::Ordering::Greater => segments.up_edges.push(edge),
+                core::cmp::Ordering::Equal => {
                     unreachable!("start_y == end_y has been checked earlier.")
                 }
             }

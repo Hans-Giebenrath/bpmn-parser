@@ -12,10 +12,11 @@
 //    rule, this must exist.
 
 use crate::util::classify_barrier_node_for_gateway;
+use alloc::vec::Vec;
 use bpmd_graph::*;
+use bpmd_util::vecset::VecSet;
 use itertools::Itertools;
 use proc_macros::{e, from, n, to};
-use std::collections::HashSet;
 
 pub fn port_assignment(graph: &mut Graph) {
     // First handle non-gateway nodes and then gateway nodes in two separate loops. This way,
@@ -806,7 +807,7 @@ pub fn partitioned_points_on_side(
 ) -> impl Iterator<Item = usize> + Clone {
     // if has_midpoint {
     points_on_side(side_len / 2, points_before_midpoint)
-        .chain(std::iter::once(side_len / 2))
+        .chain(core::iter::once(side_len / 2))
         .chain(
             points_on_side(side_len / 2, points_after_midpoint)
                 .map(move |point| point + side_len / 2),
@@ -944,7 +945,7 @@ fn handle_gateway_node_one_side(this_node_id: NodeId, graph: &mut Graph, directi
     };
 
     // This one is used to count the number of crossings.
-    let mut above_nodes_in_other_layer = HashSet::<NodeId>::from_iter(
+    let mut above_nodes_in_other_layer = VecSet::<NodeId>::from_iter(
         graph
             .iter_upwards_same_pool(StartAt::Node(other_topmost_node.id), None)
             .map(|node| node.id),
@@ -1030,7 +1031,7 @@ fn handle_gateway_node_one_side(this_node_id: NodeId, graph: &mut Graph, directi
             })
             .take_while_inclusive(|(_, is_bottom_barrier)| *is_bottom_barrier)
             .map(Some)
-            .chain(std::iter::once(None))
+            .chain(core::iter::once(None))
         {
             if bottom_is_blocked && local_has_crossed_gateway {
                 break;

@@ -1,8 +1,9 @@
+use alloc::vec::Vec;
 use bpmd_graph::*;
+use bpmd_util::vecmap::VecMap;
+use core::iter::Sum;
 use good_lp::*;
 use proc_macros::*;
-use std::collections::HashMap;
-use std::iter::Sum;
 
 // Things to do:
 //
@@ -100,7 +101,7 @@ pub fn back_edge_removal(graph: &mut Graph) -> Result<(), ParseError> {
 
 fn solve_ilp(graph: &mut Graph, back_edge_groups: &[Vec<EdgeId>]) {
     let mut vars = variables!();
-    let mut edge_vars = HashMap::new();
+    let mut edge_vars = VecMap::new();
     for edge_id in back_edge_groups.iter().flatten() {
         edge_vars
             .entry(*edge_id)

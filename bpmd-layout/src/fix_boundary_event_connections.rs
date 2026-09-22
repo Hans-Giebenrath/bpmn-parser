@@ -14,7 +14,7 @@ pub fn fix_boundary_event_connections(graph: &mut Graph) {
             ..
         } = &mut edge.edge_type
         else {
-            dbg!("This should never be the case?");
+            log::debug!("This should never be the case?");
             continue;
         };
         let &(start_x, start_y) = bend_points.first().unwrap();

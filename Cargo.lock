@@ -122,6 +122,7 @@ dependencies = [
  "cosmic-text",
  "good_lp",
  "itertools",
+ "log",
  "proc_macros",
 ]
 

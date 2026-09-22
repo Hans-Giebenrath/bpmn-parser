@@ -1,13 +1,16 @@
-use bpmd_util::timer::Timer;
-use itertools::Itertools;
-
+#![no_std]
+use alloc::format;
+use alloc::string::ToString;
 use bpmd_graph::pebpmd::*;
 use bpmd_graph::*;
-use std::collections::BTreeSet;
-use std::collections::HashMap;
-use std::collections::HashSet;
-use std::fmt::Debug;
-
+use bpmd_util::timer::Timer;
+use bpmd_util::vecmap::VecMap;
+use bpmd_util::vecset::VecSet;
+use itertools::Itertools;
+extern crate alloc;
+use alloc::collections::BTreeSet;
+use alloc::string::String;
+use core::fmt::Debug;
 pub mod analysis;
 pub mod visibility_table;
 
@@ -26,7 +29,7 @@ pub enum PoolOrProtection {
 }
 
 impl Debug for PoolOrProtection {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         match self {
             Self::Pool(PoolId(pool_idx)) => write!(f, "p({pool_idx})"),
             Self::Protection(prot) => write!(f, "prot({prot})"),
@@ -56,13 +59,12 @@ pub struct VisibilityTableInput {
     /// for the TEE and then not actually send it (or add another secure channel and give that to
     /// the TEE), but I am not sure whether someone would actually want to do that. So until then we
     /// *only* look at the protections of SdeId at the tee-in-protect node.
-    pub tee_vulnerable_rv:
-        HashMap<(/*attacker*/ PoolId, SdeId), HashSet<BTreeSet<PeBpmdProtection>>>,
+    pub tee_vulnerable_rv: VecMap<(/*attacker*/ PoolId, SdeId), VecSet<BTreeSet<PeBpmdProtection>>>,
     /// That PoolId gets all the data, which is part of that TEE or MPC, with an additional H.
     /// Since protections can be nested, they also happen to get an `H`.
     /// (Conceptually a HashSet<PoolOrProtection, HashSet<PeBpmdProtection>> but just one
     /// allocation)
-    pub software_operator: HashSet<(PoolOrProtection, PeBpmdProtection)>,
+    pub software_operator: VecSet<(PoolOrProtection, PeBpmdProtection)>,
     /// That PoolId gets all the data, which is part of that TEE or MPC, with an additional A.
     /// Why an `A`? TEE technologies usually exclude the hardware operator from the threat model, or
     /// at least only protect against a small handful of easyish hardware attacks (cold boot). But
@@ -72,20 +74,20 @@ pub struct VisibilityTableInput {
     /// just makes an attack more expensive and/or time consuming. The only silver bullet is to not
     /// gather any data in the first place.
     /// TODO verify that a hardware operator is not a `(tee|mpc)-pool`.
-    pub tee_hardware_operator: HashSet<(PoolId, PeBpmdProtection)>,
+    pub tee_hardware_operator: VecSet<(PoolId, PeBpmdProtection)>,
     /// A pool could have root access to multiple TEEs, hence a `Vec`.
-    pub tee_external_root_access: HashMap<PoolId, HashSet<PeBpmdProtection>>,
+    pub tee_external_root_access: VecMap<PoolId, VecSet<PeBpmdProtection>>,
     /// For generating the network operator visibility row.
-    pub network_message_protections: HashMap<SdeId, HashSet<BTreeSet<PeBpmdProtection>>>,
+    pub network_message_protections: VecMap<SdeId, VecSet<BTreeSet<PeBpmdProtection>>>,
     // Contains both the `data` nodes and data which moves via message flows.
     //
     // TODO this comment is not totally adequate and should move to `tee_vulnerable_rv`.
     pub directly_accessible_data:
-        HashMap<PoolOrProtection, HashMap<SdeId, HashSet<BTreeSet<PeBpmdProtection>>>>,
+        VecMap<PoolOrProtection, VecMap<SdeId, VecSet<BTreeSet<PeBpmdProtection>>>>,
 }
 
 impl Debug for VisibilityTableInput {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         writeln!(f, "visibility Table Input")?;
         writeln!(f, "  tee_vulnerable_rv")?;
         for ((pool_id, sde_id), hs) in self
@@ -167,7 +169,7 @@ impl Debug for VisibilityTableInput {
 #[derive(Default)]
 pub struct ProtectionPaths {
     /// Can't nest HashSet in a HashSet due to HashSet not implementing Hash.
-    subgraphs: HashSet<BTreeSet<EdgeId>>,
+    subgraphs: VecSet<BTreeSet<EdgeId>>,
 }
 
 #[derive(Debug)]
@@ -183,8 +185,8 @@ impl ProtectionPaths {
         let mut some_larger = false;
         let mut some_equal = false;
         let error_message = "This pe-bpmd block has both subset and superset subgraphs of another pe-bpmd block. But they must be either nested properly or not intersecting at all.";
-        for ours in &self.subgraphs {
-            for theirs in &other.subgraphs {
+        for ours in self.subgraphs.iter() {
+            for theirs in other.subgraphs.iter() {
                 if ours.eq(theirs) {
                     some_equal = true;
                 } else if ours.is_subset(theirs) {

@@ -1,6 +1,5 @@
-use std::collections::HashSet;
-
 use bpmd_graph::*;
+use bpmd_util::vecset::VecSet;
 use proc_macros::*;
 
 pub fn dummy_node_generation(graph: &mut Graph) {
@@ -9,7 +8,7 @@ pub fn dummy_node_generation(graph: &mut Graph) {
     // New edges are added to graph.edges, so we can't iterate over it at the same time.
     // Hence, we store the number.
 
-    let mut lone_looping_gateway_edges = HashSet::new();
+    let mut lone_looping_gateway_edges = VecSet::new();
     for node in &graph.nodes {
         if node.is_gateway() {
             let lone_edge = match (&node.incoming[..], &node.outgoing[..]) {
@@ -228,8 +227,8 @@ fn insert_dummy_nodes(
         let node_count_in_from_lane = total_node_count / 2;
         let node_count_in_to_lane = total_node_count - node_count_in_from_lane;
         // If from and to are in the same lane, then they simply return the same value.
-        std::iter::repeat_n(from.lane, node_count_in_from_lane)
-            .chain(std::iter::repeat_n(to.lane, node_count_in_to_lane))
+        core::iter::repeat_n(from.lane, node_count_in_from_lane)
+            .chain(core::iter::repeat_n(to.lane, node_count_in_to_lane))
     };
 
     let mut previous_node_id = from_id;

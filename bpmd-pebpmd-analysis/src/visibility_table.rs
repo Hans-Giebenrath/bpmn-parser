@@ -1,9 +1,15 @@
 use crate::PoolOrProtection;
 use crate::VisibilityTableInput;
+use alloc::collections::BTreeSet;
+use alloc::string::String;
+use alloc::string::ToString;
+use alloc::vec;
+use alloc::vec::Vec;
 use bpmd_graph::pebpmd::*;
 use bpmd_graph::*;
-use std::collections::{BTreeSet, HashMap, HashSet};
-use std::fmt::Display;
+use bpmd_util::vecmap::VecMap;
+use bpmd_util::vecset::VecSet;
+use core::fmt::Display;
 
 struct Args<'a> {
     graph: &'a Graph,
@@ -32,7 +38,7 @@ enum ProtectionString {
 }
 
 impl ProtectionString {
-    fn from(protections: &HashSet<BTreeSet<PeBpmdProtection>>) -> Self {
+    fn from(protections: &VecSet<BTreeSet<PeBpmdProtection>>) -> Self {
         if let Some(min) = protections.iter().map(BTreeSet::len).min() {
             if min == 0 {
                 // Nothing to rethink here, worst scenario possible, can just return.
@@ -45,8 +51,8 @@ impl ProtectionString {
                 }
             }
         } else {
-            dbg!("should not happen");
             // Not accessible at all.
+            // Actually, this branch should never execute?
             ProtectionString::Inaccessible
         }
     }
@@ -122,7 +128,7 @@ impl ProtectionString {
 }
 
 impl Display for ProtectionString {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         match self {
             ProtectionString::Visible => write!(f, "V"),
             ProtectionString::Protected {
@@ -165,7 +171,7 @@ pub fn generate_visibility_table(
 
     // Write header
     csv.write_record(
-        std::iter::once("Pool").chain(graph.data_elements.iter().map(|sde| sde.name.as_str())),
+        core::iter::once("Pool").chain(graph.data_elements.iter().map(|sde| sde.name.as_str())),
     )
     .expect("writing into a Vec.");
 
@@ -173,7 +179,7 @@ pub fn generate_visibility_table(
     for (pool_idx, pool) in graph.pools.iter().enumerate() {
         let pool_id = PoolId(pool_idx);
         // The `Result` is there primarily because there can be a cycle of TEE admins being each
-        // others TEE admins. TODO In general this is not a problem at all, but just needs to be
+        // other's TEE admins. TODO In general this is not a problem at all, but just needs to be
         // implemented, but I don't do that now. But then the `collect` can be removed, avoid a
         // bunch of allocations, yay! (who cares! I care!)
         let row = graph
@@ -191,7 +197,7 @@ pub fn generate_visibility_table(
             })
             .collect::<Result<Vec<_>, _>>()?;
         csv.write_record(
-            std::iter::once(
+            core::iter::once(
                 pool.name
                     .clone()
                     .unwrap_or_else(|| "Anonymous Pool".to_string()),
@@ -201,7 +207,7 @@ pub fn generate_visibility_table(
         .expect("writing into a Vec.");
     }
 
-    let min_protections_len = |protection_groups: &HashSet<BTreeSet<PeBpmdProtection>>| -> usize {
+    let min_protections_len = |protection_groups: &VecSet<BTreeSet<PeBpmdProtection>>| -> usize {
         protection_groups
             .iter()
             .map(BTreeSet::len)
@@ -220,7 +226,7 @@ pub fn generate_visibility_table(
             .map(min_protections_len)
         {
             Some(0) => row.push("V".to_string()),
-            Some(n) => row.push(std::iter::repeat_n('H', n).collect()),
+            Some(n) => row.push(core::iter::repeat_n('H', n).collect()),
             None => row.push(String::new()),
         }
     }
@@ -258,7 +264,7 @@ fn is_pool_pebpmd(pebpmd: &PeBpmd, pool_id: PoolId) -> bool {
 /// calculated lazily and then cached for further usage.
 struct OnDemandVisibilityTableCell<'a> {
     graph: &'a Graph,
-    cache: HashMap<(PoolOrProtection, SdeId), ProtectionString>,
+    cache: VecMap<(PoolOrProtection, SdeId), ProtectionString>,
     endless_recursion_detection: Vec<(PoolOrProtection, SdeId)>,
 }
 
@@ -283,7 +289,6 @@ impl<'a> OnDemandVisibilityTableCell<'a> {
             .endless_recursion_detection
             .contains(&(pool_or_protection, sde_id))
         {
-            // TODO must be a ParseError.
             let mut errors = Vec::new();
             for rec in &self.endless_recursion_detection {
                 let tc = match rec.0 {

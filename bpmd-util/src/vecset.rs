@@ -96,3 +96,9 @@ impl<T: Eq> Extend<T> for VecSet<T> {
         });
     }
 }
+
+impl<T> VecSet<T> {
+    pub fn drain(&mut self) -> alloc::vec::Drain<'_, T> {
+        self.inner.drain(..)
+    }
+}

@@ -2,16 +2,22 @@ use crate::PoolOrProtection;
 use crate::ProtectionGraphCmp;
 use crate::ProtectionPaths;
 use crate::VisibilityTableInput;
+use alloc::collections::BTreeSet;
+use alloc::format;
+use alloc::string::ToString;
+use alloc::vec;
+use alloc::vec::Vec;
 use bpmd_graph::pebpmd::*;
 use bpmd_graph::*;
+use bpmd_util::vecmap::VecMap;
+use bpmd_util::vecset::VecSet;
+use core::iter::Extend;
 use itertools::Itertools;
-use proc_macros::{e, from, n, to};
-use std::collections::{BTreeSet, HashMap, HashSet};
-use std::iter::Extend;
+use proc_macros::*;
 
 pub fn pebpmd_analysis(graph: &mut Graph) -> Result<VisibilityTableInput, ParseError> {
     let mut state = State::default();
-    let pebpmd_definitions = std::mem::take(&mut graph.pe_bpmd_definitions);
+    let pebpmd_definitions = core::mem::take(&mut graph.pe_bpmd_definitions);
     for pebpmd_definition in &pebpmd_definitions {
         analyse_single(pebpmd_definition, graph, &mut state)?;
     }
@@ -61,17 +67,17 @@ enum GraphElement {
 struct State {
     // A `data` node represents just one piece of data, but it can be protected simultaneously by
     // multiple protections (both secure channel and TEE).
-    data_node_protection: HashMap<NodeId, HashSet<PeBpmdProtection>>,
-    flow_protection: HashMap<EdgeId, HashMap<SdeId, BTreeSet<PeBpmdProtection>>>,
+    data_node_protection: VecMap<NodeId, VecSet<PeBpmdProtection>>,
+    flow_protection: VecMap<EdgeId, VecMap<SdeId, BTreeSet<PeBpmdProtection>>>,
     // The reverse of `data_node_protection` and `message_flow_protection`. To apply coloring after
     // the graph is analysed (enables to traverse over `&Graph` instead of `&mut Graph`).
-    protection_graph: HashMap<PeBpmdProtection, HashSet<GraphElement>>,
+    protection_graph: VecMap<PeBpmdProtection, VecSet<GraphElement>>,
     // Like `protection_graph` but more fine-grained. Just contains edges to realise whether
     // different protections are either correctly nested or disjoint (if some protection path of
-    // pe_bpmd_protection_1 is strictly smaller than some protection path of pe_bpmd_protection_2,
-    // then no protection path of pe_bpmd_protection_2 shall be strictly smaller than some
-    // protection path of pe_bpmd_protection_1).
-    protection_paths_graphs: HashMap<PeBpmdProtection, ProtectionPaths>,
+    // `pe_bpmd_protection_1` is strictly smaller than some protection path of
+    // `pe_bpmd_protection_2`, then no protection path of `pe_bpmd_protection_2` shall be strictly
+    // smaller than some protection path of `pe_bpmd_protection_1`).
+    protection_paths_graphs: VecMap<PeBpmdProtection, ProtectionPaths>,
     result: VisibilityTableInput,
 }
 
@@ -385,7 +391,7 @@ fn compute_accessible_data(graph: &Graph, analysis_state: &mut State) -> Result<
         // Ensure that the pool protection is a superset of the lane protection, and the lane (or
         // pool if missing) protection is a superset of all the task protections. (task protections
         // themselves are sorted afterwards, hang on)
-        for (a, b) in std::iter::once((pool_protection, lane_protection)).chain(
+        for (a, b) in core::iter::once((pool_protection, lane_protection)).chain(
             lane_protection.or(pool_protection).iter().flat_map(|prot| {
                 task_protections
                     .iter()
@@ -418,9 +424,9 @@ fn compute_accessible_data(graph: &Graph, analysis_state: &mut State) -> Result<
                     .compare(analysis_state.protection_paths_graphs.get(b).unwrap())
                 {
                     Err(e) => todo!("Write a good error message, {e}"),
-                    // Smallest to the left, as this is the one containing the others.
-                    Ok(ProtectionGraphCmp::Super) => std::cmp::Ordering::Greater,
-                    Ok(ProtectionGraphCmp::Sub) => std::cmp::Ordering::Less,
+                    // Smallest to the left, as this is the one which contains the others.
+                    Ok(ProtectionGraphCmp::Super) => core::cmp::Ordering::Greater,
+                    Ok(ProtectionGraphCmp::Sub) => core::cmp::Ordering::Less,
                     // TODO This is not allowed since it makes analysis rather hard. It could be
                     // that there is a TEE which could conditionally execute one MPC algorithm or
                     // another algorithm. But I believe this is a headache to implement, so just
@@ -664,7 +670,7 @@ fn compute_visibility_tee_or_mpc(
             .insert(protection);
     }
     // TODO something is missing here, `all_sdes` is not used for anything?
-    let mut all_sdes = HashSet::<SdeId>::new();
+    let mut all_sdes = VecSet::<SdeId>::new();
     // Consider all data which is transported to/within/out of the TEE/MPC.
     for node in &graph.nodes {
         let consider = match &computation.pebpmd_type {
@@ -870,7 +876,7 @@ fn protection_channel(
 /// Encapsulates the mutable aspects of the traversal, so the graph itself is not mutated during
 /// traversal (circumvents the borrow checker).
 struct ProtectionPathTraversalState {
-    visited_nodes: HashSet<NodeId>,
+    visited_nodes: VecSet<NodeId>,
     protection: PeBpmdProtection,
     cur_sde: SdeId,
     visited_edges: BTreeSet<EdgeId>,
@@ -895,7 +901,7 @@ fn check_protection_paths(
         &graph.nodes[node_id].outgoing
     };
 
-    for node_id in std::iter::once(&node_id).chain(ends).cloned() {
+    for node_id in core::iter::once(&node_id).chain(ends).cloned() {
         // This will likely run multiple times for `ends` if the function is run multiple times. But
         // overall this is in the range of O(3 x 3) per protection I'd say (which is O(1) but you
         // get the point).
@@ -914,7 +920,7 @@ fn check_protection_paths(
             analysis_state.set_flow_protection(edge_id, sde_id, protection);
 
             let mut state = ProtectionPathTraversalState {
-                visited_nodes: HashSet::from([node_id]),
+                visited_nodes: VecSet::from_iter([node_id]),
                 visited_edges: Default::default(),
                 protection,
                 cur_sde: sde_id,
@@ -1143,7 +1149,7 @@ fn create_protection_error_message(
     result
 }
 
-fn contains<T: std::cmp::PartialEq>(haystack: &[(T, TokenCoordinate)], needle: &T) -> bool {
+fn contains<T: core::cmp::PartialEq>(haystack: &[(T, TokenCoordinate)], needle: &T) -> bool {
     haystack.iter().any(|(straw, _)| *straw == *needle)
 }
 
@@ -1159,7 +1165,13 @@ fn computation_filter(computation: &ComputationCommon) -> impl Fn(&SdeId) -> boo
 fn apply_colors(graph: &mut Graph, state: &State) {
     for definition in &graph.pe_bpmd_definitions {
         let protection = definition.r#type.protection();
-        for graph_element in state.protection_graph[&protection].iter().cloned() {
+        for graph_element in state
+            .protection_graph
+            .get(&protection)
+            .unwrap()
+            .iter()
+            .cloned()
+        {
             match graph_element {
                 GraphElement::Edge(edge_id) => {
                     let edge = &mut e!(edge_id);

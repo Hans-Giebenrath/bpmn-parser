@@ -1,10 +1,15 @@
 use crate::all_crossing_minimization_sweep::{
     EdgeConnection, INCOMING, OUTGOING, PullBalance, SweepGraph, SweepNode, SweepNodeId,
 };
+use alloc::collections::VecDeque;
+use alloc::format;
+use alloc::string::String;
+use alloc::vec;
+use alloc::vec::Vec;
 use bpmd_graph::*;
 use bpmd_util::index_iter::IterIndices;
+use bpmd_util::vecset::VecSet;
 use proc_macros::*;
-use std::collections::{HashSet, VecDeque};
 
 #[derive(Default)]
 pub struct P3Layer {
@@ -77,14 +82,14 @@ pub fn run(
                         .partial_cmp(&mn1.pull_and_bary())
                         .unwrap()
                     {
-                        std::cmp::Ordering::Less => sorted_pairs += 1,
-                        std::cmp::Ordering::Greater => rev_sorted_pairs += 1,
+                        core::cmp::Ordering::Less => sorted_pairs += 1,
+                        core::cmp::Ordering::Greater => rev_sorted_pairs += 1,
                         _ => (),
                     }
                 } else {
                     match mn0.barycenter.partial_cmp(&mn1.barycenter).unwrap() {
-                        std::cmp::Ordering::Less => sorted_pairs += 1,
-                        std::cmp::Ordering::Greater => rev_sorted_pairs += 1,
+                        core::cmp::Ordering::Less => sorted_pairs += 1,
+                        core::cmp::Ordering::Greater => rev_sorted_pairs += 1,
                         _ => (),
                     }
                 }
@@ -160,7 +165,7 @@ pub fn run(
         }
     }
     if debug {
-        println!("Sweep Graph for {current_location:?}, order top-to-bottom: {debug_order}");
+        log::debug!("Sweep Graph for {current_location:?}, order top-to-bottom: {debug_order}");
     }
 }
 
@@ -220,7 +225,7 @@ impl P3Layer {
     fn find_violated_constraint(&mut self) -> Option<(usize, usize)> {
         // TODO My Java code uses a Queue here with `add` and `poll` but the paper just uses a set.
         // So a `Vec` with `push` and `pop` should be sufficient?
-        // TODO move the allocation out. Does not make sense to alloc+free all the time.
+        // TODO move the allocation out. Does not make sense to `alloc`+`free` all the time.
         let mut s: VecDeque<usize> = VecDeque::new();
 
         // fill the queue
@@ -244,7 +249,7 @@ impl P3Layer {
 
             // Borrow-checker workaround, is reassigned at the end.
             // TODO maybe add a Vec based VecSet here, so we can do index based iteration.
-            let below_snapshot = std::mem::take(&mut self.merge_nodes[v_idx].below_of_this);
+            let below_snapshot = core::mem::take(&mut self.merge_nodes[v_idx].below_of_this);
 
             for &t_idx in &below_snapshot {
                 self.merge_nodes[t_idx]
@@ -340,8 +345,8 @@ struct MergeNode {
     ordered_nodes: Vec<SweepNodeId>,
     barycenter: f32,
     degree: f32,
-    above_of_this: HashSet</* merge node idx */ usize>,
-    below_of_this: HashSet</* merge node idx */ usize>,
+    above_of_this: VecSet</* merge node idx */ usize>,
+    below_of_this: VecSet</* merge node idx */ usize>,
     incoming_constraints: Vec</* merge node idx */ usize>,
     /// Should be the sum from the previous analysis (which generated Pull) instead.
     pull_balance: PullBalance,
@@ -385,8 +390,8 @@ impl MergeNode {
             ordered_nodes: vec![sweep_node_id],
             barycenter,
             degree,
-            above_of_this: HashSet::new(),
-            below_of_this: HashSet::new(),
+            above_of_this: VecSet::new(),
+            below_of_this: VecSet::new(),
             incoming_constraints: Vec::new(),
             pull_balance: if mind_the_pull {
                 sweep_node.pull_balance.clone()

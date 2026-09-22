@@ -1,3 +1,5 @@
+use alloc::vec;
+use alloc::vec::Vec;
 use bpmd_graph::*;
 use proc_macros::*;
 
@@ -118,7 +120,7 @@ pub fn dummy_node_removal(graph: &mut Graph) {
     while graph.nodes.pop_if(|node| node.is_any_dummy()).is_some() {}
     // Then fix the dummy edge references in incoming and outgoing.
     for node in &mut graph.nodes {
-        let incoming = std::mem::take(&mut node.incoming);
+        let incoming = core::mem::take(&mut node.incoming);
         let incoming = incoming
             .into_iter()
             .map(|edge_id| match graph.edges[edge_id].edge_type {
@@ -131,7 +133,7 @@ pub fn dummy_node_removal(graph: &mut Graph) {
             .collect::<Vec<_>>();
         node.incoming = incoming;
 
-        let outgoing = std::mem::take(&mut node.outgoing);
+        let outgoing = core::mem::take(&mut node.outgoing);
         let outgoing = outgoing
             .into_iter()
             .map(|edge_id| match graph.edges[edge_id].edge_type {

@@ -12,17 +12,22 @@
 //! lanes together, by checking all combinations for their global crossing counts, take the best one.
 use crate::all_crossing_minimization_common::*;
 use crate::macros::impl_index;
+use alloc::borrow::ToOwned;
+use alloc::format;
+use alloc::rc::Rc;
+use alloc::string::String;
+use alloc::string::ToString;
+use alloc::vec;
+use alloc::vec::Vec;
 use bpmd_graph::*;
 use bpmd_util::index_iter::IterIndices;
+use bpmd_util::vecmap::VecMap;
 use bpmd_util::vecset::VecSet;
+use core::cmp::Ordering;
+use core::hash::Hash;
+use core::hash::Hasher;
 use itertools::Itertools;
 use proc_macros::*;
-use std::cmp::Ordering;
-use std::collections::HashMap;
-use std::collections::HashSet;
-use std::hash::Hash;
-use std::hash::Hasher;
-use std::rc::Rc;
 
 mod one_layer;
 
@@ -49,7 +54,7 @@ struct Slice {
 }
 
 impl Slice {
-    fn as_range(&self) -> std::ops::Range<usize> {
+    fn as_range(&self) -> core::ops::Range<usize> {
         self.start as usize..self.end as usize
     }
 }
@@ -144,7 +149,7 @@ impl CrossingCount {
     }
 }
 
-impl<'a> std::iter::Sum<&'a CrossingCount> for CrossingCount {
+impl<'a> core::iter::Sum<&'a CrossingCount> for CrossingCount {
     fn sum<I: Iterator<Item = &'a CrossingCount>>(iter: I) -> Self {
         iter.fold(Self::default(), |acc, x| Self {
             df_df_crossings: acc
@@ -265,12 +270,12 @@ impl SweepGraph {
             .flat_map(|chunk| {
                 let result = (empty_layer_tracker..n!(chunk[0]).layer_id.0)
                     .map(|_| &[][..])
-                    .chain(std::iter::once(chunk));
+                    .chain(core::iter::once(chunk));
                 empty_layer_tracker = n!(chunk[0]).layer_id.0 + 1;
                 result
             });
 
-        let mut edge_collection = HashSet::new();
+        let mut edge_collection = VecSet::new();
 
         // We need to prepend a fake layer (i.e. with zero nodes), because we have an initial layer
         // which captures only the right loops.
@@ -605,7 +610,7 @@ impl SingleLaneSweepSolutions {
     }
 }
 
-type ConstraintMap = HashMap<Coord3, Vec<Above>>;
+type ConstraintMap = VecMap<Coord3, Vec<Above>>;
 
 pub fn reduce_all_crossings_sweep(graph: &mut Graph) -> Result<(), ParseError> {
     let undo = temporarily_add_dummy_nodes_for_edges_within_same_layer(graph);
@@ -645,7 +650,7 @@ pub fn reduce_all_crossings_sweep(graph: &mut Graph) -> Result<(), ParseError> {
             all_best_versions.push(best_versions);
         }
     }
-    d!(println!("{debug_output}"));
+    d!(log::info!("{debug_output}"));
 
     // TODO at this location, if there is a lane with multiple best solutions, one would need to
     // test them all out.
@@ -659,7 +664,7 @@ pub fn reduce_all_crossings_sweep(graph: &mut Graph) -> Result<(), ParseError> {
         for (lane_idx, lane) in pool.lanes.iter().enumerate() {
             let best_solutions = best_it.next().unwrap();
             if best_solutions.solutions.len() > 1 {
-                println!(
+                log::debug!(
                     "p({})/l({}) has {} solutions, taking some random one",
                     pool_idx,
                     lane_idx,
@@ -1155,7 +1160,7 @@ fn calculate_vertical_edge_chains(graph: &Graph) -> Result<Rc<Vec<VerticalEdgeCh
             (None, None) => Ok(None),
             (Some(next_node), None)
                 // Not a loop.
-                if !current_chain.iter().any(|prev| std::ptr::eq(*prev, next_node)) =>
+                if !current_chain.iter().any(|prev| core::ptr::eq(*prev, next_node)) =>
             {
                 Ok(Some(next_node))
             }
@@ -1376,7 +1381,7 @@ fn calculate_vertical_edge_chains(graph: &Graph) -> Result<Rc<Vec<VerticalEdgeCh
         assert!(forwards_is_legal || backwards_is_legal);
         if !forwards_is_legal {
             chain.reverse();
-            std::mem::swap(&mut forwards_is_legal, &mut backwards_is_legal);
+            core::mem::swap(&mut forwards_is_legal, &mut backwards_is_legal);
         }
         vertical_edge_chains.push(VerticalEdgeChain {
             top_to_bottom_node_list: chain.iter().map(|node| node.id).collect(),

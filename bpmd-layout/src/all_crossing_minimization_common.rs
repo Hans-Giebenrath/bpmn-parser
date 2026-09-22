@@ -1,3 +1,4 @@
+use alloc::vec::Vec;
 use bpmd_graph::*;
 use proc_macros::*;
 

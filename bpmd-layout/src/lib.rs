@@ -1,3 +1,5 @@
+#![no_std]
+extern crate alloc;
 mod all_crossing_minimization_common;
 pub mod all_crossing_minimization_sweep;
 pub mod back_edge_removal;
