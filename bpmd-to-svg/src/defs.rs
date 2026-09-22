@@ -2,6 +2,8 @@ use crate::primitives::{
     ACTIVITY_MARKER_DIMENSION, MESSAGE_FLOW_END_MARKER_WIDTH, MESSAGE_FLOW_START_MARKER_RADIUS,
     STROKE_WIDTH,
 };
+use alloc::format;
+use alloc::string::String;
 
 use bpmd_graph::*;
 

@@ -1,4 +1,5 @@
 use crate::straight_edge_math;
+use alloc::vec;
 use bpmd_graph::*;
 use bpmd_util::collision_grid::Grid;
 use bpmd_util::index_iter::IterIndices;

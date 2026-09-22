@@ -86,7 +86,7 @@ pub fn sort_incoming_and_outgoing(graph: &mut Graph) {
             continue;
         }
         if node.incoming.len() > 1 {
-            let mut incoming_cpy = std::mem::take(&mut node.incoming);
+            let mut incoming_cpy = core::mem::take(&mut node.incoming);
             incoming_cpy.sort_by_cached_key(|edge_id| {
                 let from_node = &from!(*edge_id);
                 let to_node = &to!(*edge_id);
@@ -179,7 +179,7 @@ pub fn sort_incoming_and_outgoing(graph: &mut Graph) {
 
         let node = &mut graph.nodes[node_id];
         if node.outgoing.len() > 1 {
-            let mut outgoing_cpy = std::mem::take(&mut node.outgoing);
+            let mut outgoing_cpy = core::mem::take(&mut node.outgoing);
             outgoing_cpy.sort_by_cached_key(|edge_id| {
                 let from_node = &from!(*edge_id);
                 let to_node = &to!(*edge_id);

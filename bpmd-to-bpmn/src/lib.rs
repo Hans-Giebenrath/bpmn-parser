@@ -1,6 +1,10 @@
+#![no_std]
+extern crate alloc;
+use alloc::format;
+use alloc::string::String;
 use bpmd_graph::*;
+use core::fmt::Display;
 use proc_macros::*;
-use std::fmt::Display;
 
 struct IncomingOutgoing<'a> {
     incoming: &'a [EdgeId],
@@ -9,7 +13,7 @@ struct IncomingOutgoing<'a> {
 }
 
 impl Display for IncomingOutgoing<'_> {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         for EdgeId(edge_idx) in self.incoming.iter().cloned() {
             let edge = &self.graph.edges[edge_idx];
             match edge.flow_type {
@@ -67,7 +71,7 @@ impl Display for IncomingOutgoing<'_> {
 struct EventDefinition<'a>(&'a EventType);
 
 impl Display for EventDefinition<'_> {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         // TODO only a handful of them are actually tested.
         let text = match *self.0 {
             EventType::Blank => return Ok(()),
@@ -286,7 +290,7 @@ pub fn generate_bpmn(graph: &Graph) -> String {
             ..
         } = &edge.edge_type
         else {
-            dbg!("This should never be the case?");
+            log::warn!("This should never be the case?");
             continue;
         };
 
@@ -574,10 +578,10 @@ r#"    <bpmn:boundaryEvent id="BoundaryEvent_{node_idx}_{edge_idx}" attachedToRe
                 bpmn.push_str("           <bpmn:compensationEventDefinition {id}/>");
             }
             BoundaryEventType::Multiple => {
-                dbg!("TODO - bpmn.io don't support it, so I don't know how it looks like");
+                log::warn!("TODO - bpmn.io don't support it, so I don't know how it looks like");
             }
             BoundaryEventType::MultipleParallel => {
-                dbg!("TODO - bpmn.io don't support it, so I don't know how it looks like");
+                log::warn!("TODO - bpmn.io don't support it, so I don't know how it looks like");
             }
             BoundaryEventType::Cancel => {
                 // Cancel does not have anything.
@@ -602,7 +606,7 @@ r#"    <bpmn:boundaryEvent id="BoundaryEvent_{node_idx}_{edge_idx}" attachedToRe
 struct AdditionalShapeInfo<'a>(&'a Node);
 
 impl Display for AdditionalShapeInfo<'_> {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         if self.0.is_gateway() {
             write!(f, " isMarkerVisible=\"true\"")?;
         }
@@ -627,7 +631,7 @@ impl Display for AdditionalShapeInfo<'_> {
 struct AdditionalEdgeShapeInfo<'a>(&'a Edge);
 
 impl Display for AdditionalEdgeShapeInfo<'_> {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         if let Some(stroke_color) = &self.0.stroke_color {
             write!(
                 f,

@@ -1,8 +1,9 @@
+use alloc::vec::Vec;
 use bpmd_algorithms::same_layaer_lane_crossings_within_cluster::same_layer_lane_crossings_within_cluster;
 use bpmd_graph::*;
+use bpmd_util::vecset::VecSet;
 use good_lp::*;
 use proc_macros::*;
-use std::collections::HashSet;
 
 pub fn solve_layer_assignment(graph: &mut Graph) {
     solve_layers(graph);
@@ -18,7 +19,7 @@ const DEBUG_ILP_CONSTRUCTION: bool = false;
 macro_rules! d {
     ($($tt:tt)*) => {{
         if DEBUG_ILP_CONSTRUCTION {
-            $($tt)*
+            log::info!($($tt)*);
         }
     }};
 }
@@ -46,7 +47,7 @@ impl Aux {
 }
 
 fn solve_layers(graph: &mut Graph) {
-    d!(dbg!(&graph););
+    d!("{graph:?}");
     let mut vars = variables!();
     let mut aux = Aux::new(graph);
 
@@ -60,7 +61,7 @@ fn solve_layers(graph: &mut Graph) {
             node.id,
             vars.add(variable().integer().min(0).max(num_nodes as f64)),
         );
-        d!(eprintln!("0 <= n({}) <= {num_nodes}", node.id.0));
+        d!("0 <= n({}) <= {num_nodes}", node.id.0);
     }
 
     let mut objective = Expression::from(0.0);
@@ -82,14 +83,16 @@ fn solve_layers(graph: &mut Graph) {
             })
         {
             objective += 0.1 * aux.get(node.id);
-            d!(eprintln!("pull left n({})", node.id.0));
+            d!("pull left n({})", node.id.0);
         }
     }
 
     let mut constraints = Vec::new();
     handle_vertical_lane_crossings(graph, &aux, &mut vars, &mut constraints);
+    //```
     //let mut problem = problem.set_verbose(true);
     //problem.set_parameter("loglevel", "0");
+    //```
 
     graph
         .edges
@@ -113,14 +116,11 @@ fn solve_layers(graph: &mut Graph) {
             if minimize {
                 // Favor short edges
                 objective += aux.get(right) - aux.get(left);
-                d!(eprintln!("minimize n({}) -> n({})", left.0, right.0));
+                d!("minimize n({}) -> n({})", left.0, right.0);
             }
             let from_var = aux.get(left);
             let to_var = aux.get(right);
-            d!(eprintln!(
-                "constraint n({}) before n({}) ({msg})",
-                left.0, right.0
-            ));
+            d!("constraint n({}) before n({}) ({msg})", left.0, right.0);
             constraints.push((to_var - from_var).geq(1));
         });
 
@@ -137,10 +137,7 @@ fn solve_layers(graph: &mut Graph) {
                 .map(|constraint| (constraint.0, constraint.1, "same layer constraint")),
         )
         .for_each(|(n0, n1, msg)| {
-            d!(eprintln!(
-                "constraint n({}) same layer as n({}) ({msg})",
-                n0.0, n1.0
-            ));
+            d!("constraint n({}) same layer as n({}) ({msg})", n0.0, n1.0);
             constraints.push((aux.get(n0) - aux.get(n1)).eq(0));
         });
 
@@ -195,8 +192,8 @@ fn solve_data_object_layers_via_arithmetic_mean(graph: &mut Graph) {
             match avg - avg_floor {
                 d if d < 0.25 => (layer_id, false),
                 // We *only* allow data nodes to move into the half layer if they have at most two
-                // data associations. Otherwise there is some really complicated situation what to
-                // do if it is in the halflayer, and the data edges must be routed. They then need
+                // data associations. Otherwise, there is some really complicated situation what to
+                // do if it is in the half-layer, and the data edges must be routed. They then need
                 // to leave at the top or bottom maybe, but this is just something which I don't
                 // want to solve at the moment, and I wonder whether it is actually worth it.
                 // The usual case for half layers is the simple one-in-one-out-same-flow situation.
@@ -242,7 +239,7 @@ fn solve_data_object_layers_via_arithmetic_mean(graph: &mut Graph) {
     // TODO Handle MAX_NODES_PER_LAYER. When too many data objects pile up in the same layer, they
     // need to be spread to the left and right. This is not trivial, however. If there are 10
     // parallel sequence flows in the lane at that layer, then having 2 per flow = 20 data objects
-    // in total in that layer is ok. However, if there is just one sequence flow, then this needs
+    // in total in that layer is okay. However, if there is just one sequence flow, then this needs
     // to be spread out. Now, the complexity is to determine how many data objects are truly
     // assigned to a specific sequence flow lane, or whether it is just placed here as the two
     // recipients are spread far away. Probably it makes sense to allow 2 per sequence flow and
@@ -264,7 +261,7 @@ fn handle_vertical_lane_crossings(
         .collect::<Vec<_>>();
     all_same_layer_lane_crossings.sort_unstable();
 
-    let mut already_constrained = HashSet::new();
+    let mut already_constrained = VecSet::new();
     for crossing in &all_same_layer_lane_crossings {
         let in_between_lane_range =
             crossing.top_pool_lane.lane.0 + 1..crossing.bot_pool_lane.lane.0;
@@ -333,23 +330,27 @@ fn force_different_layers(
 ) {
     assert!(!a.is_blackbox_node());
     assert!(!b.is_blackbox_node());
-    // We want: a != b.
+    // We want: `a != b`.
     //  <==> a < b || a > b
     // So we have a boolean `z`, and an `M` which is larger than any value which `a` or `b` can ever
     // become (total number of nodes):
+    // ```
     //   a < b + M * z
     //   b < a + M * (1 - z)
     //
     // z == 0:           z == 1:
     //   a < b             (a < b + M)
     //   (b < a + M)       b < a
+    // ```
     //
     // Since there is only `<=` and `>=` in the solver, no `<` or `>`, rewrite it:
+    // ```
     //   a + 1 <= b + M * z
     //   b + 1 <= a + M * (1 - z)
+    // ```
     //
     //
-    d!(eprintln!("different layers: {} - {}", a.id.0, b.id.0));
+    d!("different layers: {} - {}", a.id.0, b.id.0);
     let z = vars.add(variable().binary());
     constraints.push((aux.get(a.id) + 1).leq(aux.get(b.id) + total_num_nodes as f64 * z));
     constraints.push((aux.get(b.id) + 1).leq(aux.get(a.id) + total_num_nodes as f64 * (1 - z)));

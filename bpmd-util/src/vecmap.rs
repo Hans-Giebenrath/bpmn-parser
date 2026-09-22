@@ -133,14 +133,27 @@ impl<'a, K: Eq, V> Entry<'a, K, V> {
     }
 }
 
-impl<K, V> FromIterator<(K, V)> for VecMap<K, V> {
+impl<K: Eq, V> FromIterator<(K, V)> for VecMap<K, V> {
     fn from_iter<I>(iter: I) -> Self
     where
         I: IntoIterator<Item = (K, V)>,
     {
-        Self {
-            inner: iter.into_iter().collect(),
+        let mut result = Self::default();
+        for (k, v) in iter {
+            let _: bool = result.insert(k, v);
         }
+        result
+    }
+}
+
+impl<K: Eq, V> Extend<(K, V)> for VecMap<K, V> {
+    fn extend<I>(&mut self, iter: I)
+    where
+        I: IntoIterator<Item = (K, V)>,
+    {
+        iter.into_iter().for_each(|(key, value)| {
+            let _: bool = self.insert(key, value);
+        });
     }
 }
 

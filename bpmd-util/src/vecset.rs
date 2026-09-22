@@ -79,7 +79,7 @@ impl<T: Eq> FromIterator<T> for VecSet<T> {
         let mut set = Self::new();
 
         for value in iter {
-            set.insert(value);
+            let _: bool = set.insert(value);
         }
 
         set
@@ -92,7 +92,7 @@ impl<T: Eq> Extend<T> for VecSet<T> {
         I: IntoIterator<Item = T>,
     {
         iter.into_iter().for_each(|item| {
-            let _ = self.insert(item);
+            let _: bool = self.insert(item);
         });
     }
 }
@@ -100,5 +100,32 @@ impl<T: Eq> Extend<T> for VecSet<T> {
 impl<T> VecSet<T> {
     pub fn drain(&mut self) -> alloc::vec::Drain<'_, T> {
         self.inner.drain(..)
+    }
+}
+
+impl<'a, T> IntoIterator for &'a VecSet<T> {
+    type Item = &'a T;
+    type IntoIter = core::slice::Iter<'a, T>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.inner.iter()
+    }
+}
+
+impl<'a, T> IntoIterator for &'a mut VecSet<T> {
+    type Item = &'a mut T;
+    type IntoIter = core::slice::IterMut<'a, T>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.inner.iter_mut()
+    }
+}
+
+impl<T> IntoIterator for VecSet<T> {
+    type Item = T;
+    type IntoIter = alloc::vec::IntoIter<T>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.inner.into_iter()
     }
 }

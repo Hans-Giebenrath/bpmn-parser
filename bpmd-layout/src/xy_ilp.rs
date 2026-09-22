@@ -1,12 +1,14 @@
 use crate::util::classify_barrier_node_for_gateway;
+use alloc::vec;
+use alloc::vec::Vec;
 use bpmd_graph::*;
+use core::cmp::Ordering;
 use good_lp::solvers::SolverModel;
 use good_lp::*;
 use itertools::Either;
 use itertools::Itertools;
 use itertools::iproduct;
 use proc_macros::*;
-use std::cmp::Ordering;
 
 type PaddingVarsExpandedAux = (
     /* above */
@@ -173,22 +175,22 @@ const DEBUG_ILP_CONSTRUCTION: bool = false;
 macro_rules! d {
     ($($tt:tt)*) => {{
         if DEBUG_ILP_CONSTRUCTION {
-            $($tt)*
+            log::info!($($tt)*);
         }
     }};
 }
 
 #[track_caller]
 fn c<T: SolverModel>(problem: &mut T, constraint: Constraint) {
-    d! {
-        let location = std::panic::Location::caller();
-        println!("[line {}] {constraint:?}", location.line());
-    }
+    d!(
+        "[line {}] {constraint:?}",
+        core::panic::Location::caller().line()
+    );
     problem.add_constraint(constraint);
 }
 
 fn assign_y(graph: &mut Graph, pool: PoolId, lane: LaneId, min_y_value: usize) -> usize {
-    d!(dbg!(&graph););
+    d!("{graph:?}");
     let mut aux = Aux::new(graph);
     let mut vars = variables!();
     let node_ids_iter = graph.pools[pool.0].lanes[lane.0].nodes.iter().cloned();
@@ -203,9 +205,7 @@ fn assign_y(graph: &mut Graph, pool: PoolId, lane: LaneId, min_y_value: usize) -
     // NOT an integer variable!
     let height_minimization_var = vars.add(variable().min(0));
     objective += HEIGHT_MINIMIZATION_FACTOR * height_minimization_var;
-    d!(eprintln!(
-        "height_minimization_var (HMV) factor: {HEIGHT_MINIMIZATION_FACTOR}"
-    ));
+    d!("height_minimization_var (HMV) factor: {HEIGHT_MINIMIZATION_FACTOR}");
 
     fn y_padding(n: &Node, cfg: &Config) -> usize {
         if n.is_any_dummy() {
@@ -238,11 +238,11 @@ fn assign_y(graph: &mut Graph, pool: PoolId, lane: LaneId, min_y_value: usize) -
                 ),
             },
         );
-        d!(eprintln!(
+        d!(
             "minimum y for n({} - ilp var v{}): {min_y_value}",
             node.id.0,
             var_idx_minus_one + 1
-        ));
+        );
     }
 
     // Minimize the vertical length of edges. I.e. ideally as a result they go
@@ -303,8 +303,8 @@ fn assign_y(graph: &mut Graph, pool: PoolId, lane: LaneId, min_y_value: usize) -
             edge_id,
             from_id: edge.from,
             to_id: edge.to,
-            min_id: std::cmp::min(edge.from, edge.to),
-            max_id: std::cmp::max(edge.from, edge.to),
+            min_id: core::cmp::min(edge.from, edge.to),
+            max_id: core::cmp::max(edge.from, edge.to),
             diff_var,
             active,
             edge_weight,
@@ -341,7 +341,7 @@ fn assign_y(graph: &mut Graph, pool: PoolId, lane: LaneId, min_y_value: usize) -
         aux.get_mut(node_id).padding_vars_expanded = gateway_additional;
     }
 
-    println!("Num of vars: {}", vars.len());
+    d!("Num of vars: {}", vars.len());
     let mut problem = vars.minimise(objective).using(default_solver);
 
     // Add padding constraints between neighboring nodes.
@@ -390,20 +390,20 @@ fn assign_y(graph: &mut Graph, pool: PoolId, lane: LaneId, min_y_value: usize) -
                         &mut problem,
                         (below_aux - above_aux).geq((above_height + padding) as f64),
                     );
-                    d! {
-                        let real_above = node_ids_iter
+                    d!(
+                        "padding above node({}) <dist {}> below node({})",
+                        node_ids_iter
                             .clone()
                             .find(|n| aux.v(*n) == above_aux)
-                            .unwrap();
-                        let real_below = node_ids_iter
+                            .unwrap()
+                            .0,
+                        padding,
+                        node_ids_iter
                             .clone()
                             .find(|n| aux.v(*n) == below_aux)
-                            .unwrap();
-                        eprintln!(
-                            "padding above node({}) <dist {}> below node({})",
-                            real_above.0, padding, real_below.0
-                        );
-                    };
+                            .unwrap()
+                            .0
+                    );
                 },
             );
         });
@@ -432,14 +432,14 @@ fn assign_y(graph: &mut Graph, pool: PoolId, lane: LaneId, min_y_value: usize) -
         }
         let from_node = &graph.nodes[*from_id];
         let to_node = &graph.nodes[*to_id];
-        d!(eprintln!(
+        d!(
             "minimize edge y height: {edge_weight} * e({} | {} -> {} / \"{}\" -> \"{}\")",
             edge_id.0,
             from_id.0,
             to_id.0,
             from_node.display_text_or_dummy_kind(),
             to_node.display_text_or_dummy_kind(),
-        ));
+        );
         let from_var = aux.v(*from_id);
         let to_var = aux.v(*to_id);
         let from_offset = if from_node.is_real() {
@@ -477,12 +477,12 @@ fn assign_y(graph: &mut Graph, pool: PoolId, lane: LaneId, min_y_value: usize) -
     let mut min_y_encountered = usize::MAX;
     let mut max_y_plus_height_encountered = usize::MIN;
     for node_id in node_ids_iter.clone() {
-        d!(eprintln!(
+        d!(
             "solution n({}) y: {} (non-rounded: {})",
             node_id.0,
             solution.value(aux.v(node_id)).round() as usize,
             solution.value(aux.v(node_id)),
-        ));
+        );
     }
     for node_id in node_ids_iter.clone() {
         let node = &mut n!(node_id);
@@ -553,7 +553,7 @@ fn analyse_gateway_neighbor_layer_connectivity<'a>(
     if let Some(first) = edges.iter().find_map(&target_node)
         && let Some(last) = rev.find_map(&target_node)
     {
-        if !std::ptr::eq(first, last) {
+        if !core::ptr::eq(first, last) {
             GatewayNeighborLayerConnectivity::MultipleSameLaneEdges {
                 top_node: first,
                 bottom_node: last,
@@ -562,7 +562,7 @@ fn analyse_gateway_neighbor_layer_connectivity<'a>(
                 in_between_nodes: edges
                     .iter()
                     .flat_map(target_node)
-                    .take_while(|t: &&Node| !std::ptr::eq(*t, last)),
+                    .take_while(|t: &&Node| !core::ptr::eq(*t, last)),
             }
         } else {
             GatewayNeighborLayerConnectivity::OnlyOneSameLaneEdge(first)
@@ -930,13 +930,13 @@ fn handle_gateway_neighbor_layer_connectivity(
                     assert!(gateway.pool_and_lane() == cur.pool_and_lane());
                     if cur.is_bend_dummy() {
                         cached_constraints.push((middle(gateway, &aux) - middle(cur, &aux)).eq(0.0));
-                        d!(eprintln!(
+                        d!(
                             "gateway fix lone bend node to same y coordinate: gateway node({}) - bend node({}) / \"{}\" - \"{}\"",
                             gateway.id.0,
                             cur.id.0,
                             gateway.display_text_or_dummy_kind(),
                             cur.display_text_or_dummy_kind()
-                        ));
+                        );
                     } else {
                         // In this case we have a loop lone element, i.e. `cur` is somewhere
                         // above or below the gateway node. Cannot fix it to the same y coordinate.
@@ -947,26 +947,26 @@ fn handle_gateway_neighbor_layer_connectivity(
                     assert!(!top_slot_is_data); // Graph validation insufficient.
                     if gateway.pool_and_lane() == cur.pool_and_lane() {
                         cached_constraints.push((middle(gateway, &aux) - middle(cur, &aux)).geq(graph.config.min_vertical_space_between_gateway_bendpoints as f64 / 2.0));
-                        d!(eprintln!(
+                        d!(
                             "gateway below non-lone bend node: gateway node({}) - bend node({}) / \"{}\" - \"{}\"",
                             gateway.id.0,
                             cur.id.0,
                             gateway.display_text_or_dummy_kind(),
                             cur.display_text_or_dummy_kind()
-                        ));
+                        );
                     }
                     lone_encountered
                 } else {
                     assert!(!bottom_slot_is_data); // Graph validation insufficient.
                     if gateway.pool_and_lane() == cur.pool_and_lane() {
                         cached_constraints.push((middle(cur, &aux) - middle(gateway, &aux)).geq(graph.config.min_vertical_space_between_gateway_bendpoints as f64 / 2.0));
-                        d!(eprintln!(
+                        d!(
                             "gateway above non-lone bend node: gateway node({}) - bend node({}) / \"{}\" - \"{}\"",
                             gateway.id.0,
                             cur.id.0,
                             gateway.display_text_or_dummy_kind(),
                             cur.display_text_or_dummy_kind()
-                        ));
+                        );
                     }
                     lone_encountered
                 }
@@ -978,17 +978,17 @@ fn handle_gateway_neighbor_layer_connectivity(
                 // the bend dummy into another lane if we cannot leave from the top/bottom at all.
                 assert!(gateway.pool_and_lane() == cur.pool_and_lane());
                 cached_constraints.push((middle(gateway, &aux) - middle(cur, &aux)).eq(0.0));
-                d!(eprintln!(
+                d!(
                     "gateway fix non-lone bend node to same y: gateway node({}) - bend node({}) / \"{}\" - \"{}\"",
                     gateway.id.0,
                     cur.id.0,
                     gateway.display_text_or_dummy_kind(),
                     cur.display_text_or_dummy_kind()
-                ));
+                );
 
                 if nr == 1 {
                     // Already second edge. But also only print on the second edge to not spam.
-                    eprintln!(
+                    d!(
                         "Gateway {} is forced to have multiple edges on one side",
                         gateway.display_text_or_dummy_kind()
                     );
@@ -1000,13 +1000,13 @@ fn handle_gateway_neighbor_layer_connectivity(
                 if top_is_blocked_for_non_lones {
                     if gateway.pool_and_lane() == cur.pool_and_lane() {
                         cached_constraints.push((middle(gateway, &aux) - middle(cur, &aux)).leq(0.0));
-                        d!(eprintln!(
+                        d!(
                             "gateway below non-lone bend node: gateway node({}) - bend node({}) / \"{}\" - \"{}\"",
                             gateway.id.0,
                             cur.id.0,
                             gateway.display_text_or_dummy_kind(),
                             cur.display_text_or_dummy_kind()
-                        ));
+                        );
                     } else {
                         // Assert: Otherwise bend dummy placement logic is flawed, should not have pushed
                         // the bend dummy into another lane if we cannot leave from the top/bottom at all.
@@ -1015,13 +1015,13 @@ fn handle_gateway_neighbor_layer_connectivity(
                 } else {
                     if gateway.pool_and_lane() == cur.pool_and_lane() {
                         cached_constraints.push((middle(gateway, &aux) - middle(cur, &aux)).geq(0.0));
-                        d!(eprintln!(
+                        d!(
                             "gateway above non-lone bend node: gateway node({}) - bend node({}) / \"{}\" - \"{}\"",
                             gateway.id.0,
                             cur.id.0,
                             gateway.display_text_or_dummy_kind(),
                             cur.display_text_or_dummy_kind()
-                        ));
+                        );
                     } else {
                         // Assert: Otherwise bend dummy placement logic is flawed, should not have pushed
                         // the bend dummy into another lane if we cannot leave from the top/bottom at all.
@@ -1032,10 +1032,10 @@ fn handle_gateway_neighbor_layer_connectivity(
                     cached_constraints.push(
                         (middle(cur, &aux) - middle(prev, &aux)).geq(graph.config.dummy_node_y_padding as f64),
                     );
-                    d!(eprintln!(
+                    d!(
                         "padding above node({}) <dist {}> below node({})",
                         prev.id.0, graph.config.dummy_node_y_padding, cur.id.0
-                    ));
+                    );
                 }
                 Some(cur)
             });
@@ -1049,10 +1049,12 @@ fn handle_gateway_neighbor_layer_connectivity(
                         (middle(cur, &aux) - middle(prev, &aux))
                             .geq(graph.config.dummy_node_y_padding as f64),
                     );
-                    d!(eprintln!(
+                    d!(
                         "padding above node({}) <dist {}> below node({})",
-                        prev.id.0, graph.config.dummy_node_y_padding, cur.id.0
-                    ));
+                        prev.id.0,
+                        graph.config.dummy_node_y_padding,
+                        cur.id.0
+                    );
                 }
                 Some(cur)
             });
@@ -1115,8 +1117,8 @@ fn handle_gateway_neighbor_layer_connectivity(
             // nicely at the right corner of the gateway symbol.
             cached_constraints.push((middle(gateway, aux) - middle(node, aux)).eq(0.0));
 
-            //let id1 = std::cmp::min(gateway.id, node.id);
-            //let id2 = std::cmp::max(gateway.id, node.id);
+            //let id1 = core::cmp::min(gateway.id, node.id);
+            //let id2 = core::cmp::max(gateway.id, node.id);
             // Activate the diff_var for this edge. Previously it was deactivated because it was
             // connected to a gateway, but it is the only edge.
             //diff_vars
@@ -1124,13 +1126,13 @@ fn handle_gateway_neighbor_layer_connectivity(
             //    .find(|diff_var| diff_var.min_id == id1 && diff_var.max_id == id2)
             //    .unwrap()
             //    .active = true;
-            d!(eprintln!(
+            d!(
                 "gateway fix lone same-lane bend node to same y coordinate: gateway node({}) - bend node({}) / \"{}\" - \"{}\"",
                 gateway.id.0,
                 node.id.0,
                 gateway.display_text_or_dummy_kind(),
                 node.display_text_or_dummy_kind()
-            ));
+            );
             // TODO in principle it would be cool to make the connected edge a bit less rigid. The
             // other side of the gateway is expected to be branching, and to allow the gateway node
             // to be positioned better, without disrupting the rest of the layout, it might be good
@@ -1148,13 +1150,13 @@ fn handle_gateway_neighbor_layer_connectivity(
                         .eq(0.0),
                 );
 
-                d!(eprintln!(
+                d!(
                     "gateway balance between top node({0}) - gateway node({1}) - bottom node({2}) (and distance between {0} and {2} > {3})",
                     top_node.id.0,
                     gateway.id.0,
                     bottom_node.id.0,
                     graph.config.min_vertical_space_between_gateway_bendpoints
-                ));
+                );
 
                 // An additional constraint to ensure that the branches are not too close to the gateway
                 // node, otherwise it looks awkward.
@@ -1181,7 +1183,7 @@ fn handle_gateway_neighbor_layer_connectivity(
                 // with respect to gateway (since now they are all pushed to the side anyway).
                 cached_constraints
                     .push((middle(above_node, aux) - middle(below_node, aux)).eq(0.0));
-                d!(eprintln!(
+                d!(
                     "gateway and bend dummy forced on same y: gateway node({}) - other node({})",
                     gateway.id.0,
                     if above_node.id == gateway.id {
@@ -1189,14 +1191,14 @@ fn handle_gateway_neighbor_layer_connectivity(
                     } else {
                         above_node.id.0
                     },
-                ));
+                );
                 return;
             }
 
             let min = graph.config.min_vertical_space_between_gateway_bendpoints / 2;
             let max = lane.nodes.len()
                 * (MAX_NODE_HEIGHT
-                    + std::cmp::max(
+                    + core::cmp::max(
                         graph.config.regular_node_y_padding,
                         graph.config.dummy_node_y_padding,
                     ));
@@ -1219,10 +1221,11 @@ fn handle_gateway_neighbor_layer_connectivity(
                 );
             }
             if in_between_count > 0 {
-                d!(eprintln!(
+                d!(
                     "gateway forbidden offset constraint for gateway node {} with {} other intermediate bend nodes",
-                    gateway.id, in_between_count
-                ));
+                    gateway.id,
+                    in_between_count
+                );
             }
         }
     }

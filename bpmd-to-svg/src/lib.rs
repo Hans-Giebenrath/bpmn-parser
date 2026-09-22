@@ -1,8 +1,10 @@
+#![no_std]
+extern crate alloc;
 use bpmd_graph::*;
-
 pub mod defs;
+use alloc::string::String;
+use alloc::vec::Vec;
 pub mod primitives;
-
 use primitives::ElementSvgStyle;
 
 pub fn to_svg(graph: &Graph, font_cache: &mut FontCache, embed_font: bool) -> String {
@@ -95,7 +97,7 @@ pub fn to_svg(graph: &Graph, font_cache: &mut FontCache, embed_font: bool) -> St
             text,
         } = &edge.edge_type
         else {
-            dbg!("This should never be the case?");
+            log::warn!("This should never be the case?");
             continue;
         };
 

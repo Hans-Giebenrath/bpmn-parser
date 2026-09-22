@@ -11,3 +11,4 @@ cosmic-text = {
     default-features = false,
     features = ["no_std", "swash"],
 }
+log = "0.4.34"

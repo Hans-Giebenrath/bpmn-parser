@@ -6,11 +6,13 @@
 //! Anyway, the idea is to have one big `defs` section which contains all icons, and then we can
 //! reference it while drawing.
 
+use alloc::format;
+use alloc::string::String;
 use cosmic_text::{
     Align, Attrs, Buffer, Command, FontSystem, LayoutRun, Metrics, Shaping, SwashCache, Wrap,
 };
 
-use std::fmt::Write as _;
+use core::fmt::Write as _;
 
 use bpmd_graph::*;
 pub const STROKE_WIDTH: f64 = 2.;
@@ -301,7 +303,7 @@ impl<'a> Svg<'a> {
         if multiple {
             let start_x = content_width / 2 + pool_header_width - ACTIVITY_MARKER_DIMENSION / 2;
             let y_padding = 3;
-            let start_y = dbg!(height) - y_padding - ACTIVITY_MARKER_DIMENSION;
+            let start_y = height - y_padding - ACTIVITY_MARKER_DIMENSION;
             writeln!(
                     self.body,
                     r##"  <use href="#tm-multiple" x="{start_x}" y="{start_y}" width="{ACTIVITY_MARKER_DIMENSION}" height="{ACTIVITY_MARKER_DIMENSION}" stroke="{}" fill="none" />"##,

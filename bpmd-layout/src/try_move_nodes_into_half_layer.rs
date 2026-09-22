@@ -1,8 +1,8 @@
+use alloc::vec::Vec;
 use bpmd_graph::*;
-use bpmd_util::index_iter::IterIndices;
+use bpmd_util::{index_iter::IterIndices, vecmap::VecMap};
+use core::ops::RangeInclusive;
 use proc_macros::*;
-use std::collections::HashMap;
-use std::ops::RangeInclusive;
 
 // If the data object is within a half-layer, and is on a vertical edge segment,
 // then it is moved instead into the regular layer (left to it). Right now the
@@ -16,8 +16,8 @@ pub fn try_move_nodes_into_half_layer(graph: &mut Graph) {
 
     // These are not *exactly* the vertical segments, but added padding.
     // Also, the left value is always smaller than the right value.
-    let mut vertical_segments_per_layer: HashMap<LayerId, Vec<RangeInclusive<usize>>> =
-        HashMap::new();
+    let mut vertical_segments_per_layer: VecMap<LayerId, Vec<RangeInclusive<usize>>> =
+        VecMap::new();
 
     let white_spacing = 5; // air between the elements
     let data_node_height = DATAOBJECT_NODE_HEIGHT;

@@ -153,6 +153,7 @@ name = "bpmd-to-bpmn"
 version = "0.1.0"
 dependencies = [
  "bpmd-graph",
+ "log",
  "proc_macros",
 ]
 
@@ -162,6 +163,7 @@ version = "0.1.0"
 dependencies = [
  "bpmd-graph",
  "cosmic-text",
+ "log",
  "proc_macros",
 ]
 

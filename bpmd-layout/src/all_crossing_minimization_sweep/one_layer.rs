@@ -251,7 +251,7 @@ impl P3Layer {
             // TODO maybe add a Vec based VecSet here, so we can do index based iteration.
             let below_snapshot = core::mem::take(&mut self.merge_nodes[v_idx].below_of_this);
 
-            for &t_idx in &below_snapshot {
+            for &t_idx in below_snapshot.iter() {
                 self.merge_nodes[t_idx]
                     .incoming_constraints
                     .insert(0, v_idx);

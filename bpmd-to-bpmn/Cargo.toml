@@ -5,4 +5,5 @@ edition = "2024"
 
 [dependencies]
 bpmd-graph = { path = "../bpmd-graph" }
+log = "0.4.34"
 proc_macros = { path = "../proc_macros" }
