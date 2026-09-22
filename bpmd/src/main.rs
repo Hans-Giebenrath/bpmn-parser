@@ -106,20 +106,20 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut graph = parse(&mut import_data, &mut timer).bpmd_format_err(&import_data)?;
     import_data.pop();
 
-    {
-        let visibility_table =
-            pebpmd_analysis(&mut graph, &mut timer).bpmd_format_err(&import_data)?;
-        if let Some(visibility_path) = &cli.visibility_table {
-            std::fs::write(visibility_path, visibility_table)?;
-        };
-    }
-
-    // This takes quite some time :( Would be cool if that could be a `const` method, but requires
-    // upstream support and I don't believe this is easily achievable.
-    let mut font_cache = timer.time_it("Initializing font system", FontCache::new);
-
     let result = catch_unwind(AssertUnwindSafe(
         || -> Result<String, Box<dyn std::error::Error>> {
+            {
+                let visibility_table =
+                    pebpmd_analysis(&mut graph, &mut timer).bpmd_format_err(&import_data)?;
+                if let Some(visibility_path) = &cli.visibility_table {
+                    std::fs::write(visibility_path, visibility_table)?;
+                };
+            }
+
+            // This takes quite some time :( Would be cool if that could be a `const` method, but requires
+            // upstream support and I don't believe this is easily achievable.
+            let mut font_cache = timer.time_it("Initializing font system", FontCache::new);
+
             layout_graph(&mut graph, &mut timer, &mut font_cache).bpmd_format_err(&import_data)?;
             Ok(match cli.output_format {
                 OutputFormat::Bpmn => timer.time_it("XML export", || generate_bpmn(&graph)),
