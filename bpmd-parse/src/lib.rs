@@ -15,6 +15,6 @@ pub use lexer::lex;
 pub use parser::Parser;
 
 pub fn parse(import_data: &mut dyn ImportHandler, timer: &mut Timer) -> Result<Graph, ParseError> {
-    let stream = lex(import_data)?;
-    timer.time_it("Parsing", || parser::Parser::new().parse(stream))
+    let stream = timer.time_it("lexing", || lex(import_data))?;
+    timer.time_it("parsing", || parser::Parser::new().parse(stream))
 }
