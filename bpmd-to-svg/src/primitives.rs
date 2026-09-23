@@ -1019,22 +1019,25 @@ fn run_to_svg_path(
         for cmd in commands {
             match *cmd {
                 Command::MoveTo(p) => {
-                    d.push_str(&format!("M {} {} ", p.x + dx, -p.y + dy));
+                    write!(&mut d, "M {} {} ", p.x + dx, -p.y + dy).unwrap();
                 }
                 Command::LineTo(p) => {
-                    d.push_str(&format!("L {} {} ", p.x + dx, -p.y + dy));
+                    write!(&mut d, "L {} {} ", p.x + dx, -p.y + dy).unwrap();
                 }
                 Command::QuadTo(p1, p2) => {
-                    d.push_str(&format!(
+                    write!(
+                        &mut d,
                         "Q {} {} {} {} ",
                         p1.x + dx,
                         -p1.y + dy,
                         p2.x + dx,
                         -p2.y + dy,
-                    ));
+                    )
+                    .unwrap();
                 }
                 Command::CurveTo(p1, p2, p3) => {
-                    d.push_str(&format!(
+                    write!(
+                        &mut d,
                         "C {} {} {} {} {} {} ",
                         p1.x + dx,
                         -p1.y + dy,
@@ -1042,10 +1045,11 @@ fn run_to_svg_path(
                         -p2.y + dy,
                         p3.x + dx,
                         -p3.y + dy,
-                    ));
+                    )
+                    .unwrap();
                 }
                 Command::Close => {
-                    d.push_str("Z ");
+                    write!(&mut d, "Z ").unwrap();
                 }
             }
         }
