@@ -1,0 +1,26 @@
+[package]
+name = "bpmd-playground-wasm"
+version = "0.1.0"
+edition = "2024"
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+wasm-bindgen = "0.2.129"
+annotate-snippets = "0.12"
+bpmd-graph = { path = "../bpmd-graph" }
+bpmd-parse = { path = "../bpmd-parse" }
+bpmd-layout = { path = "../bpmd-layout" }
+bpmd-util = { path = "../bpmd-util" }
+bpmd-to-svg = { path = "../bpmd-to-svg" }
+bpmd-to-bpmn = { path = "../bpmd-to-bpmn" }
+bpmd-pebpmd-analysis = { path = "../bpmd-pebpmd-analysis" }
+serde = { version = "1.0",  default-features = false, features = ["derive", "alloc"] }
+serde_json = { version = "1.0",  default-features = false , features = ["alloc"]}
+serde-wasm-bindgen = "0.6.5"
+web-sys = { version = "0.3", features = [
+    "Window",
+    "Performance",
+    "console",
+] }
