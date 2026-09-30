@@ -11,7 +11,7 @@ bpmd-algorithms = { path = "../bpmd-algorithms" }
 bpmd-util = { path = "../bpmd-util" }
 bpmd-graph = { path = "../bpmd-graph" }
 proc_macros = { path = "../proc_macros" }
-itertools = "0.15.0"
+itertools = { version = "0.15.0", default-features = false, features = ["use_alloc"] }
 cosmic-text = {
     version = "0.19",
     default-features = false,

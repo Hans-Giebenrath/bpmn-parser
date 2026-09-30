@@ -13,3 +13,4 @@ bpmd-util = { path = "../bpmd-util" }
 bpmd-to-svg = { path = "../bpmd-to-svg" }
 bpmd-to-bpmn = { path = "../bpmd-to-bpmn" }
 bpmd-pebpmd-analysis = { path = "../bpmd-pebpmd-analysis" }
+csv = "1.4.0"

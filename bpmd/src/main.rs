@@ -5,6 +5,7 @@ use annotate_snippets::Level;
 use bpmd_graph::*;
 use bpmd_layout::*;
 use bpmd_parse::*;
+use bpmd_pebpmd_analysis::VisibilityTable;
 use bpmd_pebpmd_analysis::pebpmd_analysis;
 use bpmd_to_bpmn::*;
 use bpmd_to_svg::*;
@@ -112,7 +113,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 let visibility_table =
                     pebpmd_analysis(&mut graph, &mut timer).bpmd_format_err(&import_data)?;
                 if let Some(visibility_path) = &cli.visibility_table {
-                    std::fs::write(visibility_path, visibility_table)?;
+                    std::fs::write(visibility_path, to_csv(&visibility_table))?;
                 };
             }
 
@@ -379,4 +380,14 @@ fn validate_import(
             tc,
         )])
     }
+}
+
+fn to_csv(visibility_table: &VisibilityTable) -> String {
+    let mut csv = csv::Writer::from_writer(Vec::new());
+    csv.write_record(&visibility_table.header_row).unwrap();
+    for row in &visibility_table.rows {
+        csv.write_record(row).unwrap();
+    }
+    let bytes = csv.into_inner().unwrap();
+    String::from_utf8_lossy_owned(bytes)
 }

@@ -6,6 +6,7 @@ use alloc::vec::Vec;
 use bpmd_graph::pebpmd::*;
 use bpmd_graph::*;
 use bpmd_util::vecmap::VecMap;
+use bpmd_util::vecset::VecSet;
 use itertools::Itertools;
 
 use crate::lexer;
@@ -541,10 +542,9 @@ impl Parser {
         }
 
         if tee_or_mpc == "tee" {
-            let unique_pools: Vec<_> = tasks
+            let unique_pools: VecSet<PoolId> = tasks
                 .iter()
                 .map(|(id, _)| self.graph.nodes[*id].pool)
-                .unique()
                 .collect();
 
             if unique_pools.len() != 1 {

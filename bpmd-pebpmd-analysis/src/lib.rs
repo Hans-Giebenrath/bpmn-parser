@@ -1,6 +1,7 @@
 #![no_std]
 use alloc::format;
 use alloc::string::ToString;
+use alloc::vec::Vec;
 use bpmd_graph::pebpmd::*;
 use bpmd_graph::*;
 use bpmd_util::timer::Timer;
@@ -14,7 +15,10 @@ use core::fmt::Debug;
 pub mod analysis;
 pub mod visibility_table;
 
-pub fn pebpmd_analysis(graph: &mut Graph, timer: &mut Timer) -> Result<String, ParseError> {
+pub fn pebpmd_analysis(
+    graph: &mut Graph,
+    timer: &mut Timer,
+) -> Result<VisibilityTable, ParseError> {
     let analysis_result = timer.time_it("pebpmd_analysis", || analysis::pebpmd_analysis(graph))?;
     let visibility_data = timer.time_it("pebpmd_generate_visibility_table", || {
         visibility_table::generate_visibility_table(graph, &analysis_result)
@@ -35,6 +39,11 @@ impl Debug for PoolOrProtection {
             Self::Protection(prot) => write!(f, "prot({prot})"),
         }
     }
+}
+
+pub struct VisibilityTable {
+    pub header_row: Vec<String>,
+    pub rows: Vec<Vec<String>>,
 }
 
 /// This is just a slightly different form of the PeBpmd type, but more digestible for the creation

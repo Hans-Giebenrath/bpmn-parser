@@ -1,4 +1,5 @@
 use crate::PoolOrProtection;
+use crate::VisibilityTable;
 use crate::VisibilityTableInput;
 use alloc::collections::BTreeSet;
 use alloc::string::String;
@@ -161,8 +162,11 @@ impl Display for ProtectionString {
 pub fn generate_visibility_table(
     graph: &Graph,
     input: &VisibilityTableInput,
-) -> Result<String, ParseError> {
-    let mut csv = csv::Writer::from_writer(Vec::new());
+) -> Result<VisibilityTable, ParseError> {
+    let mut result = VisibilityTable {
+        header_row: Vec::new(),
+        rows: Vec::new(),
+    };
     let mut on_demand_call = OnDemandVisibilityTableCell {
         graph,
         cache: Default::default(),
@@ -170,10 +174,10 @@ pub fn generate_visibility_table(
     };
 
     // Write header
-    csv.write_record(
-        core::iter::once("Pool").chain(graph.data_elements.iter().map(|sde| sde.name.as_str())),
-    )
-    .expect("writing into a Vec.");
+    result.header_row = core::iter::once("Pool")
+        .chain(graph.data_elements.iter().map(|sde| sde.name.as_str()))
+        .map(ToString::to_string)
+        .collect();
 
     // Write rows
     for (pool_idx, pool) in graph.pools.iter().enumerate() {
@@ -196,15 +200,15 @@ pub fn generate_visibility_table(
                     .map(|strings| strings.to_string())
             })
             .collect::<Result<Vec<_>, _>>()?;
-        csv.write_record(
+        result.rows.push(
             core::iter::once(
                 pool.name
                     .clone()
                     .unwrap_or_else(|| "Anonymous Pool".to_string()),
             )
-            .chain(row),
-        )
-        .expect("writing into a Vec.");
+            .chain(row)
+            .collect(),
+        );
     }
 
     let min_protections_len = |protection_groups: &VecSet<BTreeSet<PeBpmdProtection>>| -> usize {
@@ -230,10 +234,8 @@ pub fn generate_visibility_table(
             None => row.push(String::new()),
         }
     }
-    csv.write_record(row).expect("writing into a Vec.");
-
-    let bytes = csv.into_inner().expect("writing into a Vec.");
-    Ok(String::from_utf8(bytes).unwrap_or("".to_string()))
+    result.rows.push(row);
+    Ok(result)
 }
 
 fn is_pool_pebpmd(pebpmd: &PeBpmd, pool_id: PoolId) -> bool {
