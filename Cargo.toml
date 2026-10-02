@@ -1,5 +1,3 @@
-#cargo-features = ["profile-rustflags", "codegen-backend"]
-
 [workspace]
 resolver = "3"
 members = ["boundary-lookuptable","bpmd", "bpmd-algorithms", "bpmd-graph", "bpmd-layout", "bpmd-parse", "bpmd-pebpmd-analysis", "bpmd-playground-wasm", "bpmd-to-bpmn", "bpmd-to-svg", "bpmd-util", "proc_macros"]

@@ -11,6 +11,7 @@ use annotate_snippets::AnnotationKind;
 use annotate_snippets::Level;
 use annotate_snippets::Snippet;
 use annotate_snippets::renderer::{DecorStyle, Renderer};
+use web_sys::js_sys;
 
 use bpmd_graph::*;
 use bpmd_layout::layout_graph;
@@ -99,6 +100,12 @@ impl ImportHandler for ImportData {
 }
 
 #[wasm_bindgen]
+pub fn init_bpmd() {
+    wasm_logger::init(wasm_logger::Config::default());
+    console_error_panic_hook::set_once();
+}
+
+#[wasm_bindgen]
 pub fn compile_bpmd(text: JsValue) -> JsValue {
     let request: RequestType = match serde_wasm_bindgen::from_value(text) {
         Ok(request) => request,
@@ -122,22 +129,24 @@ pub fn compile_bpmd(text: JsValue) -> JsValue {
 }
 
 fn run(request: RequestType) -> Result<InnerReturnType, Box<dyn core::error::Error>> {
-    let mut timer = Timer::new(
-        Box::new(|| {
-            let window = web_sys::window().expect("no global window");
-            let performance = window.performance().expect("performance API unavailable");
+    log::warn!("HEY 1");
+    let global = js_sys::global();
+    let worker: web_sys::WorkerGlobalScope = global.unchecked_into();
 
-            Duration::from_secs_f64(performance.now() / 1000.0)
-        }),
+    let performance = worker.performance().expect("performance API unavailable");
+    let mut timer = Timer::new(
+        Box::new(move || Duration::from_secs_f64(performance.now() / 1000.0)),
         Box::new(|start, end| end.saturating_sub(start)),
         Box::new(|s| web_sys::console::log_1(&s.into())),
     );
     let mut import_data = ImportData::new(request.text);
     let mut graph = parse(&mut import_data, &mut timer).bpmd_format_err(&import_data)?;
 
+    log::warn!("HEY 2");
     let pebpmd_visibility_table =
         pebpmd_analysis(&mut graph, &mut timer).bpmd_format_err(&import_data)?;
 
+    log::warn!("HEY 3");
     // Reuse the expensive font system between calls rather than constructing
     // FontCache for every compilation.
     let mut cache = FONT_CACHE.0.borrow_mut();
