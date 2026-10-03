@@ -4,14 +4,14 @@
     <meta charset="utf-8" />
     <title>BPMD Playground</title>
   </head>
-  <body>
-      <h1 id="title">BPMD Playground</h1>
-      <textarea id="editor" cols="115">
-
-      </textarea>
-      <script type="module" src="./main.js" ></script>
-      <div id="diagram" style="max-width: 500px" />
-      <div id="vistab" />
-      <div id="diagnostics" />
+  <body style="display: flex">
+      <div>
+          <h1 id="title">BPMD Playground</h1>
+          <textarea id="editor" cols="75" rows="40"></textarea>
+      </div>
+      <div id="diagram" style="width: 50em;"></div>
+      <div id="vistab"></div>
+      <div id="diagnostics" style="white-space: pre; font-family: mono; font-size: 0.8em;"></div>
   </body>
+  <script type="module" src="./main.js" ></script>
 </html>

@@ -238,7 +238,7 @@ fn render_snippet_report(
         }))
         .collect::<Vec<_>>();
 
-    let renderer = Renderer::styled().decor_style(DecorStyle::Unicode);
+    let renderer = Renderer::plain().decor_style(DecorStyle::Unicode);
     renderer.render(&report).to_string()
 }
 

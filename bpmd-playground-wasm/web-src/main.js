@@ -18,6 +18,6 @@ worker.addEventListener("message", (event) => {
         vistab.innerHTML = event.data.pebpmd_visibility_table_html;
         diagnostics.textContent = "";
     } else {
-        diagnostics.textContent = event.data.error_message;
+        diagnostics.textContent = event.data.error_message.replace("\n", "\n\r");
     }
 });
