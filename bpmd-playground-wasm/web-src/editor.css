@@ -1,0 +1,28 @@
+#editor-container {
+  position: relative;
+}
+
+#editor, #mirror-editor {
+  position: absolute;
+  inset: 0;
+
+  box-sizing: border-box;
+  margin: 0;
+  padding: 8px;
+
+  font-family: monospace;
+  white-space: pre;
+  tab-size: 4;
+
+  overflow: auto;
+}
+
+#mirror-editor {
+  pointer-events: none;
+}
+
+#editor {
+  /*color: transparent;*/
+  /*background: transparent;*/
+  caret-color: black;
+}

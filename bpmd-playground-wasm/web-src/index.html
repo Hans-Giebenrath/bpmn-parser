@@ -4,6 +4,7 @@
     <meta charset="utf-8" />
     <title>BPMD Playground</title>
     <link rel="stylesheet" type="text/css" href="visibility-table.css">
+    <link rel="stylesheet" type="text/css" href="editor.css">
     <style>
       svg { max-height: 35em; }
     </style>
@@ -11,7 +12,10 @@
   <body style="display: flex; gap: 1em">
       <div>
           <h1 id="title">BPMD Playground</h1>
-          <textarea id="editor" cols="75" rows="40"></textarea>
+          <div id="editor-container" style="width: 80ch; height: 50em;">
+              <pre id="mirror-editor"></pre>
+              <textarea id="editor" style="width: 100%" rows="40"></textarea>
+          </div>
       </div>
       <div style="flex-direction: column; gap: 1em; ">
           <div id="diagram" style="width: 55em;"></div>
