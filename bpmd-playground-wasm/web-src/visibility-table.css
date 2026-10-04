@@ -1,0 +1,32 @@
+/*
+Source - https://stackoverflow.com/a/68808784
+Posted by Dan, modified by community. See post 'Timeline' for change history
+Retrieved 2026-10-04, License - CC BY-SA 4.0
+*/
+
+table {
+  border-collapse: collapse;
+  border: 2px solid #000;
+  border-width: 2px 0;
+  text-align: left;
+}
+
+th,
+td {
+  line-height: 1.4;
+  padding-right: 12px;
+}
+
+th:last-child,
+td:last-child {
+  padding-right: 0;
+}
+
+th:not(:empty) {
+  border-bottom: 1px solid #000;
+  font-weight: 400;
+}
+
+thead:first-child th {
+  text-align: center;
+}

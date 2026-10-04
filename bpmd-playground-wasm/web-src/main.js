@@ -19,5 +19,8 @@ worker.addEventListener("message", (event) => {
         diagnostics.textContent = "";
     } else {
         diagnostics.textContent = event.data.error_message.replace("\n", "\n\r");
+        console.log(event);
+        console.log(event.data.error_message);
+        console.log(event.data.error_message.replace("\\n", "\n"));
     }
 });
