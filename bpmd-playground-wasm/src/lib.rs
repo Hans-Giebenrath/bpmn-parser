@@ -129,7 +129,6 @@ pub fn compile_bpmd(text: JsValue) -> JsValue {
 }
 
 fn run(request: RequestType) -> Result<InnerReturnType, Box<dyn core::error::Error>> {
-    log::warn!("HEY 1");
     let global = js_sys::global();
     let worker: web_sys::WorkerGlobalScope = global.unchecked_into();
 
@@ -142,11 +141,9 @@ fn run(request: RequestType) -> Result<InnerReturnType, Box<dyn core::error::Err
     let mut import_data = ImportData::new(request.text);
     let mut graph = parse(&mut import_data, &mut timer).bpmd_format_err(&import_data)?;
 
-    log::warn!("HEY 2");
     let pebpmd_visibility_table =
         pebpmd_analysis(&mut graph, &mut timer).bpmd_format_err(&import_data)?;
 
-    log::warn!("HEY 3");
     // Reuse the expensive font system between calls rather than constructing
     // FontCache for every compilation.
     let mut cache = FONT_CACHE.0.borrow_mut();

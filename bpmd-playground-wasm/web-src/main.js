@@ -2,6 +2,7 @@ const worker = new Worker(
   new URL("./webworker.js", import.meta.url),
   { type: "module" },
 );
+import { render_error } from "./editor.js";
 
 const input = document.querySelector("#editor");
 const diagram = document.querySelector("#diagram");
