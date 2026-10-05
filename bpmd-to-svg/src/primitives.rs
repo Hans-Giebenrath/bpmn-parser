@@ -146,7 +146,7 @@ impl<'a> Svg<'a> {
         Self {
             width,
             height,
-            body: String::new(),
+            body: String::with_capacity(80 * 1024),
             style: SvgStyle::default(),
             embed_font,
             // Just clone it to avoid lifetimes. It is big, but whatever. Just one clone.
