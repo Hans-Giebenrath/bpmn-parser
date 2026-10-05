@@ -547,9 +547,7 @@ impl<'a> Lexer<'a> {
                     self.sas.add_fragment(tc, tc_end.end, Token::Id(id))?;
                 }
                 Some('/') if self.continues_with("/") => {
-                    while self.current_char != Some('\n') {
-                        self.advance(); // Skip the comment
-                    }
+                    self.skip_comment();
                 }
                 Some('\n') | Some('\r') => {
                     self.advance();

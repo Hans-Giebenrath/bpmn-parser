@@ -1,0 +1,11 @@
+= Pool
+
+# Hallo
+. End
+
+= Another pool
+
+# Hallo2
+. End2
+
+// MF <-pool-end ->hallo2

@@ -79,9 +79,7 @@ impl<'a> Lexer<'a> {
         loop {
             match self.current_char {
                 Some('/') if self.continues_with("/") => {
-                    while self.current_char != Some('\n') {
-                        self.advance(); // Skip the comment
-                    }
+                    self.skip_comment();
                 }
                 Some('[') => {
                     let tc = self.current_coord();

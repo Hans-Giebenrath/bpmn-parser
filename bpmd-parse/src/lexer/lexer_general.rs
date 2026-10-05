@@ -1550,9 +1550,7 @@ impl<'a> Lexer<'a> {
 
             match self.current_char {
                 Some('/') if self.continues_with("/") => {
-                    while self.current_char != Some('\n') {
-                        self.advance(); // Skip the comment
-                    }
+                    self.skip_comment();
                 }
 
                 // Tokens
@@ -1844,6 +1842,15 @@ impl<'a> Lexer<'a> {
         }
     }
 
+    pub fn skip_comment(&mut self) {
+        while let Some(c) = self.current_char
+            && c != '\n'
+            && c != '\r'
+        {
+            self.advance();
+        }
+    }
+
     /// Labels are always mandatory, so if we would return an empty string, then we return an error
     /// instead.
     pub fn read_label(&mut self) -> Result<(TokenCoordinate, String), ParseError> {
@@ -1920,9 +1927,7 @@ impl<'a> Lexer<'a> {
         loop {
             match self.current_char {
                 Some('/') if self.continues_with("/") => {
-                    while self.current_char != Some('\n') {
-                        self.advance(); // Skip the comment
-                    }
+                    self.skip_comment();
                 }
                 Some('\n') | Some('\r') => {
                     self.advance();
