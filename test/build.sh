@@ -31,9 +31,9 @@ else
 fi
 release="${release:-false}"
 if [ "$release" = "true" ]; then
-    (cd .. && cargo build --release)
+    (cd .. && cargo build --bin bpmd --release)
 else
-    (cd .. && cargo build)
+    (cd .. && cargo build --bin bpmd)
 fi
 
 file_stem=compiled
@@ -47,7 +47,7 @@ for f in "${all[@]}"; do
     else
         ((--parallelism)) || true
     fi
-    ./build_one.sh "$f" &
+    ./one.sh "$f" &
 done
 wait
 
