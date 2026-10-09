@@ -967,7 +967,7 @@ fn write_text_at(
         // usability.
         write!(
             body,
-            r#"<text class="{class}" x="{x}" y="{}" text-anchor="start" dominant-baseline="hanging" font-family="{}" fill="{}" font-size="{}"{fill_opacity}>"#,
+            r#"<text class="{class}" x="{x}" y="{}" text-anchor="start" dominant-baseline="text-top" font-family="{}" fill="{}" font-size="{}"{fill_opacity}>"#,
             y - merged.line_height, // subtract line height here, so in the loop we can
                                     // unconditionally set `dy` to line height (otherwise first
                                     // iteration must use 0.0).

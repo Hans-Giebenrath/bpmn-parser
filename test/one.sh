@@ -18,9 +18,13 @@ run() {
     if $release; then
         dir=release
     fi
+    local no_embed_flag=""
+    if [ "${no_embed:-}" = "true" ]; then
+        no_embed_flag="--no-svg-embed-font"
+    fi
     set -x
     printf "\nOUTPUT FOR %s:\n" "$stem" >"$TMPDIR/$stem.output"
-    if ! time timeout 3s "${CARGO_TARGET_DIR:-./target}"/$dir/bpmd "$@" 2>&1 | tee -a "$TMPDIR/$stem.output"; then
+    if ! time timeout 3s "${CARGO_TARGET_DIR:-./target}"/$dir/bpmd $no_embed_flag "$@" 2>&1 | tee -a "$TMPDIR/$stem.output"; then
         failed=true
     fi
     if [[ "$stem" =~ ^ERR ]]; then

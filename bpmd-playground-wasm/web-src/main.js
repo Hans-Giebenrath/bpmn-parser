@@ -10,7 +10,7 @@ const vistab = document.querySelector("#vistab");
 const diagnostics = document.querySelector("#diagnostics");
 
 input.addEventListener("input", () => {
-  worker.postMessage({ text: input.value, format: "SvgEmbed" });
+  worker.postMessage({ text: input.value, format: "SvgNoEmbed" });
 });
 
 worker.addEventListener("message", (event) => {
