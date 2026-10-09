@@ -6,6 +6,7 @@ Big TODOs before 1.0:
 - bug: previously, Pool1 was software-operator for mpc, resulting in visibility P. now it is missing that, resulting in visibility HH.
 - PE-BPMD: make an example where unencrypted data is communicated out of a TEE pool/lane/tasks, to identify that the containing pool gets correct visibility assigned. AIUI that code is currently missing.
 - PE-BPMD: Fix all the TODOs, mostly around good error messages (and ensure there are tests which would trigger those, if possible)
+- --show-licenses flag to display licenses. Also, probably serve license file for Inter font in the playground?
 
 After 1.0:
 - add `[place .. left of ..]` which also fixes the vertical alignment of the two nodes
