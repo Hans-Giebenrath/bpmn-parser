@@ -3,7 +3,7 @@ const mirror = document.querySelector("#mirror-editor");
 
 editor.addEventListener("scroll", () => {
   mirror.style.transform =
-    `translate(${-textarea.scrollLeft}px, ${-textarea.scrollTop}px)`;
+    `translate(${-editor.scrollLeft}px, ${-editor.scrollTop}px)`;
 });
 
 editor.addEventListener("input", () => {

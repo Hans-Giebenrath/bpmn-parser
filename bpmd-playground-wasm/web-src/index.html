@@ -12,6 +12,16 @@
       <div>
           <h1 id="title">BPMD Playground</h1>
           <div id="editor-container" style="width: 80ch; height: 40em;">
+              <!--
+                  Underlines, or maybe even background colors, are rendered in this pre.
+                  Reason is that `#mirror-editor` is supposed to be updated quickly, but layouting
+                  can take some time. So to not block highlighting newest syntax with waiting for
+                  a successful layout run, `#mirror-editor` is updated by another process, and
+                  `#diagnostics-pane` is updated when the layouting run is done.
+
+              -->
+              <pre id="diagnostics-pane" style="white-space: pre"></pre>
+              <!--  -->
               <pre id="mirror-editor" style="white-space: pre"></pre>
               <textarea id="editor" style="width: 100%" rows="40"></textarea>
           </div>

@@ -26,7 +26,11 @@ build-playground out_dir:
     if ! [ -f "$binary_file" ] || find . -name '*.rs' -newer "$binary_file" -print -quit | grep -q .; then
         # Sources are newer, rebuild.
         ~/.cargo/bin/wasm-pack build --release --target web --out-dir "{{ out_dir }}"
+        # While the rest is instantaneous, this one takes time, so bel when ready.
+        tput bel
     fi
+    mkdir -p "{{ out_dir }}/fonts"
+    cp ../inter-font/Inter-{Italic,Regular,SemiBold}.ttf "{{ out_dir }}/fonts"
     cp -r web-src/. "{{ out_dir }}/"
 
 _test-playground test_dir:
@@ -34,7 +38,6 @@ _test-playground test_dir:
     set -euo pipefail
     just build-playground "{{ test_dir }}"
     cd "{{ test_dir }}/"
-    tput bel
     python3 -m http.server
 
 test-playground:

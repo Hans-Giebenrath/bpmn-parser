@@ -27,6 +27,10 @@ use core::time::Duration;
 use serde::{Deserialize, Serialize};
 use wasm_bindgen::prelude::*;
 
+use crate::syntax_highlighting::highlight_text_for_inner_html;
+
+mod syntax_highlighting;
+
 struct Cache(RefCell<Option<FontCache>>);
 
 // WASM currently executes this module on one thread. The wrapper is needed
@@ -48,6 +52,7 @@ enum Format {
     SvgEmbed,
     SvgNoEmbed,
     Bpmn,
+    HighlightedInnerHtml,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -63,6 +68,7 @@ enum ReturnType {
     },
 }
 
+#[derive(Default)]
 struct InnerReturnType {
     diagram: String,
     pebpmd_visibility_table: VisibilityTable,
@@ -138,6 +144,16 @@ fn run(request: RequestType) -> Result<InnerReturnType, Box<dyn core::error::Err
         Box::new(|start, end| end.saturating_sub(start)),
         Box::new(|s| web_sys::console::log_1(&s.into())),
     );
+
+    if matches!(request.format, Format::HighlightedInnerHtml) {
+        return Ok(InnerReturnType {
+            diagram: timer.time_it("Highlighting text", || {
+                highlight_text_for_inner_html(&request.text)
+            }),
+            ..Default::default()
+        });
+    }
+
     let mut import_data = ImportData::new(request.text);
     let mut graph = parse(&mut import_data, &mut timer).bpmd_format_err(&import_data)?;
 
@@ -159,6 +175,7 @@ fn run(request: RequestType) -> Result<InnerReturnType, Box<dyn core::error::Err
         Format::SvgEmbed => timer.time_it("SVG export (with font embedding)", || {
             to_svg(&graph, font_cache, true)
         }),
+        Format::HighlightedInnerHtml => unreachable!("Previously handled"),
     };
 
     Ok(InnerReturnType {
