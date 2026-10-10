@@ -41,6 +41,7 @@ impl Debug for PoolOrProtection {
     }
 }
 
+#[derive(Default)]
 pub struct VisibilityTable {
     pub header_row: Vec<String>,
     pub rows: Vec<Vec<String>>,

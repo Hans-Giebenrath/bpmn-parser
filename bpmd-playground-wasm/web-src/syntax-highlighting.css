@@ -1,0 +1,5 @@
+#mirror-editor {
+    & .comment {
+        color: blue;
+    }
+}

@@ -22,7 +22,7 @@
 }
 
 #editor {
-  /*color: transparent;*/
-  /*background: transparent;*/
+  color: transparent;
+  background: transparent;
   caret-color: black;
 }

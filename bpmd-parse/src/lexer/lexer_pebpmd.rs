@@ -543,7 +543,7 @@ impl<'a> Lexer<'a> {
                 Some('@') => {
                     let tc = self.current_coord();
                     self.advance();
-                    let (tc_end, id) = self.read_label()?;
+                    let (tc_end, id) = self.read_label(true)?;
                     self.sas.add_fragment(tc, tc_end.end, Token::Id(id))?;
                 }
                 Some('/') if self.continues_with("/") => {

@@ -1557,7 +1557,7 @@ impl<'a> Lexer<'a> {
                 Some('@') => {
                     let tc = self.current_coord();
                     self.advance();
-                    let (tc_end, id) = self.read_label()?;
+                    let (tc_end, id) = self.read_label(true)?;
                     self.sas.add_fragment(tc, tc_end.end, Token::Id(id))?;
                 }
                 Some('-') if self.continues_with(">") => {
@@ -1565,10 +1565,11 @@ impl<'a> Lexer<'a> {
                     self.advance();
                     self.advance();
 
-                    let (tc_end, target) = self.read_label()?;
+                    let (tc_end, target) = self.read_label(false)?;
                     let (tc_end, text_label) = self
                         .read_quoted_text()?
                         .unwrap_or_else(|| (tc_end, String::new()));
+                    self.skip_whitespace();
 
                     self.sas.add_fragment(
                         tc,
@@ -1591,10 +1592,11 @@ impl<'a> Lexer<'a> {
                     self.advance();
                     self.advance();
 
-                    let (tc_end, target) = self.read_label()?;
+                    let (tc_end, target) = self.read_label(false)?;
                     let (tc_end, text_label) = self
                         .read_quoted_text()?
                         .unwrap_or_else(|| (tc_end, String::new()));
+                    self.skip_whitespace();
 
                     self.sas.add_fragment(
                         tc,
@@ -1853,8 +1855,13 @@ impl<'a> Lexer<'a> {
 
     /// Labels are always mandatory, so if we would return an empty string, then we return an error
     /// instead.
-    pub fn read_label(&mut self) -> Result<(TokenCoordinate, String), ParseError> {
-        self.skip_whitespace();
+    pub fn read_label(
+        &mut self,
+        // For the label on `<-` we don't want to automatically skip whitespaces,
+        // since the `"displaytext"` should follow immediately afterwards. Makes
+        // parsing easier, and avoidance of white space also ensures that people have the same style.
+        skip_whitespace_after: bool,
+    ) -> Result<(TokenCoordinate, String), ParseError> {
         let coord_start = self.current_coord();
         let mut text = String::with_capacity(15);
 
@@ -1866,7 +1873,9 @@ impl<'a> Lexer<'a> {
             coord_end = self.current_coord();
             self.advance();
         }
-        self.skip_whitespace();
+        if skip_whitespace_after {
+            self.skip_whitespace();
+        }
 
         if text.is_empty() {
             Err(vec![(
@@ -1879,7 +1888,6 @@ impl<'a> Lexer<'a> {
     }
 
     pub fn read_quoted_text(&mut self) -> Result<Option<(TokenCoordinate, String)>, ParseError> {
-        self.skip_whitespace();
         let coord_start = self.current_coord();
         if self.current_char != Some('"') {
             return Ok(None);
@@ -1954,7 +1962,7 @@ impl<'a> Lexer<'a> {
     pub fn run_extension_inner(&mut self) -> Result<(), ParseError> {
         // Read extension
         let mut tc = self.current_coord();
-        let (tc_end, extension_type) = self.read_label()?;
+        let (tc_end, extension_type) = self.read_label(true)?;
         // Hoist it here, as inlining hinders rustfmt from formatting the whole match statement.
         const MISMATCH_ERR: &str = "Invalid extension. Valid extensions are: 'place', 'pe-bpmd', 'import', 'blackbox', 'unblackbox'";
 
