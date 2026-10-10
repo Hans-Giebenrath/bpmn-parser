@@ -1,28 +1,29 @@
 #editor-container {
-  position: relative;
+    display: inline-grid;
+    border: thin solid gray;
 }
 
-#editor, #mirror-editor {
-  position: absolute;
-  inset: 0;
+#editor, #mirror-editor, #diagnostics-pane {
+    grid-area: 1/1;
+    box-sizing: border-box;
+    margin: 0;
+    padding: 0.5em;
+    inset: 0;
+    border: 0;
 
-  box-sizing: border-box;
-  margin: 0;
-  padding: 8px;
+    font-family: monospace;
+    white-space: pre;
+    tab-size: 4;
 
-  font-family: monospace;
-  white-space: pre;
-  tab-size: 4;
-
-  overflow: auto;
+    overflow: auto;
 }
 
 #mirror-editor {
-  pointer-events: none;
+    pointer-events: none;
 }
 
 #editor {
-  color: transparent;
-  background: transparent;
-  caret-color: black;
+    color: transparent;
+    background: transparent;
+    caret-color: black;
 }

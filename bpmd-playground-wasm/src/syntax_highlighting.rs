@@ -167,7 +167,7 @@ pub fn highlight_text_for_inner_html(mut text: &str) -> String {
         if allow_new_statement {
             log::error!("before stmt");
             if try_match(STMT_START_LONG, &mut text, &mut out, "stmt stmt-long")
-                || try_match(BOUNDARY, &mut text, &mut out, "bounday")
+                || try_match(BOUNDARY, &mut text, &mut out, "boundary")
                 || try_match(STMT_START_SHORT, &mut text, &mut out, "stmt stmt-short")
             {
                 log::error!("in stmt");

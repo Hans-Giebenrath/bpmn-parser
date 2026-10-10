@@ -1,5 +1,57 @@
+/* Initial coloring scheme provided by ChatGPT. */
 #mirror-editor {
-    & .comment {
-        color: blue;
-    }
+  color: #28323f;
+  background: #fafbfd;
+
+  /* Statement markers: events, activities, gateways, boundaries, etc. */
+  & .stmt,
+  & .boundary {
+    color: #175cd3;
+    font-weight: 700;
+  }
+
+  /* Human-readable labels. */
+  & .display_text,
+  & .label,
+  & .quoted_words {
+    color: #28323f;
+  }
+
+  /* Attributes and identifiers. */
+  & .attribute,
+  & .id-label {
+    color: #9a4d0b;
+  }
+
+  /* Extension keywords: primary concepts and modifiers. */
+  & .extension-keyword1 {
+    color: #6941c6;
+    font-weight: 600;
+  }
+
+  & .extension-keyword2 {
+    color: #7a5aab;
+  }
+
+  /* Comments. */
+  & .comment {
+    color: #667085;
+    font-style: italic;
+  }
+
+  /* Minor punctuation / structural markers. */
+  & .extension-start,
+  & .extension-end,
+  & .grouping,
+  & .quote_symbol,
+  & .hash {
+    color: #667085;
+  }
+
+  /* Unrecognized tokens. */
+  & .illegal_word {
+    color: #b42318;
+    text-decoration: underline wavy;
+    text-decoration-color: #f97066;
+  }
 }

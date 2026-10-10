@@ -12,7 +12,7 @@
   <body style="display: flex; gap: 1em">
       <div>
           <h1 id="title">BPMD Playground</h1>
-          <div id="editor-container" style="width: 80ch; height: 40em;">
+          <div id="editor-container">
               <!--
                   Underlines, or maybe even background colors, are rendered in this pre.
                   Reason is that `#mirror-editor` is supposed to be updated quickly, but layouting
@@ -24,7 +24,7 @@
               <pre id="diagnostics-pane" style="white-space: pre"></pre>
               <!--  -->
               <pre id="mirror-editor" style="white-space: pre"></pre>
-              <textarea id="editor" style="width: 100%" rows="40"></textarea>
+              <textarea id="editor" rows="40" cols="75"></textarea>
           </div>
       </div>
       <div style="flex-direction: column; gap: 1em; ">
