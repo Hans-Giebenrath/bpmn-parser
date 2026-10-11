@@ -297,7 +297,8 @@ fn render(text: &str, tokens: &[(String, TokenCoordinate)]) -> String {
         for part in segment.split_inclusive('\n') {
             if let Some(before_newline) = part.strip_suffix('\n') {
                 write!(out, "{}", HtmlEscaped(before_newline)).unwrap();
-                write!(
+                // Important! Newline required here.
+                writeln!(
                     out,
                     "<span class=\"line-end\" id=\"line-end-{line_idx}\"></span>"
                 )

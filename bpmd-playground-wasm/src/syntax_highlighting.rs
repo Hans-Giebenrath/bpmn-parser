@@ -165,12 +165,10 @@ pub fn highlight_text_for_inner_html(mut text: &str) -> String {
         old_len = Some(text.len());
 
         if allow_new_statement {
-            log::error!("before stmt");
             if try_match(STMT_START_LONG, &mut text, &mut out, "stmt stmt-long")
                 || try_match(BOUNDARY, &mut text, &mut out, "boundary")
                 || try_match(STMT_START_SHORT, &mut text, &mut out, "stmt stmt-short")
             {
-                log::error!("in stmt");
                 allow_new_statement = false;
                 allow_display_text = true;
                 allow_attributes = true;
@@ -185,7 +183,6 @@ pub fn highlight_text_for_inner_html(mut text: &str) -> String {
             }
         }
 
-        log::error!("before with ext");
         if within_extension {
             if try_match(HASH_FOR_COLORS, &mut text, &mut out, "") {
                 allow_new_statement = false;
@@ -256,10 +253,8 @@ pub fn highlight_text_for_inner_html(mut text: &str) -> String {
         if text.is_empty() {
             return out;
         }
-        log::error!("at end");
     }
 
-    log::error!("Syntax Highlighting failed - loop finished");
     out.push_str(text);
     out
 }
@@ -274,11 +269,6 @@ fn eat_whitespace(text: &mut &str, output: &mut String, allow_new_statement: &mu
         *allow_new_statement = true;
     }
 
-    log::error!(
-        "eat_whitespace: text len: {}, trimmed len: {}",
-        text.len(),
-        trimmed.len()
-    );
     output.push_str(whitespace);
     *text = trimmed;
 }
