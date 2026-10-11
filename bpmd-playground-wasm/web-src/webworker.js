@@ -4,6 +4,12 @@ await init();
 init_bpmd();
 
 self.addEventListener("message", (event) => {
-    const result = compile_bpmd(event.data);
-    self.postMessage(result)
+    try {
+        const result = compile_bpmd(event.data);
+        self.postMessage(result)
+    } catch (e) {
+        console.log(e);
+    }
 });
+
+self.postMessage("ready");

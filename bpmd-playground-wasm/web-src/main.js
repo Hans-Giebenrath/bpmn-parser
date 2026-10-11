@@ -14,12 +14,23 @@ const diagram = document.querySelector("#diagram");
 const vistab = document.querySelector("#vistab");
 const diagnostics = document.querySelector("#diagnostics");
 
-input.addEventListener("input", () => {
-  worker.postMessage({ text: input.value, format: "SvgNoEmbed" });
-  worker2.postMessage({ text: input.value, format: "HighlightedInnerHtml" });
-});
+let worker1ready = false;
+let worker2ready = false;
+const handleInput = () => {
+    if (worker1ready && worker2ready) {
+        console.log("Here!", input.value);
+        worker.postMessage({ text: input.value, format: "SvgNoEmbed" });
+        worker2.postMessage({ text: input.value, format: "HighlightedInnerHtml" });
+    }
+};
+
+input.addEventListener("input", handleInput);
 
 worker.addEventListener("message", (event) => {
+    if (event.data === "ready") {
+        worker1ready = true;
+        handleInput();
+    }
     if (event.data.type == "Success") {
         diagram.innerHTML = event.data.diagram;
         vistab.innerHTML = event.data.pebpmd_visibility_table_html;
@@ -33,6 +44,10 @@ worker.addEventListener("message", (event) => {
 });
 
 worker2.addEventListener("message", (event) => {
+    if (event.data === "ready") {
+        worker2ready = true;
+        handleInput();
+    }
     if (event.data.type == "Success") {
         mirror.innerHTML = event.data.diagram;
         console.log(event.data.diagram);
