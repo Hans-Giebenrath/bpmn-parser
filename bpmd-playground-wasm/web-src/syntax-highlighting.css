@@ -51,7 +51,8 @@
   /* Unrecognized tokens. */
   & .illegal_word {
     color: #b42318;
-    text-decoration: underline wavy;
+    text-decoration: underline;
     text-decoration-color: #f97066;
+    text-decoration-thickness: 0.2em;
   }
 }
