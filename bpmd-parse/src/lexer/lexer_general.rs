@@ -1811,6 +1811,7 @@ impl<'a> Lexer<'a> {
                     let tc = self.current_coord();
                     self.advance();
                     self.run_extension(tc)?;
+                    self.skip_whitespace();
                 }
                 Some('\n') | Some('\r') => {
                     self.advance();
