@@ -1,0 +1,23 @@
+#right-side {
+    display: inline-grid;
+}
+
+#right-side > * {
+    grid-area: 1/1;
+}
+
+.diag-box {
+    padding: 0.3em;
+    border-style: solid;
+    border-width: thin;
+    border-radius: 0.4em;
+    display: inline-block;
+    margin-left: -1px;
+    margin-top: 0.3em;
+    max-width: 50em;
+    background-color: #77ccff;
+}
+
+#diag-box-0 {
+    background-color: #ffcccc;
+}

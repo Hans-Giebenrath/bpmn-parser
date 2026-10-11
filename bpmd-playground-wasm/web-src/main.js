@@ -12,7 +12,8 @@ const mirror = document.querySelector("#mirror-editor");
 const input = document.querySelector("#editor");
 const diagram = document.querySelector("#diagram");
 const vistab = document.querySelector("#vistab");
-const diagnostics = document.querySelector("#diagnostics");
+const diagnostics_pane = document.querySelector("#diagnostics-pane");
+const diagnostics_boxes = document.querySelector("#diag-box-container");
 
 let worker1ready = false;
 let worker2ready = false;
@@ -34,12 +35,12 @@ worker.addEventListener("message", (event) => {
     if (event.data.type == "Success") {
         diagram.innerHTML = event.data.diagram;
         vistab.innerHTML = event.data.pebpmd_visibility_table_html;
-        diagnostics.textContent = "";
+        diagnostics_pane.innerHTML = "";
+        diagnostics_boxes.innerHTML = "";
     } else {
-        diagnostics.textContent = event.data.error_message.replace("\n", "\n\r");
+        diagnostics_pane.innerHTML = event.data.diagnostics_pane_content;
+        diagnostics_boxes.innerHTML = event.data.diagnostic_boxes_html;
         console.log(event);
-        console.log(event.data.error_message);
-        console.log(event.data.error_message.replace("\\n", "\n"));
     }
 });
 

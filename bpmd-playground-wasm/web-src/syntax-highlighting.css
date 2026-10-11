@@ -1,7 +1,6 @@
 /* Initial coloring scheme provided by ChatGPT. */
 #mirror-editor {
   color: #28323f;
-  background: #fafbfd;
 
   /* Statement markers: events, activities, gateways, boundaries, etc. */
   & .stmt,
@@ -55,4 +54,12 @@
     text-decoration-color: #f97066;
     text-decoration-thickness: 0.2em;
   }
+}
+
+#diagnostics-pane {
+    & .error {
+        background-color: #f99096;
+        box-decoration-break: clone;
+        -webkit-box-decoration-break: clone;
+    }
 }
