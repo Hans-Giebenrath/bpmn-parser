@@ -20,12 +20,24 @@ accept-svg image:
 
 build-playground out_dir:
     #!/usr/bin/bash
-    set -x
+    set -xeuo pipefail
     cd bpmd-playground-wasm
     binary_file="{{ out_dir }}"/bpmd_playground_wasm.js
     if ! [ -f "$binary_file" ] || find . -name '*.rs' -newer "$binary_file" -print -quit | grep -q .; then
         # Sources are newer, rebuild.
-        ~/.cargo/bin/wasm-pack build --release --target web --out-dir "{{ out_dir }}"
+        RUSTFLAGS="-C panic=unwind -C target-feature=+exception-handling" \
+          cargo +nightly build \
+            --release \
+            --target wasm32-unknown-unknown \
+            -Z build-std=std,panic_unwind
+        ~/.cargo/bin/wasm-bindgen \
+          --target web \
+          --out-dir "{{ out_dir }}" \
+          "${CARGO_TARGET_DIR:-target}/wasm32-unknown-unknown/release/bpmd_playground_wasm.wasm"
+        #RUSTUP_TOOLCHAIN=nightly \
+        #    RUSTFLAGS="-C target-feature=+exception-handling" \
+        #    CARGO_UNSTABLE_BUILD_STD="std,panic_unwind" \
+        #    ~/.cargo/bin/wasm-pack build --release --target web --out-dir "{{ out_dir }}"
         # While the rest is instantaneous, this one takes time, so bel when ready.
         tput bel
     fi

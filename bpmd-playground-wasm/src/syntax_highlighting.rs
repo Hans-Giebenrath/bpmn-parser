@@ -154,7 +154,7 @@ pub fn highlight_text_for_inner_html(mut text: &str) -> String {
         if let Some(old_len) = old_len
             && old_len == text.len()
         {
-            eat_next_unexpected_word(&mut text, &mut out, "illegal_word");
+            eat_next_anyword(&mut text, &mut out, "illegal_word");
             eat_whitespace(&mut text, &mut out, &mut allow_new_statement);
             if old_len == text.len() {
                 log::error!("Syntax Highlighting failed - no progress made. Iterations: {i}");
@@ -186,7 +186,7 @@ pub fn highlight_text_for_inner_html(mut text: &str) -> String {
         if within_extension {
             if try_match(HASH_FOR_COLORS, &mut text, &mut out, "") {
                 allow_new_statement = false;
-                eat_next_word(&mut text, &mut out, "hash-label");
+                eat_next_label(&mut text, &mut out, "hash-label");
                 eat_whitespace(&mut text, &mut out, &mut allow_new_statement);
             }
             if try_match(GROUPING, &mut text, &mut out, "grouping")
@@ -221,14 +221,14 @@ pub fn highlight_text_for_inner_html(mut text: &str) -> String {
         if allow_attributes && try_match(ATTRIBUTE_ID, &mut text, &mut out, "attribute id") {
             allow_display_text = false;
             allow_new_statement = false;
-            eat_next_word(&mut text, &mut out, "id-label");
+            eat_next_label(&mut text, &mut out, "id-label");
             eat_whitespace(&mut text, &mut out, &mut allow_new_statement);
         }
 
         // Often arrows are next to each other, so loop this one.
         while allow_attributes && try_match(ATTRIBUTE_ARROW, &mut text, &mut out, "attribute arrow")
         {
-            eat_next_word(&mut text, &mut out, "label");
+            eat_next_label(&mut text, &mut out, "label");
             eat_next_quoted_words(&mut text, &mut out);
             allow_display_text = false;
             allow_new_statement = false;
@@ -244,7 +244,7 @@ pub fn highlight_text_for_inner_html(mut text: &str) -> String {
 
         // Must come at the end to not eat any attributes or the comment.
         if allow_display_text {
-            eat_next_word(&mut text, &mut out, "display_text");
+            eat_next_anyword(&mut text, &mut out, "display_text");
             allow_attributes = true;
             allow_new_statement = false;
             eat_whitespace(&mut text, &mut out, &mut allow_new_statement);
@@ -298,7 +298,7 @@ fn eat_rest_of_the_line(text: &mut &str, out: &mut String, css_class: &str) {
     }
 }
 
-fn eat_next_unexpected_word(text: &mut &str, out: &mut String, css_class: &str) -> bool {
+fn eat_next_anyword(text: &mut &str, out: &mut String, css_class: &str) -> bool {
     let trimmed = text.trim_start_matches(|c: char| !c.is_whitespace());
     let word_len = text.len() - trimmed.len();
     if word_len > 0 {
@@ -311,7 +311,7 @@ fn eat_next_unexpected_word(text: &mut &str, out: &mut String, css_class: &str) 
     }
 }
 
-fn eat_next_word(text: &mut &str, out: &mut String, css_class: &str) -> bool {
+fn eat_next_label(text: &mut &str, out: &mut String, css_class: &str) -> bool {
     let trimmed = text.trim_start_matches(is_allowed_symbol_in_label_or_id);
     let word_len = text.len() - trimmed.len();
     if word_len > 0 {

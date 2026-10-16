@@ -1,6 +1,5 @@
 Big TODOs before 1.0:
-- Fix the panic handling
-- Syntax highlighting: breaks with `[Encrypted]` in data display text (it thinks it is an extension)
+- A data object which comes and goes to the same node, results in a panic.
 - Go do the cheat sheet!
 - try prevent cosmic-text from printings its debug logging for the fallback
 - Black Box Pools

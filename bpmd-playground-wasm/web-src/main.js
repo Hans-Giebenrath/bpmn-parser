@@ -6,7 +6,6 @@ const worker2 = new Worker(
   new URL("./webworker.js", import.meta.url),
   { type: "module" },
 );
-import { render_error } from "./editor.js";
 
 const mirror = document.querySelector("#mirror-editor");
 const input = document.querySelector("#editor");
@@ -32,6 +31,7 @@ worker.addEventListener("message", (event) => {
     if (event.data === "ready") {
         worker1ready = true;
         handleInput();
+        return;
     }
     if (event.data.type == "Success") {
         diagram.innerHTML = event.data.diagram;
@@ -51,6 +51,7 @@ worker2.addEventListener("message", (event) => {
     if (event.data === "ready") {
         worker2ready = true;
         handleInput();
+        return;
     }
     if (event.data.type == "Success") {
         mirror.innerHTML = event.data.diagram;
@@ -60,4 +61,9 @@ worker2.addEventListener("message", (event) => {
         console.log(event.data.error_message);
         console.log(event.data.error_message.replace("\\n", "\n"));
     }
+});
+
+input.addEventListener("scroll", () => {
+  front_mirror.style.transform =
+    `translate(${-input.scrollLeft}px, ${-input.scrollTop}px)`;
 });

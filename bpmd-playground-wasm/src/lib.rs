@@ -1,6 +1,8 @@
-#![no_std]
-
 extern crate alloc;
+
+use std::any::Any;
+use std::panic::AssertUnwindSafe;
+use std::panic::catch_unwind;
 
 use core::fmt::Write as _;
 use core::fmt::{self, Display, Formatter};
@@ -107,7 +109,7 @@ impl ImportHandler for ImportData {
 
 #[wasm_bindgen]
 pub fn init_bpmd() {
-    wasm_logger::init(wasm_logger::Config::default());
+    wasm_logger::init(wasm_logger::Config::new(log::Level::Info));
     console_error_panic_hook::set_once();
 }
 
@@ -126,7 +128,18 @@ pub fn compile_bpmd(text: JsValue) -> JsValue {
         }
     };
     let mut import_data = ImportData::new(request.text.clone());
-    let result = match run(request, &mut import_data) {
+    let result = match catch_unwind(AssertUnwindSafe(|| run(request, &mut import_data))) {
+        Ok(result) => result,
+        Err(e) => Err(vec![(
+            format!("BPMD Internal Error: {}", panic_to_message(&e)),
+            TokenCoordinate {
+                start: 0,
+                end: import_data.source.len(),
+                ..Default::default()
+            },
+        )]),
+    };
+    let result = match result {
         Ok(result) => ReturnType::Success {
             diagram: result.diagram,
             pebpmd_visibility_table_html: to_html_table(&result.pebpmd_visibility_table),
@@ -319,12 +332,11 @@ fn render(text: &str, tokens: &[(String, TokenCoordinate)]) -> String {
 
         emit(&text[pos..coord.start], &mut out, &mut line_idx);
 
-        write!(
-            out,
-            "<span class=\"{}\">",
-            if idx == 0 { "error" } else { "hint" }
-        )
-        .unwrap();
+        if idx == 0 {
+            write!(out, "<span class=\"error\">",).unwrap();
+        } else {
+            write!(out, "<span class=\"hint hint-{idx}\">",).unwrap();
+        }
 
         emit(&text[coord.start..coord.end], &mut out, &mut line_idx);
 
@@ -346,4 +358,12 @@ fn render(text: &str, tokens: &[(String, TokenCoordinate)]) -> String {
     }
 
     out
+}
+
+fn panic_to_message(panic: &Box<dyn Any + Send>) -> &str {
+    panic
+        .downcast_ref::<String>()
+        .map(String::as_str)
+        .or_else(|| panic.downcast_ref::<&str>().copied())
+        .unwrap_or("Unknown panic payload")
 }

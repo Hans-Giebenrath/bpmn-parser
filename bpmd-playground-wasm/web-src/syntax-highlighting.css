@@ -57,9 +57,50 @@
 }
 
 #diagnostics-pane {
+    color: white;
     & .error {
-        background-color: #f99096;
         box-decoration-break: clone;
         -webkit-box-decoration-break: clone;
     }
+
+    & .hint {
+        box-decoration-break: clone;
+        -webkit-box-decoration-break: clone;
+    }
+
+    & .hint-1 {
+        box-decoration-break: clone;
+        -webkit-box-decoration-break: clone;
+    }
+}
+
+.diag-box {
+    padding: 0.3em;
+    border-style: solid;
+    border-width: thin;
+    border-radius: 0.4em;
+    display: inline-block;
+    margin-left: -1px;
+    margin-top: 0.3em;
+    max-width: 50em;
+}
+
+#diagnostics-pane .error, #diag-box-0 {
+    background-color: #ffcccc;
+}
+
+#diagnostics-pane .hint, .diag-box {
+    background-color: #77ccff;
+}
+
+#diagnostics-pane .hint-2, #diag-box-2 {
+    background-color: #90a8f9;
+}
+
+#diagnostics-pane .hint-3, #diag-box-3 {
+    background-color: #cff990;
+}
+
+#diagnostics-pane .hint-4, #diag-box-4 {
+    background-color: #90f9eb;
 }
