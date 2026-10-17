@@ -4,6 +4,7 @@ mod id_matcher;
 pub mod lexer;
 pub mod parser;
 
+use alloc::vec::Vec;
 use bpmd_graph::ParseError;
 use bpmd_graph::*;
 use bpmd_util::timer::Timer;
@@ -14,7 +15,10 @@ pub use lexer::StatementStream;
 pub use lexer::lex;
 pub use parser::Parser;
 
-pub fn parse(import_data: &mut dyn ImportHandler, timer: &mut Timer) -> Result<Graph, ParseError> {
+pub fn parse(
+    import_data: &mut dyn ImportHandler,
+    timer: &mut Timer,
+) -> Result<(Graph, Vec<ParseError>), ParseError> {
     let stream = timer.time_it("lexing", || lex(import_data))?;
     timer.time_it("parsing", || parser::Parser::new().parse(stream))
 }

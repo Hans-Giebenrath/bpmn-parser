@@ -55,6 +55,13 @@ enum Format {
     HighlightedInnerHtml,
 }
 
+#[derive(Serialize, Deserialize, Default)]
+struct Failure {
+    diagnostics_pane_content: String,
+    diagnostic_boxes_html: String,
+    number_of_diagnostics: u32,
+}
+
 #[derive(Serialize, Deserialize)]
 #[serde(tag = "type")]
 enum ReturnType {
@@ -62,11 +69,12 @@ enum ReturnType {
         /// Format was specified in the request argument.
         diagram: String,
         pebpmd_visibility_table_html: String,
+        #[serde(flatten)]
+        failure: Failure,
     },
     Failure {
-        diagnostics_pane_content: String,
-        diagnostic_boxes_html: String,
-        number_of_diagnostics: u32,
+        #[serde(flatten)]
+        failure: Failure,
     },
 }
 
@@ -74,6 +82,7 @@ enum ReturnType {
 struct InnerReturnType {
     diagram: String,
     pebpmd_visibility_table: VisibilityTable,
+    recovery_errors: Vec<ParseError>,
 }
 
 /// Import handler for the browser build.
@@ -120,9 +129,7 @@ pub fn compile_bpmd(text: JsValue) -> JsValue {
         Err(error) => {
             log::error!("{error}");
             return serde_wasm_bindgen::to_value(&ReturnType::Failure {
-                diagnostics_pane_content: Default::default(),
-                diagnostic_boxes_html: Default::default(),
-                number_of_diagnostics: Default::default(),
+                failure: Default::default(),
             })
             .unwrap();
         }
@@ -143,8 +150,15 @@ pub fn compile_bpmd(text: JsValue) -> JsValue {
         Ok(result) => ReturnType::Success {
             diagram: result.diagram,
             pebpmd_visibility_table_html: to_html_table(&result.pebpmd_visibility_table),
+            failure: result
+                .recovery_errors
+                .first()
+                .map(|e| into_error(&import_data.source, e))
+                .unwrap_or_default(),
         },
-        Err(e) => into_error(&import_data.source, e),
+        Err(e) => ReturnType::Failure {
+            failure: into_error(&import_data.source, &e),
+        },
     };
     serde_wasm_bindgen::to_value(&result).unwrap()
 }
@@ -169,7 +183,7 @@ fn run(request: RequestType, import_data: &mut ImportData) -> Result<InnerReturn
         });
     }
 
-    let mut graph = parse(import_data, &mut timer)?;
+    let (mut graph, recovery_errors) = parse(import_data, &mut timer)?;
 
     let pebpmd_visibility_table = pebpmd_analysis(&mut graph, &mut timer)?;
 
@@ -194,10 +208,11 @@ fn run(request: RequestType, import_data: &mut ImportData) -> Result<InnerReturn
     Ok(InnerReturnType {
         diagram,
         pebpmd_visibility_table,
+        recovery_errors,
     })
 }
 
-fn into_error(text: &str, errors: ParseError) -> ReturnType {
+fn into_error(text: &str, errors: &ParseError) -> Failure {
     let diagnostic_boxes_html = {
         let mut html = String::with_capacity(300);
         let mut is_first = true;
@@ -218,7 +233,7 @@ fn into_error(text: &str, errors: ParseError) -> ReturnType {
 
     let diagnostics_pane_content = render(text, &errors);
 
-    ReturnType::Failure {
+    Failure {
         diagnostics_pane_content,
         diagnostic_boxes_html,
         number_of_diagnostics: errors.len() as u32,

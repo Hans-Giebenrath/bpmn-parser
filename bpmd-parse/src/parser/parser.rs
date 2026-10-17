@@ -118,14 +118,19 @@ struct DanglingEdgeInfo {
 #[derive(Default)]
 struct DanglingSequenceFlows {
     /// An edge whose start is known but end is unknown: `->label`
-    dangling_end_map: VecMap<String, Vec<DanglingEdgeInfo>>,
+    dangling_end_map: VecMap</* label */ String, Vec<DanglingEdgeInfo>>,
     /// An edge whose end is known but start is unknown: `<-label`
-    dangling_start_map: VecMap<String, Vec<DanglingEdgeInfo>>,
+    dangling_start_map: VecMap</* label */ String, Vec<DanglingEdgeInfo>>,
 }
 
 pub struct Parser {
     pub graph: Graph,
     pub context: ParseContext,
+    /// This thing is returned. Meant to store errors which happen easily when creating the diagram,
+    /// but which we can easily recover from (like inserting a missing end node). This allows
+    /// for better experience when creating new diagrams. However, there are errors where we cannot
+    /// just augment something, like wrong `->targets`.
+    recoverable_errors: Vec<ParseError>,
 }
 
 impl Parser {
@@ -155,10 +160,22 @@ impl Parser {
                 id_matcher: IdMatcher::new(),
                 source_file_idx: 0,
             },
+            recoverable_errors: Default::default(),
         }
     }
 
-    pub fn parse(mut self, tokens: StatementStream) -> Result<Graph, ParseError> {
+    // Return type is either an unrecoverable `ParseError`, or a successful graph with an empty
+    // `Vec<ParseError>`, or a Graph which was augmented to become "correct" but also errors which
+    // say what was wrong. Motivation: When creating a new diagram, the graph is never really in a
+    // state where it is "complete": end nodes are missing, or gateway targets or similar, or a lane
+    // is inserted where previous nodes where directly under the pool, or whatever else seems to be
+    // recoverable. The added elements also have a dedicated color and some additional text to explain
+    // what's wrong. This is in addition to the regular error messages.
+    // But this is only attempted
+    pub fn parse(
+        mut self,
+        tokens: StatementStream,
+    ) -> Result<(Graph, Vec<ParseError>), ParseError> {
         // MFs are delayed because they should be resolved *after* we know what is a blackbox and
         // what not.
         let mut delayed_message_flow_statements = Vec::new();
@@ -294,7 +311,9 @@ impl Parser {
             self.parse_delayed_message_flow(meta)?;
         }
 
-        for dangling_sequence_flows in self.context.dangling_sequence_flows.values() {
+        let all_dangling_sequence_flows =
+            core::mem::take(&mut self.context.dangling_sequence_flows);
+        for dangling_sequence_flows in all_dangling_sequence_flows.values() {
             let dangling_end_map = &dangling_sequence_flows.dangling_end_map;
             let dangling_start_map = &dangling_sequence_flows.dangling_start_map;
             let all_keys: VecSet<_> = dangling_end_map
@@ -341,9 +360,7 @@ impl Parser {
                         }
                     }
                     (Some(still_danglings), None) | (None, Some(still_danglings)) => {
-                        let label_used_in_other_pools = self
-                            .context
-                            .dangling_sequence_flows
+                        let label_used_in_other_pools = all_dangling_sequence_flows
                             .iter()
                             .map(|x| {
                                 x.1.dangling_end_map.contains_key(*key)
@@ -358,7 +375,7 @@ impl Parser {
                         } else {
                             ""
                         };
-                        return Err(still_danglings
+                        self.recoverable_errors.push(still_danglings
                             .iter()
                             .map(|still_dangling| {
                                 (
@@ -368,6 +385,35 @@ impl Parser {
                                 )
                             })
                             .collect());
+                        if dangling_end_map.get(*key).is_some() {
+                            for dangling in still_danglings {
+                                let pool_and_lane =
+                                    self.graph.nodes[dangling.known_node_id].pool_and_lane();
+                                self.create_missing_end(
+                                    dangling.known_node_id,
+                                    pool_and_lane,
+                                    Some(key.as_str()),
+                                );
+                            }
+                        }
+                        if dangling_start_map.get(*key).is_some() {
+                            for dangling in still_danglings {
+                                let pool_and_lane =
+                                    self.graph.nodes[dangling.known_node_id].pool_and_lane();
+                                let node_id =
+                                    self.create_missing_start(pool_and_lane, Some(key.as_str()));
+                                self.graph.add_edge(
+                                    node_id,
+                                    dangling.known_node_id,
+                                    EdgeType::Regular {
+                                        text: Some(DisplayText::new(dangling.edge_text.clone())),
+                                        bend_points: RegularEdgeBendPoints::ToBeDetermined,
+                                    },
+                                    FlowType::SequenceFlow,
+                                    dangling.boundary_event.clone(),
+                                );
+                            }
+                        }
                     }
                     (None, None) => unreachable!(), // Keys come from at least one map
                 }
@@ -380,18 +426,16 @@ impl Parser {
         create_transported_data(&mut self.graph);
         bpmd_algorithms::validate_graph_correctness(&self.graph)?;
 
-        Ok(self.graph)
+        Ok((self.graph, self.recoverable_errors))
     }
 
     /// Set the current pool
     fn parse_pool(&mut self, meta: PoolMeta) -> Result<(), ParseError> {
-        let old_state = core::mem::replace(
-            &mut self.context.lifeline_state,
-            LifelineState::NoLifelineActive {
-                previous_lifeline_termination_statement: None,
-            },
-        );
-        err_from_unfinished_lifeline(&old_state, self.context.current_token_coordinate)?;
+        self.maybe_recover_from_unfinished_lifeline();
+        self.context.lifeline_state = LifelineState::NoLifelineActive {
+            previous_lifeline_termination_statement: None,
+        };
+
         if let GroupingState::WithinPool { pool_id, ptc } = &self.context.grouping_state {
             // Two pools were created immediately behind each other. But there is always the
             // assumption that there is also at least one lane per pool.
@@ -419,13 +463,10 @@ impl Parser {
 
     /// Set the current lane
     fn parse_lane(&mut self, label: &str) -> Result<(), ParseError> {
-        let old_state = core::mem::replace(
-            &mut self.context.lifeline_state,
-            LifelineState::NoLifelineActive {
-                previous_lifeline_termination_statement: None,
-            },
-        );
-        err_from_unfinished_lifeline(&old_state, self.context.current_token_coordinate)?;
+        self.maybe_recover_from_unfinished_lifeline();
+        self.context.lifeline_state = LifelineState::NoLifelineActive {
+            previous_lifeline_termination_statement: None,
+        };
 
         let (pool_id, lane_id) = match self.context.grouping_state {
             GroupingState::Init => {
@@ -540,10 +581,7 @@ impl Parser {
         node_position: NodePositionInLifeline,
     ) -> Result<(), ParseError> {
         if !incoming_sequence_flow_landings.is_empty() {
-            err_from_unfinished_lifeline(
-                &self.context.lifeline_state,
-                self.context.current_token_coordinate,
-            )?;
+            self.maybe_recover_from_unfinished_lifeline();
             for EdgeMeta {
                 target,
                 text_label,
@@ -565,13 +603,14 @@ impl Parser {
                     });
             }
         } else if matches!(node_position, NodePositionInLifeline::Start) {
-            err_from_unfinished_lifeline(
-                &self.context.lifeline_state,
-                self.context.current_token_coordinate,
-            )?;
-        } else if let LifelineState::ActiveLifeline { last_node_id, .. } =
-            self.context.lifeline_state
-        {
+            self.maybe_recover_from_unfinished_lifeline();
+        } else {
+            let last_node_id = match &self.context.lifeline_state {
+                LifelineState::ActiveLifeline { last_node_id, .. } => *last_node_id,
+                LifelineState::NoLifelineActive {
+                    previous_lifeline_termination_statement,
+                } => self.recover_from_no_lifeline_active(*previous_lifeline_termination_statement),
+            };
             self.graph.add_edge(
                 last_node_id,
                 current_node_id,
@@ -583,11 +622,6 @@ impl Parser {
                 FlowType::SequenceFlow,
                 None,
             );
-        } else {
-            return Err(err_from_no_lifeline_active(
-                &self.context.lifeline_state,
-                self.context.current_token_coordinate,
-            ));
         }
 
         self.context.lifeline_state = if !outgoing_sequence_flow_jumps.is_empty() {
@@ -705,32 +739,32 @@ impl Parser {
 
     fn parse_boundary_event(&mut self, meta: BoundaryEventMeta) -> Result<(), ParseError> {
         let pool_and_lane = self.manage_pool_and_lane_ids_for_new_node();
-        let known_node_id = match &mut self.context.lifeline_state {
+        let node_id = match &self.context.lifeline_state {
             LifelineState::ActiveLifeline { last_node_id, .. } => *last_node_id,
-            a => {
-                return Err(err_from_no_lifeline_active(
-                    a,
-                    self.context.current_token_coordinate,
-                ));
-            }
+            LifelineState::NoLifelineActive {
+                previous_lifeline_termination_statement,
+            } => self.recover_from_no_lifeline_active(*previous_lifeline_termination_statement),
         };
 
-        let NodeType::RealNode { tc, event, .. } = &self.graph.nodes[known_node_id.0].node_type
-        else {
+        let NodeType::RealNode { tc, event, .. } = &self.graph.nodes[node_id.0].node_type else {
             panic!("in the beginning there are no dummy nodes.");
         };
 
         use ActivityType::*;
         use BpmnNode::*;
-        if !matches!(
+        let node_id = if matches!(
             event,
-            // TODO are boundary
             Activity(Task(_), ..)
                 | Activity(Subprocess, ..)
                 | Activity(CallActivity, ..)
                 | Activity(Transaction, ..)
         ) {
-            return Err(vec![
+            // The current node type is good for boundary events.
+            node_id
+        } else {
+            // This node type cannot have boundary events.
+            // We try to recover by inserting an activity node here ourself.
+            self.recoverable_errors.push(vec![
 (
                 "A boundary event can only follow a task (- Some Task), a subprocess, a call activity or a transaction.".to_string(),
                 self.context.current_token_coordinate,
@@ -740,7 +774,37 @@ impl Parser {
                     *tc,
             )
             ]);
-        }
+            let new_node_id = self.graph.add_node(
+                NodeType::RealNode {
+                    event: BpmnNode::Activity(
+                        ActivityType::Task(TaskType::None),
+                        Default::default(),
+                    ),
+                    display_text: DisplayText::new(
+                        "Boundary events require an activity (- Activity)".to_string(),
+                    ),
+                    tc: self.context.current_token_coordinate,
+                    transported_data: vec![],
+                    pe_bpmd_hides_protection_operations: false,
+                },
+                pool_and_lane,
+                None,
+            );
+
+            // Let the nodes jump out a bit.
+            self.graph.nodes[new_node_id].stroke_color = Some("#ff1b1b".to_string());
+            self.graph.nodes[new_node_id].fill_color = Some("#ffe5e5".to_string());
+
+            self.connect_nodes(
+                new_node_id,
+                pool_and_lane.pool,
+                &mut [],
+                &mut [],
+                NodePositionInLifeline::Middle,
+            );
+
+            new_node_id
+        };
 
         self.context
             .dangling_sequence_flows
@@ -750,7 +814,7 @@ impl Parser {
             .entry(meta.sequence_flow_jump_meta.target)
             .or_default()
             .push(DanglingEdgeInfo {
-                known_node_id,
+                known_node_id: node_id,
                 edge_text: meta.sequence_flow_jump_meta.text_label,
                 tc: self.context.current_token_coordinate,
                 boundary_event: Some(meta.boundary_event),
@@ -1066,6 +1130,8 @@ impl Parser {
         self.context.id_matcher.find_nondata_node_id(needle, None)
     }
 
+    /// Assigns shorthand-blank events a message symbol if it is connected to a message flow.
+    /// (So `.. Event` will not change its visual, because the blank was explicitly requested.)
     fn process_shorthand_blank_events(&mut self) -> Result<(), ParseError> {
         for node_id in self.context.shorthand_blank_events.iter() {
             let node = &mut self.graph.nodes[*node_id];
@@ -1105,51 +1171,126 @@ impl Parser {
         }
         Ok(())
     }
-}
 
-#[track_caller]
-fn err_from_no_lifeline_active(
-    l: &LifelineState,
-    current_token_coordinate: TokenCoordinate,
-) -> ParseError {
-    match l {
-            LifelineState::NoLifelineActive { previous_lifeline_termination_statement: None } => vec![
+    /// This adds in artificial nodes to show what is wrong. See [Self::recoverable_errors].
+    fn recover_from_no_lifeline_active(
+        &mut self,
+        previous_lifeline_termination_statement: Option<TokenCoordinate>,
+    ) -> NodeId {
+        if let Some(prev) = previous_lifeline_termination_statement {
+            self.recoverable_errors.push(vec![
+                (
+                    "This statement requires an active sequence flow.".to_string(),
+                    self.context.current_token_coordinate,
+                ),
+                (
+                    "The sequence flow was previously terminated here.".to_string(),
+                    prev,
+                ),
+            ]);
+        } else {
+            self.recoverable_errors.push(vec![
 (
                 "This statement requires an active sequence flow. Try to add a start event `#` before this line.".to_string(),
-                current_token_coordinate,
-)]
-            ,
-            LifelineState::NoLifelineActive { previous_lifeline_termination_statement: Some(tc) } => vec![
-(
-                "This statement requires an active sequence flow.".to_string(),
-                current_token_coordinate,
-),(
-                "The sequence flow was previously terminated here.".to_string(),
-                *tc,
-)]
-            ,
-        l => panic!("{l:?}, {current_token_coordinate:?}"),
+                    self.context.current_token_coordinate,
+)]);
+        }
+        let pool_and_lane = self.manage_pool_and_lane_ids_for_new_node();
+        let node_id = self.create_missing_start(pool_and_lane, None);
+        self.context.lifeline_state = LifelineState::ActiveLifeline {
+            last_node_id: node_id,
+            token_coordinate: self.context.current_token_coordinate,
+        };
+        node_id
     }
-}
 
-fn err_from_unfinished_lifeline(
-    l: &LifelineState,
-    current_token_coordinate: TokenCoordinate,
-) -> Result<(), ParseError> {
-    match l {
-        LifelineState::ActiveLifeline {
-            token_coordinate, ..
-        } => Err(vec![
+    fn maybe_recover_from_unfinished_lifeline(&mut self) {
+        let &LifelineState::ActiveLifeline {
+            last_node_id,
+            token_coordinate,
+        } = &self.context.lifeline_state
+        else {
+            // All good!
+            return;
+        };
+        self.recoverable_errors.push(vec![
             (
                 "This statement cannot appear within an active sequence flow.".to_string(),
-                current_token_coordinate,
+                self.context.current_token_coordinate,
             ),
             (
                 "This statement is part of the currently active sequence flow.".to_string(),
-                *token_coordinate,
+                token_coordinate,
             ),
-        ]),
-        LifelineState::NoLifelineActive { .. } => Ok(()),
+        ]);
+
+        let pool_and_lane = self.manage_pool_and_lane_ids_for_new_node();
+        self.create_missing_end(last_node_id, pool_and_lane, None);
+    }
+
+    fn create_missing_start(&mut self, pool_and_lane: PoolAndLane, label: Option<&str>) -> NodeId {
+        let new_node_id = self.graph.add_node(
+            NodeType::RealNode {
+                event: BpmnNode::Event(
+                    EventType::Blank,
+                    EventVisual::Start(InterruptKind::Interrupting),
+                ),
+                display_text: if let Some(label) = label {
+                    DisplayText::new(format!("Missing Start Event (# Start ->{label})"))
+                } else {
+                    DisplayText::new(format!("Missing Start Event (# Start)"))
+                },
+                tc: self.context.current_token_coordinate,
+                transported_data: vec![],
+                pe_bpmd_hides_protection_operations: false,
+            },
+            pool_and_lane,
+            None,
+        );
+
+        // Let the nodes jump out a bit.
+        self.graph.nodes[new_node_id].stroke_color = Some("#ff1b1b".to_string());
+        self.graph.nodes[new_node_id].fill_color = Some("#ffe5e5".to_string());
+
+        new_node_id
+    }
+
+    fn create_missing_end(
+        &mut self,
+        previous_node_id: NodeId,
+        pool_and_lane: PoolAndLane,
+        label: Option<&str>,
+    ) {
+        let new_node_id = self.graph.add_node(
+            NodeType::RealNode {
+                event: BpmnNode::Event(EventType::Blank, EventVisual::End),
+                display_text: if let Some(label) = label {
+                    DisplayText::new(format!("Missing End Event (. End <-{label})"))
+                } else {
+                    DisplayText::new(format!("Missing End Event (. End)"))
+                },
+                tc: self.context.current_token_coordinate,
+                transported_data: vec![],
+                pe_bpmd_hides_protection_operations: false,
+            },
+            pool_and_lane,
+            None,
+        );
+
+        // Let the nodes jump out a bit.
+        self.graph.nodes[new_node_id].stroke_color = Some("#ff1b1b".to_string());
+        self.graph.nodes[new_node_id].fill_color = Some("#ffe5e5".to_string());
+        self.graph.add_edge(
+            previous_node_id,
+            new_node_id,
+            EdgeType::Regular {
+                // No text for regular sequence flow edges.
+                text: None,
+                bend_points: RegularEdgeBendPoints::ToBeDetermined,
+            },
+            FlowType::SequenceFlow,
+            None,
+        );
     }
 }
 
