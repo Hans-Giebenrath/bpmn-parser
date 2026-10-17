@@ -99,7 +99,6 @@ enum NodePositionInLifeline {
     Start,
     Middle,
     End,
-    InferOrIntermediate,
 }
 
 #[derive(Debug)]
@@ -524,7 +523,8 @@ impl Parser {
             pool_and_lane.pool,
             meta.sequence_flow_landings.as_mut_slice(),
             meta.sequence_flow_jumps.as_mut_slice(),
-            NodePositionInLifeline::InferOrIntermediate,
+            // The landings and jumps are used to determine its actual position.
+            NodePositionInLifeline::Middle,
         )
     }
 
