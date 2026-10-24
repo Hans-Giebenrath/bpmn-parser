@@ -238,6 +238,7 @@ pub fn validate_graph_correctness(graph: &Graph) -> Result<(), ParseError> {
     }
 
     if let Some(first) = errors.into_iter().next() {
+        log::error!("Printing graph, to support debugging failed graph invariants {graph:?}");
         // TODO well, at some point the parser should be rewritten to allow for returning multiple
         // errors. Right now it is one error at a time, but if multiple things are broken then a
         // more exhaustive list would be nice.

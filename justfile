@@ -23,7 +23,7 @@ build-playground out_dir:
     set -xeuo pipefail
     cd bpmd-playground-wasm
     binary_file="{{ out_dir }}"/bpmd_playground_wasm.js
-    if ! [ -f "$binary_file" ] || find . -name '*.rs' -newer "$binary_file" -print -quit | grep -q .; then
+    if ! [ -f "$binary_file" ] || find .. -name '*.rs' -newer "$binary_file" -print -quit | grep -q .; then
         # Sources are newer, rebuild.
         RUSTFLAGS="-C panic=unwind -C target-feature=+exception-handling" \
           cargo +nightly build \
@@ -59,4 +59,4 @@ test-playground:
         rm -r "$test_dir"
     }
     trap "cleanup" EXIT
-    watchexec --on-busy-update restart --watch bpmd-playground-wasm/src --watch bpmd-playground-wasm/web-src just _test-playground "$test_dir"
+    watchexec --on-busy-update restart --exts html,css,js,rs,toml just _test-playground "$test_dir"

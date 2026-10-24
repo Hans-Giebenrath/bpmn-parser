@@ -68,6 +68,7 @@ impl Display for OutputFormat {
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
+    env_logger::init();
     let cli = Cli::parse();
     let origin = Instant::now();
     let mut timer = Timer::new(
@@ -97,14 +98,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             TokenCoordinate::default(),
         ) {
             Ok(stack) => stack,
-            Err(e) => {
-                Result::<(), ParseError>::Err(e).bpmd_format_err(&import_data)?;
-                unreachable!();
-            }
+            Err(e) => return Err(e.bpmd_format_err(&import_data)),
         },
     }
 
-    let mut graph = parse(&mut import_data, &mut timer).bpmd_format_err(&import_data)?;
+    let (mut graph, recoverable_errors) =
+        parse(&mut import_data, &mut timer).bpmd_format_err(&import_data)?;
     import_data.pop();
 
     let result = catch_unwind(AssertUnwindSafe(
@@ -136,13 +135,25 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         },
     ));
 
-    let output_data = match result {
-        Ok(r) => r?, // propagate Result errors as before
-        Err(payload) => {
+    let output_data = match (result, recoverable_errors.first()) {
+        (Ok(Ok(r)), _) => r,
+        (Ok(Err(e)), None) => return Err(e),
+        (Ok(Err(_)), Some(e)) => return Err(e.bpmd_format_err(&import_data)),
+        (Err(payload), e) => {
             eprintln!("Panic! Debug-printing the graph: {graph:#?}");
+            if let Some(e) = e {
+                eprintln!(
+                    "First error message during parsing: {}",
+                    e.bpmd_format_err(&import_data)
+                );
+            }
             std::panic::resume_unwind(payload);
         }
     };
+
+    if let Some(err) = recoverable_errors.first() {
+        eprintln!("{}", err.bpmd_format_err(&import_data));
+    }
 
     match cli.output {
         Some(pb) => std::fs::write(pb, output_data)?,
@@ -170,19 +181,26 @@ impl std::fmt::Debug for BpmdParseError {
 
 impl std::error::Error for BpmdParseError {}
 
+trait ParseErrorMapToError {
+    fn bpmd_format_err(self, source_files: &ImportData) -> Box<dyn std::error::Error>;
+}
+
+impl ParseErrorMapToError for &ParseError {
+    fn bpmd_format_err(self, source_files: &ImportData) -> Box<dyn std::error::Error> {
+        Box::new(BpmdParseError(render_snippet_report(
+            &source_files.bpmd_source_files,
+            self,
+        )))
+    }
+}
+
 trait ParseErrorMapToBoxError<T> {
     fn bpmd_format_err(self, source_files: &ImportData) -> Result<T, Box<dyn std::error::Error>>;
 }
 
 impl<T> ParseErrorMapToBoxError<T> for Result<T, ParseError> {
     fn bpmd_format_err(self, source_files: &ImportData) -> Result<T, Box<dyn std::error::Error>> {
-        self.map_err(|annotations| {
-            Box::new(BpmdParseError(render_snippet_report(
-                &source_files.bpmd_source_files,
-                annotations,
-            )))
-            .into()
-        })
+        self.map_err(|annotations| annotations.bpmd_format_err(source_files))
     }
 }
 
@@ -195,7 +213,7 @@ pub struct BpmdSourceFile {
 
 fn render_snippet_report(
     source_files: &[BpmdSourceFile],
-    annotations: Vec<(String, TokenCoordinate)>,
+    annotations: &Vec<(String, TokenCoordinate)>,
 ) -> String {
     assert!(!annotations.is_empty());
 

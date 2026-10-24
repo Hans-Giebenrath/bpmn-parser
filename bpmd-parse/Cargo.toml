@@ -9,3 +9,4 @@ bpmd-graph = { path = "../bpmd-graph" }
 bpmd-util = { path = "../bpmd-util" }
 fuzzy-matcher = "0.3.7"
 itertools = { version = "0.15.0", default-features = false, features = ["use_alloc"] }
+log = "0.4.34"

@@ -534,7 +534,7 @@ fn to_boundary_event(mut tokens: Tokens, backup_tc: TokenCoordinate) -> AResult 
     };
 
     let atts = assemble_attributes(
-        "Data statements",
+        "Boundary events",
         tokens,
         AssemblyRequest {
             display_text: ARAttribute::Forbidden,

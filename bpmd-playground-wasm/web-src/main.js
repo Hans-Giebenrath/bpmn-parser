@@ -33,17 +33,19 @@ worker.addEventListener("message", (event) => {
         handleInput();
         return;
     }
+    console.log("diagram rendering", event.data);
     if (event.data.type == "Success") {
         diagram.innerHTML = event.data.diagram;
         vistab.innerHTML = event.data.pebpmd_visibility_table_html;
-        diagnostics_pane.innerHTML = "";
-        diagnostics_boxes.innerHTML = "";
+    }
+
+    diagnostics_pane.innerHTML = event.data.diagnostics_pane_content;
+    diagnostics_boxes.innerHTML = event.data.diagnostic_boxes_html;
+
+    if (event.data.diagnostics_pane_content == "") {
         outer_diagnostics_boxes.style.display = "none";
     } else {
-        diagnostics_pane.innerHTML = event.data.diagnostics_pane_content;
-        diagnostics_boxes.innerHTML = event.data.diagnostic_boxes_html;
         outer_diagnostics_boxes.style.removeProperty("display");
-        console.log(event);
     }
 });
 
@@ -53,13 +55,12 @@ worker2.addEventListener("message", (event) => {
         handleInput();
         return;
     }
+    console.log("syntax highlighting", event.data);
     if (event.data.type == "Success") {
         mirror.innerHTML = event.data.diagram;
-        console.log(event.data.diagram);
     } else {
-        console.log(event);
-        console.log(event.data.error_message);
-        console.log(event.data.error_message.replace("\\n", "\n"));
+        // Well this should never happen?
+        mirror.textContent = input.value;
     }
 });
 

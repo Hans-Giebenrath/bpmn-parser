@@ -29,14 +29,13 @@ pub struct ParseContext {
     lifeline_state: LifelineState,
     pub current_token_coordinate: TokenCoordinate,
     /// Sequence flows are always within a pool, so the identifiers are scoped per PoolId
-    /// through this HashMap.
+    /// through this `VecMap`.
     dangling_sequence_flows: VecMap<PoolId, DanglingSequenceFlows>,
     // Shorthand blank events maybe need to be transformed into message events, such that they are
     // allowed to send or receive data. This automatic transformation is done to allow quickly
     // prototyping of the BPMD file using shorthand syntax in a first iteration.
     shorthand_blank_events: VecSet<NodeId>,
     pub id_matcher: IdMatcher,
-    source_file_idx: usize,
 }
 
 // X ->l1 ; l1: - task; J end; X<-end
@@ -91,7 +90,6 @@ enum GroupingState {
         pool_id: PoolId,
         ptc: TokenCoordinate,
         lane_id: LaneId,
-        ltc: TokenCoordinate,
     },
 }
 
@@ -158,7 +156,6 @@ impl Parser {
                 dangling_sequence_flows: VecMap::default(),
                 shorthand_blank_events: Default::default(),
                 id_matcher: IdMatcher::new(),
-                source_file_idx: 0,
             },
             recoverable_errors: Default::default(),
         }
@@ -200,14 +197,18 @@ impl Parser {
 
         match &self.context.lifeline_state {
             LifelineState::NoLifelineActive { .. } => { /* all good */ }
-            LifelineState::ActiveLifeline {
-                token_coordinate, ..
+            &LifelineState::ActiveLifeline {
+                last_node_id,
+                token_coordinate,
             } => {
                 //
-                return Err(vec![(
+                self.recoverable_errors.push(vec![(
                     "The text file ended with an active sequence flow. Add an end event like `. End` after this line to finish the sequence flow.".to_string(),
-                    *token_coordinate,
+                    token_coordinate,
                 )]);
+
+                let pool_and_lane = self.manage_pool_and_lane_ids_for_new_node();
+                self.create_missing_end(last_node_id, pool_and_lane, None, None);
             }
         }
 
@@ -280,7 +281,7 @@ impl Parser {
                 {
                     node.node_type = NodeType::BlackBox {
                         display_text: display_text.raw_text.clone(),
-                        tc: tc.clone(),
+                        tc: *tc,
                     };
                 }
             }
@@ -347,7 +348,13 @@ impl Parser {
                                     start.known_node_id,
                                     end.known_node_id,
                                     EdgeType::Regular {
-                                        text: Some(DisplayText::new(start.edge_text.clone())),
+                                        text: Some(DisplayText::new(
+                                            if start.edge_text.is_empty() {
+                                                end.edge_text.clone()
+                                            } else {
+                                                start.edge_text.clone()
+                                            },
+                                        )),
                                         bend_points: RegularEdgeBendPoints::ToBeDetermined,
                                     },
                                     FlowType::SequenceFlow,
@@ -393,6 +400,7 @@ impl Parser {
                                     dangling.known_node_id,
                                     pool_and_lane,
                                     Some(key.as_str()),
+                                    dangling.boundary_event.clone(),
                                 );
                             }
                         }
@@ -486,7 +494,6 @@ impl Parser {
                     pool_id,
                     ptc,
                     lane_id,
-                    ltc: self.context.current_token_coordinate,
                 };
                 (pool_id, lane_id)
             }
@@ -566,7 +573,9 @@ impl Parser {
             meta.sequence_flow_jumps.as_mut_slice(),
             // The landings and jumps are used to determine its actual position.
             NodePositionInLifeline::Middle,
-        )
+        );
+
+        Ok(())
     }
 
     /// Connects the current node with the previous node, handling incoming joining/jumping
@@ -579,7 +588,7 @@ impl Parser {
         outgoing_sequence_flow_jumps: &mut [EdgeMeta],
         // end event just overrides manually what was stored there.
         node_position: NodePositionInLifeline,
-    ) -> Result<(), ParseError> {
+    ) {
         if !incoming_sequence_flow_landings.is_empty() {
             self.maybe_recover_from_unfinished_lifeline();
             for EdgeMeta {
@@ -662,8 +671,6 @@ impl Parser {
                 token_coordinate: self.context.current_token_coordinate,
             }
         };
-
-        Ok(())
     }
 
     fn parse_event(&mut self, mut meta: lexer::EventMeta, is_end: bool) -> Result<(), ParseError> {
@@ -706,7 +713,9 @@ impl Parser {
             meta.sequence_flow_landing.as_mut_slice(),
             meta.sequence_flow_jump.as_mut_slice(),
             node_position,
-        )
+        );
+
+        Ok(())
     }
 
     fn parse_activity(&mut self, mut meta: ActivityMeta) -> Result<(), ParseError> {
@@ -734,7 +743,9 @@ impl Parser {
             meta.sequence_flow_landing.as_mut_slice(),
             meta.sequence_flow_jump.as_mut_slice(),
             NodePositionInLifeline::Middle,
-        )
+        );
+
+        Ok(())
     }
 
     fn parse_boundary_event(&mut self, meta: BoundaryEventMeta) -> Result<(), ParseError> {
@@ -1225,7 +1236,7 @@ impl Parser {
         ]);
 
         let pool_and_lane = self.manage_pool_and_lane_ids_for_new_node();
-        self.create_missing_end(last_node_id, pool_and_lane, None);
+        self.create_missing_end(last_node_id, pool_and_lane, None, None);
     }
 
     fn create_missing_start(&mut self, pool_and_lane: PoolAndLane, label: Option<&str>) -> NodeId {
@@ -1238,7 +1249,7 @@ impl Parser {
                 display_text: if let Some(label) = label {
                     DisplayText::new(format!("Missing Start Event (# Start ->{label})"))
                 } else {
-                    DisplayText::new(format!("Missing Start Event (# Start)"))
+                    DisplayText::new("Missing Start Event (# Start)".to_string())
                 },
                 tc: self.context.current_token_coordinate,
                 transported_data: vec![],
@@ -1260,6 +1271,7 @@ impl Parser {
         previous_node_id: NodeId,
         pool_and_lane: PoolAndLane,
         label: Option<&str>,
+        boundary_event: Option<BoundaryEvent>,
     ) {
         let new_node_id = self.graph.add_node(
             NodeType::RealNode {
@@ -1267,7 +1279,7 @@ impl Parser {
                 display_text: if let Some(label) = label {
                     DisplayText::new(format!("Missing End Event (. End <-{label})"))
                 } else {
-                    DisplayText::new(format!("Missing End Event (. End)"))
+                    DisplayText::new("Missing End Event (. End)".to_string())
                 },
                 tc: self.context.current_token_coordinate,
                 transported_data: vec![],
@@ -1289,8 +1301,14 @@ impl Parser {
                 bend_points: RegularEdgeBendPoints::ToBeDetermined,
             },
             FlowType::SequenceFlow,
-            None,
+            boundary_event,
         );
+    }
+}
+
+impl Default for Parser {
+    fn default() -> Self {
+        Self::new()
     }
 }
 

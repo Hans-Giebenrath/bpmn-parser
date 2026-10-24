@@ -160,7 +160,11 @@ pub fn compile_bpmd(text: JsValue) -> JsValue {
             failure: into_error(&import_data.source, &e),
         },
     };
-    serde_wasm_bindgen::to_value(&result).unwrap()
+    // Must use this representation due to the `#[serde(flatten)]` annotation which would otherwise
+    // create a JS Map type, being uncomfortable to work with.
+    result
+        .serialize(&serde_wasm_bindgen::Serializer::new().serialize_maps_as_objects(true))
+        .unwrap()
 }
 
 fn run(request: RequestType, import_data: &mut ImportData) -> Result<InnerReturnType, ParseError> {
@@ -231,7 +235,7 @@ fn into_error(text: &str, errors: &ParseError) -> Failure {
         html
     };
 
-    let diagnostics_pane_content = render(text, &errors);
+    let diagnostics_pane_content = render(text, errors);
 
     Failure {
         diagnostics_pane_content,

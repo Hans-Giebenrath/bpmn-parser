@@ -7,3 +7,4 @@ edition = "2024"
 bpmd-util = { path = "../bpmd-util" }
 bpmd-graph = { path = "../bpmd-graph" }
 proc_macros = { path = "../proc_macros" }
+log = "0.4.34"
