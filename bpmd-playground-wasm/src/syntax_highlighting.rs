@@ -1,6 +1,8 @@
 use alloc::string::String;
 use bpmd_parse::lexer::is_allowed_symbol_in_label_or_id;
 use core::fmt::Write as _;
+
+use crate::HtmlEscaped;
 const STMT_START_SHORT: &[(&str, &str)] = &[
     (".", "end"),
     ("!", "end"),
@@ -63,13 +65,13 @@ const BOUNDARY: &[(&str, &str)] = &[
     ("X!", "interrupt-boundary"),
     ("#!", "interrupt-boundary"),
     ("+!", "interrupt-boundary"),
-    ("M!", "non-interrupt-boundary"),
-    ("T!", "non-interrupt-boundary"),
-    ("C!", "non-interrupt-boundary"),
-    ("S!", "non-interrupt-boundary"),
-    ("^!", "non-interrupt-boundary"),
-    ("#!", "non-interrupt-boundary"),
-    ("+!", "non-interrupt-boundary"),
+    ("M+", "non-interrupt-boundary"),
+    ("T+", "non-interrupt-boundary"),
+    ("C+", "non-interrupt-boundary"),
+    ("S+", "non-interrupt-boundary"),
+    ("^+", "non-interrupt-boundary"),
+    ("#+", "non-interrupt-boundary"),
+    ("++", "non-interrupt-boundary"),
 ];
 
 const ATTRIBUTE_TYPE: &[(&str, &str)] = &[
@@ -278,7 +280,8 @@ fn try_match(group: &[(&str, &str)], text: &mut &str, out: &mut String, css_clas
         if let Some(rest) = text.strip_prefix(statement) {
             write!(
                 out,
-                "<span class=\"{css_class} {additional_css_classes}\">{statement}</span>"
+                "<span class=\"{css_class} {additional_css_classes}\">{}</span>",
+                HtmlEscaped(statement)
             )
             .unwrap();
             *text = rest;
@@ -292,7 +295,7 @@ fn eat_rest_of_the_line(text: &mut &str, out: &mut String, css_class: &str) {
     let trimmed = text.trim_start_matches(|c: char| c != '\n' && c != '\r');
     let line_len = text.len() - trimmed.len();
     if line_len > 0 {
-        let line = &text[..line_len];
+        let line = HtmlEscaped(&text[..line_len]);
         write!(out, "<span class=\"{css_class}\">{line}</span>").unwrap();
         *text = trimmed;
     }
@@ -302,7 +305,7 @@ fn eat_next_anyword(text: &mut &str, out: &mut String, css_class: &str) -> bool 
     let trimmed = text.trim_start_matches(|c: char| !c.is_whitespace());
     let word_len = text.len() - trimmed.len();
     if word_len > 0 {
-        let word = &text[..word_len];
+        let word = HtmlEscaped(&text[..word_len]);
         write!(out, "<span class=\"{css_class}\">{word}</span>").unwrap();
         *text = trimmed;
         true
@@ -315,7 +318,7 @@ fn eat_next_label(text: &mut &str, out: &mut String, css_class: &str) -> bool {
     let trimmed = text.trim_start_matches(is_allowed_symbol_in_label_or_id);
     let word_len = text.len() - trimmed.len();
     if word_len > 0 {
-        let word = &text[..word_len];
+        let word = HtmlEscaped(&text[..word_len]);
         write!(out, "<span class=\"{css_class}\">{word}</span>").unwrap();
         *text = trimmed;
         true
@@ -332,7 +335,7 @@ fn eat_next_quoted_words(text: &mut &str, out: &mut String) -> bool {
     let rest2 = rest.trim_start_matches(|c: char| c != '\n' && c != '\r' && c != '"');
     let quoted_words_len = rest.len() - rest2.len();
     if quoted_words_len > 0 {
-        let quoted_words = &rest[..quoted_words_len];
+        let quoted_words = HtmlEscaped(&rest[..quoted_words_len]);
         write!(out, "<span class=\"quoted_words\">{quoted_words}</span>").unwrap();
     }
     if let Some(rest3) = rest2.strip_prefix('"') {

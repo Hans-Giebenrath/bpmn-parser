@@ -6,7 +6,10 @@ use bpmd_util::index_iter::IterIndices;
 use proc_macros::*;
 
 pub fn find_straight_edges(graph: &mut Graph) {
-    let mut grid = Grid::new(graph.total_width_height());
+    let Some(graph_width_height) = graph.total_width_height() else {
+        return;
+    };
+    let mut grid = Grid::new(graph_width_height);
 
     let margin = graph.config.data_edge_node_collision_margin;
     for node in &graph.nodes {

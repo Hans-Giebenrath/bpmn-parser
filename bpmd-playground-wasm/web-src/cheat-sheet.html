@@ -1,0 +1,84 @@
+<!doctype html>
+<html lang="en-US">
+  <head>
+    <meta charset="utf-8" />
+    <title>BPMD Playground</title>
+    <link rel="stylesheet" type="text/css" href="fonts.css">
+  </head>
+  <body style="display: flex; gap: 0em">
+      <div id="help-node-statement">
+          <!-- First line which contains all of the symbols -->
+          <code class="header">
+              <span class="stmt-short stmt">-</span>
+              <span class="display_text">Process Step</span>
+          </code>
+          <code class="id-label header">@identifier</code>
+          <code class="arrow header">&lt;-label"Edge Text"</code>
+          <code class="arrow header">-&gt;label"Edge Text"</code>
+          <code class="type header">~service</code>
+          <!-- end -->
+
+          <!-- Statement type and display text. -->
+          <ul style="list-style-type: none; padding: 0; margin: 0">
+              <li><code>
+                      <span class="stmt-short stmt">#</span>
+                      <span class="display_text">(Start) Event</span>
+                  </code></li>
+                  <li><code>
+                          <span class="stmt-short stmt">-</span>
+                          <span class="display_text">Activity</span>
+                      </code></li>
+                      <li><code>
+                              <span class="stmt-short stmt">.</span>
+                              <span class="display_text">End Event</span>
+                          </code></li>
+                          <li><code>
+                                  <span class="stmt-short stmt">X</span>
+                                  <span class="display_text">Gateway</span>
+                              </code></li>
+          </ul>
+          <!-- end -->
+
+          <!-- ID label. -->
+          <div class="autobreak">
+              Node identifier
+          </div>
+          <!-- end -->
+
+          <!-- In Arrow -->
+          <div class="autobreak">
+              Connect an incoming sequence flow to a <code>-&gt;label</code>, optionally with an edge text.
+          </div>
+          <!-- end -->
+
+          <!-- Out Arrow -->
+          <div class="autobreak">
+              Connect an outgoing sequence flow to a <code>&lt;-label</code>, optionally with an edge text.
+          </div>
+          <!-- end -->
+
+          <!-- Type -->
+          <div style="display: flex">
+              <ul style="list-style-type: none; padding: 0; margin: 0;">
+                  <li><code class="type">~throw</code></li>
+                  <li><code class="type">~catch</code></li>
+                  <li><code class="type">~send</code></li>
+                  <li><code class="type">~receive</code></li>
+                  <li><code class="type">~manual</code></li>
+                  <li><code class="type">~user</code></li>
+                  <li><code class="type">~script</code></li>
+              </ul>
+              <ul style="list-style-type: none; padding: 0; margin: 0;">
+                  <li><code class="type">~service</code></li>
+                  <li><code class="type">~businessrule</code></li>
+                  <li><code class="type">~multiple</code></li>
+                  <li><code class="type">~loop</code></li>
+                  <li><code class="type">~adhoc</code></li>
+                  <li><code class="type">~compensation</code></li>
+              </ul>
+          </div>
+          <!-- end -->
+      </div>
+  </body>
+</html>
+

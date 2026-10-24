@@ -6,7 +6,9 @@ use cosmic_text::{Align, Attrs, Buffer, Metrics, Shaping, Wrap};
 use bpmd_graph::*;
 
 pub fn set_display_text_locations(graph: &mut Graph, cache: &mut FontCache) {
-    let mut grid = prepare_collision_grid(graph);
+    let Some(mut grid) = prepare_collision_grid(graph) else {
+        return;
+    };
     for node in &mut graph.nodes {
         if node.is_blackbox_node() {
             // TODO this is a bit ugly, combine the next `let NodeType::RealNode` with a match.
@@ -1014,8 +1016,9 @@ fn activity_display_text_location_candidates(
     .materialize(textbox_wh)
 }
 
-fn prepare_collision_grid(graph: &Graph) -> Grid {
-    let mut grid = Grid::new(graph.total_width_height());
+fn prepare_collision_grid(graph: &Graph) -> Option<Grid> {
+    let graph_width_height = graph.total_width_height()?;
+    let mut grid = Grid::new(graph_width_height);
 
     for edge in &graph.edges {
         let EdgeType::Regular {
@@ -1069,7 +1072,7 @@ fn prepare_collision_grid(graph: &Graph) -> Grid {
         }
     }
 
-    grid
+    Some(grid)
 }
 
 fn prep(cache: &mut FontCache, display_text: &mut DisplayText) -> (usize, usize) {

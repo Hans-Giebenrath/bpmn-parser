@@ -635,17 +635,19 @@ impl Graph {
             )
     }
 
-    pub fn total_width_height(&self) -> (usize, usize) {
-        let last_pool = &self.pools.last().unwrap();
+    pub fn total_width_height(&self) -> Option<(usize, usize)> {
+        let Some(last_pool) = &self.pools.last() else {
+            return None;
+        };
         // A safety measure, to ensure that during our calculations we didn't got a underflow and as
         // such some enormous coordinate. But I think that we could even cap it to something like
         // 10^6, since that would likely already OOM the collision grid.
         assert!(last_pool.x + last_pool.width <= (u32::MAX / 4) as usize);
         assert!(last_pool.y + last_pool.height <= (u32::MAX / 4) as usize);
-        (
+        Some((
             last_pool.x + last_pool.width,
             last_pool.y + last_pool.height,
-        )
+        ))
     }
 }
 

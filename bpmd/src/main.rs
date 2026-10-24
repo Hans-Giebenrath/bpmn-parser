@@ -213,7 +213,7 @@ pub struct BpmdSourceFile {
 
 fn render_snippet_report(
     source_files: &[BpmdSourceFile],
-    annotations: &Vec<(String, TokenCoordinate)>,
+    annotations: &[(String, TokenCoordinate)],
 ) -> String {
     assert!(!annotations.is_empty());
 

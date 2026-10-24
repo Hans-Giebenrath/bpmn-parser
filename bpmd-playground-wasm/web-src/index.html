@@ -3,45 +3,147 @@
   <head>
     <meta charset="utf-8" />
     <title>BPMD Playground</title>
+    <link rel="icon" href="favicon.svg" type="image/svg+xml">
     <link rel="stylesheet" type="text/css" href="fonts.css">
     <link rel="stylesheet" type="text/css" href="visibility-table.css">
     <link rel="stylesheet" type="text/css" href="editor.css">
     <link rel="stylesheet" type="text/css" href="svg.css">
     <link rel="stylesheet" type="text/css" href="syntax-highlighting.css">
     <link rel="stylesheet" type="text/css" href="right-side.css">
+    <link rel="stylesheet" type="text/css" href="cheat-sheet.css">
   </head>
-  <body style="display: flex; gap: 0em">
-      <div>
-          <h1 id="title">BPMD Playground</h1>
-          <div id="editor-container">
-              <!--
-                  Underlines, or maybe even background colors, are rendered in this pre.
-                  Reason is that `#mirror-editor` is supposed to be updated quickly, but layouting
-                  can take some time. So to not block highlighting newest syntax with waiting for
-                  a successful layout run, `#mirror-editor` is updated by another process, and
-                  `#diagnostics-pane` is updated when the layouting run is done.
+  <body style="margin-top: 0; margin-bottom: 0; height: 100vh;">
+      <div style="display: flex; gap: 0em;">
+          <div>
+              <h1 id="title" style="margin: 0.2em; font-size: 1.2em">BPMD Playground</h1>
+              <div id="editor-container">
+                  <!--
+                      Underlines, or maybe even background colors, are rendered in this pre.
+                      Reason is that `#mirror-editor` is supposed to be updated quickly, but layouting
+                      can take some time. So to not block highlighting newest syntax with waiting for
+                      a successful layout run, `#mirror-editor` is updated by another process, and
+                      `#diagnostics-pane` is updated when the layouting run is done.
 
-              -->
-              <pre id="diagnostics-pane" style="white-space: pre"></pre>
-              <!--  -->
-              <pre id="mirror-editor" style="white-space: pre"></pre>
-              <textarea id="editor" rows="40" cols="75"></textarea>
+                  -->
+                  <pre id="diagnostics-pane" style="white-space: pre"></pre>
+                  <!--  -->
+                  <pre id="mirror-editor" style="white-space: pre"></pre>
+                  <textarea id="editor" rows="40" cols="65"></textarea>
+              </div>
           </div>
-      </div>
-      <div id="right-side">
-          <div style="flex-direction: column; gap: 1em; margin-left: 1em">
-              <div id="diagram" style="width: 55em;"></div>
-              <div id="vistab"></div>
-          </div>
-          <div id="outer-diag-box-container">
-              <!-- A placeholder so the diagnostics bubbles start at the editor. -->
-              <!-- I.e. this mirrors the `h1` heading on the left side. -->
-              <h1 style="visibility: hidden">placeholder</h1>
-              <div id="diag-box-container">
+          <div id="right-side">
+              <div style="display: flex; flex-direction: column; gap: 1em; margin-left: 1em;">
+                  <div id="diagram" style="width: 67em;"></div>
+                  <!-- The visibility table is not super interesting usually, so have the diagnostics
+                      above that. -->
+                      <div id="diag-box-container"></div>
+                      <div id="vistab"></div>
               </div>
           </div>
       </div>
-          <!-- <div id="diagnostics" style="white-space: pre-wrap; font-family: mono; font-size: 0.8em; max-width: 55em;"></div> -->
+      <div id="cheat-sheet-small" style="margin-top:auto;">
+          <div>
+              <div class="full-statement">
+                  <code class="stmt-short stmt">=</code>
+                  <code class="display_text">Pool Name</code>
+                  <code class="id-label header">@identifier</code>
+                  <code class="type header">~blackbox</code>
+                  <code class="type header">~multiple</code>
+              </div>
+              <div class="short-statements">
+                  <code>== Lane</code>
+              </div>
+          </div>
+
+          <div>
+              <div class="full-statement">
+                  <code class="stmt-short stmt">-</code>
+                  <code class="display_text">Process Step</code>
+                  <code class="id-label header">@identifier</code>
+                  <code class="arrow header">&lt;-label"Edge Text"</code>
+                  <code class="arrow header">-&gt;label"Edge Text"</code>
+                  <code class="type header">~service</code>
+              </div>
+              <div class="short-statements">
+                  <code># (Start) Event</code>
+                  <code>- Activity</code>
+                  <code>. End</code>
+              </div>
+          </div>
+
+          <div>
+              <div class="full-statement">
+                  <code class="stmt-short stmt">X</code>
+                  <code class="display_text">Gateway</code>
+                  <code class="id-label header">@identifier</code>
+                  <span class="alternating">
+                      <span>
+                          <code class="arrow header">&lt;-label1"Edge Text"</code>
+                          <code class="arrow header">&lt;-label2"Edge Text"</code>
+                      </span>
+                      <span>
+                          <code class="arrow header">-&gt;label1"Edge Text"</code>
+                          <code class="arrow header">-&gt;label2"Edge Text"</code>
+                      </span>
+                  </span>
+              </div>
+              <div class="short-statements">
+                  <code>+ Gateway</code>
+                  <code>O Gateway</code>
+                  <code>* Gateway</code>
+              </div>
+          </div>
+
+          <div>
+              <div class="full-statement">
+                  <code class="stmt-short stmt">M!</code>
+                  <code class="arrow header">-&gt;label1"Edge Text"</code>
+              </div>
+              <div class="short-statements">
+                  <code>T!</code>
+                  <code>C!</code>
+                  <code>S!</code>
+                  <code>E!</code>
+                  <code>^!</code>
+                  <code>&lt;!</code>
+                  <code>X!</code>
+                  <code>#!</code>
+                  <code>+!</code>
+                  <code>M+</code>
+                  <code>T+</code>
+                  <code>C+</code>
+                  <code>S+</code>
+                  <code>^+</code>
+                  <code>#+</code>
+                  <code>++</code>
+              </div>
+          </div>
+
+          <div>
+              <div class="full-statement">
+                  <code class="stmt-short stmt">OD</code>
+                  <code class="display_text">Data Object</code>
+                  <code class="id-label header">@identifier</code>
+                  <code class="arrow header">&lt;-node-matcher"Data Flow Text"</code>
+                  <code class="arrow header">-&gt;node-matcher"Data Flow Text"</code>
+              </div>
+              <div class="short-statements">
+                  <code>SD Data Store</code>
+                  <code>&nbsp;&amp; Data Continuation</code>
+                  <code>O&amp; Data Continuation</code>
+                  <code>S&amp; Data Continuation</code>
+              </div>
+          </div>
+
+          <div>
+              <div class="full-statement">
+                  <code class="stmt-short stmt">MF</code>
+                  <code class="display_text">Message Flow Text</code>
+                  <code class="arrow header">&lt;-start-node-matcher</code>
+                  <code class="arrow header">-&gt;end-node-matcher</code>
+              </div>
+          </div>
+      </div>
   </body>
   <script type="module" src="./main.js" ></script>
 </html>

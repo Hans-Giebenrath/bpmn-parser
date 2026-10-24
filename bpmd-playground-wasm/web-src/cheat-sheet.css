@@ -1,0 +1,67 @@
+#help-node-statement {
+    display: grid;
+    grid-template-columns: repeat(5, max-content);
+    grid-gap: 0.5em;
+
+    & .autobreak {
+        width: 0;
+        min-width: 100%;
+        overflow-wrap: anywhere;
+    }
+    & code {
+        white-space: nowrap;
+    }
+    & > .header {
+        font-size: 1.3em;
+    }
+}
+
+
+.alternating > :first-child {
+  animation: first 10s infinite;
+}
+
+.alternating > :last-child {
+  animation: second 10s infinite;
+}
+
+@keyframes first {
+  0%, 49.99% { opacity: 1; }
+  50%, 100% { opacity: 0; }
+}
+
+@keyframes second {
+  0%, 49.99% { opacity: 0; }
+  50%, 100% { opacity: 1; }
+}
+
+.alternating {
+  display: inline-grid;
+}
+
+.alternating > * {
+  grid-area: 1 / 1;
+}
+
+#cheat-sheet-small {
+    display: grid;
+    grid-template-columns: auto;
+    font-family: Inter;
+    background-color: #f3f0b5;
+    border: 1px solid #c08c1b;
+
+    & > * {
+        border-bottom: 1px solid black;
+    }
+    & > *:last-child {
+        border-bottom: none;
+    }
+
+    & .full-statement, & .short-statements {
+        display: inline-block;
+    }
+
+    & .short-statements > * {
+        margin-left: 2em;
+    }
+}

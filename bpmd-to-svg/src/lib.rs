@@ -8,7 +8,9 @@ pub mod primitives;
 use primitives::ElementSvgStyle;
 
 pub fn to_svg(graph: &Graph, font_cache: &mut FontCache, embed_font: bool) -> String {
-    let (total_width, total_height) = graph.total_width_height();
+    let Some((total_width, total_height)) = graph.total_width_height() else {
+        return primitives::Svg::new(embed_font, 1, 1, &graph.config, font_cache).finish();
+    };
     let mut svg = primitives::Svg::new(
         embed_font,
         total_width,

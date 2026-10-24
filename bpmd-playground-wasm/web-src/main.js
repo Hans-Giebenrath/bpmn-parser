@@ -13,7 +13,6 @@ const diagram = document.querySelector("#diagram");
 const vistab = document.querySelector("#vistab");
 const diagnostics_pane = document.querySelector("#diagnostics-pane");
 const diagnostics_boxes = document.querySelector("#diag-box-container");
-const outer_diagnostics_boxes = document.querySelector("#outer-diag-box-container");
 
 let worker1ready = false;
 let worker2ready = false;
@@ -41,12 +40,6 @@ worker.addEventListener("message", (event) => {
 
     diagnostics_pane.innerHTML = event.data.diagnostics_pane_content;
     diagnostics_boxes.innerHTML = event.data.diagnostic_boxes_html;
-
-    if (event.data.diagnostics_pane_content == "") {
-        outer_diagnostics_boxes.style.display = "none";
-    } else {
-        outer_diagnostics_boxes.style.removeProperty("display");
-    }
 });
 
 worker2.addEventListener("message", (event) => {
