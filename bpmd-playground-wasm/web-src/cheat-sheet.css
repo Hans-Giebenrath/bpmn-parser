@@ -57,6 +57,10 @@
         border-bottom: none;
     }
 
+    & .full-statement {
+        font-weight: bold;
+    }
+
     & .full-statement, & .short-statements {
         display: inline-block;
     }

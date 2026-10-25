@@ -1,3 +1,4 @@
+* link:../playground/index.html[Playground]
 * xref:install.adoc[]
 * xref:dsl-overview.adoc[]
 * Extensions

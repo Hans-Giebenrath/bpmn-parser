@@ -53,7 +53,7 @@ else
     fi
 fi
 run() {
-    time timeout 3s "${CARGO_TARGET_DIR:-./target}"/${release_dir}/bpmn-parser "$@"
+    time timeout 3s "${CARGO_TARGET_DIR:-./target}"/${release_dir}/bpmd "$@"
 }
 
 echo "generating "

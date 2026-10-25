@@ -21,8 +21,9 @@ accept-svg image:
 build-playground out_dir:
     #!/usr/bin/bash
     set -xeuo pipefail
+    outdir="$(realpath -e "{{ out_dir }}")"
     cd bpmd-playground-wasm
-    binary_file="{{ out_dir }}"/bpmd_playground_wasm.js
+    binary_file="$outdir/bpmd_playground_wasm.js"
     if ! [ -f "$binary_file" ] || find .. -name '*.rs' -newer "$binary_file" -print -quit | grep -q .; then
         # Sources are newer, rebuild.
         RUSTFLAGS="-C panic=unwind -C target-feature=+exception-handling" \
@@ -32,18 +33,13 @@ build-playground out_dir:
             -Z build-std=std,panic_unwind
         ~/.cargo/bin/wasm-bindgen \
           --target web \
-          --out-dir "{{ out_dir }}" \
+          --out-dir "$outdir" \
           "${CARGO_TARGET_DIR:-target}/wasm32-unknown-unknown/release/bpmd_playground_wasm.wasm"
-        #RUSTUP_TOOLCHAIN=nightly \
-        #    RUSTFLAGS="-C target-feature=+exception-handling" \
-        #    CARGO_UNSTABLE_BUILD_STD="std,panic_unwind" \
-        #    ~/.cargo/bin/wasm-pack build --release --target web --out-dir "{{ out_dir }}"
-        # While the rest is instantaneous, this one takes time, so bel when ready.
         tput bel
     fi
-    mkdir -p "{{ out_dir }}/fonts"
-    cp ../inter-font/Inter-{Italic,Regular,SemiBold}.ttf "{{ out_dir }}/fonts"
-    cp -r web-src/. "{{ out_dir }}/"
+    mkdir -p "$outdir/fonts"
+    cp ../inter-font/Inter-{Italic,Regular,SemiBold}.ttf "$outdir/fonts"
+    cp -r web-src/. "$outdir/"
 
 _test-playground test_dir:
     #!/usr/bin/bash
