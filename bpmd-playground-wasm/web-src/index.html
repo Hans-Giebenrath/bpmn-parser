@@ -15,7 +15,17 @@
   <body style="margin-top: 0; margin-bottom: 0; height: 100vh;">
       <div style="display: flex; gap: 0em;">
           <div>
-              <h1 id="title" style="margin: 0.2em; font-size: 1.2em">BPMD Playground</h1>
+              <div id="top-row">
+                  <h1 id="title" style="margin: 0.2em; font-size: 1.2em; display: inline-block;">BPMD Playground</h1>
+                  <select id="download-selection" disabled>
+                      <option value="">--Download--</option>
+                      <option value="svg-embed" title="For maximum compatibility. Text is embedded as paths, thus any font problems are avoided. However, file size is larger.">SVG with embedded font</option>
+                      <option value="svg-no-embed" title="Smaller text file, but might not render the same everywhere.">SVG with regular text</option>
+                      <option value="bpmn-camunda" title=".bpmn file which can be opened in regular BPMN editors.">BPMN file</option>
+                      <option value="vistab-csv">Visibility Table <code>.csv</code></option>
+                      <option value="diag-txt" title="The source code of your diagram as .txt file. (you could just Ctrl+C it)">Diagram .txt</option>
+                  </select>
+              </div>
               <div id="editor-container">
                   <!--
                       Underlines, or maybe even background colors, are rendered in this pre.
