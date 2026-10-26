@@ -407,18 +407,11 @@ fn to_task_activity(atts: Tokens, backup_tc: TokenCoordinate) -> AResult {
             Direction::Outgoing => sequence_flow_jump = Some(edge_meta),
         }
     }
-    for (active, text, tc) in [
-        (
-            atts.activity_marker.is_blackbox,
-            "~blackbox",
-            atts.activity_marker_tcs.is_blackbox,
-        ),
-        (
-            atts.activity_marker.adhoc,
-            "~adhoc",
-            atts.activity_marker_tcs.adhoc,
-        ),
-    ] {
+    for (active, text, tc) in [(
+        atts.activity_marker.is_blackbox,
+        "~blackbox",
+        atts.activity_marker_tcs.is_blackbox,
+    )] {
         if active {
             return Err(vec![(
                 format!("An activity cannot have the {text} attribute. Remove this attribute."),
