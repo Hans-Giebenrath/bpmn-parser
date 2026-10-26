@@ -52,6 +52,7 @@ enum Format {
     SvgEmbed,
     SvgNoEmbed,
     Bpmn,
+    VisTabCsv,
     HighlightedInnerHtml,
 }
 
@@ -206,6 +207,7 @@ fn run(request: RequestType, import_data: &mut ImportData) -> Result<InnerReturn
         Format::SvgEmbed => timer.time_it("SVG export (with font embedding)", || {
             to_svg(&graph, font_cache, true)
         }),
+        Format::VisTabCsv => timer.time_it("CSV export", || to_csv(&pebpmd_visibility_table)),
         Format::HighlightedInnerHtml => unreachable!("Previously handled"),
     };
 
@@ -385,4 +387,14 @@ fn panic_to_message(panic: &Box<dyn Any + Send>) -> &str {
         .map(String::as_str)
         .or_else(|| panic.downcast_ref::<&str>().copied())
         .unwrap_or("Unknown panic payload")
+}
+
+fn to_csv(visibility_table: &VisibilityTable) -> String {
+    let mut csv = csv::Writer::from_writer(Vec::new());
+    csv.write_record(&visibility_table.header_row).unwrap();
+    for row in &visibility_table.rows {
+        csv.write_record(row).unwrap();
+    }
+    let bytes = csv.into_inner().unwrap();
+    String::from_utf8_lossy_owned(bytes)
 }
