@@ -967,10 +967,14 @@ fn write_text_at(
         // usability.
         write!(
             body,
-            r#"<text class="{class}" x="{x}" y="{}" text-anchor="start" dominant-baseline="text-top" font-family="{}" fill="{}" font-size="{}"{fill_opacity}>"#,
-            y - merged.line_height, // subtract line height here, so in the loop we can
-                                    // unconditionally set `dy` to line height (otherwise first
-                                    // iteration must use 0.0).
+            r#"<text class="{class}" x="{x}" y="{}" text-anchor="start" dominant-baseline="alphabetic" font-family="{}" fill="{}" font-size="{}"{fill_opacity}>"#,
+            // subtract line height here, so in the loop we can
+            // unconditionally set `dy` to line height (otherwise first
+            // iteration must use 0.0).
+            // Also, since `dominant-baseline="text-top"` seems to be only supported in Firefox, shift
+            // the text manually down by `line_y`. This is not pixel perfect, but seems to be good
+            // enough I'd say.
+            y - merged.line_height + text.buffer.layout_runs().next().map(|r|r.line_y).unwrap_or_default(),
             merged.font_family,
             merged.font_color,
             merged.font_size,

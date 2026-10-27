@@ -27,6 +27,8 @@ pub struct DisplayText {
 
 impl DisplayText {
     pub fn new(raw_text: String) -> Self {
+        let font_size = 12.0;
+        let line_height = 14.0;
         Self {
             raw_text,
             location: DisplayTextLocation {
@@ -35,11 +37,11 @@ impl DisplayText {
                 y: 0,
             },
             max_width: Some(MAX_NODE_WIDTH as u16),
-            font_size: 12.0,
-            line_height: 14.0,
+            font_size,
+            line_height,
             font_family: "sans-serif".to_string(),
             font_color: "#111".to_string(),
-            buffer: Buffer::new_empty(Metrics::new(12.0, 14.0)),
+            buffer: Buffer::new_empty(Metrics::new(font_size, line_height)),
         }
     }
 }
