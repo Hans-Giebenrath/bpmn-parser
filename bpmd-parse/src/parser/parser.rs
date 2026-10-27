@@ -465,7 +465,7 @@ impl Parser {
         self.context.last_node_id = None;
         self.context
             .id_matcher
-            .register_pool(pool_id, Vec::new(), Some(meta.title));
+            .register_pool(pool_id, meta.ids, Some(meta.title));
         Ok(())
     }
 
@@ -1146,6 +1146,9 @@ impl Parser {
     fn process_shorthand_blank_events(&mut self) -> Result<(), ParseError> {
         for node_id in self.context.shorthand_blank_events.iter() {
             let node = &mut self.graph.nodes[*node_id];
+            if node.is_blackbox_node() {
+                continue;
+            }
             if node
                 .incoming
                 .iter()

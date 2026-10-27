@@ -1,0 +1,11 @@
+// TODO Two empty lanes result in panic here:
+// bpmd-layout/src/all_crossing_minimization_sweep.rs:497:9:
+// assertion failed: result.edge_layers.len() >= 2
+= Pool 1 ~multiple
+== Lane 1
+== Lane 2
+= Pool 2 //~blackbox
+
+# Start
+. End
+

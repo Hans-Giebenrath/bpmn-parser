@@ -1,0 +1,16 @@
+// You can add IDs to pools for easier referencing
+// in node matchers or pool matchers.
+= Pool @p1
+
+# Start
+. End
+
+= Pool @p2
+
+# Start
+. End
+
+// Uses the pool ids as part of the node matcher.
+MF <-p1-end ->p2-start
+// Directly uses the pool ID.
+[unblackbox @p1]

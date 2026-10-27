@@ -1,0 +1,14 @@
+// This is a pool statement.
+// It introduces a pool,
+// and all nodes you add below
+// belong into this pool,
+// until the next pool statement.
+= Pool 1
+
+# Start
+. End
+
+// This is the next pool statement.
+// In this example, no nodes are below this pool,
+// so it appears empty.
+= Another Pool

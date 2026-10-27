@@ -834,15 +834,15 @@ pub fn add_node(
     // Add node ID to the pool and lane stuff
     pools[pool].add_node(nodes, lane, node_id, layer);
     let node_type = if pools[pool].is_blackbox {
-        let NodeType::RealNode {
-            display_text, tc, ..
-        } = node_type
-        else {
-            unreachable!();
-        };
-        NodeType::BlackBox {
-            display_text: display_text.raw_text,
-            tc,
+        match node_type {
+            NodeType::RealNode {
+                display_text, tc, ..
+            } => NodeType::BlackBox {
+                display_text: display_text.raw_text,
+                tc,
+            },
+            NodeType::BlackBox { .. } => node_type,
+            _ => unreachable!("{node_type:?}"),
         }
     } else {
         node_type

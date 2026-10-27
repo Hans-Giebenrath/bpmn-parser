@@ -1,0 +1,25 @@
+// Mark a pool as a black box.
+// Note that these pools cannot be
+// converted back to non-blackbox pools
+// through the `[unblackbox ]` statement.
+= Pool 1 ~blackbox
+
+// Try adding `~blackbox` to this pool as well.
+// In this case the message flow disappears, as we are
+// usually not interested in interactions between
+// blackbox pools.
+= Pool 2 // ~blackbox
+
+# Start
+. End
+
+// Since `Pool 1` is marked as a blackbox pool,
+// it can be directly used as the target of a message flow.
+MF <-end ->p1
+
+// Note: The `[blackbox @p1]` statement has the same effect
+// as the `~blackbox` attribute. However, it should only
+// be used in conjunction with `[import ]` to modify
+// other diagrams, but `[import ]` is not available in
+// the playground.
+// [blackbox @p1]

@@ -132,6 +132,7 @@ pub struct DataFlowMeta {
 #[derive(Eq, Debug, Clone, PartialEq)]
 pub struct PoolMeta {
     pub title: String,
+    pub ids: Vec<String>,
     /// When `#` or `.` was used.
     pub shorthand_syntax: bool,
     /// `~blackbox`.
@@ -251,7 +252,7 @@ fn to_pool(atts: Tokens, backup_tc: TokenCoordinate) -> AResult {
         atts,
         AssemblyRequest {
             display_text: ARAttribute::Required,
-            ids: ARAttribute::Forbidden,
+            ids: ARAttribute::Optional,
             flows: ARFlowAttribute::Forbidden,
             task_type: AROptionalAttribute::Forbidden,
             event_visual: AROptionalAttribute::Forbidden,
@@ -286,6 +287,7 @@ fn to_pool(atts: Tokens, backup_tc: TokenCoordinate) -> AResult {
     }
     Ok(Statement::Pool(PoolMeta {
         title: atts.display_text.unwrap(),
+        ids: atts.ids,
         shorthand_syntax: atts.used_shorthand_syntax,
         is_blackbox: atts.activity_marker.is_blackbox,
         multiple: atts.activity_marker.multiple,

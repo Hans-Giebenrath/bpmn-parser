@@ -1,7 +1,7 @@
 Big TODOs before 1.0:
 - A data object which comes and goes to the same node, results in a panic.
 - Go do the cheat sheet!
-- try prevent cosmic-text from printings its debug logging for the fallback
+- ID matcher should fail if the same ID was declared multiple times.
 - Black Box Pools
   - port order calculation for message flows to blackbox pools (not from) must be updated, as they behave as if they were reversed.
   - interaction with pe-bpmd, especially because currently the distinction between data and nondata nodes is lost. Blackbox node type probably needs a `is_data_node: bool` or something like that.
