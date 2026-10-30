@@ -14,6 +14,7 @@ use crate::lexer::DataMeta;
 use crate::lexer::Direction;
 use crate::lexer::EdgeMeta;
 use crate::lexer::GatewayNodeMeta;
+use crate::lexer::LaneMeta;
 use crate::lexer::LayoutStatement;
 use crate::lexer::PoolMeta;
 use crate::lexer::{self, MessageFlowMeta};
@@ -181,7 +182,7 @@ impl Parser {
             self.context.current_token_coordinate = coordinate;
             match token {
                 Statement::Pool(meta) => self.parse_pool(meta)?,
-                Statement::Lane(label) => self.parse_lane(&label)?,
+                Statement::Lane(meta) => self.parse_lane(meta)?,
                 Statement::Event(meta) => self.parse_event(meta, false)?,
                 Statement::EventEnd(meta) => self.parse_event(meta, true)?,
                 Statement::Activity(meta) => self.parse_activity(meta)?,
@@ -470,7 +471,7 @@ impl Parser {
     }
 
     /// Set the current lane
-    fn parse_lane(&mut self, label: &str) -> Result<(), ParseError> {
+    fn parse_lane(&mut self, meta: LaneMeta) -> Result<(), ParseError> {
         self.maybe_recover_from_unfinished_lifeline();
         self.context.lifeline_state = LifelineState::NoLifelineActive {
             previous_lifeline_termination_statement: None,
@@ -487,7 +488,7 @@ impl Parser {
             GroupingState::WithinPool { pool_id, ptc }
             | GroupingState::WithinLane { pool_id, ptc, .. } => {
                 let lane_id = self.graph.pools[pool_id.0].add_lane(
-                    Some(label.to_string()),
+                    Some(meta.title.clone()),
                     self.context.current_token_coordinate,
                 );
                 self.context.grouping_state = GroupingState::WithinLane {
@@ -536,12 +537,9 @@ impl Parser {
         };
 
         self.context.last_node_id = None;
-        self.context.id_matcher.register_lane(
-            pool_id,
-            lane_id,
-            Vec::new(),
-            Some(label.to_string()),
-        );
+        self.context
+            .id_matcher
+            .register_lane(pool_id, lane_id, meta.ids, Some(meta.title));
         Ok(())
     }
 
@@ -594,7 +592,8 @@ impl Parser {
             for EdgeMeta {
                 target,
                 text_label,
-                tc,
+                target_tc: tc,
+                ..
             } in incoming_sequence_flow_landings.iter_mut()
             {
                 self.context
@@ -637,7 +636,8 @@ impl Parser {
             for EdgeMeta {
                 target,
                 text_label,
-                tc,
+                target_tc: tc,
+                ..
             } in outgoing_sequence_flow_jumps.iter_mut()
             {
                 self.context

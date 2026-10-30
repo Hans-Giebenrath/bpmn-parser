@@ -12,4 +12,4 @@
 - Receive
 . End 2
 
-MF A message <-send ->receive
+MF <-send ->receive A message

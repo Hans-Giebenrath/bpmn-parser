@@ -37,7 +37,7 @@ pub trait ImportHandler {
 #[derive(Debug, Clone, PartialEq)]
 pub enum Statement {
     Pool(PoolMeta),         // `=` for pool
-    Lane(String),           // `==` for lane
+    Lane(LaneMeta),         // `==` for lane
     Event(EventMeta),       // `#` for start event
     EventEnd(EventMeta),    // `.` for end event
     Activity(ActivityMeta), // `-` for task activity
@@ -109,7 +109,9 @@ pub struct EdgeMeta {
     pub target: String,
     /// The text which shall be displayed on the edge.
     pub text_label: String,
-    pub tc: TokenCoordinate,
+    pub target_tc: TokenCoordinate,
+    pub text_tc: TokenCoordinate,
+    pub all_tc: TokenCoordinate,
 }
 
 #[derive(Debug, Clone, Eq, PartialEq)]
@@ -139,6 +141,14 @@ pub struct PoolMeta {
     pub is_blackbox: bool,
     /// The three vertical bars, as in `ActivityMarker`.
     pub multiple: bool,
+}
+
+#[derive(Eq, Debug, Clone, PartialEq)]
+pub struct LaneMeta {
+    pub title: String,
+    pub ids: Vec<String>,
+    /// When `#` or `.` was used.
+    pub shorthand_syntax: bool,
 }
 
 #[derive(Eq, Debug, Clone, PartialEq)]
@@ -209,10 +219,8 @@ enum ARFlowAttribute {
     Forbidden,
     OptionalOneLeftAndOrRightArrows,
     OptionalOneLeftArrow,
-    RequiredExactlyOneArrow,
     RequiredExactlyOneRightArrow,
     RequiredLeftAndRightArrows,
-    RequiredArrowsOfSameDirection,
     RequiredExactlyOneLeftAndOneRightArrow,
 }
 
@@ -300,7 +308,7 @@ fn to_lane(atts: Tokens, backup_tc: TokenCoordinate) -> AResult {
         atts,
         AssemblyRequest {
             display_text: ARAttribute::Required,
-            ids: ARAttribute::Forbidden,
+            ids: ARAttribute::Optional,
             flows: ARFlowAttribute::Forbidden,
             task_type: AROptionalAttribute::Forbidden,
             event_visual: AROptionalAttribute::Forbidden,
@@ -308,7 +316,11 @@ fn to_lane(atts: Tokens, backup_tc: TokenCoordinate) -> AResult {
         },
         backup_tc,
     )?;
-    Ok(Statement::Lane(atts.display_text.unwrap()))
+    Ok(Statement::Lane(LaneMeta {
+        title: atts.display_text.unwrap(),
+        ids: atts.ids,
+        shorthand_syntax: atts.used_shorthand_syntax,
+    }))
 }
 
 fn to_event(mut atts: Tokens, backup_tc: TokenCoordinate) -> AResult {
@@ -511,7 +523,7 @@ fn to_data(mut tokens: Tokens, backup_tc: TokenCoordinate) -> AResult {
             direction,
             target: edge_meta.target,
             text_label: edge_meta.text_label,
-            tc: edge_meta.tc,
+            tc: edge_meta.all_tc,
         })
         .collect::<Vec<_>>();
 
@@ -564,7 +576,7 @@ fn to_message_flow(atts: Tokens, backup_tc: TokenCoordinate) -> AResult {
         "Message Flows",
         atts,
         AssemblyRequest {
-            display_text: ARAttribute::Optional,
+            display_text: ARAttribute::Forbidden,
             ids: ARAttribute::Forbidden,
             flows: ARFlowAttribute::RequiredExactlyOneLeftAndOneRightArrow,
             task_type: AROptionalAttribute::Forbidden,
@@ -575,24 +587,36 @@ fn to_message_flow(atts: Tokens, backup_tc: TokenCoordinate) -> AResult {
     )?;
 
     let flows = atts.left_and_right_arrows;
-    let (Some((sender_id, sender_tc)), Some((receiver_id, receiver_tc))) =
-        flows.iter().fold((None, None), |mut acc, (dir, meta)| {
-            match dir {
-                Direction::Incoming => acc.0 = Some((meta.target.clone(), meta.tc)),
-                Direction::Outgoing => acc.1 = Some((meta.target.clone(), meta.tc)),
-            }
-            acc
-        })
+    let (Some(sender), Some(receiver)) =
+        flows
+            .into_iter()
+            .fold((None, None), |mut acc, (dir, meta)| {
+                match dir {
+                    Direction::Incoming => acc.0 = Some(meta),
+                    Direction::Outgoing => acc.1 = Some(meta),
+                }
+                acc
+            })
     else {
-        unreachable!("Both sender ID and receiver ID should be present.")
+        unreachable!("Both `<-from` and `->to` must be present")
     };
 
+    if !sender.text_label.is_empty() {
+        return Err(vec![(
+            format!(
+                "Please move the edge text behind the outgoing ->{} part",
+                receiver.target
+            ),
+            sender.text_tc,
+        )]);
+    }
+
     Ok(Statement::MessageFlow(MessageFlowMeta {
-        display_text: atts.display_text.unwrap_or_default(),
-        sender_id,
-        sender_tc,
-        receiver_id,
-        receiver_tc,
+        display_text: receiver.text_label,
+        sender_id: sender.target,
+        sender_tc: sender.target_tc,
+        receiver_id: receiver.target,
+        receiver_tc: receiver.target_tc,
     }))
 }
 
@@ -607,13 +631,18 @@ fn assemble_attributes(
     let mut tc = None;
     let mut previous_task_type_tc = None;
     let mut out = AssembledAttributes::default();
-    for it in atts.into_iter() {
+    let mut iterator = atts.into_iter().peekable();
+    while let Some(it) = iterator.next() {
         tc.get_or_insert(it.0).end = it.0.end;
         match it.1 {
             Token::Text(val) => {
                 if matches!(request.display_text, ARAttribute::Forbidden) {
                     return Err(vec![(
-                        format!("{what_plural} cannot have a display text."),
+                        // This should primarily happen for boundary events and message flows,
+                        // and there the correct position is indeed after `->`, not after `<-`.
+                        format!(
+                            "{what_plural} cannot have a display text. For text on edges, place the display text after the `->label` part."
+                        ),
                         it.0,
                     )]);
                 }
@@ -633,117 +662,113 @@ fn assemble_attributes(
                 }
                 out.ids.push(val);
             }
-            Token::Flow(val_direction, val_edge) => match request.flows {
-                ARFlowAttribute::Forbidden => {
-                    return Err(vec![(format!("{what_plural} cannot have flows."), (it.0))]);
-                }
-                ARFlowAttribute::RequiredLeftAndRightArrows => {
-                    out.left_and_right_arrows.push((val_direction, val_edge));
-                }
-                ARFlowAttribute::RequiredArrowsOfSameDirection => {
-                    match &mut out.arrows_with_same_direction {
-                        Some((direction, edge_metas)) => {
-                            if *direction != val_direction {
+            Token::Flow(val_direction, val_edge) => {
+                let edge_meta = if let Some((_, Token::Text(_))) = iterator.peek() {
+                    let Some((tc, Token::Text(text))) = iterator.next() else {
+                        unreachable!("just checked");
+                    };
+                    log::error!("Peeky peek {}", text);
+                    EdgeMeta {
+                        target: val_edge,
+                        text_label: text,
+                        text_tc: tc,
+                        target_tc: it.0,
+                        all_tc: TokenCoordinate {
+                            end: tc.end,
+                            ..it.0
+                        },
+                    }
+                } else {
+                    EdgeMeta {
+                        target: val_edge,
+                        text_label: String::new(),
+                        all_tc: it.0,
+                        text_tc: Default::default(),
+                        target_tc: it.0,
+                    }
+                };
+                match request.flows {
+                    ARFlowAttribute::Forbidden => {
+                        return Err(vec![(format!("{what_plural} cannot have flows."), (it.0))]);
+                    }
+                    ARFlowAttribute::RequiredLeftAndRightArrows => {
+                        out.left_and_right_arrows.push((val_direction, edge_meta));
+                    }
+                    ARFlowAttribute::OptionalOneLeftArrow => {
+                        match &mut out.arrows_with_same_direction {
+                            Some((_, _)) => {
                                 return Err(vec![(
                                     format!(
-                                        "{what_plural} can only have one direction of flows (either '->label' or '<-label')."
+                                        "{what_plural} can have at most 1 incoming flow (<-label), not more."
                                     ),
                                     it.0,
                                 )]);
                             }
-                            edge_metas.push(val_edge);
-                        }
-                        None => {
-                            out.arrows_with_same_direction = Some((val_direction, vec![val_edge]));
-                        }
-                    }
-                }
-                ARFlowAttribute::RequiredExactlyOneArrow => {
-                    match &mut out.arrows_with_same_direction {
-                        Some((_, _)) => {
-                            return Err(vec![(
-                                format!(
-                                    "{what_plural} must have exactly 1 flow (e.g. <-label or ->label), not more."
-                                ),
-                                it.0,
-                            )]);
-                        }
-                        None => {
-                            out.arrows_with_same_direction = Some((val_direction, vec![val_edge]));
+                            None => {
+                                if val_direction == Direction::Outgoing {
+                                    return Err(vec![(
+                                        format!(
+                                            "{what_plural} can have at most 1 incoming flow (<-label). Outgoing flows (->label) are not allowed."
+                                        ),
+                                        it.0,
+                                    )]);
+                                }
+                                out.arrows_with_same_direction =
+                                    Some((val_direction, vec![edge_meta]));
+                            }
                         }
                     }
-                }
-                ARFlowAttribute::OptionalOneLeftArrow => {
-                    match &mut out.arrows_with_same_direction {
-                        Some((_, _)) => {
-                            return Err(vec![(
-                                format!(
-                                    "{what_plural} can have at most 1 incoming flow (<-label), not more."
-                                ),
-                                it.0,
-                            )]);
-                        }
-                        None => {
-                            if val_direction == Direction::Outgoing {
+                    ARFlowAttribute::RequiredExactlyOneRightArrow => {
+                        match &mut out.arrows_with_same_direction {
+                            Some((_, _)) => {
                                 return Err(vec![(
                                     format!(
-                                        "{what_plural} can have at most 1 incoming flow (<-label). Outgoing flows (->label) are not allowed."
+                                        "{what_plural} must have exactly 1 outgoing flow (->label), not more."
                                     ),
                                     it.0,
                                 )]);
                             }
-                            out.arrows_with_same_direction = Some((val_direction, vec![val_edge]));
+                            None => {
+                                if val_direction == Direction::Incoming {
+                                    return Err(vec![(
+                                        format!(
+                                            "{what_plural} must have exactly 1 outgoing flow (->label). Incoming flows (<-label) are not allowed."
+                                        ),
+                                        it.0,
+                                    )]);
+                                }
+                                out.arrows_with_same_direction =
+                                    Some((val_direction, vec![edge_meta]));
+                            }
                         }
                     }
-                }
-                ARFlowAttribute::RequiredExactlyOneRightArrow => {
-                    match &mut out.arrows_with_same_direction {
-                        Some((_, _)) => {
-                            return Err(vec![(
-                                format!(
-                                    "{what_plural} must have exactly 1 outgoing flow (->label), not more."
-                                ),
-                                it.0,
-                            )]);
-                        }
-                        None => {
-                            if val_direction == Direction::Incoming {
+                    ARFlowAttribute::OptionalOneLeftAndOrRightArrows
+                    | ARFlowAttribute::RequiredExactlyOneLeftAndOneRightArrow => {
+                        let edge_metas = &mut out.left_and_right_arrows;
+                        if edge_metas.is_empty() {
+                            edge_metas.push((val_direction, edge_meta));
+                        } else if edge_metas.len() == 1 {
+                            let first_dir = edge_metas[0].0.clone();
+                            if first_dir == val_direction {
                                 return Err(vec![(
                                     format!(
-                                        "{what_plural} must have exactly 1 outgoing flow (->label). Incoming flows (<-label) are not allowed."
+                                        "Arrows have to be different directions. Found multiple arrows with the same direction: {first_dir:?} and {val_direction:?}."
                                     ),
                                     it.0,
                                 )]);
                             }
-                            out.arrows_with_same_direction = Some((val_direction, vec![val_edge]));
-                        }
-                    }
-                }
-                ARFlowAttribute::OptionalOneLeftAndOrRightArrows
-                | ARFlowAttribute::RequiredExactlyOneLeftAndOneRightArrow => {
-                    let edge_metas = &mut out.left_and_right_arrows;
-                    if edge_metas.is_empty() {
-                        edge_metas.push((val_direction, val_edge));
-                    } else if edge_metas.len() == 1 {
-                        let first_dir = edge_metas[0].0.clone();
-                        if first_dir == val_direction {
+                            edge_metas.push((val_direction, edge_meta));
+                        } else {
                             return Err(vec![(
-                                format!(
-                                    "Arrows have to be different directions. Found multiple arrows with the same direction: {first_dir:?} and {val_direction:?}."
-                                ),
+                                "Too many arrows. Only one left and one right arrow allowed"
+                                    .to_string(),
                                 it.0,
                             )]);
                         }
-                        edge_metas.push((val_direction, val_edge));
-                    } else {
-                        return Err(vec![(
-                            "Too many arrows. Only one left and one right arrow allowed"
-                                .to_string(),
-                            it.0,
-                        )]);
                     }
                 }
-            },
+            }
+
             Token::TaskType(task_type) => {
                 if matches!(request.task_type, AROptionalAttribute::Forbidden) {
                     return Err(vec![(
@@ -885,19 +910,6 @@ fn assemble_attributes(
 
     if matches!(
         request.flows,
-        ARFlowAttribute::RequiredArrowsOfSameDirection
-    ) && out.arrows_with_same_direction.is_none()
-    {
-        return Err(vec![(
-            format!(
-                "{what_plural} must have one flow (e.g. <-label or ->label), but it is missing."
-            ),
-            tc,
-        )]);
-    }
-
-    if matches!(
-        request.flows,
         ARFlowAttribute::RequiredExactlyOneLeftAndOneRightArrow
     ) && out.left_and_right_arrows.len() != 2
     {
@@ -918,21 +930,6 @@ fn assemble_attributes(
             ),
             tc,
         )]);
-    }
-
-    if let ARFlowAttribute::RequiredExactlyOneArrow = request.flows {
-        let found_len = out
-            .arrows_with_same_direction
-            .as_ref()
-            .map_or_else(|| 0, |x| x.1.len());
-        if found_len != 1 {
-            return Err(vec![(
-                format!(
-                    "{what_plural} must have exactly 1 flow (e.g. <-label or ->label), but you gave {found_len}."
-                ),
-                tc,
-            )]);
-        }
     }
 
     if let ARFlowAttribute::RequiredExactlyOneRightArrow = request.flows {
@@ -964,7 +961,7 @@ pub enum Token {
 
     // These are in any order
     Id(String),
-    Flow(Direction, EdgeMeta), // `->label"text"`
+    Flow(Direction, String), // `->label`
     TaskType(TaskType),
     ActivityMarker(ActivityMarker),
     EventVisual(EventVisual),
@@ -1561,26 +1558,15 @@ impl<'a> Lexer<'a> {
                     self.advance();
 
                     let (tc_end, target) = self.read_label(false)?;
-                    let (tc_end, text_label) = self
-                        .read_quoted_text()?
-                        .unwrap_or_else(|| (tc_end, String::new()));
                     self.skip_whitespace();
 
                     self.sas.add_fragment(
                         tc,
                         tc_end.end,
-                        Token::Flow(
-                            Direction::Outgoing,
-                            EdgeMeta {
-                                target,
-                                text_label,
-                                tc: TokenCoordinate {
-                                    end: tc_end.end,
-                                    ..tc
-                                },
-                            },
-                        ),
+                        Token::Flow(Direction::Outgoing, target),
                     )?;
+                    // Allow freetext after `->lbl` for the edge text.
+                    self.sas.fts.active = true;
                 }
                 Some('<') if self.continues_with("-") => {
                     let tc = self.current_coord();
@@ -1588,26 +1574,15 @@ impl<'a> Lexer<'a> {
                     self.advance();
 
                     let (tc_end, target) = self.read_label(false)?;
-                    let (tc_end, text_label) = self
-                        .read_quoted_text()?
-                        .unwrap_or_else(|| (tc_end, String::new()));
                     self.skip_whitespace();
 
                     self.sas.add_fragment(
                         tc,
                         tc_end.end,
-                        Token::Flow(
-                            Direction::Incoming,
-                            EdgeMeta {
-                                target,
-                                text_label,
-                                tc: TokenCoordinate {
-                                    end: tc_end.end,
-                                    ..tc
-                                },
-                            },
-                        ),
+                        Token::Flow(Direction::Incoming, target),
                     )?;
+                    // Allow freetext after `<-lbl` for the edge text.
+                    self.sas.fts.active = true;
                 }
 
                 /********************/

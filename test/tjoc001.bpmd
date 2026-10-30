@@ -59,7 +59,7 @@ SD E4.1 Protected Output Data Store <-p4.1 ->p5.2 ->p5.3
 
 MF <-p3.4 ->tee-received
 
-MF Request for Protected Output Data <-p5.1 ->tee-wait-download-req
+MF <-p5.1 ->tee-wait-download-req Request for Protected Output Data
 MF ->p5.1 <-p5.2
 
 

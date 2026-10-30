@@ -23,5 +23,5 @@ OD E3.4 Protected Output Data ->a332
  & E3.4 Protected Output Data <-receive ->a334
  & E3.5 Output Data <-a334
 
-MF Request for Protected Output Data <-a331 ->socp-recv
+MF <-a331 ->socp-recv Request for Protected Output Data
 MF <-a332 ->receive

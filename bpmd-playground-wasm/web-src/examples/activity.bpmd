@@ -1,0 +1,7 @@
+# Start
+// Activities are represented as boxes.
+// They usually* cannot be the start or end of a life line.
+// (* BPMD does not implement the exceptions today)
+// Try modifying the text, or add another `- Task` below.
+- This is an activity.
+. End

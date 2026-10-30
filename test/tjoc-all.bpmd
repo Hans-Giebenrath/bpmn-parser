@@ -3,8 +3,8 @@
 M# Receive CTS
 M# Protected Output Data available
 .- P3.3: Retrieve Output Data
- T! ->cancel"Timeout"
- E! ->cancel"failure"
+ T! ->cancel Timeout
+ E! ->cancel failure
 M. Output retrieved
 
 XG <-cancel
@@ -15,9 +15,9 @@ M. @cancel
 .# P3
 .- A3.1 Distribute signed CTS
 .- A3.2 Monitor CT
- ^! ->p34"Abort initiated"
- T! ->p34"Timeout"
- E! ->p34"Failure"
+ ^! ->p34 Abort initiated
+ T! ->p34 Timeout
+ E! ->p34 Failure
 
 .- A3.3 Archive the CT metadata
 .. CT finished
@@ -31,8 +31,8 @@ XG <-p34
 M# Receive CTS
 T# Computation timeslot reached
 .- P3.1 Prepare and upload Input Data
- T! ->cancel"timeout"
- E! ->cancel"failure"
+ T! ->cancel timeout
+ E! ->cancel failure
 .. Input Data submitted
 
 XG <-cancel
@@ -45,8 +45,8 @@ M# Receive CTS
 T# Computation timeslot reached
 C# Protected Input Data from all IPs accepted
 .- A3.5 Perform computation
- T! ->cancel"Timeout"
- E! ->cancel"failure"
+ T! ->cancel Timeout
+ E! ->cancel failure
 M. Protected Output Data available
 
 XG <-cancel
@@ -55,7 +55,7 @@ M. @cancel
 
 MF <-so-a31 ->socp-receive
 MF <-so-a31 ->ip-receive
-MF CTS [signed] <-so-a31 ->op-receive
+MF <-so-a31 ->op-receive CTS [signed]
 MF <-op-output-retrieved ->so-a32
 MF <-op-cancel ->so-p34
 MF <-ip-cancel ->so-p34

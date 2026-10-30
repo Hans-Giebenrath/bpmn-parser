@@ -1,0 +1,15 @@
+= Pool
+
+// A lane can only be used within a pool.
+== Lane
+
+# Start
+. End
+
+// There can be multiple lanes within a pool,
+// and they can have IDs, too, for use in
+// node matchers.
+== Lane 2 @lane2
+
+# Start
+. End
