@@ -209,7 +209,6 @@ enum AROptionalAttribute {
 
 enum ARAttribute {
     Required,
-    RequiredExact(usize),
     Optional,
     /// Contains error message for when the attribute is present.
     Forbidden,
@@ -421,6 +420,8 @@ fn to_task_activity(atts: Tokens, backup_tc: TokenCoordinate) -> AResult {
             Direction::Outgoing => sequence_flow_jump = Some(edge_meta),
         }
     }
+
+    #[allow(clippy::single_element_loop)]
     for (active, text, tc) in [(
         atts.activity_marker.is_blackbox,
         "~blackbox",
@@ -433,6 +434,7 @@ fn to_task_activity(atts: Tokens, backup_tc: TokenCoordinate) -> AResult {
             )]);
         }
     }
+
     if atts.activity_marker.r#loop && atts.activity_marker.multiple {
         return Err(vec![(
             "An activity cannot have both the ~multiple and ~loop attributes. Remove either this, ...".to_string(),
@@ -442,6 +444,7 @@ fn to_task_activity(atts: Tokens, backup_tc: TokenCoordinate) -> AResult {
             atts.activity_marker_tcs.multiple,
         )]);
     }
+
     Ok(Statement::Activity(ActivityMeta {
         activity_type: ActivityType::Task(atts.task_type),
         activity_marker: atts.activity_marker,
@@ -464,7 +467,7 @@ fn to_gateway_outer(mut atts: Tokens, backup_tc: TokenCoordinate) -> AResult {
         AssemblyRequest {
             display_text: ARAttribute::Optional,
             ids: ARAttribute::Optional,
-            flows: ARFlowAttribute::RequiredLeftAndRightArrows,
+            flows: ARFlowAttribute::OptionalOneLeftAndOrRightArrows,
             task_type: AROptionalAttribute::Forbidden,
             event_visual: AROptionalAttribute::Forbidden,
             activity_marker: AROptionalAttribute::Forbidden,
@@ -667,7 +670,6 @@ fn assemble_attributes(
                     let Some((tc, Token::Text(text))) = iterator.next() else {
                         unreachable!("just checked");
                     };
-                    log::error!("Peeky peek {}", text);
                     EdgeMeta {
                         target: val_edge,
                         text_label: text,
@@ -884,28 +886,12 @@ fn assemble_attributes(
             tc,
         )]);
     }
-    assert!(
-        !matches!(request.display_text, ARAttribute::RequiredExact(_)),
-        "There can always only be one display text. Using RequiredExact is wrong here."
-    );
 
     if matches!(request.ids, ARAttribute::Required) && out.ids.is_empty() {
         return Err(vec![(
             format!("{what_plural} must have at least one ID (@id), but it is missing."),
             tc,
         )]);
-    }
-
-    if let ARAttribute::RequiredExact(len) = request.ids {
-        let found_len = out.ids.len();
-        if len != found_len {
-            return Err(vec![(
-                format!(
-                    "{what_plural} must have exactly {len} ID (@id) attribute(s), but you gave {found_len}."
-                ),
-                tc,
-            )]);
-        }
     }
 
     if matches!(
@@ -1423,6 +1409,7 @@ impl<'a> Lexer<'a> {
 
                 // End Events
                 maybe_parse_event_end!('.', to_event_end, self);
+                maybe_parse_event_end!('!', to_event_end, self);
                 maybe_parse_event_end!('M', to_event_end, self);
                 //maybe_parse_event_end!('T', to_event_end, self); TODO diagnostics
                 //maybe_parse_event_end!('C', to_event_end, self); TODO diagnostics

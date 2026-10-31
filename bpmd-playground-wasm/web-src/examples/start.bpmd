@@ -1,0 +1,11 @@
+// An event at the start is a start event.
+# Start
+// Within an active sequence flow
+// they are a regular event box.
+# Intermediate Event
+. End
+
+// At this point, the previous sequence flow ended.
+// Hence, this event is a new start event.
+# Another Start
+. Another End

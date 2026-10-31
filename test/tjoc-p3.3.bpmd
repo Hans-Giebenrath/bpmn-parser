@@ -2,12 +2,12 @@
 
 M# @socp-recv
 .- A3.3.2 Send Protected Output Data ~service
-XG Have all OPs downloaded? ->yes"yes" ->no"no"
+XG Have all OPs downloaded? ->x
 
-.- A3.3.3 Delete Protected Output Data <-yes ~service
+.- A3.3.3 Delete Protected Output Data <-x yes ~service
 ..
 
-.. <-no
+.. <-x no
 
 = Output Party
 

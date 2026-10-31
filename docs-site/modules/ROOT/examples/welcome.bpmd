@@ -3,7 +3,8 @@
 # Becoming Interested
 # Ask Quote
 - Receive Quote
- T! ->bored"Waiting too long"
+ T! ->bored Waiting too long
+ T+ ->bored Waiting too long
 X Evaluate Quote ->accept ->deny
 
 . Search Elsewhere <-bored
@@ -19,7 +20,7 @@ X Evaluate Quote ->accept ->deny
 - Work through Request
 # Send Quote
 - Wait for Accept
-  T! ->postmortem"Portmortem Time"
+  T! ->postmortem Portmortem Time
 . WorkyWork
 
 . Why did we fail? <-postmortem

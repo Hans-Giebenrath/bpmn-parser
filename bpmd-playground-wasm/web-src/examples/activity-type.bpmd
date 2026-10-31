@@ -1,0 +1,15 @@
+# start
+// Add any `~type` to augment the activity with an icon.
+// There are two kinds of these icons, and you can
+// combine them (`~multiple`, `~adhoc`, `~loop`).
+- send ~send
+- receive ~receive
+- manual ~manual
+- user ~user
+- script ~script ~multiple
+- service ~service ~adhoc
+- businessrule ~businessrule ~loop
+. end
+
+[place @manual below @start]
+[place @service below @manual]

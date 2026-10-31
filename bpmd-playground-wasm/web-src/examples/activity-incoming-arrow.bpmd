@@ -1,0 +1,31 @@
+= Pool
+
+== Lane 1
+
+// `->l` specifies that the sequence flow continues
+// at another node with a matching `<-l`.
+// NB: The `l` is _not_ a node matcher.
+# Start ->l
+
+== Lane 2
+
+// Here is the matching `<-l`. In this example
+// the arrows are used to cross from one to another lane.
+// Usually the
+// Add edge text after `->l` or `<-l`.
+. End <-l Optional Edge Text
+
+= Another Pool
+
+== Lane 1
+// You can reuse labels across pools without interference.
+// In this case `l` is used in two pools, but BPMD knows
+// that they are not connected (you must use MF for
+// inter-pool connections).
+# Start ->l
+. End <-l2
+
+== Lane 2
+// You can continue to jump by using both `<-` and `->`
+// on the same node.
+- Next <-l ->l2

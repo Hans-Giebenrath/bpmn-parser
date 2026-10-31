@@ -3,21 +3,25 @@
   color: #28323f;
 
   /* Statement markers: events, activities, gateways, boundaries, etc. */
-  & .stmt,
-  & .boundary {
+  & .stmt {
     color: #175cd3;
     font-weight: 700;
   }
 
+  & .boundary {
+    color: #9a4d0b;
+    font-weight: 700;
+  }
+
+
   /* Human-readable labels. */
-  & .display_text,
-  & .label,
-  & .quoted_words {
+  & .display_text{
     color: #28323f;
   }
 
   /* Attributes and identifiers. */
   & .attribute,
+  & .label,
   & .id-label {
     color: #9a4d0b;
   }

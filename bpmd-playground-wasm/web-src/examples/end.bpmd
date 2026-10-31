@@ -1,0 +1,8 @@
+# Start
+X ->g
+
+// An end event `.` closes a sequence flow.
+. End 1 <-g
+
+// The `!` stands for a failure which terminates the full process.
+! End 2 <-g

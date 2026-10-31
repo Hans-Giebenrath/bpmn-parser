@@ -1,0 +1,10 @@
+= Pool
+// The `@abc` attribute specifies the identifier of this node.
+# Start @abc
+. abc
+
+// When you use `abc` in a node matcher, it matches the `@abc`
+// identifier, even if another node with the same name exists.
+OD Data 1 ->abc
+// This also works when combining with the pool name.
+OD Data 2 ->p-abc

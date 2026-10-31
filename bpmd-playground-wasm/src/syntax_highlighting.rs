@@ -231,8 +231,7 @@ pub fn highlight_text_for_inner_html(mut text: &str) -> String {
         while allow_attributes && try_match(ATTRIBUTE_ARROW, &mut text, &mut out, "attribute arrow")
         {
             eat_next_label(&mut text, &mut out, "label");
-            eat_next_quoted_words(&mut text, &mut out);
-            allow_display_text = false;
+            allow_display_text = true;
             allow_new_statement = false;
             eat_whitespace(&mut text, &mut out, &mut allow_new_statement);
         }

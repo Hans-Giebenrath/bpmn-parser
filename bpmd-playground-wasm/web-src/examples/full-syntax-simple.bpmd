@@ -1,0 +1,13 @@
+// The `#`, `-`, `.`, `X` (et al) and `!` are
+// shorthand syntax for faster prototyping and
+// when you first dabble around with BPMD.
+// However, when you need access to all kinds of symbols,
+// you might want to use the "full" syntax by default.
+// These use two characters.
+.# Start
+.- Activity
+XG ->g
+
+.. End 1 <-g
+
+!. End 2 <-g
