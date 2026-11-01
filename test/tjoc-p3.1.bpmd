@@ -8,25 +8,25 @@
 
 = Input Party
 
-# P3.1 ->ups
-X <- vno <-uno <-ups
+# P3.1 ->reboot
+X <-reboot
 - A3.1.1 Prepare Input Data ~user
 - A3.1.2 Validate Input Data Quality Locally ~service
-X Validated? ->vyes"yes" ->vno"no"
-- A3.1.3 Apply Protection to Input data <-vyes ~service
+X Validated? ->val ->reboot no
+- A3.1.3 Apply Protection to Input data ~service <-val yes
 - A3.1.4 Submit Protected Input Data ~send
 # Receive Message
-X Upload succeeded? ->uno"no" ->uyes"yes"
-. Input Data submitted <-uyes
+X Upload succeeded? ->reboot no  ->upload
+. Input Data submitted <-upload yes
 
 = Set of Computing Parties
 
 # Receive
 - A3.1.5 Validate Input Data Quality ~service
-X Validated OK? ->oyes"yes" ->ono"no"
-- A3.1.6 Store Protected Input Data <-oyes ->merge ~service
+X Validated OK? ->val
+- A3.1.6 Store Protected Input Data <-val yes ->merge ~service
 
-X <-ono <-merge
+X <-val no <-merge
 . Notify Input Party about data upload status
 
 OD Signed CTS ->input-prepare-input-data

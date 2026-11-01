@@ -2,10 +2,10 @@
 == TEE
 # Start
 - Intermediate
-X Gateway ->no"no" ->yes"yes"
+X Gateway ->gw
 
-. End 1  <-no
+. End 1  <-gw No
 
-. End 2 <-yes
+. End 2 <-gw Yes
 
 OD Data <-start ->end2

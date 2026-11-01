@@ -4,14 +4,13 @@
 # Ask Quote
 - Receive Quote
  T! ->bored Waiting too long
- T+ ->bored Waiting too long
-X Evaluate Quote ->accept ->deny
+X Evaluate Quote ->ev-q
 
 . Search Elsewhere <-bored
 
-. Search Elsewhere <-deny
+. Search Elsewhere <-ev-q Good
 
-. Accept Quote <-accept
+. Accept Quote <-ev-q Unsuitable
 
 
 = My Company

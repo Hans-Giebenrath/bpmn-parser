@@ -2,20 +2,20 @@
 == TEE
 # Received Input Data
 - P3.5.1 Validate Input Data Quality
-X Validated? ->no"no" ->yes"yes"
+X Validated? ->gw1
 
-. Notify Input Party  <-no
+. Notify Input Party  <-gw1 no
 
-- P3.5.2 Store Protected Input Data <-yes
+- P3.5.2 Store Protected Input Data <-gw1 yes
 - P4.1 Execute Computation
 - P4.2 Delete Input and Interim Data
-X Computation successful? ->success"yes" ->go_to_delete"no"
+X Computation successful? ->compsuc ->go_to_delete // TODO ok we do need more branches for gateways
 
 // G <-failure
 // - P4.3 Delete Protected Output Data
 // . CT terminated
 
-# Wait for incoming download request  <-success
+# Wait for incoming download request  <-compsuc yes
 - P5.2 Send Protected Output Data Store ->go_to_delete
 
 X <-go_to_delete

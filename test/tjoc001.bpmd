@@ -16,20 +16,20 @@
 # Computation Task is Deployed
 # Received Input Data
 - P3.5.1 Validate Input Data Quality
-X Validated? ->no"no" ->yes"yes"
+X Validated? ->val
 
-. Notify Input Party  <-no
+. Notify Input Party  <-val no
 
-- P3.5.2 Store Protected Input Data  <-yes
+- P3.5.2 Store Protected Input Data  <-val yes
 - P4.1 Execute Computation
 - P4.2 Delete Input and Interim Data
-X Computation successful? ->success"yes" ->go_to_delete"no"
+X Computation successful? ->success ->go_to_delete no
 
 // G <-failure
 // - P4.3 Delete Protected Output Data
 // . CT terminated
 
-# Wait for incoming download request  <-success
+# Wait for incoming download request <-success yes
 - P5.2 Send Protected Output Data Store ->go_to_delete
 
 X <-go_to_delete

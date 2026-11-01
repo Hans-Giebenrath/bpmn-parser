@@ -1,7 +1,7 @@
 # Start Event
-X ->above"Go Here" ->below"No, here!" ->more
+X ->gw
 
-- A 1  <-above ->a1a2
+- A 1  <-gw Go Here ->a1a2
 
 - BB 2  <-b1b2 ->b2b3
 
@@ -11,11 +11,11 @@ X ->above"Go Here" ->below"No, here!" ->more
 
 - A 3  <-a2a3 ->endjoin
 
-- BB 1  <-below ->b1b2
+- BB 1  <-gw No, here! ->b1b2
 
 - BB 3  <-b2b3 ->endjoin
 
-- CCC 1  <-more ->c1c2
+- CCC 1  <-gw ->c1c2
 
 - CCC 2  <-c1c2 ->c2c3
 

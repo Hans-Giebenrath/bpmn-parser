@@ -1,9 +1,9 @@
 # Start
-X Gateway ->one ->two // <1>
+X Gateway ->gw // <1>
 
-- One <-one ->end"Edge Text" // <2>
+- One <-gw ->end Edge Text // <2>
 
-- Two <-two ->end
+- Two <-gw ->end
 
 X <-end
 . End

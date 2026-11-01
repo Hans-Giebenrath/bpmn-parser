@@ -11,5 +11,5 @@
 - Workywork
 . Finish
 
-MF Display Text 1 <-p1-send ->p2-recv
-MF Display Text 2 <-p2-finish ->p1-recv
+MF <-p1-send ->p2-recv Display Text 1
+MF <-p2-finish ->p1-recv Display Text 2

@@ -465,7 +465,7 @@ fn to_gateway_outer(mut atts: Tokens, backup_tc: TokenCoordinate) -> AResult {
         AssemblyRequest {
             display_text: ARAttribute::Optional,
             ids: ARAttribute::Optional,
-            flows: ARFlowAttribute::OptionalOneLeftAndOrRightArrows,
+            flows: ARFlowAttribute::RequiredLeftAndRightArrows,
             task_type: AROptionalAttribute::Forbidden,
             event_visual: AROptionalAttribute::Forbidden,
             activity_marker: AROptionalAttribute::Forbidden,
