@@ -171,13 +171,11 @@ pub struct ActivityMeta {
     pub sequence_flow_landing: Option<EdgeMeta>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum EventVisual {
     // Have `None` instead of using Option<EventVisual> because it makes matching less cluttered.
     #[default]
     None,
-    Send,
-    Receive,
     Throw,
     Catch,
 }
@@ -773,10 +771,27 @@ fn assemble_attributes(
 
             Token::TaskType(task_type) => {
                 if matches!(request.task_type, AROptionalAttribute::Forbidden) {
-                    return Err(vec![(
-                        "A task type is not allowed for this statement.".to_string(),
-                        it.0,
-                    )]);
+                    if !matches!(request.event_visual, AROptionalAttribute::Forbidden)
+                        && task_type == TaskType::Send
+                    {
+                        return Err(vec![(
+                            "Use `~throw` for events. `~send` is for activities only.".to_string(),
+                            it.0,
+                        )]);
+                    } else if !matches!(request.event_visual, AROptionalAttribute::Forbidden)
+                        && task_type == TaskType::Receive
+                    {
+                        return Err(vec![(
+                            "Use `~catch` for events. `~receive` is for activities only."
+                                .to_string(),
+                            it.0,
+                        )]);
+                    } else {
+                        return Err(vec![(
+                            "A task type is not allowed for this statement.".to_string(),
+                            it.0,
+                        )]);
+                    }
                 }
                 if out.task_type == TaskType::None {
                     out.task_type = task_type;

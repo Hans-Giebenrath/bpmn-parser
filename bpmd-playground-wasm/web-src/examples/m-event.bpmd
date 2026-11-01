@@ -1,0 +1,19 @@
+= Pool 1
+
+.# Start
+// By default a message event looks like a catch.
+M# Message Event without ~type
+// You can, however, explicitly specify its visuals.
+M# Throw ~throw
+M# Catch ~catch
+// But it will also be automatically set
+// when you use message flows.
+M# Send with MF
+.. End
+
+= Pool 2
+
+# Receive with MF
+. End
+
+MF <-send ->receive Send a message

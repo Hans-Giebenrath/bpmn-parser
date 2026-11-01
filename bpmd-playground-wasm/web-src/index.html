@@ -54,35 +54,39 @@
       <div id="cheat-sheet-small" style="margin-top:auto;">
           <div>
               <div class="full-statement">
-                  <code class="stmt-short stmt">=</code>
-                  <code class="display_text">Pool Name</code>
-                  <code class="id-label header">@identifier</code>
-                  <code class="type header">~blackbox</code>
-                  <code class="type header">~multiple</code>
+                  <span data-ex="pool">
+                      <code class="stmt-short stmt">=</code>
+                      <code class="display_text">Pool Name</code>
+                  </span>
+                  <code class="id-label header" data-ex="pool-identifier">@identifier</code>
+                  <code class="type header" data-ex="pool-blackbox">~blackbox</code>
+                  <code class="type header" data-ex="pool-multiple">~multiple</code>
               </div>
               <div class="short-statements">
-                  <code>== Lane</code>
+                  <code data-ex="lane">== Lane</code>
               </div>
           </div>
 
           <div>
               <div class="full-statement">
-                  <code class="stmt-short stmt">-</code>
-                  <code class="display_text">Process Step</code>
-                  <code class="id-label header">@identifier</code>
-                  <code class="arrow header">&lt;-label Edge Text</code>
-                  <code class="arrow header">-&gt;label Edge Text</code>
-                  <code class="type header">~service</code>
+                  <span data-ex="activity">
+                      <code class="stmt-short stmt">-</code>
+                      <code class="display_text">Process Step</code>
+                  </span>
+                  <code class="id-label header" data-ex="activity-id">@identifier</code>
+                  <code class="arrow header" data-ex="activity-incoming-arrow">&lt;-label Edge Text</code>
+                  <code class="arrow header" data-ex="activity-incoming-arrow">-&gt;label Edge Text</code>
+                  <code class="type header" data-ex="activity-type">~service</code>
               </div>
               <div class="short-statements">
-                  <code># (Start) Event</code>
-                  <code>- Activity</code>
-                  <code>. End</code>
-                  <code>! End</code>
+                  <code data-ex="event"># (Start) Event</code>
+                  <code data-ex="activity">- Activity</code>
+                  <code data-ex="end">. End</code>
+                  <code data-ex="end">! End</code>
 
-                  <code>.-</code>
+                  <code data-ex="full-syntax-simple">.-</code>
 
-                  <code>.#</code>
+                  <code data-ex="full-syntax-simple">.#</code>
                   <code>M#</code>
                   <code>T#</code>
                   <code>C#</code>
@@ -95,8 +99,8 @@
                   <code>##</code>
                   <code>+#</code>
 
-                  <code>..</code>
-                  <code>!.</code>
+                  <code data-ex="full-syntax-simple">..</code>
+                  <code data-ex="full-syntax-simple">!.</code>
                   <code>M.</code>
                   <code>S.</code>
                   <code>E.</code>

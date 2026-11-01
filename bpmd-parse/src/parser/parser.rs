@@ -35,7 +35,8 @@ pub struct ParseContext {
     // Shorthand blank events maybe need to be transformed into message events, such that they are
     // allowed to send or receive data. This automatic transformation is done to allow quickly
     // prototyping of the BPMD file using shorthand syntax in a first iteration.
-    shorthand_blank_events: VecSet<NodeId>,
+    // (Only a `Vec` since we should never have the situation where we add a node twice.)
+    events_which_require_mf_symbol_fixup: Vec<(NodeId, lexer::EventVisual, TokenCoordinate)>,
     pub id_matcher: IdMatcher,
 }
 
@@ -155,7 +156,7 @@ impl Parser {
                 },
                 current_token_coordinate: TokenCoordinate::default(),
                 dangling_sequence_flows: VecMap::default(),
-                shorthand_blank_events: Default::default(),
+                events_which_require_mf_symbol_fixup: Default::default(),
                 id_matcher: IdMatcher::new(),
             },
             recoverable_errors: Default::default(),
@@ -429,7 +430,7 @@ impl Parser {
             }
         }
 
-        self.process_shorthand_blank_events()?;
+        self.process_mf_event_symbol_fixup()?;
 
         self.graph.layout_constraints.finish(&self.graph.nodes);
         create_transported_data(&mut self.graph);
@@ -678,12 +679,15 @@ impl Parser {
         let ids = meta.node_meta.ids;
         let (event_visual, node_position) = match self.context.lifeline_state {
             LifelineState::NoLifelineActive { .. } if !is_end => (
-                default_start(meta.event_visual)?,
+                default_start(&meta.event_visual)?,
                 NodePositionInLifeline::Start,
             ),
-            _ if is_end => (default_end(meta.event_visual)?, NodePositionInLifeline::End),
+            _ if is_end => (
+                default_end(&meta.event_visual)?,
+                NodePositionInLifeline::End,
+            ),
             _ => (
-                default_intermediate(meta.event_visual, meta.event_type)?,
+                default_intermediate(&meta.event_visual, meta.event_type)?,
                 NodePositionInLifeline::Middle,
             ),
         };
@@ -703,8 +707,12 @@ impl Parser {
             .id_matcher
             .register_node(node_id, ids, &self.graph);
 
-        if meta.shorthand_syntax {
-            self.context.shorthand_blank_events.insert(node_id);
+        if meta.shorthand_syntax || matches!(meta.event_type, EventType::Message) {
+            self.context.events_which_require_mf_symbol_fixup.push((
+                node_id,
+                meta.event_visual.0,
+                meta.event_visual.1,
+            ));
         }
 
         self.connect_nodes(
@@ -1143,9 +1151,14 @@ impl Parser {
 
     /// Assigns shorthand-blank events a message symbol if it is connected to a message flow.
     /// (So `.. Event` will not change its visual, because the blank was explicitly requested.)
-    fn process_shorthand_blank_events(&mut self) -> Result<(), ParseError> {
-        for node_id in self.context.shorthand_blank_events.iter() {
-            let node = &mut self.graph.nodes[*node_id];
+    fn process_mf_event_symbol_fixup(&mut self) -> Result<(), ParseError> {
+        for (node_id, ev, ev_tc) in self
+            .context
+            .events_which_require_mf_symbol_fixup
+            .iter()
+            .cloned()
+        {
+            let node = &mut self.graph.nodes[node_id];
             if node.is_blackbox_node() {
                 continue;
             }
@@ -1154,33 +1167,63 @@ impl Parser {
                 .iter()
                 .any(|edge_id| self.graph.edges[*edge_id].is_message_flow())
             {
-                let NodeType::RealNode { event, .. } = &mut node.node_type else {
+                let NodeType::RealNode {
+                    event: BpmnNode::Event(old_type, old_ev),
+                    ..
+                } = &mut node.node_type
+                else {
                     panic!("During graph construction there are only real nodes");
                 };
-                *event = BpmnNode::Event(
-                    EventType::Message,
-                    if node.outgoing.is_empty() {
-                        EventVisual::End
-                    } else {
-                        EventVisual::Catch(InterruptKind::Interrupting)
-                    },
-                );
+                *old_type = EventType::Message;
+                match ev {
+                    lexer::EventVisual::None => {
+                        *old_ev = if node.outgoing.is_empty() {
+                            EventVisual::End
+                        } else {
+                            EventVisual::Catch(InterruptKind::Interrupting)
+                        };
+                    }
+                    lexer::EventVisual::Throw => {
+                        return Err(vec![(
+                            "Use `~catch` instead of `~throw` to receive a message (or omit the attribute for automatic deduction).".to_string(),
+                            ev_tc
+                    )]);
+                    }
+                    lexer::EventVisual::Catch => {
+                        // keep old_ev which should be  - the user set something.
+                    }
+                }
             } else if node
                 .outgoing
                 .iter()
                 .any(|edge_id| self.graph.edges[*edge_id].is_message_flow())
             {
-                let NodeType::RealNode { event, .. } = &mut node.node_type else {
+                let NodeType::RealNode {
+                    event: BpmnNode::Event(old_type, old_ev),
+                    ..
+                } = &mut node.node_type
+                else {
                     panic!("During graph construction there are only real nodes");
                 };
-                *event = BpmnNode::Event(
-                    EventType::Message,
-                    if node.incoming.is_empty() {
-                        EventVisual::Start(InterruptKind::Interrupting)
-                    } else {
-                        EventVisual::Throw
-                    },
-                );
+                *old_type = EventType::Message;
+                match ev {
+                    lexer::EventVisual::None => {
+                        *old_ev = if node.incoming.is_empty() {
+                            EventVisual::Start(InterruptKind::Interrupting)
+                        } else {
+                            EventVisual::Throw
+                        };
+                    }
+                    lexer::EventVisual::Catch => {
+                        return Err(vec![(
+                            "Use `~throw` instead of `~catch` to send a message (or omit the attribute for automatic deduction).".to_string(),
+                            ev_tc
+                    )]);
+                    }
+                    lexer::EventVisual::Throw => {
+                        // keep old_ev - the user set something.
+                    }
+                }
             }
         }
         Ok(())
@@ -1392,29 +1435,28 @@ fn get_edge_data_ids(graph: &Graph, edge_ids: &[EdgeId]) -> VecSet<SdeId> {
 }
 
 fn default_start(
-    (ev, tc): (lexer::EventVisual, TokenCoordinate),
+    (ev, tc): &(lexer::EventVisual, TokenCoordinate),
 ) -> Result<bpmd_graph::bpmn_node::EventVisual, ParseError> {
     use crate::lexer::EventVisual as E;
     use bpmd_graph::bpmn_node::EventVisual as EV;
     match ev {
-        E::None | E::Receive | E::Catch => Ok(EV::Start(InterruptKind::Interrupting)),
-        E::Send | E::Throw => Err(vec![(
-            "Start events can only be ~catch or ~receive events (or simply remove this attribute)."
-                .to_string(),
-            tc,
+        E::None | E::Catch => Ok(EV::Start(InterruptKind::Interrupting)),
+        E::Throw => Err(vec![(
+            "Start events can only be ~catch events (or simply remove this attribute).".to_string(),
+            *tc,
         )]),
     }
 }
 
 fn default_intermediate(
-    (ev, tc): (lexer::EventVisual, TokenCoordinate),
+    (ev, tc): &(lexer::EventVisual, TokenCoordinate),
     event_type: EventType,
 ) -> Result<bpmd_graph::bpmn_node::EventVisual, ParseError> {
     use bpmd_graph::bpmn_node::EventVisual as EV;
     use lexer::EventVisual as E;
     match ev {
-        E::Receive | E::Catch => Ok(EV::Catch(InterruptKind::Interrupting)),
-        E::Send | E::Throw => Ok(EV::Throw),
+        E::Catch => Ok(EV::Catch(InterruptKind::Interrupting)),
+        E::Throw => Ok(EV::Throw),
         E::None => match event_type {
             EventType::Blank => Ok(EV::Throw),
             EventType::Message => Ok(EV::Catch(InterruptKind::Interrupting)),
@@ -1425,19 +1467,19 @@ fn default_intermediate(
             EventType::Error => Err(vec![(
                 "Error events cannot be intermediate events, but only end or boundary events."
                     .to_string(),
-                tc,
+                *tc,
             )]),
             EventType::Escalation => Ok(EV::Throw),
             EventType::Termination => Err(vec![(
                 "Termination events cannot be intermediate events, but only end events."
                     .to_string(),
-                tc,
+                *tc,
             )]),
             EventType::Compensation => Ok(EV::Throw),
             EventType::Cancel => Err(vec![(
                 "Cancel events cannot be intermediate events, but only end or boundary events."
                     .to_string(),
-                tc,
+                *tc,
             )]),
             EventType::Multiple => Ok(EV::Catch(InterruptKind::Interrupting)),
             EventType::MultipleParallel => Ok(EV::Catch(InterruptKind::Interrupting)),
@@ -1446,16 +1488,15 @@ fn default_intermediate(
 }
 
 fn default_end(
-    (ev, tc): (lexer::EventVisual, TokenCoordinate),
+    (ev, tc): &(lexer::EventVisual, TokenCoordinate),
 ) -> Result<bpmd_graph::bpmn_node::EventVisual, ParseError> {
     use bpmd_graph::bpmn_node::EventVisual as EV;
     use lexer::EventVisual as E;
     match ev {
-        E::None | E::Send | E::Throw => Ok(EV::End),
-        E::Receive | E::Catch => Err(vec![(
-            "End events can only ~send or ~throw events (or simply remove this attribute)."
-                .to_string(),
-            tc,
+        E::None | E::Throw => Ok(EV::End),
+        E::Catch => Err(vec![(
+            "End events can only be ~throw events (or simply remove this attribute).".to_string(),
+            *tc,
         )]),
     }
 }

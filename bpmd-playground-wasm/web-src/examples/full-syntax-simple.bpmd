@@ -3,7 +3,8 @@
 // when you first dabble around with BPMD.
 // However, when you need access to all kinds of symbols,
 // you might want to use the "full" syntax by default.
-// These use two characters.
+// These use two characters. For the simple forms,
+// you usually have to add a `.`.
 .# Start
 .- Activity
 XG ->g
