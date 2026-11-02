@@ -465,6 +465,9 @@ fn to_gateway_outer(mut atts: Tokens, backup_tc: TokenCoordinate) -> AResult {
         AssemblyRequest {
             display_text: ARAttribute::Optional,
             ids: ARAttribute::Optional,
+            // It would be nice to just allow a single arrow per direction.
+            // However, this does not work with back edges to restart a process.
+            // In that case we need a dedicated label for the loop back.
             flows: ARFlowAttribute::RequiredLeftAndRightArrows,
             task_type: AROptionalAttribute::Forbidden,
             event_visual: AROptionalAttribute::Forbidden,
@@ -1112,6 +1115,9 @@ macro_rules! tt_as_event_type {
     ('^') => {
         EventType::Escalation
     };
+    ('!') => {
+        EventType::Termination
+    };
     ('<') => {
         EventType::Compensation
     };
@@ -1128,7 +1134,9 @@ macro_rules! tt_as_event_type {
 
 macro_rules! maybe_parse_event {
     ($a:tt, $fun:ident, $self:ident) => {{
-        if $self.current_char == Some($a) && $self.continues_with("#") {
+        if $self.current_char == Some($a)
+        /* already checked outside && $self.continues_with("#") */
+        {
             let tc = $self.current_coord();
             $self.advance(); // $a
             $self.advance(); // $b
@@ -1144,39 +1152,11 @@ macro_rules! maybe_parse_event {
     }};
 }
 
-macro_rules! tt_as_event_end_type {
-    ('.') => {
-        EventType::Blank
-    };
-    ('M') => {
-        EventType::Message
-    };
-    ('S') => {
-        EventType::Signal
-    };
-    ('E') => {
-        EventType::Error
-    };
-    ('^') => {
-        EventType::Escalation
-    };
-    ('!') => {
-        EventType::Termination
-    };
-    ('<') => {
-        EventType::Compensation
-    };
-    ('X') => {
-        EventType::Cancel
-    };
-    ('#') => {
-        EventType::Multiple
-    };
-}
-
 macro_rules! maybe_parse_event_end {
     ($a:tt, $fun:ident, $self:ident) => {{
-        if $self.current_char == Some($a) && $self.continues_with(".") {
+        if $self.current_char == Some($a)
+        /* && already checked outside $self.continues_with(".") */
+        {
             let tc = $self.current_coord();
             $self.advance(); // $a
             $self.advance(); // $b
@@ -1185,7 +1165,7 @@ macro_rules! maybe_parse_event_end {
             $self.sas.add_implicit_fragment(
                 tc,
                 $self.position,
-                Token::Event(tt_as_event_end_type!($a)),
+                Token::Event(tt_as_event_type!($a)),
             );
             continue;
         }
@@ -1407,7 +1387,7 @@ impl<'a> Lexer<'a> {
         self.skip_whitespace(); // Skip any unnecessary whitespace
 
         'parse: loop {
-            if self.sas.allow_new_statement {
+            if self.sas.allow_new_statement && self.continues_with("#") {
                 // Events
                 maybe_parse_event!('.', to_event, self);
                 maybe_parse_event!('M', to_event, self);
@@ -1417,49 +1397,92 @@ impl<'a> Lexer<'a> {
                 maybe_parse_event!('S', to_event, self);
                 maybe_parse_event!('E', to_event, self);
                 maybe_parse_event!('^', to_event, self);
+                // maybe_parse_event!('!', to_event, self);
                 maybe_parse_event!('<', to_event, self);
                 maybe_parse_event!('X', to_event, self);
                 maybe_parse_event!('#', to_event, self);
                 maybe_parse_event!('+', to_event, self);
+                if self.current_char == Some('!') {
+                    return Err(vec![(
+                        "!# is not a valid event.".to_string(),
+                        self.current_coord_spanning(2),
+                    )]);
+                }
+            }
 
+            if self.sas.allow_new_statement && self.continues_with(".") {
                 // End Events
                 maybe_parse_event_end!('.', to_event_end, self);
                 maybe_parse_event_end!('!', to_event_end, self);
                 maybe_parse_event_end!('M', to_event_end, self);
-                //maybe_parse_event_end!('T', to_event_end, self); TODO diagnostics
-                //maybe_parse_event_end!('C', to_event_end, self); TODO diagnostics
-                //maybe_parse_event_end!('>', to_event_end, self); TODO diagnostics
+                //maybe_parse_event_end!('T', to_event_end, self);
+                //maybe_parse_event_end!('C', to_event_end, self);
+                //maybe_parse_event_end!('>', to_event_end, self);
                 maybe_parse_event_end!('S', to_event_end, self);
                 maybe_parse_event_end!('E', to_event_end, self);
                 maybe_parse_event_end!('^', to_event_end, self);
                 maybe_parse_event_end!('<', to_event_end, self);
                 maybe_parse_event_end!('X', to_event_end, self);
                 maybe_parse_event_end!('#', to_event_end, self);
-                //maybe_parse_event_end!('+', to_event_end, self); TODO diagnostics
+                //maybe_parse_event_end!('+', to_event_end, self);
+                if let Some(c) = self.current_char
+                    && (c == 'T' || c == 'C' || c == '>' || c == '!' || c == '+')
+                {
+                    return Err(vec![(
+                        format!("`{c}.` is not a valid end event."),
+                        self.current_coord_spanning(2),
+                    )]);
+                }
+            }
 
+            if self.sas.allow_new_statement && self.continues_with("!") {
                 // Interrupting Boundary Events
+                // maybe_parse_boundary_event!(.!, self);
                 maybe_parse_boundary_event!(M!, self);
                 maybe_parse_boundary_event!(T!, self);
                 maybe_parse_boundary_event!(C!, self);
+                // maybe_parse_boundary_event!(>!, self);
                 maybe_parse_boundary_event!(S!, self);
                 maybe_parse_boundary_event!(E!, self);
                 maybe_parse_boundary_event!(^!, self);
+                // maybe_parse_boundary_event!(!!, self);
                 maybe_parse_boundary_event!(<!, self);
                 maybe_parse_boundary_event!(X!, self);
                 maybe_parse_boundary_event!(#!, self);
                 maybe_parse_boundary_event!(+!, self);
+                if let Some(c) = self.current_char
+                    && (c == '.' || c == '>' || c == '!')
+                {
+                    return Err(vec![(
+                        format!("`{c}!` is not a valid boundary event."),
+                        self.current_coord_spanning(2),
+                    )]);
+                }
+            }
 
+            if self.sas.allow_new_statement && self.continues_with("+") {
                 // Non-Interrupting Boundary Events
+                // maybe_parse_boundary_event!(.+, self);
                 maybe_parse_boundary_event!(M+, self);
                 maybe_parse_boundary_event!(T+, self);
                 maybe_parse_boundary_event!(C+, self);
+                // maybe_parse_boundary_event!(>+, self);
                 maybe_parse_boundary_event!(S+, self);
-                //maybe_parse_boundary_event!(E+, self); // TODO diagnostics?
+                // maybe_parse_boundary_event!(E+, self);
                 maybe_parse_boundary_event!(^+, self);
-                //maybe_parse_boundary_event!(<+, self); // TODO diagnostics?
-                //maybe_parse_boundary_event!(X+, self); // TODO diagnostics?
+                // maybe_parse_boundary_event!(!+, self);
+                // maybe_parse_boundary_event!(<+, self);
+                // maybe_parse_boundary_event!(X+, self);
                 maybe_parse_boundary_event!(#+, self);
                 maybe_parse_boundary_event!(++, self);
+                if let Some(c) = self.current_char
+                    && (c == '.' || c == '>' || c == 'E' || c == '!' || c == '<' || c == 'X')
+                {
+                    return Err(vec![(
+                        format!("`{c}+` is not a valid end event."),
+                        self.current_coord_spanning(2),
+                    )]);
+                }
             }
 
             'tilde: {
@@ -1899,6 +1922,14 @@ impl<'a> Lexer<'a> {
         TokenCoordinate {
             start: self.position,
             end: self.position + 1,
+            source_file_idx: self.source_file_idx,
+        }
+    }
+
+    pub fn current_coord_spanning(&self, span: usize) -> TokenCoordinate {
+        TokenCoordinate {
+            start: self.position,
+            end: self.position + span,
             source_file_idx: self.source_file_idx,
         }
     }

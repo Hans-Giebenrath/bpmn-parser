@@ -36,6 +36,7 @@ After 1.0:
 * model the diagrams from https://thesis.cs.ut.ee/82dce7c0-0318-4c55-b1a8-e3d28cd170cf, see if they spark some ideas.
 * <D, >D, <&, >& support (not sure if they are useful at all for non-executable BPMN)
 * g0014: why is the data edge doing such funny staircases? should go straight to the right.
+* The Events table should be mapped as one-test-per-cell, with the correct error message assertion. Testing this by hand is rather annoying.
 
 * is `on-premises` for hardware-access doing the wrong thing?
 * error in pe bpmd tool should result in error of test suite.

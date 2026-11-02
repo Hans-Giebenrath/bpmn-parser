@@ -679,7 +679,11 @@ impl Parser {
         let ids = meta.node_meta.ids;
         let (event_visual, node_position) = match self.context.lifeline_state {
             LifelineState::NoLifelineActive { .. } if !is_end => (
-                default_start(&meta.event_visual)?,
+                default_start(
+                    self.context.current_token_coordinate,
+                    &meta.event_visual,
+                    meta.event_type,
+                )?,
                 NodePositionInLifeline::Start,
             ),
             _ if is_end => (
@@ -687,7 +691,11 @@ impl Parser {
                 NodePositionInLifeline::End,
             ),
             _ => (
-                default_intermediate(&meta.event_visual, meta.event_type)?,
+                default_intermediate(
+                    self.context.current_token_coordinate,
+                    &meta.event_visual,
+                    meta.event_type,
+                )?,
                 NodePositionInLifeline::Middle,
             ),
         };
@@ -1435,10 +1443,51 @@ fn get_edge_data_ids(graph: &Graph, edge_ids: &[EdgeId]) -> VecSet<SdeId> {
 }
 
 fn default_start(
+    stmt_tc: TokenCoordinate,
     (ev, tc): &(lexer::EventVisual, TokenCoordinate),
+    event_type: EventType,
 ) -> Result<bpmd_graph::bpmn_node::EventVisual, ParseError> {
     use crate::lexer::EventVisual as E;
     use bpmd_graph::bpmn_node::EventVisual as EV;
+    match event_type {
+        EventType::Cancel => {
+            return Err(vec![(
+                "Cancel cannot be used as the start event".to_string(),
+                stmt_tc,
+            )]);
+        }
+        EventType::Link => {
+            return Err(vec![(
+                "Link cannot be used as the start event".to_string(),
+                stmt_tc,
+            )]);
+        }
+        EventType::Error => {
+            return Err(vec![(
+                "Error cannot be used as the start event".to_string(),
+                stmt_tc,
+            )]);
+        }
+        EventType::Escalation => {
+            return Err(vec![(
+                "Escalation cannot be used as the start event".to_string(),
+                stmt_tc,
+            )]);
+        }
+        EventType::Termination => {
+            return Err(vec![(
+                "Termination cannot be used as the start event".to_string(),
+                stmt_tc,
+            )]);
+        }
+        EventType::Compensation => {
+            return Err(vec![(
+                "Compensation cannot be used as the start event".to_string(),
+                stmt_tc,
+            )]);
+        }
+        _ => (),
+    }
     match ev {
         E::None | E::Catch => Ok(EV::Start(InterruptKind::Interrupting)),
         E::Throw => Err(vec![(
@@ -1449,14 +1498,76 @@ fn default_start(
 }
 
 fn default_intermediate(
+    stmt_tc: TokenCoordinate,
     (ev, tc): &(lexer::EventVisual, TokenCoordinate),
     event_type: EventType,
 ) -> Result<bpmd_graph::bpmn_node::EventVisual, ParseError> {
+    use EventType as T;
     use bpmd_graph::bpmn_node::EventVisual as EV;
     use lexer::EventVisual as E;
     match ev {
-        E::Catch => Ok(EV::Catch(InterruptKind::Interrupting)),
-        E::Throw => Ok(EV::Throw),
+        E::Catch => {
+            match event_type {
+                T::Error => return Err(vec![(
+                    "Error events cannot be intermediate events, but only start, end or boundary events."
+                        .to_string(),
+                    stmt_tc,
+                )]),
+                T::Cancel => return Err(vec![(
+                    "Cancel events cannot be intermediate or start events, but only end or boundary events."
+                        .to_string(),
+                    stmt_tc,
+                )]),
+                T::Escalation => return Err(vec![(
+                    "Escalation events can only be ~throw events (or simply remove this attribute).".to_string(),
+                    *tc,
+                )]),
+                T::Compensation => return Err(vec![(
+                    "Compensation events can only be ~throw events (or simply remove this attribute).".to_string(),
+                    *tc,
+                )]),
+                T::Termination => return Err(vec![(
+                    "Termination events cannot be intermediate or start events, but only end events."
+                        .to_string(),
+                    stmt_tc,
+                )]),
+                _ => (),
+            }
+            Ok(EV::Catch(InterruptKind::Interrupting))
+        },
+        E::Throw => {
+            match event_type {
+                T::Error => return Err(vec![(
+                    "Error events cannot be intermediate events, but only start, end or boundary events."
+                        .to_string(),
+                    stmt_tc,
+                )]),
+                T::Cancel => return Err(vec![(
+                    "Cancel events cannot be intermediate or start events, but only end or boundary events."
+                        .to_string(),
+                    stmt_tc,
+                )]),
+                T::Timer => return Err(vec![(
+                    "Timer events can only be ~catch events (or simply remove this attribute).".to_string(),
+                    *tc,
+                )]),
+                T::Conditional => return Err(vec![(
+                    "Conditional events can only be ~catch events (or simply remove this attribute).".to_string(),
+                    *tc,
+                )]),
+                T::MultipleParallel => return Err(vec![(
+                    "Multiple-Parallel events can only be ~catch events (or simply remove this attribute).".to_string(),
+                    *tc,
+                )]),
+                T::Termination => return Err(vec![(
+                    "Termination events cannot be intermediate or start events, but only end events."
+                        .to_string(),
+                    stmt_tc,
+                )]),
+                _ => (),
+            }
+            Ok(EV::Throw)
+        },
         E::None => match event_type {
             EventType::Blank => Ok(EV::Throw),
             EventType::Message => Ok(EV::Catch(InterruptKind::Interrupting)),
@@ -1465,21 +1576,21 @@ fn default_intermediate(
             EventType::Link => Ok(EV::Catch(InterruptKind::Interrupting)),
             EventType::Signal => Ok(EV::Catch(InterruptKind::Interrupting)),
             EventType::Error => Err(vec![(
-                "Error events cannot be intermediate events, but only end or boundary events."
+                "Error events cannot be intermediate events, but only start, end or boundary events."
                     .to_string(),
-                *tc,
+                stmt_tc,
             )]),
             EventType::Escalation => Ok(EV::Throw),
             EventType::Termination => Err(vec![(
-                "Termination events cannot be intermediate events, but only end events."
+                "Termination events cannot be intermediate or start events, but only end events."
                     .to_string(),
-                *tc,
+                stmt_tc,
             )]),
             EventType::Compensation => Ok(EV::Throw),
             EventType::Cancel => Err(vec![(
-                "Cancel events cannot be intermediate events, but only end or boundary events."
+                "Cancel events cannot be intermediate or start events, but only end or boundary events."
                     .to_string(),
-                *tc,
+                stmt_tc,
             )]),
             EventType::Multiple => Ok(EV::Catch(InterruptKind::Interrupting)),
             EventType::MultipleParallel => Ok(EV::Catch(InterruptKind::Interrupting)),
