@@ -1479,7 +1479,7 @@ impl<'a> Lexer<'a> {
                     && (c == '.' || c == '>' || c == 'E' || c == '!' || c == '<' || c == 'X')
                 {
                     return Err(vec![(
-                        format!("`{c}+` is not a valid end event."),
+                        format!("`{c}+` is not a valid boundary event."),
                         self.current_coord_spanning(2),
                     )]);
                 }

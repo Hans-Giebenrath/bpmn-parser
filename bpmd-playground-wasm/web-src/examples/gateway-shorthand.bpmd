@@ -1,0 +1,8 @@
+= Shorthand Gateways
+
+# Start
+X X ->l1
++ + <-l1 ->l2
+O O <-l2 ->l3
+* * <-l3
+. End

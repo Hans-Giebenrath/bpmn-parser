@@ -1,0 +1,8 @@
+= Full Gateway Syntax
+
+.# Start
+XG XG ->l1
++G +G <-l1 ->l2
+OG OG <-l2 ->l3
+*G *G <-l3
+.. End
