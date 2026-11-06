@@ -1,0 +1,33 @@
+= Pool 1
+
+# Start
+. End
+
+= Pool 2
+
+# Start
+. End
+
+= Pool 3
+
+# Start
+. End
+
+// You can specify that multiple data icons on the diagram
+// actually refer to the same semantic data element, by
+// continuing on the next line with `&`, `S&` or `O&`. The
+// difference is that `&` keeps the same icon as the previous
+// one, while the latter override it.
+// While there is no visual difference, it is essential
+// for the PE-BPMD extension, and maybe for future analysis
+// modules as well. Further, it might help you to document
+// the relationship between those data elements.
+OD Data <-p1s ->p1e
+// This is semantically the same data as the previous one,
+// and it inherits the icon from the previous data element.
+ & Data (the same) <-p2s ->p2e
+// Again, semantically the same, but overriding the icon.
+S& Data (still the same) <-p3s ->p3e
+
+MF <-p1e ->p2s
+MF <-p2e ->p3s

@@ -30,3 +30,7 @@ th:not(:empty) {
 thead:first-child th {
   text-align: center;
 }
+
+body:has(#show-vis-tab:not(:checked)) #vistab {
+  display: none;
+}

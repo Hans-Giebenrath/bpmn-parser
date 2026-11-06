@@ -15,16 +15,31 @@
   <body style="margin-top: 0; margin-bottom: 0; height: 100vh;">
       <div style="display: flex; gap: 0em;">
           <div>
-              <div id="top-row">
+              <!-- flex, so the `select` are 100% high. Better clickability. Better ugliness. -->
+              <div id="top-row" style="display: flex; gap: 0.8em;">
                   <h1 id="title" style="margin: 0.2em; font-size: 1.2em; display: inline-block;">BPMD Playground</h1>
-                  <select id="download-selection" disabled>
-                      <option value="">--Download--</option>
+                  <select id="example-selection" disabled style="width: 12em;">
+                      <option value="">~ Examples ~</option>
+                      <option value="simple" title="Very simple process, showing the three base statements.">Simple</option>
+                      <option value="pool">Pools</option>
+                      <option value="gateway-branching">Gateway Branching</option>
+                      <option value="gateway-joining">Gateway Joining</option>
+                      <option value="back-edge">Back Edge with Gateways</option>
+                      <option value="lane-crossing">Crossing Lanes</option>
+                      <option value="place" title="How to tweak the layout">Manual layout tweaks: [place ...]</option>
+                  </select>
+
+                  <select id="download-selection" disabled style="width: 12em;">
+                      <option value="">~ Download ~</option>
                       <option value="svg-embed" title="For maximum compatibility. Text is embedded as paths, thus any font problems are avoided. However, file size is larger.">SVG with embedded font</option>
                       <option value="svg-no-embed" title="Smaller text file, but might not render the same everywhere.">SVG with regular text</option>
                       <option value="bpmn-camunda" title=".bpmn file which can be opened in regular BPMN editors.">BPMN file</option>
                       <option value="vistab-csv">Visibility Table <code>.csv</code></option>
                       <option value="diag-txt" title="The source code of your diagram as .txt file. (you could just Ctrl+C it)">Diagram .txt</option>
                   </select>
+                  <label style="align-self: center" title="The visibility table shows who of the pools (and network) can see what data. Most useful in combination with the `[pe-bpmd ...]` extension.">
+                      <input type="checkbox" id="show-vis-tab">Visibility Table
+                  </label>
               </div>
               <div id="editor-container">
                   <!--
@@ -58,9 +73,15 @@
                       <code class="stmt-short stmt">=</code>
                       <code class="display_text">Pool Name</code>
                   </a>
-                  <code class="id-label header" data-ex="pool-identifier">@identifier</code>
-                  <code class="type header" data-ex="pool-blackbox">~blackbox</code>
-                  <code class="type header" data-ex="pool-multiple">~multiple</code>
+                  <a href="?example=pool-identifier">
+                      <code class="id-label header">@identifier</code>
+                  </a>
+                  <a href="?example=pool-blackbox">
+                      <code class="type header">~blackbox</code>
+                  </a>
+                  <a href="?example=pool-multiple">
+                      <code class="type header">~multiple</code>
+                  </a>
               </div>
               <div class="short-statements">
                   <a href="?example=lane"><code>== Lane</code></a>
@@ -70,22 +91,15 @@
           <div>
               <div class="full-statement">
                   <a href="?example=activity">
-                      <code class="stmt-short stmt">-</code>
-                      <code class="display_text">Process Step</code>
+                      <code class="stmt-short stmt">#</code>
+                      <code class="display_text">(Start) Event</code>
                   </a>
                   <a href="?example=activity-id"><code class="id-label header">@identifier</code></a>
                   <a href="?example=activity-incoming-arrow"><code class="arrow header">&lt;-label Edge Text</code></a>
                   <a href="?example=activity-incoming-arrow"><code class="arrow header">-&gt;label Edge Text</code></a>
-                  <a href="?example=activity-type"><code class="type header">~service</code></a>
-              </ div>
+                  <a href="?example=activity-type"><code class="type header">~catch</code></a>
+              </div>
               <div class="short-statements">
-                  <a href="?example=event"><code># (Start) Event</code></a>
-                  <a href="?example=activity"><code>- Activity</code></a>
-                  <a href="?example=end"><code>. End</code></a>
-                  <a href="?example=end"><code>! End</code></a>
-
-                  <a href="?example=full-syntax-simple"><code>.-</code></a>
-
                   <a href="?example=full-syntax-simple"><code>.#</code></a>
                   <a href="?example=event-m"><code>M#</code></a>
                   <a href="?example=event-t"><code>T#</code></a>
@@ -97,20 +111,24 @@
                   <a href="?example=event-compensation"><code>&lt;#</code></a>
                   <a href="?example=event-multiple"><code>##</code></a>
                   <a href="?example=event-multiple-parallel"><code>+#</code></a>
-
-                  <a href="?example=full-syntax-simple"><code>..</code></a>
-                  <a href="?example=full-syntax-simple"><code>!.</code></a>
-                  <a href="?example=event-m"><code>M.</code></a>
-                  <a href="?example=event-s"><code>S.</code></a>
-                  <a href="?example=event-e"><code>E.</code></a>
-                  <a href="?example=event-escalation"><code>^.</code></a>
-                  <a href="?example=event-compensation"><code>&lt;.</code></a>
-                  <a href="?example=event-x"><code>X.</code></a>
-                  <a href="?example=event-multiple"><code>#.</code></a>
-              </div>
-              <div class="short-statements">
                   <a href="?example=activity-type"><code>~throw</code></a>
                   <a href="?example=activity-type"><code>~catch</code></a>
+              </div>
+          </div>
+
+          <div>
+              <div class="full-statement">
+                  <a href="?example=activity">
+                      <code class="stmt-short stmt">-</code>
+                      <code class="display_text">Activity</code>
+                  </a>
+                  <a href="?example=activity-id"><code class="id-label header">@identifier</code></a>
+                  <a href="?example=activity-incoming-arrow"><code class="arrow header">&lt;-label Edge Text</code></a>
+                  <a href="?example=activity-incoming-arrow"><code class="arrow header">-&gt;label Edge Text</code></a>
+                  <a href="?example=activity-type"><code class="type header">~service</code></a>
+              </div>
+              <div class="short-statements">
+                  <a href="?example=full-syntax-simple"><code>.- Activity</code></a>
                   <a href="?example=activity-type"><code>~send</code></a>
                   <a href="?example=activity-type"><code>~receive</code></a>
                   <a href="?example=activity-type"><code>~manual</code></a>
@@ -122,6 +140,32 @@
                   <a href="?example=activity-type"><code>~loop</code></a>
                   <a href="?example=activity-type"><code>~adhoc</code></a>
                   <a href="?example=activity-type"><code>~compensation</code></a>
+              </div>
+          </div>
+
+          <div>
+              <div class="full-statement">
+                  <a href="?example=activity">
+                      <code class="stmt-short stmt">.</code>
+                      <code class="display_text">End Event</code>
+                  </a>
+                  <a href="?example=activity-id"><code class="id-label header">@identifier</code></a>
+                  <a href="?example=activity-incoming-arrow"><code class="arrow header">&lt;-label Edge Text</code></a>
+                  <a href="?example=activity-type"><code class="type header">~throw</code></a>
+              </div>
+              <div class="short-statements">
+                  <a href="?example=end"><code>! End</code></a>
+                  <a href="?example=full-syntax-simple"><code>..</code></a>
+                  <a href="?example=full-syntax-simple"><code>!.</code></a>
+                  <a href="?example=event-m"><code>M.</code></a>
+                  <a href="?example=event-s"><code>S.</code></a>
+                  <a href="?example=event-e"><code>E.</code></a>
+                  <a href="?example=event-escalation"><code>^.</code></a>
+                  <a href="?example=event-compensation"><code>&lt;.</code></a>
+                  <a href="?example=event-x"><code>X.</code></a>
+                  <a href="?example=event-multiple"><code>#.</code></a>
+              </div>
+              <div class="short-statements">
               </div>
           </div>
 
@@ -151,10 +195,12 @@
           </div>
 
           <div>
-              <a href="?example=be-int-m"><div class="full-statement">
-                  <code class="stmt-short stmt">M!</code>
-                  <code class="arrow header">-&gt;label1 Boundary Event Edge Text</code>
-                  </div></a>
+              <a href="?example=be-int-m">
+                  <div class="full-statement">
+                      <code class="stmt-short stmt">M!</code>
+                      <code class="arrow header">-&gt;label1 Boundary Event Edge Text</code>
+                  </div>
+              </a>
               <div class="short-statements">
                   <a href="?example=be-int-t"><code>T!</code></a>
                   <a href="?example=be-int-c"><code>C!</code></a>
@@ -192,7 +238,7 @@
           </div>
 
           <div>
-              <a href="?example="><div class="full-statement">
+              <a href="?example=mf"><div class="full-statement">
                   <code class="stmt-short stmt">MF</code>
                   <code class="arrow header">&lt;-start-node-matcher</code>
                   <code class="arrow header">-&gt;end-node-matcher</code>

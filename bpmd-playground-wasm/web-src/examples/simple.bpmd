@@ -1,0 +1,8 @@
+// This is a process that is roughly as simple as it gets.
+// Every line represents a node in the process.
+// The first letter determines what kind it is,
+// and the following free-form text is the display text of that node.
+# Start Event
+# Intermediate Event
+- Activity
+. End Event

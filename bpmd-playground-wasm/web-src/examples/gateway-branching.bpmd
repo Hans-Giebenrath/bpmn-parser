@@ -1,0 +1,25 @@
+# Start
+- Validate Something
+// `X` is a gateway node. Since we want two split execution
+// into multiple sequence flows, we cannot simply continue
+// writing statements. Instead, we use an arrow `->` with
+// a label of your choice, in this case `val`, to tell that
+// this specific sequence flow continues somewhere else.
+// Look for matching `<-val` below.
+X Validation Result ->val
+
+// This is the first continuation of the sequence flow.
+// The display text on the edge is written as free-form text
+// behind the arrow+label.
+- Appreciate the effort <-val Failed
+! End
+
+// At this point, the previous sequence flow has been completed
+// (through the `! End` statement).
+// This means, we can catch up the `->val` sequence flow
+// a further time. Now, we use another edge display text.
+- Incorporate <-val Success
+. End
+
+// You could continue adding more branches to the gateway
+// by adding more statements with the `<-val` arrow.

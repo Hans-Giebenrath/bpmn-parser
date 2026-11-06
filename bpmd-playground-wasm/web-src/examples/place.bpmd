@@ -1,0 +1,35 @@
+= Pool 1
+
+# Start
+X @gw ->gw
+- Act 1 <-gw
+. End
+- Act 3 <-gw
+- Act 4
+. End
+
+= Pool 2
+
+# Start
+. End
+
+= Pool 3
+
+# Start
+. End
+
+// `place` gives you a very restricted tool
+// to adjust node positions relative to each other.
+// It uses node identifiers, as do data objects
+// and message flows.
+
+// In this case, you can make the layout a little bit
+// more compact by having a vertical edge.
+[place @act3 below @gw]
+
+// It can also help you to align start and end events
+// across pools.
+[place @p1-start above or below @p2-start]
+[place @p1-end above or below @p2-end]
+
+[place @p3-end before @p3-start]

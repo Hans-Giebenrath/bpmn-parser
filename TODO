@@ -1,4 +1,5 @@
 Big TODOs before 1.0:
+- `.#` and `..` should not be able to receive messages
 - web syntax highlighter: arrow label recognition seems broken? or is it just firefox browser cache again?
 - A data object which comes and goes to the same node, results in a panic.
 - Go do the cheat sheet!

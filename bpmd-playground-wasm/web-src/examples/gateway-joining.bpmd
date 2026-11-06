@@ -1,0 +1,14 @@
+// Joining is similar to branching.
+// The incoming sequence flow declares a "jump" by
+// using an arrow `->` with a custom identifier, `join`
+// in this example.
+# Start 1 ->join
+
+// This is rather similar, but with an additional
+// edge display text.
+# Start 2 ->join With Edge Text
+
+// This gateway says that some sequence flows are incoming,
+// with the matching `->join` attribute.
+X <-join
+. End

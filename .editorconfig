@@ -19,3 +19,9 @@ max_line_length = unset
 
 [**.md]
 max_line_length = unset
+
+[**.html]
+max_line_length = unset
+
+[**.bpmd]
+max_line_length = 70

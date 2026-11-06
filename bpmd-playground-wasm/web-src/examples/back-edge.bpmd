@@ -1,0 +1,5 @@
+# Start ->restart
+X Restart <-restart
+- Intermediate Activity
+X Did it Fail? ->restart Yes ->continue No
+. Peace <-continue

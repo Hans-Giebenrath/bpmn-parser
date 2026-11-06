@@ -55,4 +55,4 @@ test-playground:
         rm -r "$test_dir"
     }
     trap "cleanup" EXIT
-    watchexec --on-busy-update restart --exts html,css,js,rs,toml just _test-playground "$test_dir"
+    watchexec --on-busy-update restart --exts html,css,js,rs,toml,bpmd just _test-playground "$test_dir"

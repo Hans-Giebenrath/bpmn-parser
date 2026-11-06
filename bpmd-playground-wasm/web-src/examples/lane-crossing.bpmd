@@ -1,0 +1,20 @@
+= Pool
+
+== Lane 1
+
+// The sequence flow at this point shall continue at another point
+// (in another lane). Hence we need the arrow and a custom label to
+// define where we want our process to continue.
+# Start ->l1
+
+. End <-l2
+
+== Lane 2
+
+// This is the continuation for `->l1`.
+- Activity 1 <-l1
+// In this example, we jump back into the first lane with the second
+// activity. However, you could also do the jump with `->l2` directly
+// from `Activity 1` by moving the label there
+// (and removing `- Activity 2`).
+- Activity 2 ->l2

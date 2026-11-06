@@ -13,6 +13,7 @@ const diagram = document.querySelector("#diagram");
 const vistab = document.querySelector("#vistab");
 const diagnostics_pane = document.querySelector("#diagnostics-pane");
 const diagnostics_boxes = document.querySelector("#diag-box-container");
+const example_select = document.querySelector("#example-selection");
 const download_select = document.querySelector("#download-selection");
 const cheat_sheet_small = document.querySelector("#cheat-sheet-small");
 let editor_content_modified = false;
@@ -66,6 +67,7 @@ worker.addEventListener("message", (event) => {
     if (event.data === "ready") {
         worker1ready = true;
         handleInput();
+        example_select.disabled = false;
         download_select.disabled = false;
         return;
     }
@@ -118,6 +120,26 @@ function downloadFile(content, filename, mimeType) {
 
     URL.revokeObjectURL(url);
 }
+
+example_select.addEventListener("change", async (event) => {
+    const example = event.target.value;
+
+    if (!example) return;
+
+    if (!worker1ready) {
+        alert("Whoops? worker1 is not ready, yet? The select should be disabled.");
+        return;
+    }
+
+    const idx = event.target.selectedIndex;
+    await load_example(example);
+    event.target.selectedIndex = idx;
+    event.target.focus();
+});
+example_select.addEventListener('blur', (event) => {
+  event.target.selectedIndex = 0;
+});
+example_select.selectedIndex = 0;
 
 download_select.addEventListener("change", (event) => {
     const action = event.target.value;
@@ -178,13 +200,7 @@ download_select.addEventListener("change", (event) => {
 
 });
 
-cheat_sheet_small.addEventListener('click', async (event) => {
-    const target = event.target.closest('span[data-ex], code[data-ex]');
-
-    if (!target || !cheat_sheet_small.contains(target)) return;
-
-    const value = target.dataset.ex;
-
+async function load_example(value) {
     if (editor_content_modified) {
         const confirmed = confirm('Do you want to override your diagram code with an example?');
         if (!confirmed) {
@@ -208,6 +224,41 @@ cheat_sheet_small.addEventListener('click', async (event) => {
     } catch (error) {
         console.error('Failed to load example:', error);
     }
-    // Do something with value
-    console.log(value);
+}
+
+{
+    if (input.value == "") {
+        const example = new URLSearchParams(location.search).get('example');
+        if (example !== null) {
+            await load_example(example);
+        }
+    }
+
+    // Remove the `?...#...` part of the URL, as we use that one to load examples and reloading
+    // then reloads the example and not the modification.
+    history.replaceState(null, '', location.pathname);
+}
+
+cheat_sheet_small.addEventListener('click', async (event) => {
+    const target = event.target.closest('a[href]');
+
+    if (!target || !cheat_sheet_small.contains(target)) return;
+
+    const url = new URL(target.href);
+    // Only handle links with an example parameter
+    const value = url.searchParams.get('example');
+    if (value === null) return;
+
+    // Only intercept ordinary left-clicks
+    if (
+        event.button !== 0 ||
+        event.ctrlKey ||
+        event.metaKey ||
+        event.shiftKey ||
+        event.altKey
+    ) return;
+
+    event.preventDefault();
+
+    await load_example(value);
 });

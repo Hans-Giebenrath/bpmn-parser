@@ -1,0 +1,25 @@
+= Pool 1
+
+# Start
+- Send Activity
+- Send Event
+. Send End Event
+
+= Pool 2
+
+.# Start
+// You can add the `~receive` attribute to make it look nicer.
+.- Receive Activity ~receive
+// If you use the long form of events, you need to use the message event.
+M# Receive Event
+.. End Event (cannot receive messages)
+
+
+// Recommendation: Keep message flows at the end after sequence flows and after data.
+// Message flows can have a label, written at the very end (similar to boundary events)
+MF <-send-activity ->receive-activity Message Flow Label
+// Nodes can have multiple incoming or outgoing message flows.
+MF <-send-event ->receive-activity
+MF <-send-end-event ->receive-event
+
+// Note: Message flows between two `~blackbox` pools are not shown.
