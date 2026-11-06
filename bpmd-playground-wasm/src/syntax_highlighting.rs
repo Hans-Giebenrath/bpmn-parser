@@ -229,17 +229,19 @@ pub fn highlight_text_for_inner_html(mut text: &str) -> String {
 
         // Often arrows are next to each other, so loop this one.
         if allow_attributes && try_match(ATTRIBUTE_ARROW, &mut text, &mut out, "attribute arrow") {
-            while allow_attributes
-                && try_match(ATTRIBUTE_ARROW, &mut text, &mut out, "attribute arrow")
-            {
+            loop {
                 eat_next_label(&mut text, &mut out, "label");
                 allow_display_text = true;
                 allow_new_statement = false;
                 eat_whitespace(&mut text, &mut out, &mut allow_new_statement);
+                if !(allow_attributes
+                    && try_match(ATTRIBUTE_ARROW, &mut text, &mut out, "attribute arrow"))
+                {
+                    // If we would go on with 'outer loop body here,
+                    // we would eat the next statement start as a display text.
+                    continue 'outer;
+                }
             }
-            // If we would go on with 'outer loop body here,
-            // we would eat the next statement start as a display text.
-            continue 'outer;
         }
 
         if try_match(COMMENT, &mut text, &mut out, "comment") {

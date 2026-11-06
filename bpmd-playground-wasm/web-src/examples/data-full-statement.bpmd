@@ -1,0 +1,22 @@
+// Overall, support for data elements is a little bit brittle.
+// However, if you use data in simple ways only,
+// there is a high chance of working.
+
+= Pool
+== Lane 1
+
+# Start
+- middle
+. End
+
+== Lane 2
+# Start
+- Middle
+. End
+
+// While not 100% necessary, I recommend to keep all data elements grouped
+// after the pools and lanes.
+OD This is Data <-l1s
+OD This is other Data ->l1m
+OD Data can span lanes <-l1e ->l2s
+OD Many connections ->l2s First Label ->l2m Label ->l2e With labels even

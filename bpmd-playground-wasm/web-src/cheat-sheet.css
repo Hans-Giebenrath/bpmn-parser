@@ -1,3 +1,13 @@
+/* Hint to the user that they can interact with the cheat sheet. */
+[data-ex] {
+  cursor: pointer;
+}
+
+a[href*="example="] {
+  color: inherit;
+  text-decoration: none;
+}
+
 #help-node-statement {
     display: grid;
     grid-template-columns: repeat(5, max-content);

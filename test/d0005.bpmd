@@ -1,0 +1,17 @@
+= Pool
+== Lane 1
+
+# Start
+- oth /// TODO When adding this node, it crashes.
+- middle
+. End
+
+== Lane 2
+
+# Start
+- Middle
+. End
+
+OD This is Data <-l1s
+OD This is other Data ->l1m
+OD Data can span lanes <-l1e ->l2s

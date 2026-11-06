@@ -1,0 +1,7 @@
+# Start
+- middle
+. End
+
+// SD and OD have a different shape.
+SD This is a Store <-s
+OD This is an Object ->m

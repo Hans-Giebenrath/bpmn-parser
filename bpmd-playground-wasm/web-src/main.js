@@ -14,10 +14,13 @@ const vistab = document.querySelector("#vistab");
 const diagnostics_pane = document.querySelector("#diagnostics-pane");
 const diagnostics_boxes = document.querySelector("#diag-box-container");
 const download_select = document.querySelector("#download-selection");
+const cheat_sheet_small = document.querySelector("#cheat-sheet-small");
+let editor_content_modified = false;
 
 let worker1ready = false;
 let worker2ready = false;
 const handleInput = () => {
+    editor_content_modified = true;
     if (worker1ready && worker2ready) {
         console.log("Here!", input.value);
         worker.postMessage({ text: input.value, format: "SvgNoEmbed" });
@@ -173,4 +176,38 @@ download_select.addEventListener("change", (event) => {
             break;
     }
 
+});
+
+cheat_sheet_small.addEventListener('click', async (event) => {
+    const target = event.target.closest('span[data-ex], code[data-ex]');
+
+    if (!target || !cheat_sheet_small.contains(target)) return;
+
+    const value = target.dataset.ex;
+
+    if (editor_content_modified) {
+        const confirmed = confirm('Do you want to override your diagram code with an example?');
+        if (!confirmed) {
+            return;
+        }
+    }
+    try {
+        const response = await fetch(`examples/${encodeURIComponent(value)}.bpmd`);
+
+        if (!response.ok) {
+            throw new Error(`HTTP ${response.status}`);
+        }
+
+        input.value = await response.text();
+
+        // Trigger diagram rendering.
+        input.dispatchEvent(new Event('input', { bubbles: true }));
+
+        // Set it after the event dispatch, as that one sets the flag to `true`.
+        editor_content_modified = false;
+    } catch (error) {
+        console.error('Failed to load example:', error);
+    }
+    // Do something with value
+    console.log(value);
 });
