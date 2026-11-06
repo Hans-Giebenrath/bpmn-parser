@@ -7,6 +7,8 @@ const worker2 = new Worker(
   { type: "module" },
 );
 
+import { encode, decode, download_file } from "./util.js";
+
 const mirror = document.querySelector("#mirror-editor");
 const input = document.querySelector("#editor");
 const diagram = document.querySelector("#diagram");
@@ -109,18 +111,6 @@ input.addEventListener("scroll", () => {
         `translate(${-input.scrollLeft}px, ${-input.scrollTop}px)`;
 });
 
-function downloadFile(content, filename, mimeType) {
-    const blob = new Blob([content], { type: mimeType });
-    const url = URL.createObjectURL(blob);
-
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = filename;
-    a.click();
-
-    URL.revokeObjectURL(url);
-}
-
 example_select.addEventListener("change", async (event) => {
     const example = event.target.value;
 
@@ -141,7 +131,7 @@ example_select.addEventListener('blur', (event) => {
 });
 example_select.selectedIndex = 0;
 
-download_select.addEventListener("change", (event) => {
+download_select.addEventListener("change", async (event) => {
     const action = event.target.value;
 
     if (!action) return;
@@ -158,7 +148,7 @@ download_select.addEventListener("change", (event) => {
     switch (action) {
         case "svg-embed":
             download_resolver.on_success = (data) => {
-                downloadFile(data.diagram, "diagram.svg", "image/svg+xml");
+                download_file(data.diagram, "diagram.svg", "image/svg+xml");
             };
             download_resolver.on_error = () => {
                 alert("Failed to create the SVG, ensure that you have no errors in your diagram.");
@@ -167,7 +157,7 @@ download_select.addEventListener("change", (event) => {
             break;
         case "svg-no-embed":
             download_resolver.on_success = (data) => {
-                downloadFile(data.diagram, "diagram.svg", "image/svg+xml");
+                download_file(data.diagram, "diagram.svg", "image/svg+xml");
             };
             download_resolver.on_error = () => {
                 alert("Failed to create the SVG, ensure that you have no errors in your diagram.");
@@ -176,7 +166,7 @@ download_select.addEventListener("change", (event) => {
             break;
         case "bpmn-camunda":
             download_resolver.on_success = (data) => {
-                downloadFile(data.diagram, "diagram.bpmn", "application/xml");
+                download_file(data.diagram, "diagram.bpmn", "application/xml");
             };
             download_resolver.on_error = () => {
                 alert("Failed to create the BPMN file, ensure that you have no errors in your diagram.");
@@ -185,7 +175,7 @@ download_select.addEventListener("change", (event) => {
             break;
         case "vistab-csv":
             download_resolver.on_success = (data) => {
-                downloadFile(data.diagram, "visibility-table.csv", "text/csv");
+                download_file(data.diagram, "visibility-table.csv", "text/csv");
             };
             download_resolver.on_error = () => {
                 alert("Failed to create the CSV, ensure that you have no errors in your diagram.");
@@ -193,8 +183,14 @@ download_select.addEventListener("change", (event) => {
             worker.postMessage({ text: input.value, format: "VisTabCsv" });
             break;
         case "diag-txt":
-            downloadFile(input.value, "diagram.txt", "text/plain");
+            download_file(input.value, "diagram.txt", "text/plain");
             event.target.disabled = false;
+            break;
+        case "link":
+            event.target.disabled = false;
+            const url = new URL(window.location.href);
+            url.searchParams.set("d", encode(input.value));
+            await navigator.clipboard.writeText(url.toString());
             break;
     }
 
@@ -227,11 +223,20 @@ async function load_example(value) {
 }
 
 {
-    if (input.value == "") {
-        const example = new URLSearchParams(location.search).get('example');
-        if (example !== null) {
-            await load_example(example);
+    try {
+        if (input.value == "") {
+            const example = new URLSearchParams(location.search).get('example');
+            const diag = new URLSearchParams(location.search).get('d');
+            if (example !== null) {
+                await load_example(example);
+            } else if (diag !== null) {
+                input.value = decode(diag);
+                // Trigger diagram rendering.
+                input.dispatchEvent(new Event('input', { bubbles: true }));
+            }
         }
+    } catch (e) {
+        console.error('Failed to initialize website from URL parameter:', error);
     }
 
     // Remove the `?...#...` part of the URL, as we use that one to load examples and reloading
