@@ -27,6 +27,9 @@
                       <option value="back-edge">Back Edge with Gateways</option>
                       <option value="lane-crossing">Crossing Lanes</option>
                       <option value="place" title="How to tweak the layout">Manual layout tweaks: [place ...]</option>
+                      <option value="pe-bpmd-tee-tasks">PE-BPMD: TEE modeled with tasks</option>
+                      <option value="pe-bpmd-tee-lane">PE-BPMD: TEE modeled with a lane</option>
+                      <option value="pe-bpmd-tee-pool">PE-BPMD: TEE modeled with a pool</option>
                   </select>
 
                   <select id="download-selection" disabled style="width: 12em;">
@@ -52,18 +55,17 @@
 
                   -->
                   <pre id="diagnostics-pane" style="white-space: pre"></pre>
-                  <!--  -->
+                  <!-- This one stores the actually visible characters, decorated with CSS classes for syntax highlighting. -->
                   <pre id="mirror-editor" style="white-space: pre"></pre>
+                  <!-- The input field for the user, although it is set to 0 opacity, making it invisible. Text in a textarea cannot be styled (syntax highlighting, lints etc) -->
                   <textarea id="editor" rows="35" cols="65"></textarea>
               </div>
           </div>
           <div id="right-side">
               <div style="display: flex; flex-direction: column; gap: 1em; margin-left: 1em;">
                   <div id="diagram" style="width: 67em;"></div>
-                  <!-- The visibility table is not super interesting usually, so have the diagnostics
-                      above that. -->
                       <div id="diag-box-container"></div>
-                      <div id="vistab"></div>
+                      <div id="vistab" title="The visibility table shows who can see what data. &quot;V&quot;: Visible in plain text. &quot;H&quot;: Hidden due to some kind of encryption. &quot;P&quot;: Protected, but an attacker with sufficient access, time and resources has a reasonable chance of circumventing the protection. In other words: a lot better than &quot;V&quot; but weaker than &quot;H&quot;."></div>
               </div>
           </div>
       </div>
