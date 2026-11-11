@@ -11,9 +11,6 @@ pub fn solve_layer_assignment(graph: &mut Graph) {
     solve_data_object_layers_via_arithmetic_mean(graph);
 }
 
-#[derive(Debug)]
-pub struct LayerAssignmentData(Variable);
-
 const DEBUG_ILP_CONSTRUCTION: bool = false;
 
 macro_rules! d {
