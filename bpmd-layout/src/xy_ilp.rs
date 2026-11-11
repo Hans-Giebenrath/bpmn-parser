@@ -929,7 +929,7 @@ fn handle_gateway_neighbor_layer_connectivity(
                 if *other_node_id == cur.id {
                     assert!(gateway.pool_and_lane() == cur.pool_and_lane());
                     if cur.is_bend_dummy() {
-                        cached_constraints.push((middle(gateway, &aux) - middle(cur, &aux)).eq(0.0));
+                        cached_constraints.push((middle(gateway, aux) - middle(cur, aux)).eq(0.0));
                         d!(
                             "gateway fix lone bend node to same y coordinate: gateway node({}) - bend node({}) / \"{}\" - \"{}\"",
                             gateway.id.0,
@@ -946,7 +946,7 @@ fn handle_gateway_neighbor_layer_connectivity(
                 } else if !lone_encountered {
                     assert!(!top_slot_is_data); // Graph validation insufficient.
                     if gateway.pool_and_lane() == cur.pool_and_lane() {
-                        cached_constraints.push((middle(gateway, &aux) - middle(cur, &aux)).geq(graph.config.min_vertical_space_between_gateway_bendpoints as f64 / 2.0));
+                        cached_constraints.push((middle(gateway, aux) - middle(cur, aux)).geq(graph.config.min_vertical_space_between_gateway_bendpoints as f64 / 2.0));
                         d!(
                             "gateway below non-lone bend node: gateway node({}) - bend node({}) / \"{}\" - \"{}\"",
                             gateway.id.0,
@@ -959,7 +959,7 @@ fn handle_gateway_neighbor_layer_connectivity(
                 } else {
                     assert!(!bottom_slot_is_data); // Graph validation insufficient.
                     if gateway.pool_and_lane() == cur.pool_and_lane() {
-                        cached_constraints.push((middle(cur, &aux) - middle(gateway, &aux)).geq(graph.config.min_vertical_space_between_gateway_bendpoints as f64 / 2.0));
+                        cached_constraints.push((middle(cur, aux) - middle(gateway, aux)).geq(graph.config.min_vertical_space_between_gateway_bendpoints as f64 / 2.0));
                         d!(
                             "gateway above non-lone bend node: gateway node({}) - bend node({}) / \"{}\" - \"{}\"",
                             gateway.id.0,
@@ -977,7 +977,7 @@ fn handle_gateway_neighbor_layer_connectivity(
                 // Assert: Otherwise bend dummy placement logic is flawed, should not have pushed
                 // the bend dummy into another lane if we cannot leave from the top/bottom at all.
                 assert!(gateway.pool_and_lane() == cur.pool_and_lane());
-                cached_constraints.push((middle(gateway, &aux) - middle(cur, &aux)).eq(0.0));
+                cached_constraints.push((middle(gateway, aux) - middle(cur, aux)).eq(0.0));
                 d!(
                     "gateway fix non-lone bend node to same y: gateway node({}) - bend node({}) / \"{}\" - \"{}\"",
                     gateway.id.0,
@@ -999,7 +999,7 @@ fn handle_gateway_neighbor_layer_connectivity(
             inc_iter.fold(Option::<&Node>::None, |prev, cur| {
                 if top_is_blocked_for_non_lones {
                     if gateway.pool_and_lane() == cur.pool_and_lane() {
-                        cached_constraints.push((middle(gateway, &aux) - middle(cur, &aux)).leq(0.0));
+                        cached_constraints.push((middle(gateway, aux) - middle(cur, aux)).leq(0.0));
                         d!(
                             "gateway below non-lone bend node: gateway node({}) - bend node({}) / \"{}\" - \"{}\"",
                             gateway.id.0,
@@ -1014,7 +1014,7 @@ fn handle_gateway_neighbor_layer_connectivity(
                     }
                 } else {
                     if gateway.pool_and_lane() == cur.pool_and_lane() {
-                        cached_constraints.push((middle(gateway, &aux) - middle(cur, &aux)).geq(0.0));
+                        cached_constraints.push((middle(gateway, aux) - middle(cur, aux)).geq(0.0));
                         d!(
                             "gateway above non-lone bend node: gateway node({}) - bend node({}) / \"{}\" - \"{}\"",
                             gateway.id.0,
@@ -1030,7 +1030,7 @@ fn handle_gateway_neighbor_layer_connectivity(
                 }
                 if let Some(prev) = prev && cur.pool_and_lane() == prev.pool_and_lane() && cur.pool_and_lane() == gateway.pool_and_lane() {
                     cached_constraints.push(
-                        (middle(cur, &aux) - middle(prev, &aux)).geq(graph.config.dummy_node_y_padding as f64),
+                        (middle(cur, aux) - middle(prev, aux)).geq(graph.config.dummy_node_y_padding as f64),
                     );
                     d!(
                         "padding above node({}) <dist {}> below node({})",
@@ -1046,7 +1046,7 @@ fn handle_gateway_neighbor_layer_connectivity(
                     && prev.pool_and_lane() == cur.pool_and_lane()
                 {
                     cached_constraints.push(
-                        (middle(cur, &aux) - middle(prev, &aux))
+                        (middle(cur, aux) - middle(prev, aux))
                             .geq(graph.config.dummy_node_y_padding as f64),
                     );
                     d!(
