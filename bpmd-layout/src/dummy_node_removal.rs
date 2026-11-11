@@ -14,7 +14,10 @@ pub fn dummy_node_removal(graph: &mut Graph) {
         else {
             continue;
         };
-        let is_reversed = edge.is_reversed;
+        // Reversed data flows are just very simply reversed, handled at the end by reversing
+        // the bend point order. But for reversed sequence flows, there is the more complicated
+        // schema with back edge corner dummies.
+        let is_reversed_sf = edge.is_reversed && edge.is_sequence_flow();
         let text = text.clone();
         let to = edge.to;
         let from = edge.from;
@@ -25,7 +28,7 @@ pub fn dummy_node_removal(graph: &mut Graph) {
         let AbsolutePort {
             x: from_x,
             y: from_y,
-        } = if !is_reversed {
+        } = if !is_reversed_sf {
             // incoming or outgoing because it is tricky with loop edges on gateways.
             from_node.port_of_incoming_or_outgoing(first_dummy_edge_id)
         } else {
@@ -33,7 +36,7 @@ pub fn dummy_node_removal(graph: &mut Graph) {
         };
         let mut bend_points = vec![(from_x, from_y)];
         let mut cur_dummy_edge_id = first_dummy_edge_id;
-        let mut next_node_id = if !is_reversed {
+        let mut next_node_id = if !is_reversed_sf {
             if from == first_dummy_edge.from {
                 first_dummy_edge.to
             } else {
@@ -88,7 +91,7 @@ pub fn dummy_node_removal(graph: &mut Graph) {
             (cur_dummy_edge_id, next_node_id) =
                 next_node.hop_to_next_node(graph, NodeIdOrEdgeId::EdgeId(cur_dummy_edge_id));
         }
-        let AbsolutePort { x: to_x, y: to_y } = if !is_reversed {
+        let AbsolutePort { x: to_x, y: to_y } = if !is_reversed_sf {
             graph.nodes[to].port_of_incoming_or_outgoing(cur_dummy_edge_id)
         } else {
             graph.nodes[from].port_of_incoming_or_outgoing(cur_dummy_edge_id)
