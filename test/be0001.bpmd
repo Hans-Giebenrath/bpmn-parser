@@ -12,5 +12,5 @@ M! ->be1
 
 - BE2 <-be2 ->message-received
 
-X <- message-received
+X <-message-received
 . Other End
