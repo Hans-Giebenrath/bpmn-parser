@@ -821,6 +821,7 @@ pub fn partitioned_points_on_side(
     // }
 }
 
+#[derive(Copy, Clone)]
 enum Direction {
     Incoming,
     Outgoing,
@@ -1078,22 +1079,21 @@ fn handle_gateway_node_one_side(this_node_id: NodeId, graph: &mut Graph, directi
                 continue;
             }
 
-            // TODO If we have proper handling of loops, could it be that there are more outgoing
-            // edges?
-            let crossable_other_node = match direction {
-                Direction::Outgoing => &to!(crossable_node.outgoing[0]),
-                Direction::Incoming => &from!(crossable_node.incoming[0]),
-            };
+            // [None] if this is a back edge corner dummy which looks into the opposite direction.
+            let crossable_other_node_id =
+                maybe_get_crossable_other_node(graph, direction, crossable_node);
 
-            // At this point we should actually have a counting system and iterate as far as we can.
-            // Right now it is rather asymmetric.
-            if above_nodes_in_other_layer.contains(&crossable_other_node.id) {
+            if let Some(crossable_other_node_id) = crossable_other_node_id
+                && above_nodes_in_other_layer.contains(&crossable_other_node_id)
+            {
                 crossing_number -= 1;
-            } else if crossable_other_node.id != other_node.id {
+            } else if crossable_other_node_id != Some(other_node.id) {
                 // So it is below other_node.
                 crossing_number += 1;
             } else {
                 // Both edges go into the same target node, e.g. another data association.
+                // Or there is no other node.
+                // In both cases, we want to stay closer to the gateway.
                 if !local_has_crossed_gateway {
                     crossing_number -= 1;
                 } else {
@@ -1143,6 +1143,50 @@ fn handle_gateway_node_one_side(this_node_id: NodeId, graph: &mut Graph, directi
         // above `new_dummy_node`. We insert from top to bottom.
         current_top_barrier = Some(new_dummy_node);
         continue;
+    }
+}
+
+/// Tricky for back edge corner dummies: If the corner dummy "looks" into the opposite direction of
+/// `direction`, then [None] is returned. Otherwise the next node after (before) connected node
+/// according to `direction` is returned.
+fn maybe_get_crossable_other_node(
+    graph: &Graph,
+    direction: Direction,
+    crossable_node: &Node,
+) -> Option<NodeId> {
+    match (&crossable_node.node_type, direction) {
+        // These look into the same direction, so there is a follow-up node.
+        (
+            NodeType::BackEdgeCornerDummy {
+                same_layer_edge_id,
+                left_one: true,
+                ..
+            },
+            Direction::Outgoing,
+        )
+        | (
+            NodeType::BackEdgeCornerDummy {
+                same_layer_edge_id,
+                left_one: false,
+                ..
+            },
+            Direction::Incoming,
+        ) => Some(
+            crossable_node
+                .hop_to_next_node(graph, NodeIdOrEdgeId::EdgeId(*same_layer_edge_id))
+                .1,
+        ),
+        // These look in the opposite directions, so no follow-up present.
+        (NodeType::BackEdgeCornerDummy { left_one: true, .. }, Direction::Incoming)
+        | (
+            NodeType::BackEdgeCornerDummy {
+                left_one: false, ..
+            },
+            Direction::Outgoing,
+        ) => None,
+        // And the regular nodes, regular logic.
+        (_, Direction::Outgoing) => Some(e!(crossable_node.outgoing[0]).to),
+        (_, Direction::Incoming) => Some(e!(crossable_node.incoming[0]).from),
     }
 }
 

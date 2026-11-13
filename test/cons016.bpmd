@@ -27,3 +27,37 @@ X @gw ->gw
 // across pools.
 [place @p1-start above or below @p2-start]
 [place @p1-end above or below @p2-end]
+
+//[line 387] v7 + -1 v6 <= -80
+//[line 387] -1 v7 + v6 <= -30
+//padding above node(1) <dist 30> below node(9)
+//padding above node(9) <dist 30> below node(1)
+//
+//[line 387] v4 + -1 v6 <= -20
+//[line 387] -1 v4 + v6 <= -20
+//padding above node(14) <dist 20> below node(9)
+//padding above node(9) <dist 20> below node(14)
+//
+//[line 387] v5 + -1 v6 <= -20
+//[line 387] -1 v5 + v6 <= -20
+//padding above node(13) <dist 20> below node(9)
+//padding above node(9) <dist 20> below node(13)
+//
+//[line 387] v1 + -1 v2 <= -30
+//padding above node(10) <dist 30> below node(0)
+//[line 387] -1 v3 + v2 <= -66
+//padding above node(0) <dist 30> below node(5)
+//[line 387] -1 v8 + v7 <= -80
+//padding above node(1) <dist 30> below node(4)
+//[line 387] -1 v8 + v4 <= -30
+//padding above node(14) <dist 30> below node(4)
+//[line 387] v5 + -1 v8 <= -30
+//padding above node(13) <dist 30> below node(4)
+//[line 387] -1 v9 + v8 <= -110
+//padding above node(4) <dist 30> below node(6)
+//
+//14 incoming bend dummy
+//13 outgoing bend dummy
+//9  backedge corner dummy of 4
+//1  gateway
+//4  vertical node below gateway

@@ -132,6 +132,7 @@ That said, I use ChatGPT Plus from time to time (the bog standard web interface)
 * Give ideas to simplify unreadable functions
 * Help with naming stuff (e.g. double checking that `LayoutConstraint` is a good name)
 * Create me an ILP for the global edge crossing minimization (I ended up reading the existing literature instead)
+* Debugging ILP construction: Finding the contradicting constraints leading to an INFEASIBLE result.
 
 == Installation
 

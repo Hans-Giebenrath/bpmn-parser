@@ -170,7 +170,7 @@ fn middle(node: &Node, aux: &Aux) -> Expression {
     aux.v(node.id) + (node.height / 2) as f64
 }
 
-const DEBUG_ILP_CONSTRUCTION: bool = false;
+const DEBUG_ILP_CONSTRUCTION: bool = true;
 
 macro_rules! d {
     ($($tt:tt)*) => {{
@@ -335,6 +335,7 @@ fn assign_y(graph: &mut Graph, pool: PoolId, lane: LaneId, min_y_value: usize) -
             &aux,
         );
 
+        log::info!("{gateway_additional:?}");
         // Override this with the expanded gateway information.
         aux.get_mut(node_id).padding_vars_expanded = gateway_additional;
     }
