@@ -38,9 +38,6 @@ pub struct XyIlpNodeData {
 }
 
 struct DiffVar {
-    // Makes comparison easier.
-    min_id: NodeId,
-    max_id: NodeId,
     diff_var: Variable,
     edge_weight: f64,
     active: bool,
@@ -306,8 +303,6 @@ fn assign_y(graph: &mut Graph, pool: PoolId, lane: LaneId, min_y_value: usize) -
             edge_id,
             from_id: edge.from,
             to_id: edge.to,
-            min_id: core::cmp::min(edge.from, edge.to),
-            max_id: core::cmp::max(edge.from, edge.to),
             diff_var,
             active,
             edge_weight,
@@ -430,7 +425,6 @@ fn assign_y(graph: &mut Graph, pool: PoolId, lane: LaneId, min_y_value: usize) -
     } in diff_vars.iter()
     {
         if !active {
-            //|| edge_id.0 == 28 || edge_id.0 == 1 {
             continue;
         }
         let from_node = &graph.nodes[*from_id];
@@ -760,24 +754,19 @@ fn handle_gateway(
         for (position, other_node_id, is_incoming) in gateway
             .incoming
             .iter()
-            .enumerate()
-            .map(|(position, edge_id)| (position, &e!(*edge_id)))
-            .flat_map(|(position, edge)| {
-                edge.is_sequence_flow().then_some((
-                    Either::Left(position),
-                    edge.from,
-                    !edge.is_reversed,
-                ))
+            .map(|edge_id| &e!(*edge_id))
+            .flat_map(|edge| {
+                edge.is_sequence_flow()
+                    .then_some((Either::Left(()), edge.from, !edge.is_reversed))
             })
             .chain(
                 gateway
                     .outgoing
                     .iter()
-                    .enumerate()
-                    .map(|(position, edge_id)| (position, &e!(*edge_id)))
-                    .flat_map(|(position, edge)| {
+                    .map(|edge_id| &e!(*edge_id))
+                    .flat_map(|edge| {
                         edge.is_sequence_flow().then_some((
-                            Either::Right(position),
+                            Either::Right(()),
                             edge.to,
                             edge.is_reversed,
                         ))
@@ -793,7 +782,6 @@ fn handle_gateway(
             }
         }
 
-        let mut lone_element = None;
         let left_lone_element_position = 'block: {
             let last_some = if inc_count == 1 {
                 last_inc.unwrap()
@@ -802,8 +790,7 @@ fn handle_gateway(
             } else {
                 break 'block None;
             };
-            if let (Either::Left(position), other_node_id) = last_some {
-                lone_element = Some(other_node_id);
+            if let (Either::Left(()), other_node_id) = last_some {
                 if Some(other_node_id) == top_slot {
                     Some(LoneElementPosition::Top)
                 } else if Some(other_node_id) == bottom_slot {
@@ -823,8 +810,7 @@ fn handle_gateway(
             } else {
                 break 'block None;
             };
-            if let (Either::Right(position), other_node_id) = last_some {
-                lone_element = Some(other_node_id);
+            if let (Either::Right(()), other_node_id) = last_some {
                 if Some(other_node_id) == top_slot {
                     Some(LoneElementPosition::Top)
                 } else if Some(other_node_id) == bottom_slot {
@@ -1140,15 +1126,6 @@ fn handle_gateway_neighbor_layer_connectivity(
             // nicely at the right corner of the gateway symbol.
             cached_constraints.push((middle(gateway, aux) - middle(node, aux)).eq(0.0));
 
-            //let id1 = core::cmp::min(gateway.id, node.id);
-            //let id2 = core::cmp::max(gateway.id, node.id);
-            // Activate the diff_var for this edge. Previously it was deactivated because it was
-            // connected to a gateway, but it is the only edge.
-            //diff_vars
-            //    .iter_mut()
-            //    .find(|diff_var| diff_var.min_id == id1 && diff_var.max_id == id2)
-            //    .unwrap()
-            //    .active = true;
             d!(
                 "gateway fix lone same-lane bend node to same y coordinate: gateway node({}) - bend node({}) / \"{}\" - \"{}\"",
                 gateway.id.0,
