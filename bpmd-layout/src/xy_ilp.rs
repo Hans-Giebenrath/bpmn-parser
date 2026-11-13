@@ -114,7 +114,10 @@ impl Aux {
 
     #[track_caller]
     fn v(&self, index: NodeId) -> Variable {
-        self.0[index.0].as_ref().unwrap().var
+        self.0[index.0]
+            .as_ref()
+            .unwrap_or_else(|| panic!("index: {}, AUX: {:?}", index.0, self.0))
+            .var
     }
 
     #[track_caller]
@@ -572,6 +575,12 @@ fn analyse_gateway_neighbor_layer_connectivity<'a>(
     }
 }
 
+/// A branching gateway has only one incoming edge - the connected node is the "lone element".
+/// A joining gateway has only one outgoing edge - the connected node is the "lone element".
+/// If the gateway has only one edge on both sides, then it is treated as a branching gateway.
+/// (There might be special situations where the gateway is a start or end node, so there could
+/// be the situation where there is no lone element. But that is handled by an Option<.> wrapper.)
+#[derive(Debug)]
 enum LoneElementPosition {
     Top,
     Side(NodeId),
@@ -598,6 +607,10 @@ fn handle_gateway(
         )],
     );
 
+    // "slot" means that a real node must be placed there. This is for when a placement constraint
+    // forces the real node above or below the gateway. If that happens, we cannot use e.g. the top
+    // for routing edges of the other direction, as then we would have both incoming and outgoing
+    // edges connected to the top corner of the gateway node.
     let (top_slot, bottom_slot) = {
         let mut top_slot = None;
         let mut bottom_slot = None;
@@ -914,11 +927,14 @@ fn handle_gateway_neighbor_layer_connectivity(
                 && edge.is_sequence_flow()
         })
         .map(|(_, other_node_id)| &n!(other_node_id))
+        // XXX No filtering here, as we look also at nodes in other lanes for assertions.
+        // .filter(|other| other.pool_and_lane() == gateway.pool_and_lane())
         .inspect(|other| {
             last_other = Some(*other);
             first_other.get_or_insert(*other);
         });
 
+    log::error!("lone: {lone_element_position:?}");
     match (
         &lone_element_position,
         top_is_blocked_for_non_lones,
@@ -927,6 +943,8 @@ fn handle_gateway_neighbor_layer_connectivity(
         (Some(LoneElementPosition::Side(other_node_id)), _, _) => {
             inc_iter.fold(false, |lone_encountered, cur| {
                 if *other_node_id == cur.id {
+                    // The bend dummy leaves to the side, so it cannot be in another lane (then it
+                    // would need to leave at the top or bottom).
                     assert!(gateway.pool_and_lane() == cur.pool_and_lane());
                     if cur.is_bend_dummy() {
                         cached_constraints.push((middle(gateway, aux) - middle(cur, aux)).eq(0.0));
@@ -944,6 +962,8 @@ fn handle_gateway_neighbor_layer_connectivity(
                     }
                     true // set `lone_encountered := true`
                 } else if !lone_encountered {
+                    // Assert: We look at sequence flows only, and we don't allow both a sequence
+                    // flow and data association to come in from above at the same time.
                     assert!(!top_slot_is_data); // Graph validation insufficient.
                     if gateway.pool_and_lane() == cur.pool_and_lane() {
                         cached_constraints.push((middle(gateway, aux) - middle(cur, aux)).geq(graph.config.min_vertical_space_between_gateway_bendpoints as f64 / 2.0));
@@ -957,6 +977,8 @@ fn handle_gateway_neighbor_layer_connectivity(
                     }
                     lone_encountered
                 } else {
+                    // Assert: We look at sequence flows only, and we don't allow both a sequence
+                    // flow and data association to come in from below at the same time.
                     assert!(!bottom_slot_is_data); // Graph validation insufficient.
                     if gateway.pool_and_lane() == cur.pool_and_lane() {
                         cached_constraints.push((middle(cur, aux) - middle(gateway, aux)).geq(graph.config.min_vertical_space_between_gateway_bendpoints as f64 / 2.0));
@@ -1043,6 +1065,7 @@ fn handle_gateway_neighbor_layer_connectivity(
         (_, false, false) => {
             inc_iter.fold(Option::<&Node>::None, |prev, cur| {
                 if let Some(prev) = prev
+                    && prev.pool_and_lane() == gateway.pool_and_lane()
                     && prev.pool_and_lane() == cur.pool_and_lane()
                 {
                     cached_constraints.push(

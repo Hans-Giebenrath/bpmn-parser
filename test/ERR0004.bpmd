@@ -1,3 +1,5 @@
+// ERROR MESSAGE: This node has more than one outgoing sequence flow which is forbidden. Use a gateway for branching.
+// ERROR MESSAGE: One sequence flow goes here
 # Start
 - Task ->a
 

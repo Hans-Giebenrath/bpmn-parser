@@ -4,7 +4,6 @@ set -euo pipefail
 
 dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
-# Relative from repo root.
 f="$1"
 f="$(realpath -e "$f")"
 
@@ -12,6 +11,7 @@ cd "$(git rev-parse --show-toplevel)"
 release="${release:-false}"
 failed=false
 out_format=svg
+
 run() {
     local dir=debug
 
@@ -31,6 +31,13 @@ run() {
         # The ERR* files test that an error actually happens.
         if $failed; then
             failed=false
+            while read -r line; do
+                if ! grep -F "$line" "$TMPDIR/$stem.output"; then
+                    failed=true
+                    failed_filename="$failed_filename (output does not contain expected error message: <$line>)"
+                    break
+                fi
+            done < <(<"$f" sed -En 's/(\/\/ ERROR MESSAGE:)\s*(.*)/\2/p')
         else
             failed=true
             failed_filename="$failed_filename (should have shown an error, but was successful)"

@@ -1,3 +1,5 @@
+// ERROR MESSAGE: This gateway is forced on the same layer as more than two of his incoming or outgoing connected nodes. This leads to confusing layouts. Please remove the constraints instead, to let them move to the next layer instead
+// ERROR MESSAGE: This connected node is forced onto the same layer as the gateway
 # s1 ->s
 
 X x <-s ->e

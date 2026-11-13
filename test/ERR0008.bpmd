@@ -1,1 +1,3 @@
+// ERROR MESSAGE: The imported file is outside of the current root. The imported file path resolves to:
+// ERROR MESSAGE: the root to:
 [import "../file.bpmd"]

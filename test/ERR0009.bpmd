@@ -1,2 +1,3 @@
+// ERROR MESSAGE: This statement requires an active sequence flow. Try to add a start event `#` before this line.
 
 +! ->foo

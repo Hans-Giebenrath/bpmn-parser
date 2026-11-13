@@ -1,3 +1,5 @@
+// ERROR MESSAGE: This gateway has multiple incoming sequence flows and multiple outgoing sequence flows. This is forbidden, as there must be exactly one incoming sequence flow or exactly one outgoing sequence flow.
+// ERROR MESSAGE: Split the joining and branching into two separate gateways to keep visuals more idiomatic.
 # s1 ->s
 # s2 ->s
 

@@ -15,6 +15,7 @@ use std::panic::AssertUnwindSafe;
 use std::panic::catch_unwind;
 use std::path::Path;
 use std::path::PathBuf;
+use std::process::ExitCode;
 use std::str::FromStr;
 use std::time::Instant;
 
@@ -151,14 +152,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
     };
 
-    if let Some(err) = recoverable_errors.first() {
-        eprintln!("{}", err.bpmd_format_err(&import_data));
-    }
-
     match cli.output {
         Some(pb) => std::fs::write(pb, output_data)?,
         None => print!("{output_data}"),
     };
+
+    if let Some(err) = recoverable_errors.first() {
+        return Err(err.bpmd_format_err(&import_data));
+    }
 
     Ok(())
 }

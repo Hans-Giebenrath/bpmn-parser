@@ -1,3 +1,6 @@
+// ERROR MESSAGE: Forbidden Combination ~multiple ~loop
+// ERROR MESSAGE: An activity cannot have both the ~multiple and ~loop attributes. Remove either this, ...
+// ERROR MESSAGE: ... or this attribute
 # Start
 - Forbidden Combination ~multiple ~loop
 . End

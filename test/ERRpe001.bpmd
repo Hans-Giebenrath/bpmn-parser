@@ -1,3 +1,6 @@
+// ERROR MESSAGE: external_root_access is not allowed to refer to itself.
+// ERROR MESSAGE: This ID refers to the same pool.
+// ERROR MESSAGE: This is the referenced pool.
 = Rented Confidential VM
 
 = CSP
