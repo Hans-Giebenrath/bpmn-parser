@@ -881,6 +881,8 @@ fn handle_gateway_node_one_side(this_node_id: NodeId, graph: &mut Graph, directi
                 Direction::Outgoing => n!(edge.from).pool_and_lane(),
                 Direction::Incoming => n!(edge.to).pool_and_lane(),
             };
+            // TODO this logic seems incorrect. Should instead iterate upwards and check if the
+            // respective other node is encountered?
             (
                 top_is_blocked || (edge.is_vertical && other_poolane < this_pool_and_lane),
                 bottom_is_blocked || (edge.is_vertical && other_poolane > this_pool_and_lane),
