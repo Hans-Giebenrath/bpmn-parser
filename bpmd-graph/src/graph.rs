@@ -365,11 +365,35 @@ impl Graph {
         None
     }
 
+    pub fn iter_upwards_same_lane(&self, start: &Node) -> impl Iterator<Item = &Node> + Clone {
+        let graph = self;
+        core::iter::successors(
+            start.node_above_in_same_lane.map(|node_id| &n!(node_id)),
+            |next_node| {
+                next_node
+                    .node_above_in_same_lane
+                    .map(|node_id| &n!(node_id))
+            },
+        )
+    }
+
+    pub fn iter_downwards_same_lane(&self, start: &Node) -> impl Iterator<Item = &Node> + Clone {
+        let graph = self;
+        core::iter::successors(
+            start.node_below_in_same_lane.map(|node_id| &n!(node_id)),
+            |next_node| {
+                next_node
+                    .node_below_in_same_lane
+                    .map(|node_id| &n!(node_id))
+            },
+        )
+    }
+
     pub fn iter_upwards_same_pool(
         &self,
         start: StartAt,
         final_pool_lane_to_consider: Option<PoolAndLane>,
-    ) -> impl Iterator<Item = &Node> {
+    ) -> impl Iterator<Item = &Node> + Clone {
         let graph = self;
         let (mut current_node_opt, mut current_pool_and_lane, layer) = match start {
             StartAt::Node(start_node_id) => {
@@ -432,7 +456,7 @@ impl Graph {
         &self,
         start: StartAt,
         final_pool_lane_to_consider: Option<PoolAndLane>,
-    ) -> impl Iterator<Item = &Node> {
+    ) -> impl Iterator<Item = &Node> + Clone {
         let (first_pool, layer) = match &start {
             StartAt::Node(start_node_id) => {
                 let current_node = &self.nodes[*start_node_id];
@@ -523,7 +547,7 @@ impl Graph {
         &self,
         start: StartAt,
         final_pool_lane_to_consider: Option<PoolAndLane>,
-    ) -> impl Iterator<Item = &Node> {
+    ) -> impl Iterator<Item = &Node> + Clone {
         let graph = self;
         let (mut current_node_opt, mut current_pool_and_lane, layer) = match start {
             StartAt::Node(start_node_id) => {
@@ -594,7 +618,7 @@ impl Graph {
         &self,
         start: StartAt,
         final_pool_lane_to_consider: Option<PoolAndLane>,
-    ) -> impl Iterator<Item = &Node> {
+    ) -> impl Iterator<Item = &Node> + Clone {
         let (first_pool, layer) = match &start {
             StartAt::Node(start_node_id) => {
                 let current_node = &self.nodes[*start_node_id];
