@@ -69,6 +69,7 @@ cd "$TMPDIR"
 
 shopt -s nullglob
 some_failed=false
+some_differ=false
 # What a dirty hack! I use file *names* as error messages to print to the user.
 # Does the job for this little tool.
 for f in error*; do
@@ -77,10 +78,14 @@ for f in error*; do
 done
 for f in "svg difference"*; do
     print_in_yellow "$f"
-    some_failed=true
+    some_differ=true
 done
 
 if $some_failed; then
     cat -- *.output >"$dir/failed_runs_output"
     print_in_red "Error messages can be reviewed in file: ./failed_runs_output."
+    exit 1
+elif $some_differ; then
+    print_in_red "Differences detected"
+    exit 1
 fi
