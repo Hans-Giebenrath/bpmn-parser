@@ -703,13 +703,9 @@ fn partition_ports<'a>(ports: &'a mut [PortInfo]) -> PartitionedPortInfo<'a> {
 fn handle_gateway_node(this_node_id: NodeId, graph: &mut Graph) {
     for direction in [Direction::Outgoing, Direction::Incoming] {
         let this_node = &mut graph.nodes[this_node_id];
-        let (incoming_or_outgoing, ports, x) = match direction {
-            Direction::Outgoing => (
-                &this_node.outgoing[..],
-                &mut this_node.outgoing_ports,
-                this_node.width,
-            ),
-            Direction::Incoming => (&this_node.incoming[..], &mut this_node.incoming_ports, 0),
+        let (incoming_or_outgoing, ports) = match direction {
+            Direction::Outgoing => (&this_node.outgoing[..], &mut this_node.outgoing_ports),
+            Direction::Incoming => (&this_node.incoming[..], &mut this_node.incoming_ports),
         };
         match incoming_or_outgoing {
             [] => {
@@ -1086,7 +1082,7 @@ fn handle_gateway_node_one_side(this_node_id: NodeId, graph: &mut Graph, directi
                 continue;
             }
 
-            // [None] if this is a back edge corner dummy which looks into the opposite direction.
+            // `None` if this is a back edge corner dummy which looks into the opposite direction.
             let crossable_other_node_id =
                 maybe_get_crossable_other_node(graph, direction, crossable_node);
 
