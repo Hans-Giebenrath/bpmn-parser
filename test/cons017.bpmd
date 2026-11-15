@@ -9,4 +9,4 @@ X GW ->gw
 
 [place @other-start above @start-for-gw]
 [place @other-end above @e3]
-[place @other-end below @e3]
+[place @other-end below @e1]

@@ -8,5 +8,5 @@ X GW ->gw
 . Other End
 
 [place @other-start below @start-for-gw]
-[place @other-end below @e3]
+[place @other-end below @e1]
 [place @other-end above @e3]
