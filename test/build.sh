@@ -15,9 +15,8 @@ export TMPDIR
 export RUSTFLAGS="${RUSTFLAGS:--Awarnings}"
 export RUST_BACKTRACE="${RUST_BACKTRACE:-1}"
 
-print_in_red() {
-    printf "\033[31m%s\033[0m\n" "$*"
-}
+print_in_red() { printf "\033[31m%s\033[0m\n" "$*"; }
+print_in_yellow() { printf "\033[33m%s\033[0m\n" "$*"; }
 
 cleanup() {
     rm -rf "$TMPDIR"
@@ -66,14 +65,18 @@ done
 popd
 asciidoctor -o $file_stem.html $file_stem.adoc
 
-# What a dirty hack! I use file names as error messages to print to the user.
-# Does the job for this little tool.
 cd "$TMPDIR"
 
 shopt -s nullglob
 some_failed=false
+# What a dirty hack! I use file *names* as error messages to print to the user.
+# Does the job for this little tool.
 for f in error*; do
     print_in_red "$f"
+    some_failed=true
+done
+for f in "svg difference"*; do
+    print_in_yellow "$f"
     some_failed=true
 done
 

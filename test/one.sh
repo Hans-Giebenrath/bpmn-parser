@@ -52,6 +52,7 @@ run() {
 
 stem=$(basename "$f" .bpmd)
 failed_filename="error in $stem"
+svg_diff_filename="svg difference in $stem"
 tmp_adoc_file="$TMPDIR/$stem.tmp.adoc"
 csv_file="$dir/${stem}.csv"
 correct_csv_file="$dir/${stem}.csv.correct"
@@ -103,6 +104,7 @@ image::$stem.svg[width=60%]
 
 EOF
         else
+            echo "$stem" >"$TMPDIR/$svg_diff_filename"
             cat <<EOF >>"$tmp_adoc_file"
 WARNING: Reference .svg has different contents.
 
