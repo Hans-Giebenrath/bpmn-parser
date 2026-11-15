@@ -1,5 +1,7 @@
 // ERROR MESSAGE: abc
 # Start
 // Only sub-processes can have the ~adhoc marker.
+// TODO I broke this behavior - adhoc is actually only valid for
+// sub-processes, so when the square-with-a-plus is there as well.
 - Forbidden Attribute ~adhoc
 . End

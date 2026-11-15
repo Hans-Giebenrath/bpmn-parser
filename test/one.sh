@@ -72,6 +72,9 @@ cat <<EOF >>"$tmp_adoc_file"
 EOF
 
 if $failed; then
+    if grep -q "// TODO" "$f"; then
+        failed_filename="$failed_filename (file contains a TODO so likely this issue is known)"
+    fi
     echo "$stem" >"$TMPDIR/$failed_filename"
 
     cat <<EOF >>"$tmp_adoc_file"

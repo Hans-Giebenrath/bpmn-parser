@@ -520,7 +520,7 @@ fn assign_x(graph: &mut Graph) {
 }
 
 /// Ignores vertical edges as they are handled separately.
-enum GatewayNeighborLayerConnectivity<'a, I> {
+enum GatewayBendpointCluster<'a, I> {
     NoSameLaneEdges,
     OnlyOneSameLaneEdge(&'a Node),
     MultipleSameLaneEdges {
@@ -530,15 +530,14 @@ enum GatewayNeighborLayerConnectivity<'a, I> {
     },
 }
 
-fn analyse_gateway_neighbor_layer_connectivity<'a>(
+fn gateway_bendpoint_cluster<'a>(
     graph: &'a Graph,
     edges: &[EdgeId],
     from_or_to: impl Fn(&Edge) -> NodeId + Clone,
-) -> GatewayNeighborLayerConnectivity<'a, impl Iterator<Item = &'a Node>> {
-    // Walk inward from both ends until we have both matches or we exhaust the iterator.
-
-    let target_node = move |edge_id: &EdgeId| -> Option<&Node> {
-        let node = &n!(from_or_to(&e!(*edge_id)));
+    aux: &Aux,
+    current_pool_lane: PoolAndLane,
+) -> GatewayBendpointCluster<'a, impl Iterator<Item = &'a Node>> {
+    let target_node = |node: &'a Node| -> Option<&'a Node> {
         if let NodeType::BendDummy {
             kind: BendDummyKind::FromGatewayToSameLane { .. },
             ..
@@ -550,27 +549,38 @@ fn analyse_gateway_neighbor_layer_connectivity<'a>(
         }
     };
 
+    let it = edges
+        .iter()
+        .map(move |edge_id| &n!(from_or_to(&e!(*edge_id))))
+        .filter(move |node| {
+            node.pool_and_lane() == current_pool_lane
+                && aux
+                    .get(node.id)
+                    .skip_if_originating_gateway_is_equal
+                    .is_some()
+        });
+
     // If only one match exists overall, mirror it so both are equal.
-    let mut rev = edges.iter().rev();
-    if let Some(first) = edges.iter().find_map(&target_node)
-        && let Some(last) = rev.find_map(&target_node)
+    if let Some(first) = it.clone().find_map(&target_node)
+        && let Some(last) = it.clone().rev().find_map(&target_node)
     {
         if !core::ptr::eq(first, last) {
-            GatewayNeighborLayerConnectivity::MultipleSameLaneEdges {
+            GatewayBendpointCluster::MultipleSameLaneEdges {
                 top_node: first,
                 bottom_node: last,
                 // No `filter` for layer_id required, as the in between nodes are guaranteed to be
                 // non-vertical.
-                in_between_nodes: edges
-                    .iter()
+                in_between_nodes: it
                     .flat_map(target_node)
+                    .skip_while(|t: &&Node| !core::ptr::eq(*t, first))
+                    .skip(1)
                     .take_while(|t: &&Node| !core::ptr::eq(*t, last)),
             }
         } else {
-            GatewayNeighborLayerConnectivity::OnlyOneSameLaneEdge(first)
+            GatewayBendpointCluster::OnlyOneSameLaneEdge(first)
         }
     } else {
-        GatewayNeighborLayerConnectivity::NoSameLaneEdges
+        GatewayBendpointCluster::NoSameLaneEdges
     }
 }
 
@@ -1051,9 +1061,9 @@ fn handle_gateway_neighbor_layer_connectivity(
         return;
     }
 
-    match analyse_gateway_neighbor_layer_connectivity(graph, edges, from_or_to) {
-        GatewayNeighborLayerConnectivity::NoSameLaneEdges => {}
-        GatewayNeighborLayerConnectivity::OnlyOneSameLaneEdge(node) => {
+    match gateway_bendpoint_cluster(graph, edges, from_or_to, aux, gateway.pool_and_lane()) {
+        GatewayBendpointCluster::NoSameLaneEdges => {}
+        GatewayBendpointCluster::OnlyOneSameLaneEdge(node) => {
             // The bend node shall stay on the same height as the gateway node, so the edge leaves
             // nicely at the right corner of the gateway symbol.
             cached_constraints.push((middle(gateway, aux) - middle(node, aux)).eq(0.0));
@@ -1070,7 +1080,7 @@ fn handle_gateway_neighbor_layer_connectivity(
             // to be positioned better, without disrupting the rest of the layout, it might be good
             // to detach it from `node`.
         }
-        GatewayNeighborLayerConnectivity::MultipleSameLaneEdges {
+        GatewayBendpointCluster::MultipleSameLaneEdges {
             top_node,
             in_between_nodes,
             bottom_node,
