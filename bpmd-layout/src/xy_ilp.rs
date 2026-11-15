@@ -1,4 +1,5 @@
 use crate::util::classify_barrier_node_for_gateway;
+use alloc::rc::Rc;
 use alloc::vec;
 use alloc::vec::Vec;
 use bpmd_graph::*;
@@ -10,31 +11,36 @@ use itertools::Itertools;
 use itertools::iproduct;
 use proc_macros::*;
 
-type PaddingVarsExpandedAux = (
-    /* above */
-    Vec<(
-        Variable,
-        /* y padding */ usize,
-        /* above height */ usize,
-    )>,
-    /* below */
-    Vec<(
-        Variable,
-        /* y padding */ usize,
-        /* above height */ usize,
-    )>,
-);
+#[derive(Debug)]
+struct VarPadHeight {
+    var: Variable,
+    y_padding: usize,
+    height: usize,
+}
+
+#[derive(Debug)]
+struct PaddingVarsExpandedAux {
+    above: Vec<VarPadHeight>,
+    below: Vec<VarPadHeight>,
+}
 
 #[derive(Debug)]
 pub struct XyIlpNodeData {
-    var: Variable,
-    // Since gateway nodes have a confusing bunch of bend dummies of whom we don't know which is the
-    // topmost, we record the gateway node itself, and from incoming and outgoing the top (and bottom).
-    // So the gateway has up to three for above and below.
-    // For easier writing of code (less confusing iterator golfing) the regular nodes use this same
-    // construct, but for them the information is redundant with just `var`. But hey, easier code.
-    // I hate code.
-    padding_vars_expanded: PaddingVarsExpandedAux,
+    /// This one must be the same type as `padding_vars_expanded`, otherwise functions don't work
+    /// nicely.
+    var_pad_height: VarPadHeight,
+    /// Since gateway nodes have a confusing bunch of bend dummies of whom we don't know which is the
+    /// topmost, we record the gateway node itself, and from incoming and outgoing the top (and bottom).
+    /// So the gateway has up to three for above and below.
+    /// For easier writing of code (less confusing iterator golfing) the regular nodes use this same
+    /// construct, but for them the information is redundant with just `var`. But hey, easier code.
+    /// I hate code.
+    /// (Also, considers only those bend dummies which are *not* separated from their originating
+    /// gateway by any other unrelated nodes.)
+    padding_vars_expanded: Option<Rc<PaddingVarsExpandedAux>>,
+    /// For those bend dummies which are not separated from their originating gateway, this is
+    /// set to the gateway ID, so they can be skipped easily. Related to padding_vars_expanded.
+    skip_if_originating_gateway_is_equal: Option<NodeId>,
 }
 
 struct DiffVar {
@@ -114,6 +120,7 @@ impl Aux {
         self.0[index.0]
             .as_ref()
             .unwrap_or_else(|| panic!("index: {}, AUX: {:?}", index.0, self.0))
+            .var_pad_height
             .var
     }
 
@@ -128,41 +135,30 @@ impl Aux {
     }
 }
 
-#[track_caller]
-fn get_correct_padding_vars_node<'a>(graph: &'a Graph, node: &'a Node) -> NodeId {
-    match &node.node_type {
-        NodeType::BendDummy {
-            originating_node, ..
-                // At some point the bend dummy will be used for non-gateway nodes as well.
-        } => {
-let originating_node = &n!(*originating_node);
-if originating_node.is_gateway() && originating_node.pool_and_lane() == node.pool_and_lane() {
-    originating_node.id } else { node.id }
-            }
-        _ => node.id,
+fn y_padding(n: &Node, cfg: &Config) -> usize {
+    if n.is_any_dummy() {
+        cfg.dummy_node_y_padding
+    } else {
+        cfg.regular_node_y_padding
     }
 }
 
 #[track_caller]
-fn padding_vars_above<'a>(
-    graph: &Graph,
-    node: &Node,
-    aux: &'a Aux,
-) -> &'a [(Variable, usize, usize)] {
-    &aux.get(get_correct_padding_vars_node(graph, node))
+fn padding_vars_above<'a>(node: &Node, aux: &'a Aux) -> &'a [VarPadHeight] {
+    aux.get(node.id)
         .padding_vars_expanded
-        .0
+        .as_ref()
+        .map(|e| e.above.as_slice())
+        .unwrap_or_else(|| core::slice::from_ref(&aux.get(node.id).var_pad_height))
 }
 
 #[track_caller]
-fn padding_vars_below<'a>(
-    graph: &Graph,
-    node: &Node,
-    aux: &'a Aux,
-) -> &'a [(Variable, usize, usize)] {
-    &aux.get(get_correct_padding_vars_node(graph, node))
+fn padding_vars_below<'a>(node: &Node, aux: &'a Aux) -> &'a [VarPadHeight] {
+    aux.get(node.id)
         .padding_vars_expanded
-        .1
+        .as_ref()
+        .map(|e| e.below.as_slice())
+        .unwrap_or_else(|| core::slice::from_ref(&aux.get(node.id).var_pad_height))
 }
 
 #[track_caller]
@@ -207,14 +203,6 @@ fn assign_y(graph: &mut Graph, pool: PoolId, lane: LaneId, min_y_value: usize) -
     objective += HEIGHT_MINIMIZATION_FACTOR * height_minimization_var;
     d!("height_minimization_var (HMV) factor: {HEIGHT_MINIMIZATION_FACTOR}");
 
-    fn y_padding(n: &Node, cfg: &Config) -> usize {
-        if n.is_any_dummy() {
-            cfg.dummy_node_y_padding
-        } else {
-            cfg.regular_node_y_padding
-        }
-    }
-
     // `var_idx_minus_one` has minus one because the 0th variable was created for
     // `height_minimization_var`.
     for (var_idx_minus_one, node_id) in node_ids_iter.clone().enumerate() {
@@ -225,17 +213,18 @@ fn assign_y(graph: &mut Graph, pool: PoolId, lane: LaneId, min_y_value: usize) -
 
         // Make sure nodes are nicely aligned at the top.
         let min_y_value = min_y_value + (MAX_NODE_HEIGHT - node.height) / 2;
-        // NOT an integer variable! Otherwise, this lead to unsatisfiable problems with nested
-        // gateways (t0029.bpmd). We just round, this must be good enough.
-        let var = vars.add(variable().min(min_y_value as f64));
         aux.set(
             node.id,
             XyIlpNodeData {
-                var,
-                padding_vars_expanded: (
-                    vec![(var, y_padding(node, &graph.config), node.height)],
-                    vec![(var, y_padding(node, &graph.config), node.height)],
-                ),
+                var_pad_height: VarPadHeight {
+                    // NOT an integer variable! Otherwise, this lead to unsatisfiable problems with
+                    // nested gateways (t0029.bpmd). We just round, this must be good enough.
+                    var: vars.add(variable().min(min_y_value as f64)),
+                    y_padding: y_padding(node, &graph.config),
+                    height: node.height,
+                },
+                padding_vars_expanded: None,
+                skip_if_originating_gateway_is_equal: None,
             },
         );
         d!(
@@ -326,7 +315,9 @@ fn assign_y(graph: &mut Graph, pool: PoolId, lane: LaneId, min_y_value: usize) -
         if !gateway.is_gateway() {
             continue;
         }
-        let gateway_additional = handle_gateway(
+        // Do this before `handle_gateway`, as it marks bend dummy clusters.
+        calculate_gateway_additional(graph, gateway, &mut aux);
+        handle_gateway(
             graph,
             lane,
             &mut vars,
@@ -334,10 +325,6 @@ fn assign_y(graph: &mut Graph, pool: PoolId, lane: LaneId, min_y_value: usize) -
             gateway,
             &aux,
         );
-
-        log::info!("{gateway_additional:?}");
-        // Override this with the expanded gateway information.
-        aux.get_mut(node_id).padding_vars_expanded = gateway_additional;
     }
 
     d!("Num of vars: {}", vars.len());
@@ -353,44 +340,61 @@ fn assign_y(graph: &mut Graph, pool: PoolId, lane: LaneId, min_y_value: usize) -
                 .into_iter()
         })
         .filter(|(above, below)| {
+            log::warn!(
+                // everything all right here
+                "skip above: {} on {:?}, skip below: {} on {:?}",
+                above.id.0,
+                aux.get(above.id).skip_if_originating_gateway_is_equal,
+                below.id.0,
+                aux.get(below.id).skip_if_originating_gateway_is_equal,
+            );
             // We don't want to add padding constraints between a gateway and its own bend dummies,
             // as this is handled in the `handle_gateway` function.
-            let above_gateway_id = if above.is_gateway() {
-                above.id
+            if let Some(above_originating_node) =
+                aux.get(above.id).skip_if_originating_gateway_is_equal
+                && let Some(below_originating_node) =
+                    aux.get(below.id).skip_if_originating_gateway_is_equal
+                && above_originating_node == below_originating_node
+            {
+                // Filter the bend dummies around their gateways out.
+                false
             } else {
-                match &above.node_type {
-                    NodeType::BendDummy {
-                        originating_node, ..
-                    } if n!(*originating_node).is_gateway() => *originating_node,
-                    _ => return true,
-                }
-            };
-            let below_gateway_id = if below.is_gateway() {
-                below.id
-            } else {
-                match &below.node_type {
-                    NodeType::BendDummy {
-                        originating_node, ..
-                    } if n!(*originating_node).is_gateway() => *originating_node,
-                    _ => return true,
-                }
-            };
-            above_gateway_id != below_gateway_id
+                // Everyone else is got to GOOOOO!!!!!
+                true
+            }
         })
         .for_each(|(above, below)| {
+            log::warn!(
+                "from above: {} {:?}, from below: {} {:?}",
+                above.id.0,
+                padding_vars_below(above, &aux),
+                below.id.0,
+                padding_vars_above(below, &aux)
+            );
             iproduct!(
-                padding_vars_below(graph, above, &aux),
-                padding_vars_above(graph, below, &aux)
+                padding_vars_below(above, &aux),
+                padding_vars_above(below, &aux)
             )
             .for_each(
-                |(&(above_aux, above_padding, above_height), &(below_aux, below_padding, _))| {
+                |(
+                    &VarPadHeight {
+                        var: above_aux,
+                        y_padding: above_padding,
+                        height: above_height,
+                    },
+                    &VarPadHeight {
+                        var: below_aux,
+                        y_padding: below_padding,
+                        ..
+                    },
+                )| {
                     let padding = above_padding.max(below_padding);
                     c(
                         &mut problem,
                         (below_aux - above_aux).geq((above_height + padding) as f64),
                     );
                     d!(
-                        "padding above node({}) <dist {}> below node({})",
+                        "regular padding above node({}) <dist {}> below node({})",
                         node_ids_iter
                             .clone()
                             .find(|n| aux.v(*n) == above_aux)
@@ -588,20 +592,7 @@ fn handle_gateway(
     cached_constraints: &mut Vec<Constraint>,
     gateway: &Node,
     aux: &Aux,
-) -> PaddingVarsExpandedAux {
-    let mut gateway_additional = (
-        vec![(
-            aux.v(gateway.id),
-            graph.config.regular_node_y_padding,
-            gateway.height,
-        )],
-        vec![(
-            aux.v(gateway.id),
-            graph.config.regular_node_y_padding,
-            gateway.height,
-        )],
-    );
-
+) {
     // "slot" means that a real node must be placed there. This is for when a placement constraint
     // forces the real node above or below the gateway. If that happens, we cannot use e.g. the top
     // for routing edges of the other direction, as then we would have both incoming and outgoing
@@ -739,6 +730,12 @@ fn handle_gateway(
         (top_slot, bottom_slot)
     };
 
+    // Y'know what? Maybe we simply just cannot ever let data be at the top or bottom slow.
+    // Because that would interfere with the bend dummy placement (in an earlier stage) when
+    // the edge "crosses into the gateway branching" network. Because if then all the bend dummies
+    // are forced to leave to the side, then the foreign long edge dummy within doesn't fit.
+    // Would need to move it then out of the cluster (well, that is actually technically totally
+    // doable, but I kinda think that it maybe looks better if the data comes in diagonally).
     let (top_slot_is_data, bottom_slot_is_data) = (
         top_slot.is_some_and(|node_id| n!(node_id).is_data()),
         bottom_slot.is_some_and(|node_id| n!(node_id).is_data()),
@@ -859,7 +856,6 @@ fn handle_gateway(
         bottom_slot,
         top_slot_is_data,
         bottom_slot_is_data,
-        &mut gateway_additional,
         aux,
     );
 
@@ -878,12 +874,11 @@ fn handle_gateway(
         bottom_slot,
         top_slot_is_data,
         bottom_slot_is_data,
-        &mut gateway_additional,
         aux,
     );
-    gateway_additional
 }
 
+#[allow(clippy::too_many_arguments)]
 fn handle_gateway_neighbor_layer_connectivity(
     graph: &Graph,
     lane: &Lane,
@@ -899,11 +894,8 @@ fn handle_gateway_neighbor_layer_connectivity(
     bottom_slot: Option<NodeId>,
     top_slot_is_data: bool,
     bottom_slot_is_data: bool,
-    gateway_additional: &mut PaddingVarsExpandedAux,
     aux: &Aux,
 ) {
-    let mut first_other = None;
-    let mut last_other = None;
     let inc_iter = edges
         .iter()
         .map(|edge_id| &e!(*edge_id))
@@ -913,13 +905,7 @@ fn handle_gateway_neighbor_layer_connectivity(
                 && Some(other_node_id) != bottom_slot
                 && edge.is_sequence_flow()
         })
-        .map(|(_, other_node_id)| &n!(other_node_id))
-        // XXX No filtering here, as we look also at nodes in other lanes for assertions.
-        // .filter(|other| other.pool_and_lane() == gateway.pool_and_lane())
-        .inspect(|other| {
-            last_other = Some(*other);
-            first_other.get_or_insert(*other);
-        });
+        .map(|(_, other_node_id)| &n!(other_node_id));
 
     log::error!("lone: {lone_element_position:?}");
     match (
@@ -1071,42 +1057,6 @@ fn handle_gateway_neighbor_layer_connectivity(
         }
     }
 
-    if let Some(first_other) = first_other.take()
-        && first_other.pool_and_lane() == gateway.pool_and_lane()
-    {
-        if first_other.is_bend_dummy() {
-            gateway_additional.0.push((
-                aux.v(first_other.id),
-                graph.config.dummy_node_y_padding,
-                first_other.height,
-            ));
-        } else {
-            assert!(
-                first_other.is_back_edge_corner_dummy(),
-                "{graph:?},\nfirst_other: {}, top_slot: {top_slot:?}, bottom_slot: {bottom_slot:?}",
-                first_other.id,
-            );
-        }
-    }
-
-    if let Some(last_other) = last_other.take()
-        && last_other.pool_and_lane() == gateway.pool_and_lane()
-    {
-        if last_other.is_bend_dummy() {
-            gateway_additional.1.push((
-                aux.v(last_other.id),
-                graph.config.dummy_node_y_padding,
-                last_other.height,
-            ));
-        } else {
-            assert!(
-                last_other.is_back_edge_corner_dummy(),
-                "{graph:?},\nlast_other: {}, top_slot: {top_slot:?}, bottom_slot: {bottom_slot:?}",
-                last_other.id,
-            );
-        }
-    }
-
     if top_is_blocked_for_non_lones && bottom_is_blocked_for_non_lones {
         // The non-lones on this side are then already forced to the top or bottom half. No further
         // constraints are necessary (would only result in conflicts).
@@ -1232,6 +1182,105 @@ fn handle_gateway_neighbor_layer_connectivity(
     }
 }
 
+fn calculate_gateway_additional(graph: &Graph, gateway: &Node, aux: &mut Aux) {
+    let mut border_nodes = [NodeId::default(); 4];
+    let mut num_border_nodes_encountered = 0;
+    let mut gateway_additional = PaddingVarsExpandedAux {
+        above: vec![VarPadHeight {
+            var: aux.v(gateway.id),
+            y_padding: graph.config.regular_node_y_padding,
+            height: gateway.height,
+        }],
+        below: vec![VarPadHeight {
+            var: aux.v(gateway.id),
+            y_padding: graph.config.regular_node_y_padding,
+            height: gateway.height,
+        }],
+    };
+
+    aux.get_mut(gateway.id).skip_if_originating_gateway_is_equal = Some(gateway.id);
+
+    {
+        let iter =
+graph.iter_upwards_same_lane(gateway).take_while(|node| matches!(&node.node_type, NodeType::BendDummy {originating_node, .. } if *originating_node == gateway.id));
+
+        for node in iter.clone() {
+            aux.get_mut(node.id).skip_if_originating_gateway_is_equal = Some(gateway.id);
+        }
+
+        if let Some(first_relevant_incoming_bend_dummy) = iter
+            .clone()
+            .filter(|node| e!(node.outgoing[0]).to == gateway.id)
+            .last()
+        {
+            gateway_additional.above.push(VarPadHeight {
+                var: aux.v(first_relevant_incoming_bend_dummy.id),
+                y_padding: graph.config.dummy_node_y_padding,
+                height: first_relevant_incoming_bend_dummy.height,
+            });
+            border_nodes[num_border_nodes_encountered] = first_relevant_incoming_bend_dummy.id;
+            num_border_nodes_encountered += 1;
+        }
+
+        if let Some(first_relevant_outgoing_bend_dummy) = iter
+            .clone()
+            .filter(|node| e!(node.incoming[0]).from == gateway.id)
+            .last()
+        {
+            gateway_additional.above.push(VarPadHeight {
+                var: aux.v(first_relevant_outgoing_bend_dummy.id),
+                y_padding: graph.config.dummy_node_y_padding,
+                height: first_relevant_outgoing_bend_dummy.height,
+            });
+            border_nodes[num_border_nodes_encountered] = first_relevant_outgoing_bend_dummy.id;
+            num_border_nodes_encountered += 1;
+        }
+    }
+
+    {
+        let iter =
+graph.iter_downwards_same_lane(gateway).take_while(|node| matches!(&node.node_type, NodeType::BendDummy {originating_node, .. } if *originating_node == gateway.id));
+
+        for node in iter.clone() {
+            aux.get_mut(node.id).skip_if_originating_gateway_is_equal = Some(gateway.id);
+        }
+
+        if let Some(last_relevant_incoming_bend_dummy) = iter
+            .clone()
+            .filter(|node| e!(node.outgoing[0]).to == gateway.id)
+            .last()
+        {
+            gateway_additional.below.push(VarPadHeight {
+                var: aux.v(last_relevant_incoming_bend_dummy.id),
+                y_padding: graph.config.dummy_node_y_padding,
+                height: last_relevant_incoming_bend_dummy.height,
+            });
+            border_nodes[num_border_nodes_encountered] = last_relevant_incoming_bend_dummy.id;
+            num_border_nodes_encountered += 1;
+        }
+
+        if let Some(last_relevant_outgoing_bend_dummy) = iter
+            .clone()
+            .filter(|node| e!(node.incoming[0]).from == gateway.id)
+            .last()
+        {
+            gateway_additional.below.push(VarPadHeight {
+                var: aux.v(last_relevant_outgoing_bend_dummy.id),
+                y_padding: graph.config.dummy_node_y_padding,
+                height: last_relevant_outgoing_bend_dummy.height,
+            });
+            border_nodes[num_border_nodes_encountered] = last_relevant_outgoing_bend_dummy.id;
+            num_border_nodes_encountered += 1;
+        }
+    }
+
+    let gateway_additional = Rc::new(gateway_additional);
+    for border_node_id in &border_nodes[0..num_border_nodes_encountered] {
+        aux.get_mut(*border_node_id).padding_vars_expanded = Some(gateway_additional.clone());
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
 fn gateway_forbidden_offset_constraints(
     cached_constraints: &mut Vec<Constraint>,
     gateway: &Node,
