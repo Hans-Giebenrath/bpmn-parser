@@ -11,6 +11,8 @@ pub struct Lane {
     /// `None` is for the anonymous lane. See invariant at `Pool::name`.
     pub name: Option<String>,
     /// These will be sorted by layers after the layer assignment is solved.
+    /// Within the layer, the nodes appear in random order. Use [Node::node_above_in_same_lane] or
+    /// [Node::node_below_in_same_lane] for ordering.
     pub nodes: Vec<NodeId>,
     /// If `name.is_none()`, then this is the tc of the statement which implicitly created the
     /// anonymous lane.

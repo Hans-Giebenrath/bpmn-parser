@@ -52,7 +52,6 @@ run() {
 
 stem=$(basename "$f" .bpmd)
 failed_filename="error in $stem"
-svg_diff_filename="svg difference in $stem"
 tmp_adoc_file="$TMPDIR/$stem.tmp.adoc"
 csv_file="$dir/${stem}.csv"
 correct_csv_file="$dir/${stem}.csv.correct"
@@ -95,6 +94,7 @@ EOF
     svg)
         echo "finished generating $stem.$out_format"
         if ! [ -f "$correct_svg_file" ]; then
+            echo "$stem" >"$TMPDIR/missing reference .svg for $stem"
             cat <<EOF >>"$tmp_adoc_file"
 WARNING: Reference .svg does not exist.
 
@@ -107,7 +107,7 @@ image::$stem.svg[width=60%]
 
 EOF
         else
-            echo "$stem" >"$TMPDIR/$svg_diff_filename"
+            echo "$stem" >"$TMPDIR/difference in .svg for $stem"
             cat <<EOF >>"$tmp_adoc_file"
 WARNING: Reference .svg has different contents.
 
@@ -131,6 +131,7 @@ if $vis_table && ! $failed; then
             echo "✓ Visibility table for $stem matches reference."
         else
             echo "⚠ Visibility table for $stem differs from reference!"
+            echo "$stem" >"$TMPDIR/difference in .csv visibility table for $stem"
             cat <<EOF >>"$tmp_adoc_file"
 [WARNING]
 ====
@@ -150,6 +151,7 @@ EOF
         fi
     else
         echo "⚠ No reference CSV found: $correct_csv_file. Generating warning."
+        echo "$stem" >"$TMPDIR/missing reference .csv visibility table for $stem"
         cat <<EOF >>"$tmp_adoc_file"
 [WARNING]
 ====

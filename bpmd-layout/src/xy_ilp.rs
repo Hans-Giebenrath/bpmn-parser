@@ -11,6 +11,16 @@ use itertools::Itertools;
 use itertools::iproduct;
 use proc_macros::*;
 
+const DEBUG_ILP_CONSTRUCTION: bool = false;
+
+macro_rules! d {
+    ($($tt:tt)*) => {{
+        if DEBUG_ILP_CONSTRUCTION {
+            log::info!($($tt)*);
+        }
+    }};
+}
+
 #[derive(Debug)]
 struct VarPadHeight {
     var: Variable,
@@ -104,6 +114,7 @@ pub fn assign_xy_ilp(graph: &mut Graph) {
     assign_x(graph);
 }
 
+#[derive(Debug)]
 struct Aux(Vec<Option<XyIlpNodeData>>);
 impl Aux {
     fn new(graph: &Graph) -> Self {
@@ -166,16 +177,6 @@ fn middle(node: &Node, aux: &Aux) -> Expression {
     aux.v(node.id) + (node.height / 2) as f64
 }
 
-const DEBUG_ILP_CONSTRUCTION: bool = true;
-
-macro_rules! d {
-    ($($tt:tt)*) => {{
-        if DEBUG_ILP_CONSTRUCTION {
-            log::info!($($tt)*);
-        }
-    }};
-}
-
 #[track_caller]
 fn c<T: SolverModel>(problem: &mut T, constraint: Constraint) {
     d!(
@@ -189,7 +190,7 @@ fn assign_y(graph: &mut Graph, pool: PoolId, lane: LaneId, min_y_value: usize) -
     d!("{graph:?}");
     let mut aux = Aux::new(graph);
     let mut vars = variables!();
-    let node_ids_iter = graph.pools[pool.0].lanes[lane.0].nodes.iter().cloned();
+    let unsorted_node_ids_iter = graph.pools[pool.0].lanes[lane.0].nodes.iter().cloned();
 
     // TODO the allocation could be moved out of this function.
     let mut diff_vars = Vec::new();
@@ -205,7 +206,7 @@ fn assign_y(graph: &mut Graph, pool: PoolId, lane: LaneId, min_y_value: usize) -
 
     // `var_idx_minus_one` has minus one because the 0th variable was created for
     // `height_minimization_var`.
-    for (var_idx_minus_one, node_id) in node_ids_iter.clone().enumerate() {
+    for (var_idx_minus_one, node_id) in unsorted_node_ids_iter.clone().enumerate() {
         let node = &mut n!(node_id);
         assert!(node.pool == pool, "{pool:?}, {lane:?} -> {}", node);
         assert!(node.lane == lane, "{pool:?}, {lane:?} -> {}", node);
@@ -237,7 +238,7 @@ fn assign_y(graph: &mut Graph, pool: PoolId, lane: LaneId, min_y_value: usize) -
     // Minimize the vertical length of edges. I.e. ideally as a result they go
     // directly to the right (have a vertical length of 0) and hence have no
     // bend points.
-    for (edge_id, edge) in node_ids_iter
+    for (edge_id, edge) in unsorted_node_ids_iter
         .clone()
         .flat_map(|node_id| graph.nodes[node_id].outgoing.iter().cloned())
         .map(|edge| (edge, &graph.edges[edge]))
@@ -310,7 +311,7 @@ fn assign_y(graph: &mut Graph, pool: PoolId, lane: LaneId, min_y_value: usize) -
     // cases the precisely-in-the-middle visuals is what we are after anyway.
     let mut cached_constraints = Vec::new();
     let lane = &graph.pools[pool.0].lanes[lane.0];
-    for node_id in node_ids_iter.clone() {
+    for node_id in unsorted_node_ids_iter.clone() {
         let gateway = &graph.nodes[node_id];
         if !gateway.is_gateway() {
             continue;
@@ -331,7 +332,7 @@ fn assign_y(graph: &mut Graph, pool: PoolId, lane: LaneId, min_y_value: usize) -
     let mut problem = vars.minimise(objective).using(default_solver);
 
     // Add padding constraints between neighboring nodes.
-    node_ids_iter
+    unsorted_node_ids_iter
         .clone()
         .map(|node_id| &n!(node_id))
         .flat_map(|n| {
@@ -340,14 +341,6 @@ fn assign_y(graph: &mut Graph, pool: PoolId, lane: LaneId, min_y_value: usize) -
                 .into_iter()
         })
         .filter(|(above, below)| {
-            log::warn!(
-                // everything all right here
-                "skip above: {} on {:?}, skip below: {} on {:?}",
-                above.id.0,
-                aux.get(above.id).skip_if_originating_gateway_is_equal,
-                below.id.0,
-                aux.get(below.id).skip_if_originating_gateway_is_equal,
-            );
             // We don't want to add padding constraints between a gateway and its own bend dummies,
             // as this is handled in the `handle_gateway` function.
             if let Some(above_originating_node) =
@@ -364,13 +357,6 @@ fn assign_y(graph: &mut Graph, pool: PoolId, lane: LaneId, min_y_value: usize) -
             }
         })
         .for_each(|(above, below)| {
-            log::warn!(
-                "from above: {} {:?}, from below: {} {:?}",
-                above.id.0,
-                padding_vars_below(above, &aux),
-                below.id.0,
-                padding_vars_above(below, &aux)
-            );
             iproduct!(
                 padding_vars_below(above, &aux),
                 padding_vars_above(below, &aux)
@@ -395,13 +381,13 @@ fn assign_y(graph: &mut Graph, pool: PoolId, lane: LaneId, min_y_value: usize) -
                     );
                     d!(
                         "regular padding above node({}) <dist {}> below node({})",
-                        node_ids_iter
+                        unsorted_node_ids_iter
                             .clone()
                             .find(|n| aux.v(*n) == above_aux)
                             .unwrap()
                             .0,
                         padding,
-                        node_ids_iter
+                        unsorted_node_ids_iter
                             .clone()
                             .find(|n| aux.v(*n) == below_aux)
                             .unwrap()
@@ -411,7 +397,7 @@ fn assign_y(graph: &mut Graph, pool: PoolId, lane: LaneId, min_y_value: usize) -
             );
         });
 
-    node_ids_iter.clone().for_each(|node_id| {
+    unsorted_node_ids_iter.clone().for_each(|node_id| {
         c(
             &mut problem,
             middle(&n!(node_id), &aux).leq(height_minimization_var),
@@ -478,7 +464,7 @@ fn assign_y(graph: &mut Graph, pool: PoolId, lane: LaneId, min_y_value: usize) -
 
     let mut min_y_encountered = usize::MAX;
     let mut max_y_plus_height_encountered = usize::MIN;
-    for node_id in node_ids_iter.clone() {
+    for node_id in unsorted_node_ids_iter.clone() {
         d!(
             "solution n({}) y: {} (non-rounded: {})",
             node_id.0,
@@ -486,7 +472,7 @@ fn assign_y(graph: &mut Graph, pool: PoolId, lane: LaneId, min_y_value: usize) -
             solution.value(aux.v(node_id)),
         );
     }
-    for node_id in node_ids_iter.clone() {
+    for node_id in unsorted_node_ids_iter.clone() {
         let node = &mut n!(node_id);
         node.y = solution.value(aux.v(node_id)).round() as usize;
         min_y_encountered = min_y_encountered.min(node.y);
@@ -926,7 +912,6 @@ fn handle_gateway_neighbor_layer_connectivity(
                 && aux.get(other.id).skip_if_originating_gateway_is_equal.is_some()
         });
 
-    log::error!("lone: {lone_element_position:?}");
     match (
         &lone_element_position,
         top_is_blocked_for_non_lones,
@@ -1174,8 +1159,6 @@ fn handle_gateway_neighbor_layer_connectivity(
 }
 
 fn calculate_gateway_additional(graph: &Graph, gateway: &Node, aux: &mut Aux) {
-    let mut border_nodes = [NodeId::default(); 4];
-    let mut num_border_nodes_encountered = 0;
     let mut gateway_additional = PaddingVarsExpandedAux {
         above: vec![VarPadHeight {
             var: aux.v(gateway.id),
@@ -1191,40 +1174,29 @@ fn calculate_gateway_additional(graph: &Graph, gateway: &Node, aux: &mut Aux) {
 
     aux.get_mut(gateway.id).skip_if_originating_gateway_is_equal = Some(gateway.id);
 
+    let mut topmost_incoming_bend_dummy = None;
+    let mut bottommost_incoming_bend_dummy = None;
+    let mut topmost_outgoing_bend_dummy = None;
+    let mut bottommost_outgoing_bend_dummy = None;
+
     {
         let iter =
 graph.iter_upwards_same_lane(gateway).take_while(|node| matches!(&node.node_type, NodeType::BendDummy {originating_node, .. } if *originating_node == gateway.id));
 
-        for node in iter.clone() {
+        for node in iter {
             aux.get_mut(node.id).skip_if_originating_gateway_is_equal = Some(gateway.id);
-        }
-
-        if let Some(first_relevant_incoming_bend_dummy) = iter
-            .clone()
-            .filter(|node| e!(node.outgoing[0]).to == gateway.id)
-            .last()
-        {
-            gateway_additional.above.push(VarPadHeight {
-                var: aux.v(first_relevant_incoming_bend_dummy.id),
-                y_padding: graph.config.dummy_node_y_padding,
-                height: first_relevant_incoming_bend_dummy.height,
-            });
-            border_nodes[num_border_nodes_encountered] = first_relevant_incoming_bend_dummy.id;
-            num_border_nodes_encountered += 1;
-        }
-
-        if let Some(first_relevant_outgoing_bend_dummy) = iter
-            .clone()
-            .filter(|node| e!(node.incoming[0]).from == gateway.id)
-            .last()
-        {
-            gateway_additional.above.push(VarPadHeight {
-                var: aux.v(first_relevant_outgoing_bend_dummy.id),
-                y_padding: graph.config.dummy_node_y_padding,
-                height: first_relevant_outgoing_bend_dummy.height,
-            });
-            border_nodes[num_border_nodes_encountered] = first_relevant_outgoing_bend_dummy.id;
-            num_border_nodes_encountered += 1;
+            if e!(node.outgoing[0]).to == gateway.id {
+                topmost_incoming_bend_dummy = Some(node);
+                if bottommost_incoming_bend_dummy.is_none() {
+                    bottommost_incoming_bend_dummy = Some(node);
+                }
+            }
+            if e!(node.incoming[0]).from == gateway.id {
+                topmost_outgoing_bend_dummy = Some(node);
+                if bottommost_outgoing_bend_dummy.is_none() {
+                    bottommost_outgoing_bend_dummy = Some(node);
+                }
+            }
         }
     }
 
@@ -1234,40 +1206,50 @@ graph.iter_downwards_same_lane(gateway).take_while(|node| matches!(&node.node_ty
 
         for node in iter.clone() {
             aux.get_mut(node.id).skip_if_originating_gateway_is_equal = Some(gateway.id);
-        }
-
-        if let Some(last_relevant_incoming_bend_dummy) = iter
-            .clone()
-            .filter(|node| e!(node.outgoing[0]).to == gateway.id)
-            .last()
-        {
-            gateway_additional.below.push(VarPadHeight {
-                var: aux.v(last_relevant_incoming_bend_dummy.id),
-                y_padding: graph.config.dummy_node_y_padding,
-                height: last_relevant_incoming_bend_dummy.height,
-            });
-            border_nodes[num_border_nodes_encountered] = last_relevant_incoming_bend_dummy.id;
-            num_border_nodes_encountered += 1;
-        }
-
-        if let Some(last_relevant_outgoing_bend_dummy) = iter
-            .clone()
-            .filter(|node| e!(node.incoming[0]).from == gateway.id)
-            .last()
-        {
-            gateway_additional.below.push(VarPadHeight {
-                var: aux.v(last_relevant_outgoing_bend_dummy.id),
-                y_padding: graph.config.dummy_node_y_padding,
-                height: last_relevant_outgoing_bend_dummy.height,
-            });
-            border_nodes[num_border_nodes_encountered] = last_relevant_outgoing_bend_dummy.id;
-            num_border_nodes_encountered += 1;
+            if e!(node.outgoing[0]).to == gateway.id {
+                bottommost_incoming_bend_dummy = Some(node);
+                if topmost_incoming_bend_dummy.is_none() {
+                    topmost_incoming_bend_dummy = Some(node);
+                }
+            }
+            if e!(node.incoming[0]).from == gateway.id {
+                bottommost_outgoing_bend_dummy = Some(node);
+                if topmost_outgoing_bend_dummy.is_none() {
+                    topmost_outgoing_bend_dummy = Some(node);
+                }
+            }
         }
     }
 
+    for topmost in topmost_outgoing_bend_dummy
+        .iter()
+        .chain(topmost_incoming_bend_dummy.iter())
+    {
+        gateway_additional.above.push(VarPadHeight {
+            var: aux.v(topmost.id),
+            y_padding: graph.config.dummy_node_y_padding,
+            height: topmost.height,
+        });
+    }
+
+    for bottommost in bottommost_outgoing_bend_dummy
+        .iter()
+        .chain(bottommost_incoming_bend_dummy.iter())
+    {
+        gateway_additional.below.push(VarPadHeight {
+            var: aux.v(bottommost.id),
+            y_padding: graph.config.dummy_node_y_padding,
+            height: bottommost.height,
+        });
+    }
     let gateway_additional = Rc::new(gateway_additional);
-    for border_node_id in &border_nodes[0..num_border_nodes_encountered] {
-        aux.get_mut(*border_node_id).padding_vars_expanded = Some(gateway_additional.clone());
+    for outmost in core::iter::once(&gateway)
+        .chain(topmost_outgoing_bend_dummy.iter())
+        .chain(topmost_incoming_bend_dummy.iter())
+        .chain(bottommost_outgoing_bend_dummy.iter())
+        .chain(bottommost_incoming_bend_dummy.iter())
+    {
+        aux.get_mut(outmost.id).padding_vars_expanded = Some(gateway_additional.clone());
     }
 }
 

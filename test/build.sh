@@ -76,7 +76,11 @@ for f in error*; do
     print_in_red "$f"
     some_failed=true
 done
-for f in "svg difference"*; do
+for f in "difference"*; do
+    print_in_yellow "$f"
+    some_differ=true
+done
+for f in "missing reference"*; do
     print_in_yellow "$f"
     some_differ=true
 done

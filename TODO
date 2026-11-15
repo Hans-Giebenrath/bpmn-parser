@@ -14,6 +14,7 @@ Big TODOs before 1.0:
 - --show-licenses flag to display licenses. Also, probably serve license file for Inter font in the playground?
 
 After 1.0:
+- cons018 should be symmetric with cons017
 - add `[place .. left of ..]` which also fixes the vertical alignment of the two nodes
 - Gateway Happy Path (anonymous `->"label"` being a fallthrough), fallthrough into joining nodes (- Task; X <-other)
 - Join into non-gateway nodes.
