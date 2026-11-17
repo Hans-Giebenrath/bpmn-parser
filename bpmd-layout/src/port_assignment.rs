@@ -1035,7 +1035,8 @@ fn handle_gateway_node_one_side(this_node_id: NodeId, graph: &mut Graph, directi
                     classify_barrier_node_for_gateway(this_node_id, node).is_some();
                 (node, is_bottom_barrier)
             })
-            .take_while_inclusive(|(_, is_bottom_barrier)| *is_bottom_barrier)
+            // Take all the non-barrier nodes, but then, in the end, also return the barrier itself.
+            .take_while_inclusive(|(_, is_bottom_barrier)| !*is_bottom_barrier)
             .map(Some)
             .chain(core::iter::once(None))
         {
