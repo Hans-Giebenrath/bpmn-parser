@@ -1,0 +1,16 @@
+# Start for GW
+X GW ->gw
+
+. E1 for GW <-gw
+. E3 for GW <-gw
+
+# Other Start
+. Other End
+
+# S2
+. E2
+
+[place @other-start below @start-for-gw]
+[place @other-end below @e1]
+[place @other-end above @e3]
+[place @s2 below @other-start]
