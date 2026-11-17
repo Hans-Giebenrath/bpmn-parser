@@ -1023,7 +1023,7 @@ fn handle_gateway_node_one_side(this_node_id: NodeId, graph: &mut Graph, directi
                 iteration_start,
                 Some(this_pool_and_lane.max(bottom_most_pool_lane)),
             )
-            // Ignore bend dummies from the other side (incoming vs outcoming) that were
+            // Ignore bend dummies from the other side (incoming vs outgoing) that were
             // created in the previous invocation of this function.
             .filter(|node| {
                 !matches!(&node.node_type, NodeType::BendDummy {
