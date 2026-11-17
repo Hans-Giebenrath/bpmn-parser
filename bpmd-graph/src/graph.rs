@@ -395,61 +395,39 @@ impl Graph {
         final_pool_lane_to_consider: Option<PoolAndLane>,
     ) -> impl Iterator<Item = &Node> + Clone {
         let graph = self;
-        let (mut current_node_opt, mut current_pool_and_lane, layer) = match start {
-            StartAt::Node(start_node_id) => {
-                let current_node = &n!(start_node_id);
-                (
-                    Some(current_node),
-                    current_node.pool_and_lane(),
-                    current_node.layer_id,
-                )
+        let final_pool_lane = final_pool_lane_to_consider.unwrap_or(PoolAndLane::MIN);
+
+        let next_lane = move |current_pool_lane, layer| {
+            self.get_nextup_higher_node_same_pool(current_pool_lane, final_pool_lane, layer)
+                .map(|(_, id)| &n!(id))
+        };
+
+        let successor = move |node: &Node, layer| {
+            node.node_above_in_same_lane
+                .map(|id| {
+                    assert_ne!(id, node.id);
+                    &n!(id)
+                })
+                .or_else(|| next_lane(node.pool_and_lane(), layer))
+        };
+
+        let (first, layer) = match start {
+            StartAt::Node(id) => {
+                let node = &n!(id);
+                (successor(node, node.layer_id), node.layer_id)
             }
             StartAt::PoolLane(Coord3 {
                 pool_and_lane,
                 layer,
-            }) => (None, pool_and_lane, layer),
+            }) => (
+                self.get_bottom_node(pool_and_lane, layer)
+                    .map(|id| &n!(id))
+                    .or_else(|| next_lane(pool_and_lane, layer)),
+                layer,
+            ),
         };
-        let final_pool_lane_to_consider = final_pool_lane_to_consider.unwrap_or(PoolAndLane::MIN);
-        from_fn(move || {
-            if graph.pools[current_pool_and_lane.pool].lanes.is_empty() {
-                return None;
-            }
-            let Some(current_node) = current_node_opt else {
-                // Should only enter this once at the beginning for `LayerIterationStart::PoolLane`.
-                current_node_opt = graph
-                    .get_bottom_node(current_pool_and_lane, layer)
-                    .or_else(|| {
-                        graph
-                            .get_nextup_higher_node_same_pool(
-                                current_pool_and_lane,
-                                final_pool_lane_to_consider,
-                                layer,
-                            )
-                            .map(|x| x.1)
-                    })
-                    .map(|node_id| &n!(node_id));
 
-                return current_node_opt;
-            };
-            if let Some(above) = current_node.node_above_in_same_lane {
-                assert_ne!(above, current_node.id);
-                current_node_opt = Some(&n!(above));
-                current_node_opt
-            } else if let Some((next_pool_and_lane, above)) = graph
-                .get_nextup_higher_node_same_pool(
-                    current_pool_and_lane,
-                    final_pool_lane_to_consider,
-                    layer,
-                )
-            {
-                current_node_opt = Some(&n!(above));
-                current_pool_and_lane = next_pool_and_lane;
-                current_node_opt
-            } else {
-                // No more interesting stuff above.
-                None
-            }
-        })
+        core::iter::successors(first, move |node| successor(node, layer))
     }
 
     pub fn iter_upwards_all_pools(
@@ -517,6 +495,8 @@ impl Graph {
         }
     }
 
+    /// `final_pool_lane_to_consider` is clamped, i.e. it can have a greater pool index or a too large
+    /// lane index, in which case we just look into at most all remaining lanes.
     pub fn get_next_lower_node_same_pool(
         &self,
         mut lane_above_requested_one: PoolAndLane,
@@ -527,11 +507,14 @@ impl Graph {
             final_pool_lane_to_consider >= lane_above_requested_one,
             "{self:?}\nlane_above_requested_one: {lane_above_requested_one:?}, final_pool_lane_to_consider: {final_pool_lane_to_consider:?}, layer: {layer:?}"
         );
-        if final_pool_lane_to_consider.pool != lane_above_requested_one.pool {
-            assert!(!self.pools[lane_above_requested_one.pool].lanes.is_empty());
+        let num_lanes = self.pools[lane_above_requested_one.pool].lanes.len();
+        if final_pool_lane_to_consider.pool != lane_above_requested_one.pool
+            || final_pool_lane_to_consider.lane.0 > num_lanes
+        {
             final_pool_lane_to_consider = PoolAndLane {
                 pool: lane_above_requested_one.pool,
-                lane: LaneId(self.pools[lane_above_requested_one.pool].lanes.len() - 1),
+                // If there are no lanes, then there are no nodes. Easy!
+                lane: LaneId(num_lanes.checked_sub(1)?),
             };
         }
         while lane_above_requested_one < final_pool_lane_to_consider {
@@ -549,69 +532,43 @@ impl Graph {
         final_pool_lane_to_consider: Option<PoolAndLane>,
     ) -> impl Iterator<Item = &Node> + Clone {
         let graph = self;
-        let (mut current_node_opt, mut current_pool_and_lane, layer) = match start {
-            StartAt::Node(start_node_id) => {
-                let current_node = &n!(start_node_id);
-                (
-                    Some(current_node),
-                    current_node.pool_and_lane(),
-                    current_node.layer_id,
-                )
+        let final_pool_lane = final_pool_lane_to_consider.unwrap_or(PoolAndLane {
+            pool: PoolId(usize::MAX),
+            lane: LaneId(usize::MAX),
+        });
+
+        let next_lane = move |current_pool_lane, layer| {
+            graph
+                .get_next_lower_node_same_pool(current_pool_lane, final_pool_lane, layer)
+                .map(|(_, id)| &n!(id))
+        };
+
+        let successor = move |node: &Node, layer| {
+            node.node_below_in_same_lane
+                .map(|id| {
+                    assert_ne!(id, node.id);
+                    &n!(id)
+                })
+                .or_else(|| next_lane(node.pool_and_lane(), layer))
+        };
+
+        let (first, layer) = match start {
+            StartAt::Node(id) => {
+                let node = &n!(id);
+                (successor(node, node.layer_id), node.layer_id)
             }
             StartAt::PoolLane(Coord3 {
                 pool_and_lane,
                 layer,
-            }) => (None, pool_and_lane, layer),
-        };
-        let final_pool_lane_to_consider =
-            final_pool_lane_to_consider.unwrap_or_else(|| PoolAndLane {
-                pool: current_pool_and_lane.pool,
-                lane: LaneId(
-                    self.pools[current_pool_and_lane.pool]
-                        .lanes
-                        .len()
-                        // `from_fn` has a check in the beginning to return early for empty pools.
-                        .strict_sub(1),
-                ),
-            });
-        from_fn(move || {
-            if graph.pools[current_pool_and_lane.pool].lanes.is_empty() {
-                return None;
-            }
-            let Some(current_node) = current_node_opt else {
-                // Should only enter this once at the beginning for `LayerIterationStart::PoolLane`.
-                current_node_opt = graph
-                    .get_top_node(current_pool_and_lane, layer)
-                    .or_else(|| {
-                        graph
-                            .get_next_lower_node_same_pool(
-                                current_pool_and_lane,
-                                final_pool_lane_to_consider,
-                                layer,
-                            )
-                            .map(|x| x.1)
-                    })
-                    .map(|node_id| &n!(node_id));
-
-                return current_node_opt;
-            };
-            if let Some(below) = current_node.node_below_in_same_lane {
-                assert_ne!(below, current_node.id);
-                current_node_opt = Some(&n!(below));
-                current_node_opt
-            } else if let Some((next_pool_and_lane, below)) = graph.get_next_lower_node_same_pool(
-                current_pool_and_lane,
-                final_pool_lane_to_consider,
+            }) => (
+                self.get_top_node(pool_and_lane, layer)
+                    .map(|id| &n!(id))
+                    .or_else(|| next_lane(pool_and_lane, layer)),
                 layer,
-            ) {
-                current_node_opt = Some(&n!(below));
-                current_pool_and_lane = next_pool_and_lane;
-                current_node_opt
-            } else {
-                // No more interesting stuff below.
-                None
-            }
-        })
+            ),
+        };
+
+        core::iter::successors(first, move |node| successor(node, layer))
     }
 
     pub fn iter_downwards_all_pools(
