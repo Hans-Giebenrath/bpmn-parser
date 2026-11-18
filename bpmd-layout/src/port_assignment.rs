@@ -845,16 +845,6 @@ fn maybe_update_best_position(
     }
 }
 
-#[derive(Clone)]
-enum LookingForAPlace {
-    Node {
-        encountered_node: NodeId,
-        at_pool_lane: PoolAndLane,
-        is_bottom_barrier: bool,
-    },
-    EndOfSearch,
-}
-
 // Try to push the dummy bend points as far outside as
 // possible, i.e. until the crossing count increases. The goal is to "eat" as meany dummy nodes as
 // possible (without moving into the "wrong" lane)
