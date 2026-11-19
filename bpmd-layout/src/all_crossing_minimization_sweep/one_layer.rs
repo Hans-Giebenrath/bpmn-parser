@@ -322,20 +322,18 @@ impl P3Layer {
         mns[victim_idx].deactivate();
 
         // Fix the lists.
-        self.constrained_list.retain(|&idx| idx != victim_idx);
+        self.constrained_list
+            .retain(|&idx| idx != victim_idx && idx != winner_idx);
+        self.unconstrained
+            .retain(|&idx| idx != victim_idx && idx != winner_idx);
 
         if self.merge_nodes[winner_idx].has_incident_constraints() {
             // stays in constrained_list. But during the vertical edge phase it could be that
             // the winner did not have any constraints to begin with, but now ingested some from the
             // victim node.
-            if !self.constrained_list.contains(&winner_idx) {
-                self.constrained_list.push(winner_idx);
-            }
+            self.constrained_list.push(winner_idx);
         } else {
-            self.constrained_list.retain(|&idx| idx != winner_idx);
-            if !self.unconstrained.contains(&winner_idx) {
-                self.unconstrained.push(winner_idx);
-            }
+            self.unconstrained.push(winner_idx);
         }
     }
 }
