@@ -829,12 +829,12 @@ fn one_direction_sweep(
             // graph to satisfy all constraints. The current implementation is too conservative.
             // We could check at each step whether there are more unsatisfied constraints left.
             // But I hope that this conservative version is sufficient in practice.
-            something_changed = best_versions.maybe_add(sweep_graph);
+            something_changed = best_versions.maybe_add(sweep_graph) || something_changed;
         }
     }
     if !one_right_sweep_is_done {
         // At the end of the first sweep we can for sure add the current result as a best version.
-        something_changed = best_versions.maybe_add(sweep_graph);
+        something_changed = best_versions.maybe_add(sweep_graph) || something_changed;
     }
     something_changed
 }
