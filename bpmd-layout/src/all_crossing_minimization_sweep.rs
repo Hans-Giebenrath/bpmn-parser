@@ -37,7 +37,7 @@ mod one_layer;
 // nodes. This is quite a lot, but within the boundary of BPMD.
 type GeneralIndexType = u16;
 
-const DEBUG_CONSTRUCTION: bool = false;
+const DEBUG_CONSTRUCTION: bool = true;
 
 macro_rules! d {
     ($($tt:tt)*) => {{
@@ -704,7 +704,7 @@ fn left_right_sweeps(
     for (mind_the_pull, max_iter) in [(true, 6), (false, 6)] {
         let mut num_iterations = 0;
         for i in 0..max_iter {
-            num_iterations = i;
+            num_iterations = i + 1;
             let mut something_changed = false;
             for is_right_sweep in [true, false] {
                 let something_changed_local = one_direction_sweep(
@@ -726,6 +726,9 @@ fn left_right_sweeps(
                 {
                     // The current best version already has 0 crossings. There is no need
                     // to continue searching for something even better, as that does not exist.
+                    debug_output.push_str(&format!(
+                        "num iterations: {num_iterations} best version found (is right sweep: {is_right_sweep})"
+                    ));
                     return best_versions;
                 }
                 one_right_sweep_is_done = true;
@@ -737,7 +740,7 @@ fn left_right_sweeps(
                 break;
             }
         }
-        debug_output.push_str(&format!("{num_iterations} "));
+        debug_output.push_str(&format!("num iterations: {num_iterations} "));
     }
     //
     best_versions
