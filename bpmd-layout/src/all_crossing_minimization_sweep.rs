@@ -37,7 +37,7 @@ mod one_layer;
 // nodes. This is quite a lot, but within the boundary of BPMD.
 type GeneralIndexType = u16;
 
-const DEBUG_CONSTRUCTION: bool = true;
+const DEBUG_CONSTRUCTION: bool = false;
 
 macro_rules! d {
     ($($tt:tt)*) => {{
