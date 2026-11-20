@@ -137,7 +137,16 @@ pub fn run(
     state.unconstrained.sort_by(|&a, &b| {
         // DFs have the least priority, SFs the most.
         let (a, b) = (&state.merge_nodes[a], &state.merge_nodes[b]);
-        a.pull_and_bary().partial_cmp(&b.pull_and_bary()).unwrap()
+        a.pull_and_bary()
+            .partial_cmp(&b.pull_and_bary())
+            .unwrap()
+            // In case there is a tie, try to break it by the previous position. Since the
+            // calculation of the previous position could be expensive, and also usually not so
+            // often required, calculate it lazily (could also be cached and updated in `absorb`).
+            .then_with(|| {
+                a.previous_position(sweep_graph)
+                    .total_cmp(&b.previous_position(sweep_graph))
+            })
     });
 
     // Finished - now just assign the positions.
@@ -417,5 +426,13 @@ impl MergeNode {
             self.pull_balance.df_balance,
             self.barycenter,
         )
+    }
+
+    fn previous_position(&self, sweep_graph: &SweepGraph) -> f32 {
+        self.ordered_nodes
+            .iter()
+            .map(|&id| sweep_graph.nodes[id].layer_position as f32)
+            .sum::<f32>()
+            / self.ordered_nodes.len() as f32
     }
 }
