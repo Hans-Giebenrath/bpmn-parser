@@ -422,7 +422,11 @@ impl MergeNode {
             degree += 1.0;
         }
 
-        let barycenter = if degree == 0.0 { 0.0 } else { accum / degree };
+        let barycenter = if degree == 0.0 {
+            sweep_node.layer_position as f32
+        } else {
+            accum / degree
+        };
 
         Self {
             ordered_nodes: vec![sweep_node_id],
