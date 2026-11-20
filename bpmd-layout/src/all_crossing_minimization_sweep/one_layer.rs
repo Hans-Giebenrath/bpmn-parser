@@ -244,10 +244,10 @@ impl P3Layer {
         }
 
         while let Some(v_idx) = s.pop_front() {
-            let v_barycenter = self.merge_nodes[v_idx].barycenter;
+            let v_pull_and_bary = self.merge_nodes[v_idx].pull_and_bary();
 
             for &s_idx in &self.merge_nodes[v_idx].incoming_constraints {
-                if self.merge_nodes[s_idx].barycenter >= v_barycenter {
+                if self.merge_nodes[s_idx].pull_and_bary() >= v_pull_and_bary {
                     // `s` must come above `v`, but `s.barycenter` is larger than `v.barycenter`.
                     // So report in the order as they *should* appear.
                     return Some((s_idx, v_idx));
