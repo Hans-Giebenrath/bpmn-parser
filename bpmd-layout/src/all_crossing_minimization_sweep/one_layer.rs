@@ -150,7 +150,6 @@ pub fn run(
     // Finished - now just assign the positions.
     let mut i = 0;
     let mut debug_order = String::new();
-    let debug = false;
     for merge_node_idx in state.unconstrained.iter().cloned() {
         for sweep_node_id in state.merge_nodes[merge_node_idx]
             .ordered_nodes
@@ -159,7 +158,7 @@ pub fn run(
         {
             sweep_graph.nodes[sweep_node_id].layer_position = i;
             i += 1;
-            if debug {
+            if super::DEBUG_CONSTRUCTION {
                 let node_id = graph.pools[current_location.pool_and_lane.pool].lanes
                     [current_location.pool_and_lane.lane]
                     .nodes[sweep_graph.nodes[sweep_node_id].in_lane_idx as usize];
@@ -171,8 +170,8 @@ pub fn run(
             }
         }
     }
-    if debug {
-        log::debug!("Sweep Graph for {current_location:?}, order top-to-bottom: {debug_order}");
+    if super::DEBUG_CONSTRUCTION {
+        log::info!("Sweep Graph for {current_location:?}, order top-to-bottom: {debug_order}");
     }
 }
 
