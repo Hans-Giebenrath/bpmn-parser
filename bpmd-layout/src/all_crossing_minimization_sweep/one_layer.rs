@@ -35,12 +35,13 @@ pub struct P3Layer {
 ///
 /// Implementation history: I first implemented it for my bachelor's thesis in Java. Then, for BPMD,
 /// I used ChatGPT 5.3 (?maybe) to transpile it to Rust. Did heavy editing. Then added the support
-/// for vertical edges.
+/// for vertical edges and more.
 pub fn run(
     graph: &Graph,
     sweep_graph: &mut SweepGraph,
     current_location: &Coord3,
     is_right_sweep: bool,
+    mind_the_data: bool,
     mind_the_pull: bool,
     constraints: &[Above],
 ) {
@@ -52,6 +53,7 @@ pub fn run(
         constraints,
         current_location,
         is_right_sweep,
+        mind_the_data,
         mind_the_pull,
     );
 
@@ -183,6 +185,7 @@ impl P3Layer {
         constraints: &[Above],
         current_location: &Coord3,
         is_right_sweep: bool,
+        mind_the_data: bool,
         mind_the_pull: bool,
     ) {
         let current_layer = sweep_graph.layers[current_location.layer.0].clone();
@@ -198,6 +201,7 @@ impl P3Layer {
                 sweep_node,
                 SweepNodeId(idx + current_layer.start as usize),
                 is_right_sweep,
+                mind_the_data,
                 mind_the_pull,
             );
             self.merge_nodes.push(mn);
@@ -280,14 +284,31 @@ impl P3Layer {
         let mns = &mut self.merge_nodes;
         let winner_degree = mns[winner_idx].degree;
         let victim_degree = mns[victim_idx].degree;
-        let new_degree = winner_degree + victim_degree;
 
-        let new_barycenter = if new_degree != 0.0 {
-            (mns[winner_idx].barycenter * winner_degree
-                + mns[victim_idx].barycenter * victim_degree)
-                / new_degree
-        } else {
-            0.0
+        let (new_barycenter, new_degree) = match (
+            mns[winner_idx].contains_regular_node,
+            mns[victim_idx].contains_regular_node,
+        ) {
+            // Same category of nodes, so handle them equally.
+            (true, true) | (false, false) => {
+                let new_degree = winner_degree + victim_degree;
+                (
+                    if new_degree != 0.0 {
+                        (mns[winner_idx].barycenter * winner_degree
+                            + mns[victim_idx].barycenter * victim_degree)
+                            / new_degree
+                    } else {
+                        0.0
+                    },
+                    new_degree,
+                )
+            }
+
+            // Ignore the victim barycenter and degree.
+            (true, false) => (mns[winner_idx].barycenter, winner_degree),
+
+            // Ignore the winner barycenter and degree.
+            (false, true) => (mns[victim_idx].barycenter, victim_degree),
         };
 
         let victim_ordered_nodes = mns[victim_idx].ordered_nodes.clone();
@@ -354,6 +375,11 @@ struct MergeNode {
     below_of_this: VecSet</* merge node idx */ usize>,
     incoming_constraints: Vec</* merge node idx */ usize>,
     pull_balance: PullBalance,
+    /// XXX Always `true` if `mind_the_data == true`, to not have to thread `mind_the_data`
+    /// everywhere.
+    /// Required for `mind_the_data == false` case: In that case, then two nodes are merged and only
+    /// one is a data node, then the data node's barycenter is ignored.
+    contains_regular_node: bool,
 }
 
 impl MergeNode {
@@ -362,6 +388,7 @@ impl MergeNode {
         sweep_node: &SweepNode,
         sweep_node_id: SweepNodeId,
         is_right_sweep: bool,
+        mind_the_data: bool,
         mind_the_pull: bool,
     ) -> Self {
         let direction = if is_right_sweep { INCOMING } else { OUTGOING };
@@ -372,7 +399,14 @@ impl MergeNode {
             .iter()
             .flat_map(|(target_node, edge_connection)| {
                 if matches!(edge_connection, EdgeConnection::Both) {
-                    Some(sweep_graph.nodes[*target_node].layer_position as f32)
+                    let other_node = &sweep_graph.nodes[*target_node];
+                    // When we ignore data associations, then real nodes should only look at other
+                    // real nodes.
+                    if mind_the_data || sweep_node.is_data || !other_node.is_data {
+                        Some(other_node.layer_position as f32)
+                    } else {
+                        None
+                    }
                 } else {
                     // Lane-crossing edges are not added here, those are incorporated via
                     // `Pull`.
@@ -407,6 +441,11 @@ impl MergeNode {
                     sf_balance: sweep_node.pull_balance.sf_balance,
                     ..Default::default()
                 }
+            },
+            contains_regular_node: if mind_the_data {
+                true
+            } else {
+                !sweep_node.is_data
             },
         }
     }
