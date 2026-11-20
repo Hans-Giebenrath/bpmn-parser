@@ -112,13 +112,18 @@ pub fn run(
         }
     }
 
+    // TODO move the allocation out. Does not make sense to `alloc`+`free` all the time.
+    // However, we anyway allocate quite a bunch of `Vec` per layer, so it does not really matter
+    // that much.
+    let mut s: VecDeque<usize> = VecDeque::new();
     // Then handle the less strict above and below constraints.
-    while let Some((above_idx, below_idx)) = state.find_violated_constraint() {
+    while let Some((above_idx, below_idx)) = state.find_violated_constraint(&mut s) {
         // `above_idx` has currently a larger barycenter value, but due to constraints that
         // sweep node must come above sweep node `below_idx`. Hence, the names refer to the to-be
         // situation, not how they are currently ordered.
         state.absorb(/* winner */ above_idx, /* victim */ below_idx);
     }
+    drop(s);
 
     state
         .unconstrained
@@ -224,11 +229,11 @@ impl P3Layer {
         }
     }
 
-    fn find_violated_constraint(&mut self) -> Option<(usize, usize)> {
+    fn find_violated_constraint(&mut self, s: &mut VecDeque<usize>) -> Option<(usize, usize)> {
         // TODO My Java code uses a Queue here with `add` and `poll` but the paper just uses a set.
         // So a `Vec` with `push` and `pop` should be sufficient?
-        // TODO move the allocation out. Does not make sense to `alloc`+`free` all the time.
-        let mut s: VecDeque<usize> = VecDeque::new();
+
+        s.clear();
 
         // fill the queue
         for &mn_idx in &self.constrained_list {
