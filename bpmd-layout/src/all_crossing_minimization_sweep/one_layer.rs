@@ -28,7 +28,7 @@ pub struct P3Layer {
 //   mentioned, for each of the clumped vertices.)
 // Now it should be done.
 
-/// The original algorithm comes from the paper:
+/// The original algorithms come from the papers:
 /// Forster, M. (2005). A Fast and Simple Heuristic for Constrained Two-Level Crossing Reduction.
 /// In: Pach, J. (eds) Graph Drawing. GD 2004. Lecture Notes in Computer Science, vol 3383.
 /// Springer, Berlin, Heidelberg. https://doi.org/10.1007/978-3-540-31843-9_22
@@ -46,9 +46,6 @@ pub fn run(
 ) {
     let mut state = P3Layer::default();
 
-    // TODO even if `mind_the_pull == false`, the sequence flow pull *must* be respected, so we don't
-    // get snake edges around nodes which were falsely placed at the border, within two vertically
-    // connected nodes.
     state.create_merge_nodes(
         graph,
         sweep_graph,
@@ -58,6 +55,7 @@ pub fn run(
         mind_the_pull,
     );
 
+    // First handle all vertical chains (where the specific node order is dictated).
     for vertical_sequence in sweep_graph.vertical_edge_chains.iter() {
         if vertical_sequence.coord3 != *current_location {
             continue;
@@ -76,22 +74,14 @@ pub fn run(
                     .iter()
                     .find(|mn| mn.ordered_nodes[0] == sweep_graph.aux.get(*id1))
                     .unwrap();
-                if mind_the_pull {
-                    match mn0
-                        .pull_and_bary()
-                        .partial_cmp(&mn1.pull_and_bary())
-                        .unwrap()
-                    {
-                        core::cmp::Ordering::Less => sorted_pairs += 1,
-                        core::cmp::Ordering::Greater => rev_sorted_pairs += 1,
-                        _ => (),
-                    }
-                } else {
-                    match mn0.barycenter.partial_cmp(&mn1.barycenter).unwrap() {
-                        core::cmp::Ordering::Less => sorted_pairs += 1,
-                        core::cmp::Ordering::Greater => rev_sorted_pairs += 1,
-                        _ => (),
-                    }
+                match mn0
+                    .pull_and_bary()
+                    .partial_cmp(&mn1.pull_and_bary())
+                    .unwrap()
+                {
+                    core::cmp::Ordering::Less => sorted_pairs += 1,
+                    core::cmp::Ordering::Greater => rev_sorted_pairs += 1,
+                    _ => (),
                 }
             }
             rev_sorted_pairs > sorted_pairs
@@ -122,6 +112,7 @@ pub fn run(
         }
     }
 
+    // Then handle the less strict above and below constraints.
     while let Some((above_idx, below_idx)) = state.find_violated_constraint() {
         // `above_idx` has currently a larger barycenter value, but due to constraints that
         // sweep node must come above sweep node `below_idx`. Hence, the names refer to the to-be
@@ -134,6 +125,8 @@ pub fn run(
         .extend(state.constrained_list.iter().copied());
     state.constrained_list.clear();
 
+    // Now the remaining nodes are unconstrained with respect to each other.
+    // Hence, we can now sort according to barycenter etc.
     state.unconstrained.sort_by(|&a, &b| {
         // DFs have the least priority, SFs the most.
         let (a, b) = (&state.merge_nodes[a], &state.merge_nodes[b]);
@@ -350,12 +343,12 @@ impl P3Layer {
 #[derive(Debug, Clone)]
 struct MergeNode {
     ordered_nodes: Vec<SweepNodeId>,
+    /// XXX Don't use directly for comparison, use `pull_and_bary()` instead.
     barycenter: f32,
     degree: f32,
     above_of_this: VecSet</* merge node idx */ usize>,
     below_of_this: VecSet</* merge node idx */ usize>,
     incoming_constraints: Vec</* merge node idx */ usize>,
-    /// Should be the sum from the previous analysis (which generated Pull) instead.
     pull_balance: PullBalance,
 }
 
@@ -403,7 +396,13 @@ impl MergeNode {
             pull_balance: if mind_the_pull {
                 sweep_node.pull_balance.clone()
             } else {
-                Default::default()
+                // Even if `mind_the_pull == false`, the sequence flow pull *must* be respected, so we don't
+                // get snake edges around nodes which were falsely placed at the border, within two vertically
+                // connected nodes.
+                PullBalance {
+                    sf_balance: sweep_node.pull_balance.sf_balance,
+                    ..Default::default()
+                }
             },
         }
     }
@@ -419,6 +418,7 @@ impl MergeNode {
         self.incoming_constraints.clear();
     }
 
+    /// Use even if `mind_the_pull == false`, as then the relevant files are simply set to 0.
     fn pull_and_bary(&self) -> (i8, i8, i8, f32) {
         (
             self.pull_balance.sf_balance,
